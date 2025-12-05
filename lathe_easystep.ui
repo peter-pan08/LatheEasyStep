@@ -1,0 +1,494 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LatheEasyStepPanel</class>
+ <widget class="QWidget" name="LatheEasyStepPanel">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>650</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>600</width>
+    <height>400</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>LatheEasyStep</string>
+  </property>
+
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <!-- Hauptbereich: links Schrittliste, rechts Tabs + Vorschau -->
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <!-- Schrittliste -->
+     <item>
+      <widget class="QListWidget" name="listOperations">
+       <property name="minimumWidth">
+        <number>180</number>
+       </property>
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+      </widget>
+     </item>
+
+     <!-- Rechter Bereich -->
+     <item>
+      <layout class="QVBoxLayout" name="rightLayout">
+       <!-- Tabs -->
+       <item>
+        <widget class="QTabWidget" name="tabParams">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+
+         <!-- TAB: PROGRAMM -->
+         <widget class="QWidget" name="tabProgram">
+          <attribute name="title">
+           <string>Programm</string>
+          </attribute>
+          <layout class="QFormLayout" name="formLayoutProgram">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_prog_name">
+             <property name="text">
+              <string>Programmname</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QLineEdit" name="program_name"/>
+           </item>
+
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_prog_unit">
+             <property name="text">
+              <string>Maßeinheit</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QComboBox" name="program_unit">
+             <item>
+              <property name="text">
+               <string>mm</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>inch</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+
+           <!-- Rohteilgruppe -->
+           <item row="2" column="0">
+            <widget class="QLabel" name="label_prog_stock">
+             <property name="text">
+              <string>Rohteilform</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QComboBox" name="program_shape">
+             <property name="currentIndex">
+              <number>0</number>
+             </property>
+             <item>
+              <property name="text">
+               <string>Zylinder</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Rohr</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Rechteck</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>N-Eck</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+
+           <item row="3" column="0">
+            <widget class="QLabel" name="label_prog_xa">
+             <property name="text">
+              <string>Außendurchmesser (mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QDoubleSpinBox" name="program_xa">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>40.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="4" column="0">
+            <widget class="QLabel" name="label_prog_xi">
+             <property name="text">
+              <string>Innendurchmesser (mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="1">
+            <widget class="QDoubleSpinBox" name="program_xi">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>0.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="5" column="0">
+            <widget class="QLabel" name="label_prog_l">
+             <property name="text">
+              <string>Rohteillänge (mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="1">
+            <widget class="QDoubleSpinBox" name="program_l">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>2000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>60.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+
+         <!-- TAB: PLANEN -->
+         <widget class="QWidget" name="tabFace">
+          <attribute name="title">
+           <string>Planen</string>
+          </attribute>
+          <layout class="QFormLayout" name="formLayoutFace">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_face_start_dia">
+             <property name="text">
+              <string>Startdurchmesser (X, mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QDoubleSpinBox" name="face_start_diameter">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>50.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_face_target_z">
+             <property name="text">
+              <string>Ziel-Z (mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QDoubleSpinBox" name="face_target_z">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="minimum">
+              <double>-1000.000000000000000</double>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>0.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="2" column="0">
+            <widget class="QLabel" name="label_face_safe_z">
+             <property name="text">
+              <string>Sicherheits-Z (mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QDoubleSpinBox" name="face_safe_z">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="minimum">
+              <double>-1000.000000000000000</double>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>2.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="3" column="0">
+            <widget class="QLabel" name="label_face_feed">
+             <property name="text">
+              <string>Vorschub (mm/U)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QDoubleSpinBox" name="face_feed">
+             <property name="suffix">
+              <string> mm/U</string>
+             </property>
+             <property name="maximum">
+              <double>10.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>0.200000000000000</double>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+
+         <!-- TAB: LÄNGSDREHEN -->
+         <widget class="QWidget" name="tabTurn">
+          <attribute name="title">
+           <string>Längsdrehen</string>
+          </attribute>
+          <layout class="QFormLayout" name="formLayoutTurn">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_turn_start_dia">
+             <property name="text">
+              <string>Startdurchmesser (X, mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QDoubleSpinBox" name="turn_start_diameter">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>40.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_turn_end_dia">
+             <property name="text">
+              <string>Enddurchmesser (X, mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QDoubleSpinBox" name="turn_end_diameter">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>20.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="2" column="0">
+            <widget class="QLabel" name="label_turn_length">
+             <property name="text">
+              <string>Länge (Z, mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QDoubleSpinBox" name="turn_length">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>30.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="3" column="0">
+            <widget class="QLabel" name="label_turn_safe_z">
+             <property name="text">
+              <string>Sicherheits-Z (mm)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QDoubleSpinBox" name="turn_safe_z">
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+             <property name="minimum">
+              <double>-1000.000000000000000</double>
+             </property>
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>2.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+
+           <item row="4" column="0">
+            <widget class="QLabel" name="label_turn_feed">
+             <property name="text">
+              <string>Vorschub (mm/U)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="1">
+            <widget class="QDoubleSpinBox" name="turn_feed">
+             <property name="suffix">
+              <string> mm/U</string>
+             </property>
+             <property name="maximum">
+              <double>10.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>0.200000000000000</double>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+
+        </widget>
+       </item>
+
+       <!-- Vorschau -->
+       <item>
+        <widget class="LathePreviewWidget" name="previewWidget">
+         <property name="minimumHeight">
+          <number>220</number>
+         </property>
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Buttonzeile -->
+   <item>
+    <layout class="QHBoxLayout" name="buttonLayout">
+     <item>
+      <widget class="QPushButton" name="btnAdd">
+       <property name="text">
+        <string>Schritt hinzufügen</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnDelete">
+       <property name="text">
+        <string>Schritt löschen</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnMoveUp">
+       <property name="text">
+        <string>Nach oben</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnMoveDown">
+       <property name="text">
+        <string>Nach unten</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnNewProgram">
+       <property name="text">
+        <string>Neues Programm</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnGenerate">
+       <property name="text">
+        <string>G-Code erzeugen</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+
+ <customwidgets>
+  <customwidget>
+   <class>LathePreviewWidget</class>
+   <extends>QWidget</extends>
+   <header>lathe_easystep_handler</header>
+  </customwidget>
+ </customwidgets>
+
+ <resources/>
+ <connections/>
+</ui>
