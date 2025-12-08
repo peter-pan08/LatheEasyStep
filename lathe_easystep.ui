@@ -1610,10 +1610,10 @@
          </property>
         </widget>
        </item>
-      </layout>
+        </layout>
+       </widget>
+      </widget>
      </item>
-    </layout>
-   </item>
    <item>
     <layout class="QHBoxLayout" name="buttonLayout">
      <item>
@@ -1651,25 +1651,29 @@
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btnGenerate">
-       <property name="text">
-        <string>Programm erzeugen</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
+      <item>
+       <widget class="QPushButton" name="btnGenerate">
+        <property name="text">
+         <string>Programm erzeugen</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+     </layout>
+    </item>
    </layout>
-  </widget>
+  </item>
+  </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>LathePreviewWidget</class>
-   <extends>QWidget</extends>
-   <header>lathe_easystep_handler</header>
-  </customwidget>
- </customwidgets>
- <resources/>
- <connections/>
+</widget>
+<customwidgets>
+ <customwidget>
+  <class>LathePreviewWidget</class>
+  <extends>QWidget</extends>
+  <header>lathe_easystep_handler</header>
+ </customwidget>
+</customwidgets>
+<resources/>
+<connections/>
 </ui>
