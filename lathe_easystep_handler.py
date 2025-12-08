@@ -421,6 +421,10 @@ def gcode_for_contour(op: Operation) -> List[str]:
 
     lines: List[str] = ["(KONTUR)"]
 
+    tool_num = int(p.get("tool", 0))
+    if tool_num > 0:
+        lines.append(f"(Werkzeug T{tool_num:02d})")
+
     side_idx = int(p.get("side", 0))
     lines.append("(Seite: Außen)" if side_idx == 0 else "(Seite: Innen)")
 
@@ -456,7 +460,12 @@ def gcode_for_face(op: Operation) -> List[str]:
     edge_size = max(p.get("edge_size", 0.0), 0.0)
     spindle = p.get("spindle", 0.0)
 
+    tool_num = int(p.get("tool", 0))
+
     lines: List[str] = []
+
+    if tool_num > 0:
+        lines.append(f"(Werkzeug T{tool_num:02d})")
 
     # lokale Drehzahl, falls gesetzt
     if spindle and spindle > 0:
@@ -903,6 +912,7 @@ class HandlerClass:
     def _setup_param_maps(self):
         self.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {
             OpType.FACE: {
+                "tool": getattr(self.w, "face_tool", None),
                 "start_x": getattr(self.w, "face_start_x", None),
                 "start_z": getattr(self.w, "face_start_z", None),
                 "end_x": getattr(self.w, "face_end_x", None),
@@ -910,15 +920,16 @@ class HandlerClass:
                 "safe_z": getattr(self.w, "face_safe_z", None),
                 "feed": getattr(self.w, "face_feed", None),
                 "depth_per_pass": getattr(self.w, "face_depth_per_pass", None),
-            "finish_allow_x": getattr(self.w, "face_finish_allow_x", None),
-            "finish_allow_z": getattr(self.w, "face_finish_allow_z", None),
-            "depth_max": getattr(self.w, "face_depth_max", None),
-            "mode": getattr(self.w, "face_mode", None),
-            "edge_type": getattr(self.w, "face_edge_type", None),
-            "edge_size": getattr(self.w, "face_edge_size", None),
-            "spindle": getattr(self.w, "face_spindle", None),
-        },
+                "finish_allow_x": getattr(self.w, "face_finish_allow_x", None),
+                "finish_allow_z": getattr(self.w, "face_finish_allow_z", None),
+                "depth_max": getattr(self.w, "face_depth_max", None),
+                "mode": getattr(self.w, "face_mode", None),
+                "edge_type": getattr(self.w, "face_edge_type", None),
+                "edge_size": getattr(self.w, "face_edge_size", None),
+                "spindle": getattr(self.w, "face_spindle", None),
+            },
             OpType.CONTOUR: {
+                "tool": getattr(self.w, "contour_tool", None),
                 "side": getattr(self.w, "contour_side", None),
                 "start_x": getattr(self.w, "contour_start_x", None),
                 "start_z": getattr(self.w, "contour_start_z", None),
@@ -1166,6 +1177,10 @@ class HandlerClass:
         op = self.model.operations[idx]
         op.params = self._collect_params(op.op_type)
         self.model.update_geometry(op)
+        if self.list_ops:
+            item = self.list_ops.item(idx)
+            if item:
+                item.setText(self._describe_operation(op, idx + 1))
         self._refresh_preview()
 
     # ---- Button-Handler -----------------------------------------------
@@ -1719,7 +1734,9 @@ class HandlerClass:
 
     # ---- Hilfsfunktionen ----------------------------------------------
     def _describe_operation(self, op: Operation, number: int) -> str:
-        return f"{number}: {op.op_type.title()}"
+        tool = int(op.params.get("tool", 0)) if isinstance(op.params, dict) else 0
+        suffix = f" (T{tool:02d})" if tool > 0 else ""
+        return f"{number}: {op.op_type.title()}{suffix}"
 
     def _renumber_operations(self):
         if self.list_ops is None:
