@@ -96,6 +96,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.paths: List[List[Tuple[float, float]]] = []
         self.active_index: int | None = None
         self.setMinimumHeight(200)
+        self._base_span = 10.0  # Default 10x10 mm viewport
 
     def set_paths(self, paths: List[List[Tuple[float, float]]],
                   active_index: int | None = None):
@@ -111,36 +112,38 @@ class LathePreviewWidget(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.fillRect(self.rect(), QtCore.Qt.black)
 
-        # Wenn keine Pfade vorliegen, trotzdem Achsen und optionalen Nullpunkt zeichnen
-        if not self.paths:
-            painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-            center = self.rect().center()
-            painter.drawLine(0, center.y(), self.rect().width(), center.y())  # Z-Achse
-            painter.drawLine(center.x(), 0, center.x(), self.rect().height())  # X-Achse
-            # Achsbeschriftungen
-            painter.setPen(QtGui.QPen(QtGui.QColor(150, 150, 150), 1))
-            painter.drawText(center.x() + 5, 12, "X")
-            painter.drawText(4, center.y() - 4, "Z")
-            return
-
         all_points = [p for path in self.paths for p in path if len(path) > 0]
         if not all_points:
-            return
+            all_points = [(0.0, 0.0)]
 
         xs = [p[0] for p in all_points]
         zs = [p[1] for p in all_points]
         min_x, max_x = min(xs), max(xs)
         min_z, max_z = min(zs), max(zs)
-        if min_x == max_x:
-            max_x += 1.0
-            min_x -= 1.0
-        if min_z == max_z:
-            max_z += 1.0
-            min_z -= 1.0
 
-        # kleiner Rand um die Geometrie
+        # Ursprung und Mindestgröße immer berücksichtigen
+        half_span = self._base_span / 2.0
+        min_x = min(min_x, -half_span, 0.0)
+        max_x = max(max_x, half_span, 0.0)
+        min_z = min(min_z, -half_span, 0.0)
+        max_z = max(max_z, half_span, 0.0)
+
         dx = max_x - min_x
         dz = max_z - min_z
+
+        def ensure_span(min_val: float, max_val: float, base_span: float) -> Tuple[float, float]:
+            span = max_val - min_val
+            if span < base_span:
+                pad = (base_span - span) / 2.0
+                return min_val - pad, max_val + pad
+            return min_val, max_val
+
+        min_x, max_x = ensure_span(min_x, max_x, self._base_span)
+        min_z, max_z = ensure_span(min_z, max_z, self._base_span)
+
+        # kleiner Rand um die Geometrie
+        dx = max(max_x - min_x, 1e-3)
+        dz = max(max_z - min_z, 1e-3)
         pad = 0.05
         min_x -= dx * pad
         max_x += dx * pad
@@ -149,8 +152,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
         margin = 30
         rect = self.rect().adjusted(margin, margin, -margin, -margin)
-        scale_x = rect.width() / (max_x - min_x)
-        scale_z = rect.height() / (max_z - min_z)
+        scale_x = rect.width() / max(max_x - min_x, 1e-6)
+        scale_z = rect.height() / max(max_z - min_z, 1e-6)
         scale = min(scale_x, scale_z)
 
         def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
@@ -592,6 +595,7 @@ class HandlerClass:
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
+        self.contour_preview = getattr(self.w, "contourPreview", None)
         self.list_ops = getattr(self.w, "listOperations", None)
         self.tab_params = getattr(self.w, "tabParams", None)
 
@@ -1144,6 +1148,19 @@ class HandlerClass:
                 widget.setValue(val)
             widget.blockSignals(False)
 
+    def _set_preview_paths(
+        self,
+        paths: List[List[Tuple[float, float]]],
+        active_index: int | None = None,
+        include_contour_preview: bool = True,
+    ) -> None:
+        """Aktualisiert Haupt- und optional den Kontur-Tab-Preview."""
+
+        if self.preview:
+            self.preview.set_paths(paths, active_index)
+        if include_contour_preview and self.contour_preview:
+            self.contour_preview.set_paths(paths, None)
+
     def _refresh_preview(self):
         if self.preview is None:
             return
@@ -1166,7 +1183,7 @@ class HandlerClass:
             active = -1
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
-        self.preview.set_paths(paths, active)
+        self._set_preview_paths(paths, active, include_contour_preview=False)
 
     def _update_selected_operation(self):
         if self.list_ops is None:
@@ -1372,7 +1389,7 @@ class HandlerClass:
             print(f"[LatheEasyStep] contour preview path points: {path}")
         except Exception:
             pass
-        self.preview.set_paths([path], None)
+        self._set_preview_paths([path], None)
 
     def _sync_contour_edge_controls(self):
         """Synchronisiert Kante/Maß-Eingabe mit der aktuellen Tabellenzeile und blendet Felder."""
