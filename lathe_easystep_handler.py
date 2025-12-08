@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
@@ -110,120 +111,123 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QtGui.QPainter(self)
-        painter.fillRect(self.rect(), QtCore.Qt.black)
+        try:
+            painter.fillRect(self.rect(), QtCore.Qt.black)
 
-        all_points = [p for path in self.paths for p in path if len(path) > 0]
-        if not all_points:
-            all_points = [(0.0, 0.0)]
+            all_points = [p for path in self.paths for p in path if len(path) > 0]
+            if not all_points:
+                all_points = [(0.0, 0.0)]
 
-        xs = [p[0] for p in all_points]
-        zs = [p[1] for p in all_points]
-        min_x, max_x = min(xs), max(xs)
-        min_z, max_z = min(zs), max(zs)
+            xs = [p[0] for p in all_points]
+            zs = [p[1] for p in all_points]
+            min_x, max_x = min(xs), max(xs)
+            min_z, max_z = min(zs), max(zs)
 
-        # Ursprung und Mindestgröße immer berücksichtigen
-        half_span = self._base_span / 2.0
-        min_x = min(min_x, -half_span, 0.0)
-        max_x = max(max_x, half_span, 0.0)
-        min_z = min(min_z, -half_span, 0.0)
-        max_z = max(max_z, half_span, 0.0)
+            # Ursprung und Mindestgröße immer berücksichtigen
+            half_span = self._base_span / 2.0
+            min_x = min(min_x, -half_span, 0.0)
+            max_x = max(max_x, half_span, 0.0)
+            min_z = min(min_z, -half_span, 0.0)
+            max_z = max(max_z, half_span, 0.0)
 
-        dx = max_x - min_x
-        dz = max_z - min_z
+            dx = max_x - min_x
+            dz = max_z - min_z
 
-        def ensure_span(min_val: float, max_val: float, base_span: float) -> Tuple[float, float]:
-            span = max_val - min_val
-            if span < base_span:
-                pad = (base_span - span) / 2.0
-                return min_val - pad, max_val + pad
-            return min_val, max_val
+            def ensure_span(min_val: float, max_val: float, base_span: float) -> Tuple[float, float]:
+                span = max_val - min_val
+                if span < base_span:
+                    pad = (base_span - span) / 2.0
+                    return min_val - pad, max_val + pad
+                return min_val, max_val
 
-        min_x, max_x = ensure_span(min_x, max_x, self._base_span)
-        min_z, max_z = ensure_span(min_z, max_z, self._base_span)
+            min_x, max_x = ensure_span(min_x, max_x, self._base_span)
+            min_z, max_z = ensure_span(min_z, max_z, self._base_span)
 
-        # kleiner Rand um die Geometrie
-        dx = max(max_x - min_x, 1e-3)
-        dz = max(max_z - min_z, 1e-3)
-        pad = 0.05
-        min_x -= dx * pad
-        max_x += dx * pad
-        min_z -= dz * pad
-        max_z += dz * pad
+            # kleiner Rand um die Geometrie
+            dx = max(max_x - min_x, 1e-3)
+            dz = max(max_z - min_z, 1e-3)
+            pad = 0.05
+            min_x -= dx * pad
+            max_x += dx * pad
+            min_z -= dz * pad
+            max_z += dz * pad
 
-        margin = 30
-        rect = self.rect().adjusted(margin, margin, -margin, -margin)
-        scale_x = rect.width() / max(max_x - min_x, 1e-6)
-        scale_z = rect.height() / max(max_z - min_z, 1e-6)
-        scale = min(scale_x, scale_z)
+            margin = 30
+            rect = self.rect().adjusted(margin, margin, -margin, -margin)
+            scale_x = rect.width() / max(max_x - min_x, 1e-6)
+            scale_z = rect.height() / max(max_z - min_z, 1e-6)
+            scale = min(scale_x, scale_z)
 
-        def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
-            x_pix = rect.left() + (x_val - min_x) * scale
-            z_pix = rect.bottom() - (z_val - min_z) * scale
-            return QtCore.QPointF(x_pix, z_pix)
+            def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
+                x_pix = rect.left() + (x_val - min_x) * scale
+                z_pix = rect.bottom() - (z_val - min_z) * scale
+                return QtCore.QPointF(x_pix, z_pix)
 
-        # Achsen und Skala
-        painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-        x_axis = to_screen(min_x, 0)
-        x_axis_end = to_screen(max_x, 0)
-        z_axis = to_screen(0, min_z)
-        z_axis_end = to_screen(0, max_z)
-        painter.drawLine(x_axis, x_axis_end)  # Z-Achse (horizontal)
-        painter.drawLine(z_axis, z_axis_end)  # X-Achse (vertikal)
+            # Achsen und Skala
+            painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
+            x_axis = to_screen(min_x, 0)
+            x_axis_end = to_screen(max_x, 0)
+            z_axis = to_screen(0, min_z)
+            z_axis_end = to_screen(0, max_z)
+            painter.drawLine(x_axis, x_axis_end)  # Z-Achse (horizontal)
+            painter.drawLine(z_axis, z_axis_end)  # X-Achse (vertikal)
 
-        def nice_step(span: float) -> float:
-            if span <= 0:
-                return 1.0
-            raw = span / 5.0
-            power = 10 ** int(QtCore.qFloor(QtCore.qLn(raw) / QtCore.qLn(10.0)))
-            for m in (1, 2, 5, 10):
-                step = m * power
-                if span / step <= 8:
-                    return step
-            return raw
+            def nice_step(span: float) -> float:
+                if span <= 0:
+                    return 1.0
+                raw = span / 5.0
+                power = 10 ** int(math.floor(math.log10(raw)))
+                for m in (1, 2, 5, 10):
+                    step = m * power
+                    if span / step <= 8:
+                        return step
+                return raw
 
-        tick_pen = QtGui.QPen(QtGui.QColor(100, 100, 100), 1)
-        font_pen = QtGui.QPen(QtGui.QColor(160, 160, 160), 1)
-        painter.setFont(QtGui.QFont("Sans", 8))
+            tick_pen = QtGui.QPen(QtGui.QColor(100, 100, 100), 1)
+            font_pen = QtGui.QPen(QtGui.QColor(160, 160, 160), 1)
+            painter.setFont(QtGui.QFont("Sans", 8))
 
-        # X-Ticks (Z-Achse horizontal)
-        step_x = nice_step(max_x - min_x)
-        val = (min_x // step_x) * step_x
-        while val <= max_x:
-            pt = to_screen(val, 0)
-            painter.setPen(tick_pen)
-            painter.drawLine(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4)
-            painter.setPen(font_pen)
-            painter.drawText(pt.x() + 2, pt.y() - 6, f"{val:.0f}")
-            val += step_x
-
-        # Z-Ticks (X-Achse vertikal)
-        step_z = nice_step(max_z - min_z)
-        val = (min_z // step_z) * step_z
-        while val <= max_z:
-            pt = to_screen(0, val)
-            painter.setPen(tick_pen)
-            painter.drawLine(pt.x() - 4, pt.y(), pt.x() + 4, pt.y())
-            painter.setPen(font_pen)
-            painter.drawText(pt.x() + 6, pt.y() - 2, f"{val:.0f}")
-            val += step_z
-
-        # Achsbeschriftungen
-        painter.setPen(font_pen)
-        painter.drawText(rect.right() - 20, x_axis.y() - 6, "X")
-        painter.drawText(z_axis.x() + 6, rect.top() + 12, "Z")
-
-        for idx, path in enumerate(self.paths):
-            if len(path) < 2:
-                # Einzelpunkt als kleines Kreuz darstellen
-                pt = to_screen(path[0][0], path[0][1])
-                painter.setPen(QtGui.QPen(QtGui.QColor("yellow"), 2))
-                painter.drawLine(pt.x() - 4, pt.y(), pt.x() + 4, pt.y())
+            # X-Ticks (Z-Achse horizontal)
+            step_x = nice_step(max_x - min_x)
+            val = (min_x // step_x) * step_x
+            while val <= max_x:
+                pt = to_screen(val, 0)
+                painter.setPen(tick_pen)
                 painter.drawLine(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4)
-                continue
-            color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
-            painter.setPen(QtGui.QPen(color, 2))
-            points = [to_screen(x, z) for x, z in path]
-            painter.drawPolyline(QtGui.QPolygonF(points))
+                painter.setPen(font_pen)
+                painter.drawText(pt.x() + 2, pt.y() - 6, f"{val:.0f}")
+                val += step_x
+
+            # Z-Ticks (X-Achse vertikal)
+            step_z = nice_step(max_z - min_z)
+            val = (min_z // step_z) * step_z
+            while val <= max_z:
+                pt = to_screen(0, val)
+                painter.setPen(tick_pen)
+                painter.drawLine(pt.x() - 4, pt.y(), pt.x() + 4, pt.y())
+                painter.setPen(font_pen)
+                painter.drawText(pt.x() + 6, pt.y() - 2, f"{val:.0f}")
+                val += step_z
+
+            # Achsbeschriftungen
+            painter.setPen(font_pen)
+            painter.drawText(rect.right() - 20, x_axis.y() - 6, "X")
+            painter.drawText(z_axis.x() + 6, rect.top() + 12, "Z")
+
+            for idx, path in enumerate(self.paths):
+                if len(path) < 2:
+                    # Einzelpunkt als kleines Kreuz darstellen
+                    pt = to_screen(path[0][0], path[0][1])
+                    painter.setPen(QtGui.QPen(QtGui.QColor("yellow"), 2))
+                    painter.drawLine(pt.x() - 4, pt.y(), pt.x() + 4, pt.y())
+                    painter.drawLine(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4)
+                    continue
+                color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
+                painter.setPen(QtGui.QPen(color, 2))
+                points = [to_screen(x, z) for x, z in path]
+                painter.drawPolyline(QtGui.QPolygonF(points))
+        finally:
+            painter.end()
 
 
 # ----------------------------------------------------------------------
