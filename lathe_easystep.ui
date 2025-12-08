@@ -1058,6 +1058,19 @@
              </property>
             </widget>
            </item>
+           <item row="8" column="0" colspan="2">
+            <widget class="LathePreviewWidget" name="contourPreview">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumHeight">
+              <number>180</number>
+             </property>
+            </widget>
+           </item>
           </layout>
          </widget>
          <widget class="QWidget" name="tabThread">
