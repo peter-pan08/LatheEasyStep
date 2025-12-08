@@ -40,26 +40,50 @@
        <property name="minimumWidth">
         <number>180</number>
        </property>
-      </widget>
+     </widget>
      </item>
      <item>
       <layout class="QVBoxLayout" name="rightLayout">
        <item>
-          <widget class="QTabWidget" name="tabParams">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="currentIndex">
-            <number>0</number>
-           </property>
+        <widget class="QScrollArea" name="scrollParams">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>100</width>
+            <height>100</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="scrollAreaLayout">
+           <item>
+            <widget class="QTabWidget" name="tabParams">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="currentIndex">
+              <number>0</number>
+             </property>
            <widget class="QWidget" name="tabProgram">
-            <attribute name="title">
+           <attribute name="title">
              <string>Programm</string>
             </attribute>
             <layout class="QFormLayout" name="formLayoutProgram">
+             <property name="verticalSpacing">
+              <number>8</number>
+             </property>
              <item row="0" column="0">
               <widget class="QLabel" name="label_prog_npv">
                <property name="text">
@@ -543,9 +567,12 @@
           </widget>
           <widget class="QWidget" name="tabFace">
            <attribute name="title">
-            <string>Planen</string>
+           <string>Planen</string>
            </attribute>
            <layout class="QFormLayout" name="formLayoutFace">
+            <property name="verticalSpacing">
+             <number>8</number>
+            </property>
             <item row="0" column="0">
              <widget class="QLabel" name="label_face_start_x">
               <property name="text">
@@ -816,13 +843,36 @@
               </property>
              </widget>
             </item>
+            <item row="13" column="0">
+             <widget class="QLabel" name="label_face_tool">
+              <property name="text">
+               <string>Werkzeug</string>
+              </property>
+             </widget>
+            </item>
+            <item row="13" column="1">
+             <widget class="QSpinBox" name="face_tool">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>99</number>
+              </property>
+              <property name="value">
+               <number>1</number>
+              </property>
+             </widget>
+            </item>
           </layout>
          </widget>
          <widget class="QWidget" name="tabContour">
-          <attribute name="title">
+         <attribute name="title">
            <string>Kontur</string>
           </attribute>
           <layout class="QFormLayout" name="formLayoutContour">
+           <property name="verticalSpacing">
+            <number>8</number>
+           </property>
            <item row="0" column="0">
             <widget class="QLabel" name="label_contour_side">
              <property name="text">
@@ -985,6 +1035,26 @@
              </property>
              <property name="value">
               <double>0.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+           <item row="7" column="0">
+            <widget class="QLabel" name="label_contour_tool">
+             <property name="text">
+              <string>Werkzeug</string>
+             </property>
+            </widget>
+           </item>
+           <item row="7" column="1">
+            <widget class="QSpinBox" name="contour_tool">
+             <property name="minimum">
+              <number>1</number>
+             </property>
+             <property name="maximum">
+              <number>99</number>
+             </property>
+             <property name="value">
+              <number>1</number>
              </property>
             </widget>
            </item>
