@@ -104,6 +104,9 @@ class ProgramModel:
                 _fmt("L", "l", " mm"),
                 _fmt("Kantenanzahl N", "n_edges", ""),
                 _fmt("Schlüsselweite SW", "sw", " mm"),
+                _fmt("XT", "xt", " mm"),
+                _fmt("ZT", "zt", " mm"),
+                _fmt("SC", "sc", " mm"),
                 _fmt("Rückzug", "retract_mode", ""),
                 _fmt("XRA", "xra", " mm"),
                 _fmt("XRI", "xri", " mm"),
@@ -121,9 +124,10 @@ class ProgramModel:
         # Drehzahlbegrenzung aus Programmkopf (nur als Kommentar)
         s1_max = settings.get("s1_max", 0)
         s3_max = settings.get("s3_max", 0)
+        has_sub = bool(settings.get("has_subspindle", False))
         if s1_max:
             lines.append(f"(S1 max = {int(s1_max)} U/min)")
-        if s3_max:
+        if has_sub and s3_max:
             lines.append(f"(S3 max = {int(s3_max)} U/min)")
         for idx, op in enumerate(self.operations, start=1):
             lines.append(f"; Operation {idx}")
@@ -770,6 +774,9 @@ class HandlerClass:
         self.label_prog_n = getattr(self.w, "label_prog_n", None)
         self.program_sw = getattr(self.w, "program_sw", None)
         self.label_prog_sw = getattr(self.w, "label_prog_sw", None)
+        self.program_xt = getattr(self.w, "program_xt", None)
+        self.program_zt = getattr(self.w, "program_zt", None)
+        self.program_sc = getattr(self.w, "program_sc", None)
 
         self.program_xra = getattr(self.w, "program_xra", None)
         self.label_prog_xra = getattr(self.w, "label_prog_xra", None)
@@ -1365,6 +1372,29 @@ class HandlerClass:
 
     def _collect_program_header(self) -> Dict[str, object]:
         """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
+        # Fehlende Widgets nachladen, falls sie zum Zeitpunkt der Initialisierung
+        # noch nicht gefunden wurden (z. B. wegen verzögertem UI-Aufbau).
+        if self.program_npv is None:
+            self.program_npv = self._get_widget_by_name("program_npv")
+        if self.program_unit is None:
+            self.program_unit = self._find_unit_combo()
+        if self.program_shape is None:
+            self.program_shape = self._find_shape_combo()
+        if self.program_retract_mode is None:
+            self.program_retract_mode = self._get_widget_by_name("program_retract_mode")
+        if self.program_s1 is None:
+            self.program_s1 = self._get_widget_by_name("program_s1")
+        if self.program_s3 is None:
+            self.program_s3 = self._get_widget_by_name("program_s3")
+        if self.program_has_subspindle is None:
+            self.program_has_subspindle = self._get_widget_by_name("program_has_subspindle")
+        if self.program_xt is None:
+            self.program_xt = self._get_widget_by_name("program_xt")
+        if self.program_zt is None:
+            self.program_zt = self._get_widget_by_name("program_zt")
+        if self.program_sc is None:
+            self.program_sc = self._get_widget_by_name("program_sc")
+
         header: Dict[str, object] = {}
         if self.program_npv:
             header["npv"] = self.program_npv.currentText().strip()
@@ -1372,10 +1402,11 @@ class HandlerClass:
             header["unit"] = self.program_unit.currentText().strip()
         if self.program_shape:
             header["shape"] = self.program_shape.currentText().strip()
-        # Rohteilabmessungen
+
         def _val(widget):
             return float(widget.value()) if widget else None
 
+        # Rohteilabmessungen / Spannmaße
         header["xa"] = _val(self.program_xa)
         header["xi"] = _val(self.program_xi)
         header["za"] = _val(self.program_za)
@@ -1397,9 +1428,18 @@ class HandlerClass:
         header["zra"] = _val(self.program_zra)
         header["zri"] = _val(self.program_zri)
 
-        # Drehzahlbegrenzung
+        # Werkzeugwechsel-/Sicherheitspositionen
+        header["xt"] = _val(self.program_xt)
+        header["zt"] = _val(self.program_zt)
+        header["sc"] = _val(self.program_sc)
+
+        # Drehzahlbegrenzung (S3 nur, wenn Gegenspindel aktiv)
+        header["has_subspindle"] = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
         header["s1_max"] = float(self.program_s1.value()) if self.program_s1 else 0.0
-        header["s3_max"] = float(self.program_s3.value()) if self.program_s3 else 0.0
+        if header["has_subspindle"]:
+            header["s3_max"] = float(self.program_s3.value()) if self.program_s3 else 0.0
+        else:
+            header["s3_max"] = 0.0
 
         return header
 
