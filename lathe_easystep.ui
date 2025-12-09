@@ -677,6 +677,9 @@
               <property name="suffix">
                <string> mm</string>
               </property>
+              <property name="minimum">
+               <double>-1000.000000000000000</double>
+              </property>
               <property name="maximum">
                <double>1000.000000000000000</double>
               </property>
