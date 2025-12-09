@@ -1088,16 +1088,21 @@ class HandlerClass:
             current = getattr(self, name, None)
             if current:
                 return current
-            obj = root.findChild(cls, "listOperations" if name == "list_ops" else
-                                      "tabParams" if name == "tab_params" else
-                                      "btnAdd" if name == "btn_add" else
-                                      "btnDelete" if name == "btn_delete" else
-                                      "btnMoveUp" if name == "btn_move_up" else
-                                      "btnMoveDown" if name == "btn_move_down" else
-                                      "btnNewProgram" if name == "btn_new_program" else
-                                      "btnGenerate" if name == "btn_generate" else name)
+            obj_name = (
+                "listOperations" if name == "list_ops" else
+                "tabParams" if name == "tab_params" else
+                "btnAdd" if name == "btn_add" else
+                "btnDelete" if name == "btn_delete" else
+                "btnMoveUp" if name == "btn_move_up" else
+                "btnMoveDown" if name == "btn_move_down" else
+                "btnNewProgram" if name == "btn_new_program" else
+                "btnGenerate" if name == "btn_generate" else name
+            )
+            obj = root.findChild(cls, obj_name)
             if obj is None:
-                obj = root.findChild(QtWidgets.QWidget, name)
+                obj = root.findChild(QtCore.QObject, obj_name)
+            if obj is None:
+                obj = root.findChild(QtWidgets.QWidget, obj_name)
             if obj:
                 setattr(self, name, obj)
             return getattr(self, name, None)
@@ -1113,7 +1118,7 @@ class HandlerClass:
 
         # Fallbacks, falls die Typ-Suche scheitert
         if self.list_ops is None:
-            candidates = root.findChildren(QtWidgets.QListWidget)
+            candidates = root.findChildren(QtWidgets.QListWidget) or root.findChildren(QtWidgets.QWidget)
             if candidates:
                 self.list_ops = candidates[0]
         if self.tab_params is None:
