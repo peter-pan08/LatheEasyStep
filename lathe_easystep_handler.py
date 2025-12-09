@@ -195,7 +195,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
                 painter.setPen(font_pen)
-                painter.drawText(pt.x() + 2, pt.y() - 6, f"{val:.0f}")
+                painter.drawText(QtCore.QPointF(pt.x() + 2, pt.y() - 6), f"{val:.0f}")
                 val += step_x
 
             # Z-Ticks (X-Achse vertikal)
@@ -206,13 +206,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
-                painter.drawText(pt.x() + 6, pt.y() - 2, f"{val:.0f}")
+                painter.drawText(QtCore.QPointF(pt.x() + 6, pt.y() - 2), f"{val:.0f}")
                 val += step_z
 
             # Achsbeschriftungen
             painter.setPen(font_pen)
-            painter.drawText(rect.right() - 20, x_axis.y() - 6, "X")
-            painter.drawText(z_axis.x() + 6, rect.top() + 12, "Z")
+            painter.drawText(QtCore.QPointF(rect.right() - 20, x_axis.y() - 6), "X")
+            painter.drawText(QtCore.QPointF(z_axis.x() + 6, rect.top() + 12), "Z")
 
             for idx, path in enumerate(self.paths):
                 if len(path) < 2:
