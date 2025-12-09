@@ -15,6 +15,7 @@ from qtvcp.core import Action
 # Operation types
 # ----------------------------------------------------------------------
 class OpType:
+    PROGRAM_HEADER = "program_header"
     FACE = "face"
     CONTOUR = "contour"
     TURN = "turn"
@@ -68,14 +69,57 @@ class ProgramModel:
             op.path = builder(op.params)
 
     def generate_gcode(self) -> List[str]:
-        lines: List[str] = [
-            "(Programm automatisch erzeugt)",
-            "G18 G90 G40 G80",
-            "G54",
-        ]
+        settings = self.program_settings or {}
+        npv_code = str(settings.get("npv") or "G54").upper()
+        unit = settings.get("unit", "")
+        shape = settings.get("shape", "")
+
+        lines: List[str] = ["(Programm automatisch erzeugt)"]
+        if unit:
+            lines.append(f"(Maßeinheit: {unit})")
+        if shape:
+            lines.append(f"(Rohteilform: {shape})")
+
+        def _fmt(name: str, key: str, suffix: str = ""):
+            val = settings.get(key, None)
+            if val is None:
+                return None
+            try:
+                if float(val) == 0.0 and key not in ("xi", "zi", "zb", "w", "l", "n_edges", "sw"):
+                    return None
+            except Exception:
+                pass
+            return f"({name}: {val}{suffix})"
+
+        for comment in filter(
+            None,
+            [
+                _fmt("XA", "xa", " mm"),
+                _fmt("XI", "xi", " mm"),
+                _fmt("ZA", "za", " mm"),
+                _fmt("ZI", "zi", " mm"),
+                _fmt("ZB", "zb", " mm"),
+                _fmt("W", "w", " mm"),
+                _fmt("L", "l", " mm"),
+                _fmt("Kantenanzahl N", "n_edges", ""),
+                _fmt("Schlüsselweite SW", "sw", " mm"),
+                _fmt("Rückzug", "retract_mode", ""),
+                _fmt("XRA", "xra", " mm"),
+                _fmt("XRI", "xri", " mm"),
+                _fmt("ZRA", "zra", " mm"),
+                _fmt("ZRI", "zri", " mm"),
+            ],
+        ):
+            lines.append(comment)
+
+        # Basiszustand
+        lines.append("G18 G90 G40 G80")
+        if npv_code:
+            lines.append(npv_code)
+
         # Drehzahlbegrenzung aus Programmkopf (nur als Kommentar)
-        s1_max = self.program_settings.get("s1_max", 0)
-        s3_max = self.program_settings.get("s3_max", 0)
+        s1_max = settings.get("s1_max", 0)
+        s3_max = settings.get("s3_max", 0)
         if s1_max:
             lines.append(f"(S1 max = {int(s1_max)} U/min)")
         if s3_max:
@@ -154,23 +198,26 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             margin = 30
             rect = self.rect().adjusted(margin, margin, -margin, -margin)
-            scale_x = rect.width() / max(max_x - min_x, 1e-6)
-            scale_z = rect.height() / max(max_z - min_z, 1e-6)
+            scale_z = rect.width() / max(max_z - min_z, 1e-6)
+            scale_x = rect.height() / max(max_x - min_x, 1e-6)
             scale = min(scale_x, scale_z)
 
             def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
-                x_pix = rect.left() + (x_val - min_x) * scale
-                z_pix = rect.bottom() - (z_val - min_z) * scale
+                # Z horizontal, X vertikal
+                x_pix = rect.left() + (z_val - min_z) * scale
+                z_pix = rect.bottom() - (x_val - min_x) * scale
                 return QtCore.QPointF(x_pix, z_pix)
 
-            # Achsen und Skala
+            # Achsen und Skala (außen: links/unten)
             painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-            x_axis = to_screen(min_x, 0)
-            x_axis_end = to_screen(max_x, 0)
-            z_axis = to_screen(0, min_z)
-            z_axis_end = to_screen(0, max_z)
-            painter.drawLine(x_axis, x_axis_end)  # Z-Achse (horizontal)
-            painter.drawLine(z_axis, z_axis_end)  # X-Achse (vertikal)
+            axis_x_val = 0.0 if min_x <= 0.0 <= max_x else min_x
+            axis_z_val = 0.0 if min_z <= 0.0 <= max_z else min_z
+            x_axis = to_screen(axis_x_val, min_z)
+            x_axis_end = to_screen(axis_x_val, max_z)
+            z_axis = to_screen(min_x, axis_z_val)
+            z_axis_end = to_screen(max_x, axis_z_val)
+            painter.drawLine(z_axis, z_axis_end)  # Z-Achse horizontal
+            painter.drawLine(x_axis, x_axis_end)  # X-Achse vertikal
 
             def nice_step(span: float) -> float:
                 if span <= 0:
@@ -187,32 +234,32 @@ class LathePreviewWidget(QtWidgets.QWidget):
             font_pen = QtGui.QPen(QtGui.QColor(160, 160, 160), 1)
             painter.setFont(QtGui.QFont("Sans", 8))
 
-            # X-Ticks (Z-Achse horizontal)
-            step_x = nice_step(max_x - min_x)
-            val = (min_x // step_x) * step_x
-            while val <= max_x:
-                pt = to_screen(val, 0)
-                painter.setPen(tick_pen)
-                painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
-                painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() + 2, pt.y() - 6), f"{val:.0f}")
-                val += step_x
-
-            # Z-Ticks (X-Achse vertikal)
+            # Z-Ticks (horizontal unten/oben)
             step_z = nice_step(max_z - min_z)
             val = (min_z // step_z) * step_z
             while val <= max_z:
-                pt = to_screen(0, val)
+                pt = to_screen(axis_x_val, val)
                 painter.setPen(tick_pen)
-                painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
+                painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 2))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() + 6, pt.y() - 2), f"{val:.0f}")
+                painter.drawText(QtCore.QPointF(pt.x() - 6, pt.y() + 14), f"{val:.0f}")
                 val += step_z
+
+            # X-Ticks (vertikal links/rechts)
+            step_x = nice_step(max_x - min_x)
+            val = (min_x // step_x) * step_x
+            while val <= max_x:
+                pt = to_screen(val, axis_z_val)
+                painter.setPen(tick_pen)
+                painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
+                painter.setPen(font_pen)
+                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{val:.0f}")
+                val += step_x
 
             # Achsbeschriftungen
             painter.setPen(font_pen)
-            painter.drawText(QtCore.QPointF(rect.right() - 20, x_axis.y() - 6), "X")
-            painter.drawText(QtCore.QPointF(z_axis.x() + 6, rect.top() + 12), "Z")
+            painter.drawText(QtCore.QPointF(rect.right() - 20, z_axis.y() - 6), "Z")
+            painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X")
 
             for idx, path in enumerate(self.paths):
                 if len(path) < 2:
@@ -359,25 +406,108 @@ def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 
 def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
     """
-    Einfache Kontur:
+    Konturpfad aus der Segmenttabelle:
     - Startpunkt (start_x, start_z)
-    - jede Tabellenzeile ist ein absoluter Punkt (X, Z)
-    - 'Typ' wird nur als Anzeige benutzt, nicht zur Berechnung
+    - jede Tabellenzeile liefert einen Zielpunkt (X, Z)
+    - Kanten (Fase/Radius) werden erst berechnet, sobald ein Folgesegment existiert
     """
     start_x = float(params.get("start_x", 0.0))
     start_z = float(params.get("start_z", 0.0))
+    coord_mode_idx = int(params.get("coord_mode", 0))
+    incremental = coord_mode_idx == 1  # 0=Absolut, 1=Inkremental
     segments = params.get("segments") or []
 
-    x = start_x
-    z = start_z
-    path: List[Tuple[float, float]] = [(x, z)]
+    # Roh-Punkte (vor Kantenbearbeitung)
+    raw_points: List[Tuple[float, float]] = [(start_x, start_z)]
+    raw_meta: List[Dict[str, object]] = []
 
+    cur_x, cur_z = start_x, start_z
     for seg in segments:
-        sx = float(seg.get("x", x))
-        sz = float(seg.get("z", z))
-        x = sx
-        z = sz
-        path.append((x, z))
+        sx = float(seg.get("x", cur_x))
+        sz = float(seg.get("z", cur_z))
+        x_empty = bool(seg.get("x_empty", False))
+        z_empty = bool(seg.get("z_empty", False))
+        # 'mode' dient nur als Hinweis; falls eine Koordinate fehlt, bleibt die vorherige
+        mode = str(seg.get("mode", "xz")).lower()
+        if mode == "x":
+            if incremental:
+                cur_x = cur_x + sx
+            else:
+                if not x_empty:
+                    cur_x = sx
+            # Z bleibt
+        elif mode == "z":
+            if incremental:
+                cur_z = cur_z + sz
+            else:
+                if not z_empty:
+                    cur_z = sz
+            # X bleibt
+        else:  # xz
+            if incremental:
+                cur_x = cur_x + sx
+                cur_z = cur_z + sz
+            else:
+                if not x_empty:
+                    cur_x = sx
+                if not z_empty:
+                    cur_z = sz
+        raw_points.append((cur_x, cur_z))
+        raw_meta.append(
+            {
+                "edge": str(seg.get("edge", "none")).lower(),
+                "edge_size": float(seg.get("edge_size", 0.0) or 0.0),
+            }
+        )
+
+    if len(raw_points) <= 1:
+        return raw_points
+
+    # Kanten/Übergänge anwenden, sobald ein Folgesegment vorhanden ist
+    path: List[Tuple[float, float]] = [raw_points[0]]
+    for i in range(1, len(raw_points)):
+        p_prev = raw_points[i - 1]
+        p_curr = raw_points[i]
+
+        edge_info = raw_meta[i - 1] if i - 1 < len(raw_meta) else {}
+        edge_type = edge_info.get("edge", "none")
+        edge_size = max(float(edge_info.get("edge_size", 0.0) or 0.0), 0.0)
+        has_next = i < len(raw_points) - 1
+
+        if edge_type in ("chamfer", "fase", "radius") and edge_size > 0 and has_next:
+            p_next = raw_points[i + 1]
+            v1 = (p_curr[0] - p_prev[0], p_curr[1] - p_prev[1])
+            v2 = (p_next[0] - p_curr[0], p_next[1] - p_curr[1])
+            len1 = math.hypot(*v1)
+            len2 = math.hypot(*v2)
+
+            if len1 > 1e-6 and len2 > 1e-6:
+                offset = min(edge_size, len1 * 0.499, len2 * 0.499)
+                dir1 = (v1[0] / len1, v1[1] / len1)
+                dir2 = (v2[0] / len2, v2[1] / len2)
+
+                cut_start = (p_curr[0] - dir1[0] * offset, p_curr[1] - dir1[1] * offset)
+                cut_end = (p_curr[0] + dir2[0] * offset, p_curr[1] + dir2[1] * offset)
+
+                path.append(cut_start)
+                if edge_type.startswith(("chamfer", "fase")):
+                    path.append(cut_end)
+                else:  # radius -> einfache Approximation
+                    steps = 4
+                    for s in range(1, steps):
+                        t = s / steps
+                        path.append(
+                            (
+                                cut_start[0] * (1 - t) + cut_end[0] * t,
+                                cut_start[1] * (1 - t) + cut_end[1] * t,
+                            )
+                        )
+                    path.append(cut_end)
+                continue
+
+        # Standard: direkte Linie übernehmen
+        if p_curr != path[-1]:
+            path.append(p_curr)
 
     return path
 
@@ -427,10 +557,6 @@ def gcode_for_contour(op: Operation) -> List[str]:
     feed = float(p.get("feed", 0.2))
 
     lines: List[str] = ["(KONTUR)"]
-
-    tool_num = int(p.get("tool", 0))
-    if tool_num > 0:
-        lines.append(f"(Werkzeug T{tool_num:02d})")
 
     side_idx = int(p.get("side", 0))
     lines.append("(Seite: Außen)" if side_idx == 0 else "(Seite: Innen)")
@@ -536,6 +662,9 @@ def gcode_for_face(op: Operation) -> List[str]:
 
 
 def gcode_for_operation(op: Operation) -> List[str]:
+    if op.op_type == OpType.PROGRAM_HEADER:
+        # Programmkopf wird zentral in ProgramModel.generate_gcode() behandelt
+        return []
     if op.op_type == OpType.FACE:
         return gcode_for_face(op)
     if op.op_type == OpType.CONTOUR:
@@ -624,8 +753,12 @@ class HandlerClass:
         if self.program_shape is None:
             self.program_shape = self._find_shape_combo()
 
+        self.program_xa = getattr(self.w, "program_xa", None)
         self.program_xi = getattr(self.w, "program_xi", None)
         self.label_prog_xi = getattr(self.w, "label_prog_xi", None)
+        self.program_za = getattr(self.w, "program_za", None)
+        self.program_zi = getattr(self.w, "program_zi", None)
+        self.program_zb = getattr(self.w, "program_zb", None)
         self.program_w = getattr(self.w, "program_w", None)
         self.label_prog_w = getattr(self.w, "label_prog_w", None)
         self.program_l = getattr(self.w, "program_l", None)
@@ -670,6 +803,7 @@ class HandlerClass:
         self.contour_side = getattr(self.w, "contour_side", None)
         self.contour_start_x = getattr(self.w, "contour_start_x", None)
         self.contour_start_z = getattr(self.w, "contour_start_z", None)
+        self.contour_name = getattr(self.w, "contour_name", None)
         self.contour_segments = getattr(self.w, "contour_segments", None)
         self.contour_add_segment = getattr(self.w, "contour_add_segment", None)
         self.contour_delete_segment = getattr(self.w, "contour_delete_segment", None)
@@ -688,6 +822,7 @@ class HandlerClass:
         self._apply_unit_suffix()
         self._update_program_visibility()
         self._refresh_preview()
+        self._ensure_core_widgets()
 
         # letzter bekannter Einheiten-Index für Polling
         self._unit_last_index = (
@@ -821,6 +956,8 @@ class HandlerClass:
             self.contour_start_x = root.findChild(QtWidgets.QDoubleSpinBox, "contour_start_x")
         if self.contour_start_z is None and root:
             self.contour_start_z = root.findChild(QtWidgets.QDoubleSpinBox, "contour_start_z")
+        if self.contour_name is None and root:
+            self.contour_name = root.findChild(QtWidgets.QLineEdit, "contour_name")
         if self.contour_segments is None and root:
             self.contour_segments = root.findChild(QtWidgets.QTableWidget, "contour_segments")
         if self.contour_add_segment is None and root:
@@ -901,6 +1038,109 @@ class HandlerClass:
         else:
             print("[LatheEasyStep] initialized__: still no unit combo")
 
+        # Jetzt sicherstellen, dass die Preview-Widgets referenziert sind
+        self._ensure_preview_widgets()
+        self._refresh_preview()
+        # Buttons/Liste sicher verbinden (falls erst jetzt gefunden)
+        self._connect_signals()
+        try:
+            print(f"[LatheEasyStep] core widgets: list_ops={self.list_ops}, btn_add={self.btn_add}, btn_delete={self.btn_delete}")
+        except Exception:
+            pass
+        # Finaler Versuch nach vollständigem UI-Aufbau
+        self._ensure_core_widgets()
+        self._connect_signals()
+        self._debug_widget_names()
+        QtCore.QTimer.singleShot(0, self._finalize_ui_ready)
+
+    def _finalize_ui_ready(self):
+        """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
+        self._ensure_core_widgets()
+        self._connect_signals()
+        self._debug_widget_names()
+
+    def _debug_widget_names(self):
+        """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
+        root = self.root_widget or self._find_root_widget()
+        if root is None:
+            print("[LatheEasyStep] debug: no root widget")
+            return
+        btns = [w.objectName() for w in root.findChildren(QtWidgets.QPushButton)]
+        lists = [w.objectName() for w in root.findChildren(QtWidgets.QListWidget)]
+        print(f"[LatheEasyStep] debug root: {root.objectName()}")
+        print(f"[LatheEasyStep] debug buttons: {btns}")
+        print(f"[LatheEasyStep] debug list widgets: {lists}")
+
+    def _ensure_core_widgets(self):
+        """Sucht fehlende Kern-Widgets (Liste/Buttons/Tabs) im UI-Baum nach."""
+        root = (
+            self.root_widget
+            or (self.program_unit.window() if self.program_unit else None)
+            or (self.preview.window() if self.preview else None)
+            or self._find_root_widget()
+        )
+        if root is None:
+            return
+        self.root_widget = self.root_widget or root
+
+        # Direkt nach bekannten Namen suchen (Fallback: QWidget, falls Typ nicht passt)
+        def _find(name: str, cls):
+            current = getattr(self, name, None)
+            if current:
+                return current
+            obj = root.findChild(cls, "listOperations" if name == "list_ops" else
+                                      "tabParams" if name == "tab_params" else
+                                      "btnAdd" if name == "btn_add" else
+                                      "btnDelete" if name == "btn_delete" else
+                                      "btnMoveUp" if name == "btn_move_up" else
+                                      "btnMoveDown" if name == "btn_move_down" else
+                                      "btnNewProgram" if name == "btn_new_program" else
+                                      "btnGenerate" if name == "btn_generate" else name)
+            if obj is None:
+                obj = root.findChild(QtWidgets.QWidget, name)
+            if obj:
+                setattr(self, name, obj)
+            return getattr(self, name, None)
+
+        self.list_ops = _find("list_ops", QtWidgets.QListWidget)
+        self.tab_params = _find("tab_params", QtWidgets.QTabWidget)
+        self.btn_add = _find("btn_add", QtWidgets.QPushButton)
+        self.btn_delete = _find("btn_delete", QtWidgets.QPushButton)
+        self.btn_move_up = _find("btn_move_up", QtWidgets.QPushButton)
+        self.btn_move_down = _find("btn_move_down", QtWidgets.QPushButton)
+        self.btn_new_program = _find("btn_new_program", QtWidgets.QPushButton)
+        self.btn_generate = _find("btn_generate", QtWidgets.QPushButton)
+
+        # Fallbacks, falls die Typ-Suche scheitert
+        if self.list_ops is None:
+            candidates = root.findChildren(QtWidgets.QListWidget)
+            if candidates:
+                self.list_ops = candidates[0]
+        if self.tab_params is None:
+            candidates = root.findChildren(QtWidgets.QTabWidget)
+            if candidates:
+                self.tab_params = candidates[0]
+
+        # Falls wir erst jetzt Buttons gefunden haben: Signale verbinden
+        if self.btn_add and not getattr(self, "_btn_add_connected", False):
+            self.btn_add.clicked.connect(self._handle_add_operation)
+            self._btn_add_connected = True
+        if self.btn_delete and not getattr(self, "_btn_delete_connected", False):
+            self.btn_delete.clicked.connect(self._handle_delete_operation)
+            self._btn_delete_connected = True
+        if self.btn_move_up and not getattr(self, "_btn_move_up_connected", False):
+            self.btn_move_up.clicked.connect(self._handle_move_up)
+            self._btn_move_up_connected = True
+        if self.btn_move_down and not getattr(self, "_btn_move_down_connected", False):
+            self.btn_move_down.clicked.connect(self._handle_move_down)
+            self._btn_move_down_connected = True
+        if self.btn_new_program and not getattr(self, "_btn_new_program_connected", False):
+            self.btn_new_program.clicked.connect(self._handle_new_program)
+            self._btn_new_program_connected = True
+        if self.btn_generate and not getattr(self, "_btn_generate_connected", False):
+            self.btn_generate.clicked.connect(self._handle_generate_gcode)
+            self._btn_generate_connected = True
+
     def _check_unit_change(self):
         """Pollt die Einheit-Combo und triggert _apply_unit_suffix() bei Änderung."""
         if self.program_unit is None:
@@ -937,10 +1177,10 @@ class HandlerClass:
                 "spindle": getattr(self.w, "face_spindle", None),
             },
             OpType.CONTOUR: {
-                "tool": getattr(self.w, "contour_tool", None),
                 "side": getattr(self.w, "contour_side", None),
                 "start_x": getattr(self.w, "contour_start_x", None),
                 "start_z": getattr(self.w, "contour_start_z", None),
+                "coord_mode": getattr(self.w, "contour_coord_mode", None),
             },
             OpType.THREAD: {
                 "major_diameter": getattr(self.w, "thread_major_diameter", None),
@@ -1044,13 +1284,16 @@ class HandlerClass:
             self.contour_start_z.valueChanged.connect(self._update_contour_preview_temp)
         if getattr(self, "contour_side", None):
             self.contour_side.currentIndexChanged.connect(self._update_contour_preview_temp)
+        if getattr(self, "contour_name", None):
+            self.contour_name.textChanged.connect(self._update_contour_preview_temp)
 
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
         idx = self.tab_params.currentIndex() if self.tab_params else 0
         mapping = {
-            1: OpType.FACE,      # Planen
-            2: OpType.CONTOUR,   # Kontur
+            0: OpType.PROGRAM_HEADER,  # Programmkopf
+            1: OpType.FACE,            # Planen
+            2: OpType.CONTOUR,         # Kontur
             3: OpType.THREAD,
             4: OpType.GROOVE,
             5: OpType.DRILL,
@@ -1076,7 +1319,49 @@ class HandlerClass:
         # Kontur-Segmente separat aus Tabelle einsammeln
         if op_type == OpType.CONTOUR:
             params["segments"] = self._collect_contour_segments()
+            if getattr(self, "contour_name", None):
+                params["name"] = self.contour_name.text().strip()
         return params
+
+    def _collect_program_header(self) -> Dict[str, object]:
+        """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
+        header: Dict[str, object] = {}
+        if self.program_npv:
+            header["npv"] = self.program_npv.currentText().strip()
+        if self.program_unit:
+            header["unit"] = self.program_unit.currentText().strip()
+        if self.program_shape:
+            header["shape"] = self.program_shape.currentText().strip()
+        # Rohteilabmessungen
+        def _val(widget):
+            return float(widget.value()) if widget else None
+
+        header["xa"] = _val(self.program_xa)
+        header["xi"] = _val(self.program_xi)
+        header["za"] = _val(self.program_za)
+        header["zi"] = _val(self.program_zi)
+        header["zb"] = _val(self.program_zb)
+        header["w"] = _val(self.program_w)
+        header["l"] = _val(self.program_l)
+        header["n_edges"] = _val(self.program_n)
+        header["sw"] = _val(self.program_sw)
+
+        # Rückzug/Ebenen
+        header["retract_mode"] = (
+            self.program_retract_mode.currentText().strip()
+            if self.program_retract_mode
+            else ""
+        )
+        header["xra"] = _val(self.program_xra)
+        header["xri"] = _val(self.program_xri)
+        header["zra"] = _val(self.program_zra)
+        header["zri"] = _val(self.program_zri)
+
+        # Drehzahlbegrenzung
+        header["s1_max"] = float(self.program_s1.value()) if self.program_s1 else 0.0
+        header["s3_max"] = float(self.program_s3.value()) if self.program_s3 else 0.0
+
+        return header
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
         table = self.contour_segments
@@ -1092,7 +1377,9 @@ class HandlerClass:
             size_item = table.item(row, 4)
 
             mode_raw = mode_item.text().strip().lower() if mode_item else "xz"
-            if mode_raw.startswith("x"):
+            if mode_raw.startswith("xz"):
+                mode = "xz"
+            elif mode_raw.startswith("x"):
                 mode = "x"
             elif mode_raw.startswith("z"):
                 mode = "z"
@@ -1114,11 +1401,16 @@ class HandlerClass:
                 except Exception:
                     return 0.0
 
+            x_text = x_item.text().strip() if x_item and x_item.text() else ""
+            z_text = z_item.text().strip() if z_item and z_item.text() else ""
+
             segments.append(
                 {
                     "mode": mode,
                     "x": _to_float(x_item) if x_item else 0.0,
                     "z": _to_float(z_item) if z_item else 0.0,
+                    "x_empty": x_text == "",
+                    "z_empty": z_text == "",
                     "edge": edge,
                     "edge_size": _to_float(size_item) if size_item else 0.0,
                 }
@@ -1160,12 +1452,15 @@ class HandlerClass:
     ) -> None:
         """Aktualisiert Haupt- und optional den Kontur-Tab-Preview."""
 
+        self._ensure_preview_widgets()
         if self.preview:
             self.preview.set_paths(paths, active_index)
         if include_contour_preview and self.contour_preview:
             self.contour_preview.set_paths(paths, None)
 
     def _refresh_preview(self):
+        if self.preview is None:
+            self._ensure_preview_widgets()
         if self.preview is None:
             return
         paths: List[List[Tuple[float, float]]] = []
@@ -1175,6 +1470,7 @@ class HandlerClass:
             params: Dict[str, object] = {
                 "start_x": self.contour_start_x.value() if self.contour_start_x else 0.0,
                 "start_z": self.contour_start_z.value() if self.contour_start_z else 0.0,
+                "coord_mode": self.contour_coord_mode.currentIndex() if getattr(self, "contour_coord_mode", None) else 0,
                 "segments": self._collect_contour_segments(),
             }
             paths.append(build_contour_path(params))
@@ -1188,6 +1484,15 @@ class HandlerClass:
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
         self._set_preview_paths(paths, active, include_contour_preview=False)
+
+    def _ensure_preview_widgets(self):
+        """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen."""
+        root = self.root_widget or self._find_root_widget()
+        if root:
+            if self.preview is None:
+                self.preview = root.findChild(LathePreviewWidget, "previewWidget")
+            if self.contour_preview is None:
+                self.contour_preview = root.findChild(LathePreviewWidget, "contourPreview")
 
     def _update_selected_operation(self):
         if self.list_ops is None:
@@ -1206,16 +1511,45 @@ class HandlerClass:
 
     # ---- Button-Handler -----------------------------------------------
     def _handle_add_operation(self):
+        # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
+        self._ensure_core_widgets()
+        try:
+            print("[LatheEasyStep] add operation triggered")
+        except Exception:
+            pass
         op_type = self._current_op_type()
-        params = self._collect_params(op_type)
-        op = Operation(op_type, params)
-        self.model.update_geometry(op)
-        self.model.add_operation(op)
+        if op_type == OpType.PROGRAM_HEADER:
+            params = self._collect_program_header()
+            # nur einen Programmkopf zulassen -> ersetzen oder neu hinzufügen
+            for i, existing in enumerate(self.model.operations):
+                if existing.op_type == OpType.PROGRAM_HEADER:
+                    existing.params = params
+                    if self.list_ops:
+                        item = self.list_ops.item(i)
+                        if item:
+                            item.setText(self._describe_operation(existing, i + 1))
+                        self.list_ops.setCurrentRow(i)
+                    self._refresh_preview()
+                    return
+            # noch kein Programmkopf: vorne einfügen
+            op = Operation(op_type, params)
+            self.model.update_geometry(op)
+            self.model.operations.insert(0, op)
+            if self.list_ops:
+                self.list_ops.insertItem(0, self._describe_operation(op, 1))
+                self.list_ops.setCurrentRow(0)
+                self._renumber_operations()
+            self._refresh_preview()
+        else:
+            params = self._collect_params(op_type)
+            op = Operation(op_type, params)
+            self.model.update_geometry(op)
+            self.model.add_operation(op)
 
-        if self.list_ops:
-            self.list_ops.addItem(self._describe_operation(op, len(self.model.operations)))
-            self.list_ops.setCurrentRow(self.list_ops.count() - 1)
-        self._refresh_preview()
+            if self.list_ops:
+                self.list_ops.addItem(self._describe_operation(op, len(self.model.operations)))
+                self.list_ops.setCurrentRow(self.list_ops.count() - 1)
+            self._refresh_preview()
 
     def _handle_delete_operation(self):
         if self.list_ops is None:
@@ -1272,15 +1606,22 @@ class HandlerClass:
         self._init_contour_table()
 
         row = table.rowCount()
-        table.insertRow(row)
-
+        existing_segments = self._collect_contour_segments()
         x0 = self.contour_start_x.value() if self.contour_start_x else 0.0
         z0 = self.contour_start_z.value() if self.contour_start_z else 0.0
 
+        last_x = float(existing_segments[-1].get("x", x0)) if existing_segments else x0
+        last_z = float(existing_segments[-1].get("z", z0)) if existing_segments else z0
+        default_x = last_x
+        default_z = last_z
+
+        table.insertRow(row)
+
         item_cls = QtWidgets.QTableWidgetItem
-        table.setItem(row, 0, item_cls("Z"))
-        table.setItem(row, 1, item_cls(f"{x0:.3f}"))
-        table.setItem(row, 2, item_cls(f"{z0:.3f}"))
+        table.setItem(row, 0, item_cls("XZ"))
+        # X/Z leer lassen, damit sie nicht automatisch auf 0 gezogen werden
+        table.setItem(row, 1, item_cls(""))
+        table.setItem(row, 2, item_cls(""))
 
         # Vorlage verwenden (Kante/Maß)
         edge_text = self._contour_edge_template_text
@@ -1386,8 +1727,11 @@ class HandlerClass:
         params: Dict[str, object] = {
             "start_x": self.contour_start_x.value() if self.contour_start_x else 0.0,
             "start_z": self.contour_start_z.value() if self.contour_start_z else 0.0,
+            "coord_mode": self.contour_coord_mode.currentIndex() if getattr(self, "contour_coord_mode", None) else 0,
             "segments": self._collect_contour_segments(),
         }
+        if self.contour_name:
+            params["name"] = self.contour_name.text().strip()
         path = build_contour_path(params)
         try:
             print(f"[LatheEasyStep] contour preview path points: {path}")
@@ -1448,17 +1792,19 @@ class HandlerClass:
         filepath = os.path.expanduser("~/linuxcnc/nc_files/conv_lathe.ngc")
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-        # Max-Drehzahl aus dem Programmkopf holen (falls Felder vorhanden)
-        s1_val = self.program_s1.value() if self.program_s1 else 0.0
-        s3_val = self.program_s3.value() if self.program_s3 else 0.0
-        self.model.spindle_speed_max = float(s1_val or 0.0)
-        self.model.program_settings["s1_max"] = self.model.spindle_speed_max
-        self.model.program_settings["s3_max"] = float(s3_val or 0.0)
+        # Programmkopf holen, inkl. Drehzahlbegrenzungen
+        header = self._collect_program_header()
+        self.model.program_settings = header
+        self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
 
         lines = self.model.generate_gcode()
         with open(filepath, "w") as f:
             f.write("\n".join(lines))
-        Action.CALLBACK_OPEN_PROGRAM(filepath)
+        open_fn = getattr(Action, "CALLBACK_OPEN_PROGRAM", None)
+        if callable(open_fn):
+            open_fn(filepath)
+        else:
+            print(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar")
 
     def _handle_param_change(self):
         self._update_selected_operation()
@@ -1757,6 +2103,13 @@ class HandlerClass:
     def _describe_operation(self, op: Operation, number: int) -> str:
         tool = int(op.params.get("tool", 0)) if isinstance(op.params, dict) else 0
         suffix = f" (T{tool:02d})" if tool > 0 else ""
+        if op.op_type == OpType.PROGRAM_HEADER:
+            npv = op.params.get("npv", "G54") if isinstance(op.params, dict) else "G54"
+            return f"{number}: Programmkopf ({npv})"
+        if op.op_type == OpType.CONTOUR:
+            name = op.params.get("name", "") if isinstance(op.params, dict) else ""
+            name_suffix = f" [{name}]" if name else ""
+            return f"{number}: Kontur{name_suffix}{suffix}"
         return f"{number}: {op.op_type.title()}{suffix}"
 
     def _renumber_operations(self):
