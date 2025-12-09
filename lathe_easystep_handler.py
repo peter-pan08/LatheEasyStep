@@ -6,6 +6,7 @@ import math
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
+from weakref import WeakSet
 
 from qtpy import QtCore, QtGui, QtWidgets
 from qtvcp.core import Action
@@ -725,6 +726,8 @@ class HandlerClass:
         self.w = widgets
         self.paths = paths
         self.model = ProgramModel()
+        self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
+        self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
@@ -841,6 +844,15 @@ class HandlerClass:
                 continue
             if isinstance(obj, QtWidgets.QWidget):
                 return obj.window()
+        app = QtWidgets.QApplication.instance()
+        if app:
+            # bevorzugt das Panel selbst, sonst erstes Toplevel
+            for widget in app.topLevelWidgets():
+                if isinstance(widget, QtWidgets.QWidget):
+                    if widget.objectName() == "LatheConversationalPanel":
+                        return widget
+                    if widget.window() == widget:
+                        return widget
         return None
 
     def _find_unit_combo(self):
@@ -881,6 +893,18 @@ class HandlerClass:
 
         print("[LatheEasyStep] no shape combo found in tree")
         return None
+
+    def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
+        """Besorgt Widgets robuster: erst direct Attribute, dann UI-Baum."""
+
+        widget = getattr(self.w, name, None)
+        if widget:
+            return widget
+
+        root = self.root_widget or self._find_root_widget()
+        if root:
+            widget = root.findChild(QtWidgets.QWidget, name)
+        return widget
 
     # ---- QtVCP lifecycle ---------------------------------------------
     def initialized__(self):
@@ -1056,6 +1080,7 @@ class HandlerClass:
     def _finalize_ui_ready(self):
         """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
         self._ensure_core_widgets()
+        self._setup_param_maps()
         self._connect_signals()
         self._debug_widget_names()
 
@@ -1165,64 +1190,64 @@ class HandlerClass:
     def _setup_param_maps(self):
         self.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {
             OpType.FACE: {
-                "tool": getattr(self.w, "face_tool", None),
-                "start_x": getattr(self.w, "face_start_x", None),
-                "start_z": getattr(self.w, "face_start_z", None),
-                "end_x": getattr(self.w, "face_end_x", None),
-                "end_z": getattr(self.w, "face_end_z", None),
-                "safe_z": getattr(self.w, "face_safe_z", None),
-                "feed": getattr(self.w, "face_feed", None),
-                "depth_per_pass": getattr(self.w, "face_depth_per_pass", None),
-                "finish_allow_x": getattr(self.w, "face_finish_allow_x", None),
-                "finish_allow_z": getattr(self.w, "face_finish_allow_z", None),
-                "depth_max": getattr(self.w, "face_depth_max", None),
-                "mode": getattr(self.w, "face_mode", None),
-                "edge_type": getattr(self.w, "face_edge_type", None),
-                "edge_size": getattr(self.w, "face_edge_size", None),
-                "spindle": getattr(self.w, "face_spindle", None),
+                "tool": self._get_widget_by_name("face_tool"),
+                "start_x": self._get_widget_by_name("face_start_x"),
+                "start_z": self._get_widget_by_name("face_start_z"),
+                "end_x": self._get_widget_by_name("face_end_x"),
+                "end_z": self._get_widget_by_name("face_end_z"),
+                "safe_z": self._get_widget_by_name("face_safe_z"),
+                "feed": self._get_widget_by_name("face_feed"),
+                "depth_per_pass": self._get_widget_by_name("face_depth_per_pass"),
+                "finish_allow_x": self._get_widget_by_name("face_finish_allow_x"),
+                "finish_allow_z": self._get_widget_by_name("face_finish_allow_z"),
+                "depth_max": self._get_widget_by_name("face_depth_max"),
+                "mode": self._get_widget_by_name("face_mode"),
+                "edge_type": self._get_widget_by_name("face_edge_type"),
+                "edge_size": self._get_widget_by_name("face_edge_size"),
+                "spindle": self._get_widget_by_name("face_spindle"),
             },
             OpType.CONTOUR: {
-                "side": getattr(self.w, "contour_side", None),
-                "start_x": getattr(self.w, "contour_start_x", None),
-                "start_z": getattr(self.w, "contour_start_z", None),
-                "coord_mode": getattr(self.w, "contour_coord_mode", None),
+                "side": self._get_widget_by_name("contour_side"),
+                "start_x": self._get_widget_by_name("contour_start_x"),
+                "start_z": self._get_widget_by_name("contour_start_z"),
+                "coord_mode": self._get_widget_by_name("contour_coord_mode"),
             },
             OpType.THREAD: {
-                "major_diameter": getattr(self.w, "thread_major_diameter", None),
-                "pitch": getattr(self.w, "thread_pitch", None),
-                "length": getattr(self.w, "thread_length", None),
-                "passes": getattr(self.w, "thread_passes", None),
-                "safe_z": getattr(self.w, "thread_safe_z", None),
+                "major_diameter": self._get_widget_by_name("thread_major_diameter"),
+                "pitch": self._get_widget_by_name("thread_pitch"),
+                "length": self._get_widget_by_name("thread_length"),
+                "passes": self._get_widget_by_name("thread_passes"),
+                "safe_z": self._get_widget_by_name("thread_safe_z"),
             },
             OpType.GROOVE: {
-                "diameter": getattr(self.w, "groove_diameter", None),
-                "width": getattr(self.w, "groove_width", None),
-                "depth": getattr(self.w, "groove_depth", None),
-                "z": getattr(self.w, "groove_z", None),
-                "feed": getattr(self.w, "groove_feed", None),
-                "safe_z": getattr(self.w, "groove_safe_z", None),
+                "diameter": self._get_widget_by_name("groove_diameter"),
+                "width": self._get_widget_by_name("groove_width"),
+                "depth": self._get_widget_by_name("groove_depth"),
+                "z": self._get_widget_by_name("groove_z"),
+                "feed": self._get_widget_by_name("groove_feed"),
+                "safe_z": self._get_widget_by_name("groove_safe_z"),
             },
             OpType.DRILL: {
-                "diameter": getattr(self.w, "drill_diameter", None),
-                "depth": getattr(self.w, "drill_depth", None),
-                "feed": getattr(self.w, "drill_feed", None),
-                "safe_z": getattr(self.w, "drill_safe_z", None),
+                "diameter": self._get_widget_by_name("drill_diameter"),
+                "depth": self._get_widget_by_name("drill_depth"),
+                "feed": self._get_widget_by_name("drill_feed"),
+                "safe_z": self._get_widget_by_name("drill_safe_z"),
             },
             OpType.KEYWAY: {
-                "mode": getattr(self.w, "key_mode", None),
-                "radial_side": getattr(self.w, "key_radial_side", None),
-                "slot_count": getattr(self.w, "key_slot_count", None),
-                "slot_start_angle": getattr(self.w, "key_slot_start_angle", None),
-                "start_x_dia": getattr(self.w, "key_start_diameter", None),
-                "start_z": getattr(self.w, "key_start_z", None),
-                "nut_length": getattr(self.w, "key_nut_length", None),
-                "nut_depth": getattr(self.w, "key_nut_depth", None),
-                "top_clearance": getattr(self.w, "key_top_clearance", None),
-                "depth_per_pass": getattr(self.w, "key_depth_per_pass", None),
-                "plunge_feed": getattr(self.w, "key_plunge_feed", None),
-                "use_c_axis": getattr(self.w, "key_use_c_axis", None),
-                "use_c_axis_switch": getattr(self.w, "key_use_c_axis_switch", None),
-                "c_axis_switch_p": getattr(self.w, "key_c_axis_switch_p", None),
+                "mode": self._get_widget_by_name("key_mode"),
+                "radial_side": self._get_widget_by_name("key_radial_side"),
+                "slot_count": self._get_widget_by_name("key_slot_count"),
+                "slot_start_angle": self._get_widget_by_name("key_slot_start_angle"),
+                "start_x_dia": self._get_widget_by_name("key_start_diameter"),
+                "start_z": self._get_widget_by_name("key_start_z"),
+                "nut_length": self._get_widget_by_name("key_nut_length"),
+                "nut_depth": self._get_widget_by_name("key_nut_depth"),
+                "top_clearance": self._get_widget_by_name("key_top_clearance"),
+                "depth_per_pass": self._get_widget_by_name("key_depth_per_pass"),
+                "plunge_feed": self._get_widget_by_name("key_plunge_feed"),
+                "use_c_axis": self._get_widget_by_name("key_use_c_axis"),
+                "use_c_axis_switch": self._get_widget_by_name("key_use_c_axis_switch"),
+                "c_axis_switch_p": self._get_widget_by_name("key_c_axis_switch_p"),
             },
         }
 
@@ -1240,13 +1265,16 @@ class HandlerClass:
             self.btn_new_program.clicked.connect(self._handle_new_program)
         if self.btn_generate:
             self.btn_generate.clicked.connect(self._handle_generate_gcode)
-        if self.list_ops:
+        if self.list_ops and not getattr(self, "_list_ops_connected", False):
             self.list_ops.currentRowChanged.connect(self._handle_selection_change)
+            self._list_ops_connected = True
 
         # Parameterfelder
         for widgets in self.param_widgets.values():
             for widget in widgets.values():
                 if widget is None:
+                    continue
+                if widget in self._connected_param_widgets:
                     continue
                 if isinstance(widget, QtWidgets.QComboBox):
                     widget.currentIndexChanged.connect(self._handle_param_change)
@@ -1254,22 +1282,29 @@ class HandlerClass:
                     widget.toggled.connect(self._handle_param_change)
                 else:
                     widget.valueChanged.connect(self._handle_param_change)
+                self._connected_param_widgets.add(widget)
 
         # Form-Logik (Einheiten / Rohteilform / Rückzug)
-        if self.program_unit:
+        if self.program_unit and self.program_unit not in self._connected_global_widgets:
             self.program_unit.currentIndexChanged.connect(self._handle_global_change)
-        if self.program_shape:
+            self._connected_global_widgets.add(self.program_unit)
+        if self.program_shape and self.program_shape not in self._connected_global_widgets:
             self.program_shape.currentIndexChanged.connect(self._handle_global_change)
-        if self.program_retract_mode:
+            self._connected_global_widgets.add(self.program_shape)
+        if self.program_retract_mode and self.program_retract_mode not in self._connected_global_widgets:
             self.program_retract_mode.currentIndexChanged.connect(self._handle_global_change)
-        if self.program_has_subspindle:
+            self._connected_global_widgets.add(self.program_retract_mode)
+        if self.program_has_subspindle and self.program_has_subspindle not in self._connected_global_widgets:
             self.program_has_subspindle.toggled.connect(self._update_subspindle_visibility)
+            self._connected_global_widgets.add(self.program_has_subspindle)
 
         # Planen-spezifische Logik
-        if getattr(self, "face_mode", None):
+        if getattr(self, "face_mode", None) and self.face_mode not in self._connected_param_widgets:
             self.face_mode.currentIndexChanged.connect(self._update_face_visibility)
-        if getattr(self, "face_edge_type", None):
+            self._connected_param_widgets.add(self.face_mode)
+        if getattr(self, "face_edge_type", None) and self.face_edge_type not in self._connected_param_widgets:
             self.face_edge_type.currentIndexChanged.connect(self._update_face_visibility)
+            self._connected_param_widgets.add(self.face_edge_type)
 
         # Kontur-Buttons
         if getattr(self, "contour_add_segment", None):
