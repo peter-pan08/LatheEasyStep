@@ -193,7 +193,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             while val <= max_x:
                 pt = to_screen(val, 0)
                 painter.setPen(tick_pen)
-                painter.drawLine(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4)
+                painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
                 painter.setPen(font_pen)
                 painter.drawText(pt.x() + 2, pt.y() - 6, f"{val:.0f}")
                 val += step_x
@@ -204,7 +204,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             while val <= max_z:
                 pt = to_screen(0, val)
                 painter.setPen(tick_pen)
-                painter.drawLine(pt.x() - 4, pt.y(), pt.x() + 4, pt.y())
+                painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
                 painter.drawText(pt.x() + 6, pt.y() - 2, f"{val:.0f}")
                 val += step_z
@@ -219,8 +219,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     # Einzelpunkt als kleines Kreuz darstellen
                     pt = to_screen(path[0][0], path[0][1])
                     painter.setPen(QtGui.QPen(QtGui.QColor("yellow"), 2))
-                    painter.drawLine(pt.x() - 4, pt.y(), pt.x() + 4, pt.y())
-                    painter.drawLine(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4)
+                    painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
+                    painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
                     continue
                 color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
                 painter.setPen(QtGui.QPen(color, 2))
