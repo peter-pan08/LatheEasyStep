@@ -140,15 +140,20 @@ class ProgramModel:
             lines.extend(gcode_for_operation(op))
         lines.extend(["M9", "M30", "%"])
 
-        # Zeilennummerierung wie im LinuxCNC-Postprozessor: alle Zeilen außer
-        # den Prozent-Klammern erhalten ein N-Präfix mit einer Schrittweite von 10.
+        # Zeilennummerierung wie im LinuxCNC-Postprozessor: Nur echte G-Code-
+        # Zeilen erhalten ein N-Präfix mit einer Schrittweite von 10. Kommentare
+        # bleiben unnummeriert, damit die Befehlszeilen bei N10 beginnen.
         numbered: List[str] = []
         n = 10
         for line in lines:
-            if line.strip() == "%":
+            stripped = line.strip()
+            if not stripped or stripped == "%":
                 numbered.append(line)
                 continue
-            numbered.append(f"N{n} {line}")
+            if stripped.startswith("("):
+                numbered.append(line)
+                continue
+            numbered.append(f"N{n:03d} {line}")
             n += 10
 
         return numbered
@@ -1625,6 +1630,28 @@ class HandlerClass:
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
         self._set_preview_paths(paths, active, include_contour_preview=False)
 
+    def _refresh_operation_list(self, select_index: int | None = None):
+        """Synchronisiert die linke Operationsliste mit dem internen Modell."""
+        if self.list_ops is None:
+            return
+
+        current = self.list_ops.currentRow()
+        self.list_ops.blockSignals(True)
+        self.list_ops.clear()
+        for i, op in enumerate(self.model.operations):
+            self.list_ops.addItem(self._describe_operation(op, i + 1))
+
+        if select_index is None:
+            select_index = current
+        if select_index is None:
+            select_index = -1
+
+        if 0 <= select_index < self.list_ops.count():
+            self.list_ops.setCurrentRow(select_index)
+        elif self.list_ops.count() > 0:
+            self.list_ops.setCurrentRow(self.list_ops.count() - 1)
+        self.list_ops.blockSignals(False)
+
     def _ensure_preview_widgets(self):
         """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen."""
         root = self.root_widget or self._find_root_widget()
@@ -1675,10 +1702,7 @@ class HandlerClass:
             op = Operation(op_type, params)
             self.model.update_geometry(op)
             self.model.operations.insert(0, op)
-            if self.list_ops:
-                self.list_ops.insertItem(0, self._describe_operation(op, 1))
-                self.list_ops.setCurrentRow(0)
-                self._renumber_operations()
+            self._refresh_operation_list(select_index=0)
             self._refresh_preview()
         else:
             params = self._collect_params(op_type)
@@ -1686,9 +1710,7 @@ class HandlerClass:
             self.model.update_geometry(op)
             self.model.add_operation(op)
 
-            if self.list_ops:
-                self.list_ops.addItem(self._describe_operation(op, len(self.model.operations)))
-                self.list_ops.setCurrentRow(self.list_ops.count() - 1)
+            self._refresh_operation_list(select_index=len(self.model.operations) - 1)
             self._refresh_preview()
 
     def _handle_delete_operation(self):
@@ -1698,8 +1720,7 @@ class HandlerClass:
         if idx < 0:
             return
         self.model.remove_operation(idx)
-        self.list_ops.takeItem(idx)
-        self._renumber_operations()
+        self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
         self._refresh_preview()
 
     def _handle_move_up(self):
@@ -1709,10 +1730,7 @@ class HandlerClass:
         if idx <= 0:
             return
         self.model.move_up(idx)
-        item = self.list_ops.takeItem(idx)
-        self.list_ops.insertItem(idx - 1, item)
-        self.list_ops.setCurrentRow(idx - 1)
-        self._renumber_operations()
+        self._refresh_operation_list(select_index=idx - 1)
         self._refresh_preview()
 
     def _handle_move_down(self):
@@ -1722,10 +1740,7 @@ class HandlerClass:
         if idx < 0 or idx >= self.list_ops.count() - 1:
             return
         self.model.move_down(idx)
-        item = self.list_ops.takeItem(idx)
-        self.list_ops.insertItem(idx + 1, item)
-        self.list_ops.setCurrentRow(idx + 1)
-        self._renumber_operations()
+        self._refresh_operation_list(select_index=idx + 1)
         self._refresh_preview()
 
     def _init_contour_table(self):
@@ -1924,8 +1939,7 @@ class HandlerClass:
 
     def _handle_new_program(self):
         self.model.operations.clear()
-        if self.list_ops:
-            self.list_ops.clear()
+        self._refresh_operation_list(select_index=-1)
         self._refresh_preview()
 
     def _handle_generate_gcode(self):
