@@ -1559,6 +1559,37 @@ class HandlerClass:
             return ""
         return self.parting_contour.currentText().strip()
 
+    def _debug_contour_state(self, context: str = ""):
+        """Zusätzliche Debug-Ausgabe für die Kontur-Erkennung im Abspan-Tab."""
+        prefix = f"[LatheEasyStep][debug] parting contour ({context})" if context else "[LatheEasyStep][debug] parting contour"
+        try:
+            op_infos = []
+            contour_idx = 0
+            for idx, op in enumerate(self.model.operations):
+                if op.op_type != OpType.CONTOUR:
+                    continue
+                name = self._contour_name_or_fallback(op, contour_idx)
+                segs = op.params.get("segments") if isinstance(op.params, dict) else None
+                seg_count = len(segs) if isinstance(segs, list) else "n/a"
+                path_len = len(op.path) if getattr(op, "path", None) else 0
+                op_infos.append(
+                    f"op#{idx} contour_idx={contour_idx} name='{name}' segments={seg_count} path_len={path_len}"
+                )
+                contour_idx += 1
+
+            live_name = self.contour_name.text().strip() if getattr(self, "contour_name", None) else ""
+            live_rows = self.contour_segments.rowCount() if getattr(self, "contour_segments", None) else 0
+            available = self._available_contour_names()
+            print(prefix)
+            print(f"  ops: {op_infos if op_infos else 'keine Kontur-Operationen'}")
+            print(f"  live contour widget name='{live_name}' rows={live_rows}")
+            print(f"  available names for parting: {available}")
+            if getattr(self, "parting_contour", None):
+                current = self.parting_contour.currentText().strip()
+                print(f"  parting combo current text='{current}' editable={self.parting_contour.isEditable()}")
+        except Exception as exc:
+            print(f"[LatheEasyStep][debug] parting contour debug failed: {exc}")
+
     def _resolve_contour_path(self, contour_name: str) -> List[Tuple[float, float]]:
         if not contour_name:
             return []
@@ -1610,6 +1641,7 @@ class HandlerClass:
         if not getattr(self, "parting_contour", None):
             return
 
+        self._debug_contour_state("before refresh")
         names = self._available_contour_names()
         current = self.parting_contour.currentText().strip()
         self.parting_contour.blockSignals(True)
@@ -1622,6 +1654,7 @@ class HandlerClass:
             self.parting_contour.setCurrentIndex(0)
         self.parting_contour.blockSignals(False)
         self._update_parting_ready_state()
+        self._debug_contour_state("after refresh")
 
     def _update_parting_ready_state(self, *args, **kwargs):
         if self.btn_add is None:
