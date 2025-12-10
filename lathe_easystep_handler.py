@@ -1534,6 +1534,9 @@ class HandlerClass:
         return names
 
     def _current_parting_contour_name(self) -> str:
+        """Gibt den aktuell ausgewählten Kontur-Namen im Abspan-Tab zurück."""
+        if not getattr(self, "parting_contour", None):
+            self.parting_contour = self._get_widget_by_name("parting_contour")
         if not getattr(self, "parting_contour", None):
             return ""
         return self.parting_contour.currentText().strip()
@@ -1579,8 +1582,12 @@ class HandlerClass:
         return []
 
     def _update_parting_contour_choices(self):
+        """Befüllt die Kontur-Auswahl im Abspan-Tab dynamisch."""
+        if not getattr(self, "parting_contour", None):
+            self.parting_contour = self._get_widget_by_name("parting_contour")
         if not getattr(self, "parting_contour", None):
             return
+
         names = self._available_contour_names()
         current = self.parting_contour.currentText().strip()
         self.parting_contour.blockSignals(True)
@@ -1599,6 +1606,11 @@ class HandlerClass:
             return
         if self._current_op_type() != OpType.ABSPANEN:
             self.btn_add.setEnabled(True)
+            return
+        if not getattr(self, "parting_contour", None):
+            self.parting_contour = self._get_widget_by_name("parting_contour")
+        if not getattr(self, "parting_contour", None):
+            self.btn_add.setEnabled(False)
             return
         available = self._available_contour_names()
         name = self._current_parting_contour_name()
