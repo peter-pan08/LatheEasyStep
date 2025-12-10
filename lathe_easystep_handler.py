@@ -143,7 +143,7 @@ class ProgramModel:
         for idx, op in enumerate(self.operations, start=1):
             lines.append(f"( Operation {idx} )")
             lines.append(f"( {op.op_type.upper()} )")
-            lines.extend(gcode_for_operation(op))
+            lines.extend(gcode_for_operation(op, settings))
         lines.extend(["M9", "M30", "%"])
 
         # Zeilennummerierung wie im LinuxCNC-Postprozessor: Nur echte G-Code-
@@ -582,6 +582,190 @@ def gcode_from_path(path: List[Tuple[float, float]],
     return lines
 
 
+def _abspanen_safe_z(settings: Dict[str, object], side_idx: int,
+                     path: List[Tuple[float, float]]) -> float:
+    if side_idx == 0:
+        safe_candidates = [settings.get("zra"), settings.get("zri")]
+    else:
+        safe_candidates = [settings.get("zri"), settings.get("zra")]
+    for candidate in safe_candidates:
+        try:
+            if candidate is not None and float(candidate) != 0.0:
+                return float(candidate)
+        except Exception:
+            continue
+    if path:
+        return path[0][1] + 2.0
+    return 2.0
+
+
+def _offset_abspanen_path(
+    path: List[Tuple[float, float]], stock_x: float, offset: float
+) -> List[Tuple[float, float]]:
+    if offset <= 1e-6:
+        return list(path)
+
+    xs = [p[0] for p in path]
+    min_x, max_x = min(xs), max(xs)
+    adjusted: List[Tuple[float, float]] = []
+
+    if stock_x >= max_x:
+        for x, z in path:
+            adjusted.append((min(x + offset, stock_x), z))
+    elif stock_x <= min_x:
+        for x, z in path:
+            adjusted.append((max(x - offset, stock_x), z))
+    else:
+        for x, z in path:
+            adjusted.append((x + offset, z))
+
+    return adjusted
+
+
+def _abspanen_offsets(
+    stock_x: float, path: List[Tuple[float, float]], depth_per_pass: float
+) -> List[float]:
+    if not path:
+        return [0.0]
+
+    xs = [p[0] for p in path]
+    min_x, max_x = min(xs), max(xs)
+
+    if stock_x >= max_x:
+        start_offset = stock_x - min_x
+    elif stock_x <= min_x:
+        start_offset = max_x - stock_x
+    else:
+        start_offset = 0.0
+
+    if start_offset <= 1e-6:
+        return [0.0]
+
+    if depth_per_pass <= 0:
+        return [start_offset, 0.0]
+
+    passes = math.ceil(start_offset / depth_per_pass)
+    offsets: List[float] = []
+    for i in range(passes, -1, -1):
+        current = max(round(start_offset - i * depth_per_pass, 6), 0.0)
+        if offsets and abs(offsets[-1] - current) < 1e-6:
+            continue
+        offsets.append(current)
+    if offsets[-1] != 0.0:
+        offsets.append(0.0)
+    return offsets
+
+
+def _emit_segment_with_pauses(
+    lines: List[str],
+    start: Tuple[float, float],
+    end: Tuple[float, float],
+    feed: float,
+    pause_enabled: bool,
+    pause_distance: float,
+    pause_duration: float,
+):
+    x0, z0 = start
+    x1, z1 = end
+    dx, dz = x1 - x0, z1 - z0
+    length = math.hypot(dx, dz)
+
+    if pause_enabled and pause_distance > 0.0 and length > pause_distance:
+        steps = int(length // pause_distance)
+        for i in range(1, steps + 1):
+            t = min((i * pause_distance) / length, 1.0)
+            xi = x0 + dx * t
+            zi = z0 + dz * t
+            lines.append(f"G1 X{xi:.3f} Z{zi:.3f} F{feed:.3f}")
+            if t < 1.0:
+                lines.append(f"G4 P{pause_duration:.1f}")
+        if length % pause_distance < 1e-4:
+            return
+
+    lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
+
+
+def _gcode_for_abspanen_pass(
+    path: List[Tuple[float, float]],
+    feed: float,
+    safe_z: float,
+    pause_enabled: bool,
+    pause_distance: float,
+    pause_duration: float,
+) -> List[str]:
+    if not path:
+        return []
+
+    lines: List[str] = []
+    x0, z0 = path[0]
+    lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
+    lines.append(f"G0 Z{z0:.3f}")
+    lines.append(f"G1 X{x0:.3f} Z{z0:.3f} F{feed:.3f}")
+
+    prev = path[0]
+    for point in path[1:]:
+        _emit_segment_with_pauses(
+            lines, prev, point, feed, pause_enabled, pause_distance, pause_duration
+        )
+        prev = point
+
+    lines.append(f"G0 Z{safe_z:.3f}")
+    return lines
+
+
+def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
+    """Abspanen entlang einer Kontur mit Zustellungen und Unterbrechungen."""
+
+    p = op.params
+    path = list(op.path or [])
+    lines: List[str] = ["(ABSPANEN)"]
+
+    if not path:
+        return lines
+
+    side_idx = int(p.get("side", 0))
+    feed = float(p.get("feed", 0.15))
+    depth_per_pass = max(float(p.get("depth_per_pass", 0.0)), 0.0)
+    pause_enabled = bool(p.get("pause_enabled", False))
+    pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
+    pause_duration = 0.5
+    mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten
+
+    tool_num = int(p.get("tool", 0))
+    spindle = float(p.get("spindle", 0.0))
+
+    stock_x = settings.get("xa") if side_idx == 0 else settings.get("xi")
+    try:
+        stock_x = float(stock_x) if stock_x is not None else None
+    except Exception:
+        stock_x = None
+    if stock_x is None:
+        stock_x = max(point[0] for point in path)
+
+    safe_z = _abspanen_safe_z(settings, side_idx, path)
+
+    offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
+
+    if tool_num > 0:
+        lines.append(f"(Werkzeug T{tool_num:02d})")
+        lines.append(f"T{tool_num:02d} M6")
+
+    if spindle and spindle > 0:
+        lines.append(f"S{int(spindle)} M3")
+
+    mode_label = "Schrupp" if mode_idx == 0 else "Schlicht"
+    for idx, offset in enumerate(offsets, start=1):
+        lines.append(f"(Abspan-Pass {idx} {mode_label}: Offset {offset:.3f} mm)")
+        pass_path = _offset_abspanen_path(path, stock_x, offset)
+        lines.extend(
+            _gcode_for_abspanen_pass(
+                pass_path, feed, safe_z, pause_enabled, pause_distance, pause_duration
+            )
+        )
+
+    return lines
+
+
 def gcode_for_keyway(op: Operation) -> List[str]:
     p = op.params
     lines = ["(KEYWAY)"]
@@ -799,7 +983,9 @@ def gcode_for_face(op: Operation) -> List[str]:
     return lines
 
 
-def gcode_for_operation(op: Operation) -> List[str]:
+def gcode_for_operation(
+    op: Operation, settings: Dict[str, object] | None = None
+) -> List[str]:
     if op.op_type == OpType.PROGRAM_HEADER:
         # Programmkopf wird zentral in ProgramModel.generate_gcode() behandelt
         return []
@@ -824,9 +1010,7 @@ def gcode_for_operation(op: Operation) -> List[str]:
                                op.params.get("feed", 0.15),
                                op.params.get("safe_z", 2.0))
     if op.op_type == OpType.ABSPANEN:
-        return gcode_from_path(op.path,
-                               op.params.get("feed", 0.15),
-                               op.params.get("safe_z", 2.0))
+        return gcode_for_abspanen(op, settings or {})
     if op.op_type == OpType.THREAD:
         safe_z = op.params.get("safe_z", 2.0)
         major_diameter = op.params.get("major_diameter", 0.0)
