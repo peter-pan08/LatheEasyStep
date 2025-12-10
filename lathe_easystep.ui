@@ -1735,7 +1735,7 @@
            </widget>
           <widget class="QWidget" name="tabParting">
            <attribute name="title">
-            <string>Abstechen</string>
+            <string>Abspanen</string>
            </attribute>
            <layout class="QFormLayout" name="formLayoutParting">
             <property name="verticalSpacing">
