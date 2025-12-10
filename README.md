@@ -117,7 +117,7 @@ Nachdem alles stabil läuft:
 - Bohren
 - Gewinde
 - Nut
-- Abstechen
+- Abspanen
 - Freistich
 - Einstiche außen/innen
 
