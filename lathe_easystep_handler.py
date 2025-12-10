@@ -1228,6 +1228,13 @@ class HandlerClass:
         self._setup_param_maps()
         self._connect_signals()
         self._debug_widget_names()
+        try:
+            print(
+                "[LatheEasyStep][debug] finalize: parting_contour=",
+                self._get_widget_by_name("parting_contour"),
+            )
+        except Exception:
+            pass
         self._update_parting_contour_choices()
         self._update_parting_ready_state()
 
@@ -1528,7 +1535,15 @@ class HandlerClass:
         names: List[str] = []
         contour_idx = 0
         for op in self.model.operations:
+            if op is None:
+                continue
             if op.op_type != OpType.CONTOUR:
+                try:
+                    print(
+                        f"[LatheEasyStep][debug] contour-scan skip op type {op.op_type}"
+                    )
+                except Exception:
+                    pass
                 continue
             name = self._contour_name_or_fallback(op, contour_idx)
             if name and name not in names:
@@ -1639,6 +1654,7 @@ class HandlerClass:
         if not getattr(self, "parting_contour", None):
             self.parting_contour = self._get_widget_by_name("parting_contour")
         if not getattr(self, "parting_contour", None):
+            print("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh")
             return
 
         self._debug_contour_state("before refresh")
@@ -2060,6 +2076,11 @@ class HandlerClass:
             op = Operation(op_type, params)
             self.model.update_geometry(op)
             self.model.add_operation(op)
+            try:
+                debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
+                print(f"[LatheEasyStep][debug] operations now: {debug_ops}")
+            except Exception:
+                pass
 
             self._refresh_operation_list(select_index=len(self.model.operations) - 1)
             self._refresh_preview()
