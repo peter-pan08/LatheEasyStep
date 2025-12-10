@@ -1508,6 +1508,7 @@ class HandlerClass:
             self._contour_start_z_connected = True
         if getattr(self, "contour_name", None) and not getattr(self, "_contour_name_connected", False):
             self.contour_name.textChanged.connect(self._update_contour_preview_temp)
+            self.contour_name.textChanged.connect(self._update_parting_contour_choices)
             self._contour_name_connected = True
 
         if getattr(self, "contour_edge_type", None) and not getattr(self, "_contour_edge_type_connected", False):
@@ -1526,6 +1527,10 @@ class HandlerClass:
             name = str(op.params.get("name") or "").strip()
             if name and name not in names:
                 names.append(name)
+        if getattr(self, "contour_name", None):
+            live_name = self.contour_name.text().strip()
+            if live_name and live_name not in names:
+                names.append(live_name)
         return names
 
     def _current_parting_contour_name(self) -> str:
@@ -1546,6 +1551,29 @@ class HandlerClass:
                 self.model.update_geometry(op)
             try:
                 return list(op.path or [])
+            except Exception:
+                return []
+        # Fallback: aktuelle Kontur-Eingabe verwenden, auch wenn noch keine Operation
+        if (
+            getattr(self, "contour_name", None)
+            and getattr(self, "contour_segments", None)
+            and self.contour_name.text().strip() == contour_name
+        ):
+            try:
+                return build_contour_path(
+                    {
+                        "start_x": self.contour_start_x.value()
+                        if getattr(self, "contour_start_x", None)
+                        else 0.0,
+                        "start_z": self.contour_start_z.value()
+                        if getattr(self, "contour_start_z", None)
+                        else 0.0,
+                        "coord_mode": self.contour_coord_mode.currentIndex()
+                        if getattr(self, "contour_coord_mode", None)
+                        else 0,
+                        "segments": self._collect_contour_segments(),
+                    }
+                )
             except Exception:
                 return []
         return []
