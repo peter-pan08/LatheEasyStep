@@ -730,13 +730,34 @@
              </widget>
             </item>
             <item row="5" column="0">
+             <widget class="QLabel" name="label_face_finish_direction">
+              <property name="text">
+               <string>Schlichtrichtung</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
+             <widget class="QComboBox" name="face_finish_direction">
+              <item>
+               <property name="text">
+                <string>Außen → Innen</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Innen → Außen</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item row="6" column="0">
              <widget class="QLabel" name="label_face_depth_max">
               <property name="text">
                <string>max. Zustellung</string>
               </property>
              </widget>
             </item>
-            <item row="5" column="1">
+            <item row="6" column="1">
              <widget class="QDoubleSpinBox" name="face_depth_max">
               <property name="suffix">
                <string> mm</string>
@@ -749,14 +770,14 @@
               </property>
              </widget>
             </item>
-            <item row="6" column="0">
+            <item row="7" column="0">
              <widget class="QLabel" name="label_face_finish_allow_x">
               <property name="text">
                <string>Schlichtaufmaß X</string>
               </property>
              </widget>
             </item>
-            <item row="6" column="1">
+            <item row="7" column="1">
              <widget class="QDoubleSpinBox" name="face_finish_allow_x">
               <property name="suffix">
                <string> mm</string>
@@ -769,14 +790,14 @@
               </property>
              </widget>
             </item>
-            <item row="7" column="0">
+            <item row="8" column="0">
              <widget class="QLabel" name="label_face_finish_allow_z">
               <property name="text">
                <string>Schlichtaufmaß Z</string>
               </property>
              </widget>
             </item>
-            <item row="7" column="1">
+            <item row="8" column="1">
              <widget class="QDoubleSpinBox" name="face_finish_allow_z">
               <property name="suffix">
                <string> mm</string>
@@ -789,14 +810,14 @@
               </property>
              </widget>
             </item>
-            <item row="8" column="0">
+            <item row="9" column="0">
              <widget class="QLabel" name="label_face_edge_type">
               <property name="text">
                <string>Kantenform</string>
               </property>
              </widget>
             </item>
-            <item row="8" column="1">
+            <item row="9" column="1">
              <widget class="QComboBox" name="face_edge_type">
               <item>
                <property name="text">
@@ -810,19 +831,19 @@
               </item>
               <item>
                <property name="text">
-                <string>Radius</string>
-               </property>
-              </item>
-             </widget>
+               <string>Radius</string>
+              </property>
+             </item>
+            </widget>
             </item>
-            <item row="9" column="0">
+            <item row="10" column="0">
              <widget class="QLabel" name="label_face_edge_size">
               <property name="text">
                <string>Kantengröße</string>
               </property>
              </widget>
             </item>
-            <item row="9" column="1">
+            <item row="10" column="1">
              <widget class="QDoubleSpinBox" name="face_edge_size">
               <property name="suffix">
                <string> mm</string>
@@ -832,14 +853,14 @@
               </property>
              </widget>
             </item>
-            <item row="10" column="0">
+            <item row="11" column="0">
              <widget class="QLabel" name="label_3">
               <property name="text">
                <string>Sicherheits-Z</string>
               </property>
              </widget>
             </item>
-            <item row="10" column="1">
+            <item row="11" column="1">
              <widget class="QDoubleSpinBox" name="face_safe_z">
               <property name="suffix">
                <string> mm</string>
@@ -855,14 +876,14 @@
               </property>
              </widget>
             </item>
-            <item row="11" column="0">
+            <item row="12" column="0">
              <widget class="QLabel" name="label_4">
               <property name="text">
                <string>Vorschub</string>
               </property>
              </widget>
             </item>
-            <item row="11" column="1">
+            <item row="12" column="1">
              <widget class="QDoubleSpinBox" name="face_feed">
               <property name="suffix">
                <string> mm/U</string>
@@ -875,14 +896,14 @@
               </property>
              </widget>
             </item>
-            <item row="12" column="0">
+            <item row="13" column="0">
              <widget class="QLabel" name="label_face_spindle">
               <property name="text">
                <string>Drehzahl</string>
               </property>
              </widget>
             </item>
-            <item row="12" column="1">
+            <item row="13" column="1">
              <widget class="QDoubleSpinBox" name="face_spindle">
               <property name="suffix">
                <string> U/min</string>
@@ -898,14 +919,14 @@
               </property>
              </widget>
             </item>
-            <item row="13" column="0">
+            <item row="14" column="0">
              <widget class="QLabel" name="label_face_tool">
               <property name="text">
                <string>Werkzeug</string>
               </property>
              </widget>
             </item>
-            <item row="13" column="1">
+            <item row="14" column="1">
              <widget class="QSpinBox" name="face_tool">
               <property name="minimum">
                <number>1</number>
