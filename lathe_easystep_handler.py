@@ -1407,6 +1407,11 @@ class HandlerClass:
 
     # ---- Signalanschlüsse ---------------------------------------------
     def _connect_signals(self):
+        # Stelle sicher, dass die Kern-Widgets vorhanden sind, bevor wir Signale verbinden
+        self._ensure_core_widgets()
+        if self.tab_params is None:
+            self.tab_params = self._get_widget_by_name("tabParams")
+
         self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
         self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
         self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
@@ -1657,6 +1662,8 @@ class HandlerClass:
 
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
+        if self.tab_params is None:
+            self.tab_params = self._get_widget_by_name("tabParams")
         idx = self.tab_params.currentIndex() if self.tab_params else 0
         mapping = {
             0: OpType.PROGRAM_HEADER,  # Programmkopf
