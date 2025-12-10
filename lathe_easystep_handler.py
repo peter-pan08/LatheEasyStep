@@ -1636,7 +1636,7 @@ class HandlerClass:
             return
         available = self._available_contour_names()
         name = self._current_parting_contour_name()
-        ready = bool(name) and (not available or name in available)
+        ready = bool(name) and name in available
         self.btn_add.setEnabled(ready)
 
     def _handle_tab_changed(self, *_args, **_kwargs):
