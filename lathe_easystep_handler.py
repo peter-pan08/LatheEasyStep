@@ -594,14 +594,26 @@ def gcode_for_face(op: Operation) -> List[str]:
     depth_total = abs(z0 - z1)
 
     # effektive Zustellung pro Schnitt: bevorzugt depth_per_pass, sonst depth_max,
-    # immer gedeckelt auf die tatsächlich abzunehmende Tiefe
-    depth = depth_per_pass if depth_per_pass > 0 else depth_max
-    if depth <= 0.0:
-        depth = depth_total
-    depth = max(min(depth, depth_total), 0.0)
+    # immer gedeckelt auf die tatsächlich abzunehmende Tiefe. Anschließend wird
+    # die Zustellung auf gleichmäßige Schritte verteilt, damit der letzte Hub
+    # nicht deutlich kleiner ausfällt.
+    desired_depth = depth_per_pass if depth_per_pass > 0 else depth_max
+    if desired_depth <= 0.0:
+        desired_depth = depth_total
+    desired_depth = max(min(desired_depth, depth_total), 0.0)
+
     finish_allow_x = max(p.get("finish_allow_x", 0.0), 0.0)
     finish_allow_z = max(p.get("finish_allow_z", 0.0), 0.0)
     finish_dir = int(p.get("finish_direction", 0))  # 0=Außen→Innen, 1=Innen→Außen
+
+    # gleichmäßige Verteilung der Zustellungen über die gesamte Schruppstrecke
+    if z1 < z0:
+        z_limit_rough = z1 + finish_allow_z
+    else:
+        z_limit_rough = z1 - finish_allow_z
+    total_rough_depth = abs(z0 - z_limit_rough)
+    rough_passes = max(1, math.ceil(total_rough_depth / desired_depth)) if total_rough_depth > 0 else 0
+    depth = total_rough_depth / rough_passes if rough_passes > 0 else 0.0
 
     mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten, 2=Schruppen+Schlichten (fallback)
     edge_type = int(p.get("edge_type", 0))  # 0=keine, 1=Fase, 2=Radius (wie keine)
@@ -641,7 +653,7 @@ def gcode_for_face(op: Operation) -> List[str]:
             x_limit_rough = x1 - finish_allow_x
 
         z_curr = z0
-        while cmp(z_curr):
+        for _ in range(rough_passes):
             z_next = z_curr + dz
             if dz < 0 and z_next < z_limit_rough:
                 z_next = z_limit_rough
