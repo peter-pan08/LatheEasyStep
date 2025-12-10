@@ -26,6 +26,7 @@ class OpType:
     GROOVE = "groove"
     DRILL = "drill"
     KEYWAY = "keyway"
+    PARTING = "parting"
 
 
 @dataclass
@@ -66,6 +67,7 @@ class ProgramModel:
             OpType.GROOVE: build_groove_path,
             OpType.DRILL: build_drill_path,
             OpType.KEYWAY: build_keyway_path,
+            OpType.PARTING: build_parting_path,
         }.get(op.op_type)
         if builder:
             op.path = builder(op.params)
@@ -439,6 +441,22 @@ def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     ]
 
 
+def build_parting_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
+    """Zeichnet den gewählten Konturpfad für den Abstech-Schritt."""
+
+    source_path = params.get("source_path") or []
+    points: List[Tuple[float, float]] = []
+    try:
+        for point in source_path:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            x_val, z_val = point[0], point[1]
+            points.append((float(x_val), float(z_val)))
+    except Exception:
+        return []
+    return points
+
+
 def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
     """
     Konturpfad aus der Segmenttabelle:
@@ -805,6 +823,10 @@ def gcode_for_operation(op: Operation) -> List[str]:
         return gcode_from_path(op.path,
                                op.params.get("feed", 0.15),
                                op.params.get("safe_z", 2.0))
+    if op.op_type == OpType.PARTING:
+        return gcode_from_path(op.path,
+                               op.params.get("feed", 0.15),
+                               op.params.get("safe_z", 2.0))
     if op.op_type == OpType.THREAD:
         safe_z = op.params.get("safe_z", 2.0)
         major_diameter = op.params.get("major_diameter", 0.0)
@@ -946,6 +968,17 @@ class HandlerClass:
         self._contour_edge_template_size = 0.0
         self._contour_row_user_selected = False
         self._op_row_user_selected = False
+
+        # Abstech-Widgets
+        self.parting_contour = getattr(self.w, "parting_contour", None)
+        self.parting_side = getattr(self.w, "parting_side", None)
+        self.parting_tool = getattr(self.w, "parting_tool", None)
+        self.parting_spindle = getattr(self.w, "parting_spindle", None)
+        self.parting_feed = getattr(self.w, "parting_feed", None)
+        self.parting_depth_per_pass = getattr(self.w, "parting_depth_per_pass", None)
+        self.parting_mode = getattr(self.w, "parting_mode", None)
+        self.parting_pause_enabled = getattr(self.w, "parting_pause_enabled", None)
+        self.parting_pause_distance = getattr(self.w, "parting_pause_distance", None)
 
         # Parameter-Widgets für jede Operation
         self._setup_param_maps()
@@ -1195,6 +1228,8 @@ class HandlerClass:
         self._setup_param_maps()
         self._connect_signals()
         self._debug_widget_names()
+        self._update_parting_contour_choices()
+        self._update_parting_ready_state()
 
     def _debug_widget_names(self):
         """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
@@ -1358,6 +1393,16 @@ class HandlerClass:
                 "use_c_axis_switch": self._get_widget_by_name("key_use_c_axis_switch"),
                 "c_axis_switch_p": self._get_widget_by_name("key_c_axis_switch_p"),
             },
+            OpType.PARTING: {
+                "side": self._get_widget_by_name("parting_side"),
+                "tool": self._get_widget_by_name("parting_tool"),
+                "spindle": self._get_widget_by_name("parting_spindle"),
+                "feed": self._get_widget_by_name("parting_feed"),
+                "depth_per_pass": self._get_widget_by_name("parting_depth_per_pass"),
+                "mode": self._get_widget_by_name("parting_mode"),
+                "pause_enabled": self._get_widget_by_name("parting_pause_enabled"),
+                "pause_distance": self._get_widget_by_name("parting_pause_distance"),
+            },
         }
 
     # ---- Signalanschlüsse ---------------------------------------------
@@ -1374,6 +1419,9 @@ class HandlerClass:
         if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
             self.list_ops.clicked.connect(self._mark_operation_user_selected)
             self._list_ops_click_connected = True
+        if self.tab_params and not getattr(self, "_tab_params_connected", False):
+            self.tab_params.currentChanged.connect(self._update_parting_ready_state)
+            self._tab_params_connected = True
 
         # Parameterfelder
         for widgets in self.param_widgets.values():
@@ -1411,6 +1459,12 @@ class HandlerClass:
         if getattr(self, "face_edge_type", None) and self.face_edge_type not in self._connected_param_widgets:
             self.face_edge_type.currentIndexChanged.connect(self._update_face_visibility)
             self._connected_param_widgets.add(self.face_edge_type)
+
+        # Abstech-spezifische Logik
+        if getattr(self, "parting_contour", None) and not getattr(self, "_parting_contour_connected", False):
+            self.parting_contour.currentIndexChanged.connect(self._update_parting_ready_state)
+            self.parting_contour.editTextChanged.connect(self._update_parting_ready_state)
+            self._parting_contour_connected = True
 
         self._connect_contour_signals()
 
@@ -1463,6 +1517,66 @@ class HandlerClass:
             self.contour_edge_size.valueChanged.connect(self._handle_contour_edge_change)
             self._contour_edge_size_connected = True
 
+    # ---- Abstech-Helfer ----------------------------------------------
+    def _available_contour_names(self) -> List[str]:
+        names: List[str] = []
+        for op in self.model.operations:
+            if op.op_type != OpType.CONTOUR:
+                continue
+            name = str(op.params.get("name") or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def _current_parting_contour_name(self) -> str:
+        if not getattr(self, "parting_contour", None):
+            return ""
+        return self.parting_contour.currentText().strip()
+
+    def _resolve_contour_path(self, contour_name: str) -> List[Tuple[float, float]]:
+        if not contour_name:
+            return []
+        for op in self.model.operations:
+            if op.op_type != OpType.CONTOUR:
+                continue
+            name = str(op.params.get("name") or "").strip()
+            if name != contour_name:
+                continue
+            if not op.path:
+                self.model.update_geometry(op)
+            try:
+                return list(op.path or [])
+            except Exception:
+                return []
+        return []
+
+    def _update_parting_contour_choices(self):
+        if not getattr(self, "parting_contour", None):
+            return
+        names = self._available_contour_names()
+        current = self.parting_contour.currentText().strip()
+        self.parting_contour.blockSignals(True)
+        self.parting_contour.clear()
+        for name in names:
+            self.parting_contour.addItem(name)
+        if current:
+            self.parting_contour.setCurrentText(current)
+        elif names:
+            self.parting_contour.setCurrentIndex(0)
+        self.parting_contour.blockSignals(False)
+        self._update_parting_ready_state()
+
+    def _update_parting_ready_state(self, *args, **kwargs):
+        if self.btn_add is None:
+            return
+        if self._current_op_type() != OpType.PARTING:
+            self.btn_add.setEnabled(True)
+            return
+        available = self._available_contour_names()
+        name = self._current_parting_contour_name()
+        ready = bool(name) and (not available or name in available)
+        self.btn_add.setEnabled(ready)
+
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
         idx = self.tab_params.currentIndex() if self.tab_params else 0
@@ -1474,6 +1588,7 @@ class HandlerClass:
             4: OpType.GROOVE,
             5: OpType.DRILL,
             6: OpType.KEYWAY,
+            7: OpType.PARTING,
         }
         return mapping.get(idx, OpType.FACE)
 
@@ -1497,6 +1612,10 @@ class HandlerClass:
             params["segments"] = self._collect_contour_segments()
             if getattr(self, "contour_name", None):
                 params["name"] = self.contour_name.text().strip()
+        elif op_type == OpType.PARTING:
+            contour_name = self._current_parting_contour_name()
+            params["contour_name"] = contour_name
+            params["source_path"] = self._resolve_contour_path(contour_name)
         return params
 
     def _collect_program_header(self) -> Dict[str, object]:
@@ -1658,6 +1777,13 @@ class HandlerClass:
                 widget.setValue(val)
             widget.blockSignals(False)
 
+        if op.op_type == OpType.PARTING and getattr(self, "parting_contour", None):
+            name = str(op.params.get("contour_name") or "")
+            self.parting_contour.blockSignals(True)
+            self.parting_contour.setCurrentText(name)
+            self.parting_contour.blockSignals(False)
+            self._update_parting_ready_state()
+
     def _set_preview_paths(
         self,
         paths: List[List[Tuple[float, float]]],
@@ -1721,6 +1847,7 @@ class HandlerClass:
         elif self.list_ops.count() > 0:
             self.list_ops.setCurrentRow(self.list_ops.count() - 1)
         self.list_ops.blockSignals(False)
+        self._update_parting_contour_choices()
 
     def _ensure_preview_widgets(self):
         """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen."""
@@ -1781,6 +1908,15 @@ class HandlerClass:
             self._refresh_preview()
         else:
             params = self._collect_params(op_type)
+            if op_type == OpType.PARTING:
+                contour_name = self._current_parting_contour_name()
+                contour_path = self._resolve_contour_path(contour_name)
+                if not contour_name or not contour_path:
+                    print("[LatheEasyStep] Abstechen benötigt eine vorhandene Kontur-Auswahl")
+                    self._update_parting_ready_state()
+                    return
+                params["contour_name"] = contour_name
+                params["source_path"] = contour_path
             op = Operation(op_type, params)
             self.model.update_geometry(op)
             self.model.add_operation(op)
@@ -2050,6 +2186,7 @@ class HandlerClass:
         return os.path.expanduser(os.path.join("~/linuxcnc/nc_files", filename))
 
     def _handle_param_change(self):
+        self._update_parting_ready_state()
         if self._op_row_user_selected:
             self._update_selected_operation()
         elif self._current_op_type() == OpType.CONTOUR:
@@ -2072,6 +2209,7 @@ class HandlerClass:
                 OpType.GROOVE: 4,
                 OpType.DRILL: 5,
                 OpType.KEYWAY: 6,
+                OpType.PARTING: 7,
             }
             self.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
         self._load_params_to_form(op)
@@ -2389,6 +2527,12 @@ class HandlerClass:
             end_z = op.params.get("end_z", 0.0) if isinstance(op.params, dict) else 0.0
             coolant_hint = " mit Kühlung" if bool(op.params.get("coolant", False)) else ""
             return f"{number}: Planen {mode_label} (Z {start_z}→{end_z}){coolant_hint}{suffix}"
+        if op.op_type == OpType.PARTING:
+            name = op.params.get("contour_name", "") if isinstance(op.params, dict) else ""
+            side_idx = int(op.params.get("side", 0)) if isinstance(op.params, dict) else 0
+            side_label = "außen" if side_idx == 0 else "innen"
+            name_suffix = f" [{name}]" if name else ""
+            return f"{number}: Abstechen{name_suffix} ({side_label}){suffix}"
         return f"{number}: {op.op_type.title()}{suffix}"
 
     def _renumber_operations(self):

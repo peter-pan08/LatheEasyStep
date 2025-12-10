@@ -1732,9 +1732,186 @@
             </widget>
            </item>
           </layout>
-         </widget>
-        </widget>
-       </item>
+           </widget>
+          <widget class="QWidget" name="tabParting">
+           <attribute name="title">
+            <string>Abstechen</string>
+           </attribute>
+           <layout class="QFormLayout" name="formLayoutParting">
+            <property name="verticalSpacing">
+             <number>8</number>
+            </property>
+            <item row="0" column="0">
+             <widget class="QLabel" name="label_parting_contour">
+              <property name="text">
+               <string>Kontur</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QComboBox" name="parting_contour">
+              <property name="editable">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="label_parting_side">
+              <property name="text">
+               <string>Seite</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QComboBox" name="parting_side">
+              <item>
+               <property name="text">
+                <string>Außenseite</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Innenseite</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="label_parting_tool">
+              <property name="text">
+               <string>Werkzeug</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QSpinBox" name="parting_tool">
+              <property name="maximum">
+               <number>999</number>
+              </property>
+              <property name="value">
+               <number>1</number>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="label_parting_spindle">
+              <property name="text">
+               <string>Drehzahl</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QDoubleSpinBox" name="parting_spindle">
+              <property name="suffix">
+               <string> U/min</string>
+              </property>
+              <property name="maximum">
+               <double>30000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>1200.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="label_parting_feed">
+              <property name="text">
+               <string>Vorschub</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QDoubleSpinBox" name="parting_feed">
+              <property name="suffix">
+               <string> mm/U</string>
+              </property>
+              <property name="maximum">
+               <double>1000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>0.150000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0">
+             <widget class="QLabel" name="label_parting_depth">
+              <property name="text">
+               <string>Zustellung</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
+             <widget class="QDoubleSpinBox" name="parting_depth_per_pass">
+              <property name="suffix">
+               <string> mm</string>
+              </property>
+              <property name="maximum">
+               <double>1000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>1.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="0">
+             <widget class="QLabel" name="label_parting_mode">
+              <property name="text">
+               <string>Strategie</string>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="1">
+             <widget class="QComboBox" name="parting_mode">
+              <item>
+               <property name="text">
+                <string>Schruppen</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Schlichten</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item row="7" column="0">
+             <widget class="QLabel" name="label_parting_pause">
+              <property name="text">
+               <string>Vorschubunterbrechung</string>
+              </property>
+             </widget>
+            </item>
+            <item row="7" column="1">
+             <widget class="QCheckBox" name="parting_pause_enabled">
+              <property name="text">
+               <string>aktivieren</string>
+              </property>
+             </widget>
+            </item>
+            <item row="8" column="0">
+             <widget class="QLabel" name="label_parting_pause_distance">
+              <property name="text">
+               <string>Unterbrechungsabstand</string>
+              </property>
+             </widget>
+            </item>
+            <item row="8" column="1">
+             <widget class="QDoubleSpinBox" name="parting_pause_distance">
+              <property name="suffix">
+               <string> mm</string>
+              </property>
+              <property name="maximum">
+               <double>1000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>1.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          </widget>
+         </item>
        <item>
         <widget class="LathePreviewWidget" name="previewWidget">
          <property name="sizePolicy">
