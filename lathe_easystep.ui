@@ -944,6 +944,20 @@
               </property>
              </widget>
             </item>
+            <item row="15" column="0">
+             <widget class="QLabel" name="label_face_coolant">
+              <property name="text">
+               <string>Kühlung</string>
+              </property>
+             </widget>
+            </item>
+            <item row="15" column="1">
+             <widget class="QCheckBox" name="face_coolant">
+              <property name="text">
+               <string>Kühlmittel einschalten</string>
+              </property>
+             </widget>
+            </item>
           </layout>
          </widget>
          <widget class="QWidget" name="tabContour">
