@@ -1060,7 +1060,7 @@ class HandlerClass:
         """Besorgt Widgets robuster: erst direct Attribute, dann UI-Baum."""
 
         widget = getattr(self.w, name, None)
-        if widget:
+        if widget is not None:
             return widget
 
         root = self.root_widget or self._find_root_widget()
@@ -1568,9 +1568,9 @@ class HandlerClass:
 
     def _current_parting_contour_name(self) -> str:
         """Gibt den aktuell ausgewählten Kontur-Namen im Abspan-Tab zurück."""
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             return ""
         return self.parting_contour.currentText().strip()
 
@@ -1651,9 +1651,9 @@ class HandlerClass:
 
     def _update_parting_contour_choices(self):
         """Befüllt die Kontur-Auswahl im Abspan-Tab dynamisch."""
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             print("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh")
             return
 
@@ -1678,9 +1678,9 @@ class HandlerClass:
         if self._current_op_type() != OpType.ABSPANEN:
             self.btn_add.setEnabled(True)
             return
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.btn_add.setEnabled(False)
             return
         available = self._available_contour_names()
