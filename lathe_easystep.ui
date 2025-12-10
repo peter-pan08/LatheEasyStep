@@ -284,6 +284,9 @@
                <property name="suffix">
                 <string> mm</string>
                </property>
+               <property name="minimum">
+                <double>-2000.000000000000000</double>
+               </property>
                <property name="maximum">
                 <double>1000.000000000000000</double>
                </property>
@@ -324,17 +327,20 @@
             </item>
             <item row="9" column="1">
              <widget class="QDoubleSpinBox" name="program_l">
-              <property name="visible">
-               <bool>false</bool>
+             <property name="visible">
+              <bool>false</bool>
+             </property>
+             <property name="suffix">
+              <string> mm</string>
+             </property>
+              <property name="minimum">
+               <double>-2000.000000000000000</double>
               </property>
-              <property name="suffix">
-               <string> mm</string>
+              <property name="maximum">
+               <double>2000.000000000000000</double>
               </property>
-               <property name="maximum">
-                <double>2000.000000000000000</double>
-               </property>
-              </widget>
-             </item>
+             </widget>
+            </item>
              <item row="10" column="0">
              <widget class="QLabel" name="label_prog_n">
               <property name="visible">
