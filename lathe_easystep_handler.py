@@ -1420,7 +1420,7 @@ class HandlerClass:
             self.list_ops.clicked.connect(self._mark_operation_user_selected)
             self._list_ops_click_connected = True
         if self.tab_params and not getattr(self, "_tab_params_connected", False):
-            self.tab_params.currentChanged.connect(self._update_parting_ready_state)
+            self.tab_params.currentChanged.connect(self._handle_tab_changed)
             self._tab_params_connected = True
 
         # Parameterfelder
@@ -1622,6 +1622,11 @@ class HandlerClass:
         name = self._current_parting_contour_name()
         ready = bool(name) and (not available or name in available)
         self.btn_add.setEnabled(ready)
+
+    def _handle_tab_changed(self, *_args, **_kwargs):
+        """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
+        self._update_parting_contour_choices()
+        self._update_parting_ready_state()
 
     def _fallback_contour_name(self, idx: int) -> str:
         return f"Kontur {idx + 1}"
