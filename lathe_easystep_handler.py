@@ -636,6 +636,7 @@ def gcode_for_face(op: Operation) -> List[str]:
     edge_type = int(p.get("edge_type", 0))  # 0=keine, 1=Fase, 2=Radius (wie keine)
     edge_size = max(p.get("edge_size", 0.0), 0.0)
     spindle = p.get("spindle", 0.0)
+    coolant_enabled = bool(p.get("coolant", False))
 
     tool_num = int(p.get("tool", 0))
 
@@ -647,6 +648,9 @@ def gcode_for_face(op: Operation) -> List[str]:
     # lokale Drehzahl, falls gesetzt
     if spindle and spindle > 0:
         lines.append(f"S{int(spindle)} M3")
+
+    if coolant_enabled:
+        lines.append("M8")
 
     # -------------------------
     # 1) Schruppen (Z-Schritte, Bewegung in X)
@@ -713,6 +717,9 @@ def gcode_for_face(op: Operation) -> List[str]:
             lines.append(f"G1 X{end_finish_x:.3f} F{feed:.3f}")
 
         lines.append(f"G0 Z{safe_z:.3f}")
+
+    if coolant_enabled:
+        lines.append("M9")
 
     return lines
 
@@ -1264,6 +1271,7 @@ class HandlerClass:
                 "edge_type": self._get_widget_by_name("face_edge_type"),
                 "edge_size": self._get_widget_by_name("face_edge_size"),
                 "spindle": self._get_widget_by_name("face_spindle"),
+                "coolant": self._get_widget_by_name("face_coolant"),
             },
             OpType.CONTOUR: {
                 "side": self._get_widget_by_name("contour_side"),
@@ -2251,7 +2259,8 @@ class HandlerClass:
             }.get(mode_idx, "Planen")
             start_z = op.params.get("start_z", 0.0) if isinstance(op.params, dict) else 0.0
             end_z = op.params.get("end_z", 0.0) if isinstance(op.params, dict) else 0.0
-            return f"{number}: Planen {mode_label} (Z {start_z}→{end_z}){suffix}"
+            coolant_hint = " mit Kühlung" if bool(op.params.get("coolant", False)) else ""
+            return f"{number}: Planen {mode_label} (Z {start_z}→{end_z}){coolant_hint}{suffix}"
         return f"{number}: {op.op_type.title()}{suffix}"
 
     def _renumber_operations(self):
