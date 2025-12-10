@@ -589,9 +589,10 @@ def gcode_for_face(op: Operation) -> List[str]:
     safe_z = p.get("safe_z", z0 + 2.0)
     feed = p.get("feed", 0.2)
 
-    depth = max(p.get("depth_max", p.get("depth_per_pass", abs(x0 - x1))), 0.0)
+    depth = max(p.get("depth_max", p.get("depth_per_pass", abs(z0 - z1))), 0.0)
     finish_allow_x = max(p.get("finish_allow_x", 0.0), 0.0)
     finish_allow_z = max(p.get("finish_allow_z", 0.0), 0.0)
+    finish_dir = int(p.get("finish_direction", 0))  # 0=Außen→Innen, 1=Innen→Außen
 
     mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten, 2=Schruppen+Schlichten (fallback)
     edge_type = int(p.get("edge_type", 0))  # 0=keine, 1=Fase, 2=Radius (wie keine)
@@ -610,56 +611,68 @@ def gcode_for_face(op: Operation) -> List[str]:
         lines.append(f"S{int(spindle)} M3")
 
     # -------------------------
-    # 1) Schruppen (X-Schritte)
+    # 1) Schruppen (Z-Schritte, Bewegung in X)
     # -------------------------
     do_rough = mode_idx in (0, 2)
     do_finish = mode_idx in (1, 2)
 
-    if do_rough and depth > 0.0 and abs(x0 - x1) > finish_allow_x:
-        if x1 < x0:
-            dx = -depth
-            x_limit_rough = x1 + finish_allow_x
-            cmp = lambda x: x > x_limit_rough + 1e-4
+    if do_rough and depth > 0.0 and abs(z0 - z1) > finish_allow_z:
+        if z1 < z0:
+            dz = -depth
+            z_limit_rough = z1 + finish_allow_z
+            cmp = lambda z: z > z_limit_rough + 1e-4
         else:
-            dx = depth
+            dz = depth
+            z_limit_rough = z1 - finish_allow_z
+            cmp = lambda z: z < z_limit_rough - 1e-4
+
+        if x1 < x0:
+            x_limit_rough = x1 + finish_allow_x
+        else:
             x_limit_rough = x1 - finish_allow_x
-            cmp = lambda x: x < x_limit_rough - 1e-4
 
-        x_curr = x0
-        while cmp(x_curr):
-            x_next = x_curr + dx
-            if dx < 0 and x_next < x_limit_rough:
-                x_next = x_limit_rough
-            elif dx > 0 and x_next > x_limit_rough:
-                x_next = x_limit_rough
+        z_curr = z0
+        while cmp(z_curr):
+            z_next = z_curr + dz
+            if dz < 0 and z_next < z_limit_rough:
+                z_next = z_limit_rough
+            elif dz > 0 and z_next > z_limit_rough:
+                z_next = z_limit_rough
 
-            lines.append(f"G0 X{x_curr:.3f} Z{safe_z:.3f}")
-            z_start = z0
-            z_rough_end = z1 + (finish_allow_z if z1 < z0 else -finish_allow_z)
-
-            lines.append(f"G1 Z{z_start:.3f} F{feed:.3f}")
-            lines.append(f"G1 Z{z_rough_end:.3f}")
-            lines.append(f"G1 X{x_next:.3f}")
+            lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
+            lines.append(f"G0 Z{z_next:.3f}")
+            lines.append(f"G1 X{x_limit_rough:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
 
-            x_curr = x_next
+            z_curr = z_next
 
     # -------------------------
     # 2) Schlichten
     # -------------------------
     if do_finish:
         lines.append("(Schlichtschnitt Plan)")
-        lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
-        lines.append(f"G1 Z{z0:.3f} F{feed:.3f}")
+
+        x_outside = max(x0, x1)
+        x_inside = min(x0, x1)
+        start_finish_x = x_outside if finish_dir == 0 else x_inside
+        end_finish_x = x_inside if finish_dir == 0 else x_outside
+
+        lines.append(f"G0 X{start_finish_x:.3f} Z{safe_z:.3f}")
 
         if edge_type == 1 and edge_size > 0.0:
-            z_fase_start = z1 + edge_size
-            lines.append(f"G1 Z{z_fase_start:.3f}")
-            lines.append(f"G1 X{(x0 - edge_size):.3f} Z{z1:.3f}")
-            lines.append(f"G1 X{x1:.3f} Z{z1:.3f}")
+            if finish_dir == 0:
+                z_fase_start = z1 + edge_size
+                lines.append(f"G0 Z{z_fase_start:.3f}")
+                lines.append(f"G1 X{(x_outside - edge_size):.3f} Z{z1:.3f} F{feed:.3f}")
+                lines.append(f"G1 X{end_finish_x:.3f} Z{z1:.3f}")
+            else:
+                z_fase_end = z1 + edge_size
+                lines.append(f"G0 Z{z1:.3f}")
+                lines.append(f"G1 X{(x_outside - edge_size):.3f} F{feed:.3f}")
+                lines.append(f"G1 X{x_outside:.3f} Z{z_fase_end:.3f}")
         else:
-            lines.append(f"G1 Z{z1:.3f}")
-            lines.append(f"G1 X{x1:.3f} Z{z1:.3f}")
+            lines.append(f"G0 Z{z1:.3f}")
+            lines.append(f"G1 X{end_finish_x:.3f} F{feed:.3f}")
 
         lines.append(f"G0 Z{safe_z:.3f}")
 
@@ -1207,6 +1220,7 @@ class HandlerClass:
                 "depth_per_pass": self._get_widget_by_name("face_depth_per_pass"),
                 "finish_allow_x": self._get_widget_by_name("face_finish_allow_x"),
                 "finish_allow_z": self._get_widget_by_name("face_finish_allow_z"),
+                "finish_direction": self._get_widget_by_name("face_finish_direction"),
                 "depth_max": self._get_widget_by_name("face_depth_max"),
                 "mode": self._get_widget_by_name("face_mode"),
                 "edge_type": self._get_widget_by_name("face_edge_type"),
