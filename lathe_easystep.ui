@@ -988,34 +988,13 @@
             <number>8</number>
            </property>
            <item row="0" column="0">
-            <widget class="QLabel" name="label_contour_side">
-             <property name="text">
-              <string>Seite</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="1">
-            <widget class="QComboBox" name="contour_side">
-             <item>
-              <property name="text">
-               <string>Außen</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Innen</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item row="1" column="0">
             <widget class="QLabel" name="label_contour_start_x">
              <property name="text">
               <string>Start X</string>
              </property>
             </widget>
            </item>
-           <item row="1" column="1">
+           <item row="0" column="1">
             <widget class="QDoubleSpinBox" name="contour_start_x">
              <property name="suffix">
               <string> mm</string>
@@ -1025,14 +1004,14 @@
              </property>
             </widget>
            </item>
-           <item row="2" column="0">
+           <item row="1" column="0">
             <widget class="QLabel" name="label_contour_start_z">
              <property name="text">
               <string>Start Z</string>
              </property>
             </widget>
            </item>
-           <item row="2" column="1">
+           <item row="1" column="1">
             <widget class="QDoubleSpinBox" name="contour_start_z">
              <property name="suffix">
               <string> mm</string>
@@ -1045,14 +1024,14 @@
              </property>
             </widget>
            </item>
-           <item row="3" column="0">
+           <item row="2" column="0">
             <widget class="QLabel" name="label_contour_coord_mode">
              <property name="text">
               <string>Koordinaten</string>
              </property>
             </widget>
            </item>
-           <item row="3" column="1">
+           <item row="2" column="1">
             <widget class="QComboBox" name="contour_coord_mode">
              <item>
               <property name="text">
@@ -1066,17 +1045,17 @@
              </item>
             </widget>
            </item>
-           <item row="4" column="0">
+           <item row="3" column="0">
             <widget class="QLabel" name="label_contour_name">
              <property name="text">
               <string>Konturname</string>
              </property>
             </widget>
            </item>
-           <item row="4" column="1">
+           <item row="3" column="1">
             <widget class="QLineEdit" name="contour_name"/>
            </item>
-           <item row="5" column="0" colspan="2">
+           <item row="4" column="0" colspan="2">
             <widget class="QTableWidget" name="contour_segments">
              <column>
               <property name="text">
@@ -1105,7 +1084,7 @@
              </column>
             </widget>
            </item>
-         <item row="6" column="0" colspan="2">
+         <item row="5" column="0" colspan="2">
           <layout class="QHBoxLayout" name="layoutContourButtons">
            <item>
             <widget class="QPushButton" name="contour_add_segment">
@@ -1133,18 +1112,18 @@
               <property name="text">
                <string>▼</string>
               </property>
-             </widget>
-            </item>
-           </layout>
-         </item>
-           <item row="7" column="0">
+            </widget>
+           </item>
+          </layout>
+        </item>
+           <item row="6" column="0">
             <widget class="QLabel" name="label_contour_edge_type">
              <property name="text">
               <string>Kante</string>
              </property>
             </widget>
            </item>
-           <item row="7" column="1">
+           <item row="6" column="1">
             <widget class="QComboBox" name="contour_edge_type">
              <item>
               <property name="text">
@@ -1163,14 +1142,14 @@
              </item>
             </widget>
            </item>
-           <item row="8" column="0">
+           <item row="7" column="0">
             <widget class="QLabel" name="label_contour_edge_size">
              <property name="text">
               <string>Kantenmaß</string>
              </property>
             </widget>
            </item>
-           <item row="8" column="1">
+           <item row="7" column="1">
             <widget class="QDoubleSpinBox" name="contour_edge_size">
              <property name="suffix">
               <string> mm</string>
