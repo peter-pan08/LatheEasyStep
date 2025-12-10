@@ -157,7 +157,11 @@ class ProgramModel:
             numbered.append(f"N{n} {line}")
             n += 1
 
-        return numbered
+        # Zeichensatz vereinheitlichen: LinuxCNC erwartet ASCII, daher alle
+        # Zeilen transliterieren und unzulässige Zeichen ersetzen.
+        sanitized = [_sanitize_gcode_text(line) for line in numbered]
+
+        return sanitized
 
 
 # ----------------------------------------------------------------------
@@ -576,6 +580,28 @@ def gcode_for_keyway(op: Operation) -> List[str]:
     lines.append(f"#<_c_axis_switch_p> = {int(p.get('c_axis_switch_p', 0))}")
     lines.append("o<keyway_c> call")
     return lines
+
+
+def _sanitize_gcode_text(text: str) -> str:
+    """Ersetzt Umlaute/Akzente durch ASCII, um falsche Zeichensätze zu vermeiden."""
+    translit = {
+        "ä": "ae",
+        "Ä": "Ae",
+        "ö": "oe",
+        "Ö": "Oe",
+        "ü": "ue",
+        "Ü": "Ue",
+        "ß": "ss",
+    }
+
+    for src, repl in translit.items():
+        text = text.replace(src, repl)
+
+    try:
+        text.encode("ascii")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("ascii", "replace").decode("ascii")
 
 
 def gcode_for_contour(op: Operation) -> List[str]:
