@@ -141,7 +141,7 @@ class ProgramModel:
         lines.extend(["M9", "M30", "%"])
 
         # Zeilennummerierung wie im LinuxCNC-Postprozessor: Nur echte G-Code-
-        # Zeilen erhalten ein N-Präfix mit einer Schrittweite von 10. Kommentare
+        # Zeilen erhalten ein N-Präfix mit einer Schrittweite von 1. Kommentare
         # bleiben unnummeriert, damit die Befehlszeilen bei N10 beginnen.
         numbered: List[str] = []
         n = 10
@@ -153,8 +153,8 @@ class ProgramModel:
             if stripped.startswith("("):
                 numbered.append(line)
                 continue
-            numbered.append(f"N{n:03d} {line}")
-            n += 10
+            numbered.append(f"N{n} {line}")
+            n += 1
 
         return numbered
 
