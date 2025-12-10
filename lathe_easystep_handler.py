@@ -589,7 +589,16 @@ def gcode_for_face(op: Operation) -> List[str]:
     safe_z = p.get("safe_z", z0 + 2.0)
     feed = p.get("feed", 0.2)
 
-    depth = max(p.get("depth_max", p.get("depth_per_pass", abs(z0 - z1))), 0.0)
+    depth_per_pass = float(p.get("depth_per_pass", 0.0))
+    depth_max = float(p.get("depth_max", 0.0))
+    depth_total = abs(z0 - z1)
+
+    # effektive Zustellung pro Schnitt: bevorzugt depth_per_pass, sonst depth_max,
+    # immer gedeckelt auf die tatsächlich abzunehmende Tiefe
+    depth = depth_per_pass if depth_per_pass > 0 else depth_max
+    if depth <= 0.0:
+        depth = depth_total
+    depth = max(min(depth, depth_total), 0.0)
     finish_allow_x = max(p.get("finish_allow_x", 0.0), 0.0)
     finish_allow_z = max(p.get("finish_allow_z", 0.0), 0.0)
     finish_dir = int(p.get("finish_direction", 0))  # 0=Außen→Innen, 1=Innen→Außen
@@ -2204,6 +2213,16 @@ class HandlerClass:
             name = op.params.get("name", "") if isinstance(op.params, dict) else ""
             name_suffix = f" [{name}]" if name else ""
             return f"{number}: Kontur{name_suffix}{suffix}"
+        if op.op_type == OpType.FACE:
+            mode_idx = int(op.params.get("mode", 0)) if isinstance(op.params, dict) else 0
+            mode_label = {
+                0: "Schruppen",
+                1: "Schlichten",
+                2: "Schruppen+Schlichten",
+            }.get(mode_idx, "Planen")
+            start_z = op.params.get("start_z", 0.0) if isinstance(op.params, dict) else 0.0
+            end_z = op.params.get("end_z", 0.0) if isinstance(op.params, dict) else 0.0
+            return f"{number}: Planen {mode_label} (Z {start_z}→{end_z}){suffix}"
         return f"{number}: {op.op_type.title()}{suffix}"
 
     def _renumber_operations(self):
