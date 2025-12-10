@@ -646,7 +646,7 @@ def _abspanen_offsets(
 
     passes = math.ceil(start_offset / depth_per_pass)
     offsets: List[float] = []
-    for i in range(passes, -1, -1):
+    for i in range(0, passes + 1):
         current = max(round(start_offset - i * depth_per_pass, 6), 0.0)
         if offsets and abs(offsets[-1] - current) < 1e-6:
             continue
@@ -1163,6 +1163,9 @@ class HandlerClass:
         self.parting_mode = getattr(self.w, "parting_mode", None)
         self.parting_pause_enabled = getattr(self.w, "parting_pause_enabled", None)
         self.parting_pause_distance = getattr(self.w, "parting_pause_distance", None)
+        self.label_parting_depth = getattr(self.w, "label_parting_depth", None)
+        self.label_parting_pause = getattr(self.w, "label_parting_pause", None)
+        self.label_parting_pause_distance = getattr(self.w, "label_parting_pause_distance", None)
 
         # Parameter-Widgets für jede Operation
         self._setup_param_maps()
@@ -1170,6 +1173,7 @@ class HandlerClass:
         self._connect_contour_signals()
         self._apply_unit_suffix()
         self._update_program_visibility()
+        self._update_parting_mode_visibility()
         self._refresh_preview()
         self._ensure_core_widgets()
 
@@ -1618,6 +1622,11 @@ class HandlerClass:
         if self.tab_params and not getattr(self, "_tab_params_connected", False):
             self.tab_params.currentChanged.connect(self._handle_tab_changed)
             self._tab_params_connected = True
+        if self.parting_mode and not getattr(self, "_parting_mode_connected", False):
+            self.parting_mode.currentIndexChanged.connect(
+                self._update_parting_mode_visibility
+            )
+            self._parting_mode_connected = True
 
         # Parameterfelder
         for widgets in self.param_widgets.values():
@@ -1872,6 +1881,22 @@ class HandlerClass:
         ready = bool(name) and name in available
         self.btn_add.setEnabled(ready)
 
+    def _update_parting_mode_visibility(self):
+        """Versteckt Schrupp-spezifische Felder beim Schlichten."""
+
+        mode_idx = self.parting_mode.currentIndex() if self.parting_mode else 0
+        show_roughing = mode_idx == 0
+        for widget in (
+            self.label_parting_depth,
+            self.parting_depth_per_pass,
+            self.label_parting_pause,
+            self.parting_pause_enabled,
+            self.label_parting_pause_distance,
+            self.parting_pause_distance,
+        ):
+            if widget is not None:
+                widget.setVisible(show_roughing)
+
     def _handle_tab_changed(self, *_args, **_kwargs):
         """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
         self._update_parting_contour_choices()
@@ -2120,6 +2145,7 @@ class HandlerClass:
             self.parting_contour.setCurrentText(name)
             self.parting_contour.blockSignals(False)
             self._update_parting_ready_state()
+            self._update_parting_mode_visibility()
 
     def _set_preview_paths(
         self,
