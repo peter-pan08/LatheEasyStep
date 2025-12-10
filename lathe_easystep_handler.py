@@ -72,10 +72,11 @@ class ProgramModel:
     def generate_gcode(self) -> List[str]:
         settings = self.program_settings or {}
         npv_code = str(settings.get("npv") or "G54").upper()
-        unit = settings.get("unit", "")
+        unit = (settings.get("unit") or "").strip().lower()
+        unit_code = "G21" if unit.startswith("mm") else ("G20" if unit else "")
         shape = settings.get("shape", "")
 
-        lines: List[str] = ["(Programm automatisch erzeugt)"]
+        lines: List[str] = ["%", "(Programm automatisch erzeugt)"]
         if unit:
             lines.append(f"(Maßeinheit: {unit})")
         if shape:
@@ -117,7 +118,11 @@ class ProgramModel:
             lines.append(comment)
 
         # Basiszustand
-        lines.append("G18 G90 G40 G80")
+        lines.append("G18 G7 G90 G40 G80")
+        if unit_code:
+            lines.append(unit_code)
+        # mm/U bzw. in/U entsprechend LinuxCNC-Postprozessor
+        lines.append("G95")
         if npv_code:
             lines.append(npv_code)
 
@@ -130,7 +135,7 @@ class ProgramModel:
         if has_sub and s3_max:
             lines.append(f"(S3 max = {int(s3_max)} U/min)")
         for idx, op in enumerate(self.operations, start=1):
-            lines.append(f"; Operation {idx}")
+            lines.append(f"( Operation {idx} )")
             lines.append(f"( {op.op_type.upper()} )")
             lines.extend(gcode_for_operation(op))
         lines.extend(["M9", "M30", "%"])
