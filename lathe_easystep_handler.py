@@ -72,12 +72,15 @@ class ProgramModel:
 
     def generate_gcode(self) -> List[str]:
         settings = self.program_settings or {}
+        program_name = str(settings.get("program_name") or "").strip()
         npv_code = str(settings.get("npv") or "G54").upper()
         unit = (settings.get("unit") or "").strip().lower()
         unit_code = "G21" if unit.startswith("mm") else ("G20" if unit else "")
         shape = settings.get("shape", "")
 
         lines: List[str] = ["%", "(Programm automatisch erzeugt)"]
+        if program_name:
+            lines.append(f"(Programmname: {_sanitize_gcode_text(program_name)})")
         if unit:
             lines.append(f"(Maßeinheit: {unit})")
         if shape:
@@ -922,10 +925,12 @@ class HandlerClass:
         self._contour_edge_template_text = "Keine"
         self._contour_edge_template_size = 0.0
         self._contour_row_user_selected = False
+        self._op_row_user_selected = False
 
         # Parameter-Widgets für jede Operation
         self._setup_param_maps()
         self._connect_signals()
+        self._connect_contour_signals()
         self._apply_unit_suffix()
         self._update_program_visibility()
         self._refresh_preview()
@@ -1103,22 +1108,7 @@ class HandlerClass:
         if self.contour_edge_size is None and root:
             self.contour_edge_size = root.findChild(QtWidgets.QDoubleSpinBox, "contour_edge_size")
 
-        # Kontur-Buttons (falls oben noch nicht verbunden)
-        if self.contour_add_segment:
-            self.contour_add_segment.clicked.connect(self._handle_contour_add_segment)
-        if self.contour_delete_segment:
-            self.contour_delete_segment.clicked.connect(self._handle_contour_delete_segment)
-        if self.contour_move_up:
-            self.contour_move_up.clicked.connect(self._handle_contour_move_up)
-        if self.contour_move_down:
-            self.contour_move_down.clicked.connect(self._handle_contour_move_down)
-        if self.contour_segments:
-            self.contour_segments.itemChanged.connect(self._handle_contour_table_change)
-            self.contour_segments.currentCellChanged.connect(self._handle_contour_row_select)
-        if self.contour_edge_type:
-            self.contour_edge_type.currentIndexChanged.connect(self._handle_contour_edge_change)
-        if self.contour_edge_size:
-            self.contour_edge_size.valueChanged.connect(self._handle_contour_edge_change)
+        self._connect_contour_signals()
 
         # Gegenspindel-Checkbox sicherstellen
         if self.program_has_subspindle is None:
@@ -1362,6 +1352,9 @@ class HandlerClass:
         if self.list_ops and not getattr(self, "_list_ops_connected", False):
             self.list_ops.currentRowChanged.connect(self._handle_selection_change)
             self._list_ops_connected = True
+        if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
+            self.list_ops.clicked.connect(self._mark_operation_user_selected)
+            self._list_ops_click_connected = True
 
         # Parameterfelder
         for widgets in self.param_widgets.values():
@@ -1400,26 +1393,59 @@ class HandlerClass:
             self.face_edge_type.currentIndexChanged.connect(self._update_face_visibility)
             self._connected_param_widgets.add(self.face_edge_type)
 
-        # Kontur-Buttons
+        self._connect_contour_signals()
+
+    def _connect_contour_signals(self):
+        """Verbindet alle Kontur-Widgets nur einmal."""
         if getattr(self, "contour_add_segment", None):
-            self.contour_add_segment.clicked.connect(self._handle_contour_add_segment)
+            self._connect_button_once(
+                self.contour_add_segment,
+                self._handle_contour_add_segment,
+                "_contour_add_connected",
+            )
         if getattr(self, "contour_delete_segment", None):
-            self.contour_delete_segment.clicked.connect(self._handle_contour_delete_segment)
+            self._connect_button_once(
+                self.contour_delete_segment,
+                self._handle_contour_delete_segment,
+                "_contour_delete_connected",
+            )
         if getattr(self, "contour_move_up", None):
-            self.contour_move_up.clicked.connect(self._handle_contour_move_up)
+            self._connect_button_once(
+                self.contour_move_up,
+                self._handle_contour_move_up,
+                "_contour_move_up_connected",
+            )
         if getattr(self, "contour_move_down", None):
-            self.contour_move_down.clicked.connect(self._handle_contour_move_down)
-        if getattr(self, "contour_segments", None):
+            self._connect_button_once(
+                self.contour_move_down,
+                self._handle_contour_move_down,
+                "_contour_move_down_connected",
+            )
+
+        if getattr(self, "contour_segments", None) and not getattr(self, "_contour_table_connected", False):
             self.contour_segments.itemChanged.connect(self._handle_contour_table_change)
             self.contour_segments.currentCellChanged.connect(self._handle_contour_row_select)
-        if getattr(self, "contour_start_x", None):
+            self._contour_table_connected = True
+
+        if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
             self.contour_start_x.valueChanged.connect(self._update_contour_preview_temp)
-        if getattr(self, "contour_start_z", None):
+            self._contour_start_x_connected = True
+        if getattr(self, "contour_start_z", None) and not getattr(self, "_contour_start_z_connected", False):
             self.contour_start_z.valueChanged.connect(self._update_contour_preview_temp)
-        if getattr(self, "contour_side", None):
+            self._contour_start_z_connected = True
+        if getattr(self, "contour_side", None) and not getattr(self, "_contour_side_connected", False):
             self.contour_side.currentIndexChanged.connect(self._update_contour_preview_temp)
-        if getattr(self, "contour_name", None):
+            self._contour_side_connected = True
+        if getattr(self, "contour_name", None) and not getattr(self, "_contour_name_connected", False):
             self.contour_name.textChanged.connect(self._update_contour_preview_temp)
+            self._contour_name_connected = True
+
+        if getattr(self, "contour_edge_type", None) and not getattr(self, "_contour_edge_type_connected", False):
+            self.contour_edge_type.currentIndexChanged.connect(self._handle_contour_edge_change)
+            self._contour_edge_type_connected = True
+        if getattr(self, "contour_edge_size", None) and not getattr(self, "_contour_edge_size_connected", False):
+            self.contour_edge_size.valueChanged.connect(self._handle_contour_edge_change)
+            self._contour_edge_size_connected = True
 
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
@@ -1662,6 +1688,7 @@ class HandlerClass:
 
         current = self.list_ops.currentRow()
         self.list_ops.blockSignals(True)
+        self._op_row_user_selected = False
         self.list_ops.clear()
         for i, op in enumerate(self.model.operations):
             self.list_ops.addItem(self._describe_operation(op, i + 1))
@@ -1686,8 +1713,13 @@ class HandlerClass:
             if self.contour_preview is None:
                 self.contour_preview = root.findChild(LathePreviewWidget, "contourPreview")
 
-    def _update_selected_operation(self):
+    def _mark_operation_user_selected(self, *args, **kwargs):
+        self._op_row_user_selected = True
+
+    def _update_selected_operation(self, *, force: bool = False):
         if self.list_ops is None:
+            return
+        if not force and not self._op_row_user_selected:
             return
         idx = self.list_ops.currentRow()
         if idx < 0 or idx >= len(self.model.operations):
@@ -1964,6 +1996,7 @@ class HandlerClass:
 
     def _handle_new_program(self):
         self.model.operations.clear()
+        self._op_row_user_selected = False
         self._refresh_operation_list(select_index=-1)
         self._refresh_preview()
 
@@ -1999,9 +2032,17 @@ class HandlerClass:
         return os.path.expanduser(os.path.join("~/linuxcnc/nc_files", filename))
 
     def _handle_param_change(self):
-        self._update_selected_operation()
+        if self._op_row_user_selected:
+            self._update_selected_operation()
+        elif self._current_op_type() == OpType.CONTOUR:
+            # Trotzdem Live-Vorschau anbieten, ohne bestehende Operationen zu überschreiben
+            self._update_contour_preview_temp()
 
     def _handle_selection_change(self, row: int):
+        self._op_row_user_selected = bool(
+            self.list_ops
+            and (self.list_ops.hasFocus() or self._op_row_user_selected)
+        )
         if row < 0 or row >= len(self.model.operations):
             return
         op = self.model.operations[row]
