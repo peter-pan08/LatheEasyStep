@@ -1536,6 +1536,17 @@ class HandlerClass:
             contour_idx += 1
         if getattr(self, "contour_name", None):
             live_name = self.contour_name.text().strip()
+            if not live_name:
+                # Wenn der Nutzer noch keinen Namen vergeben hat, aber bereits
+                # Segmente eingetragen sind, vergeben wir einen Fallback-Namen,
+                # damit die Kontur im Abspan-Tab auswählbar wird.
+                if getattr(self, "contour_segments", None) and self.contour_segments.rowCount() > 0:
+                    live_name = self._fallback_contour_name(self._contour_count())
+                    try:
+                        self.contour_name.blockSignals(True)
+                        self.contour_name.setText(live_name)
+                    finally:
+                        self.contour_name.blockSignals(False)
             if live_name and live_name not in names:
                 names.append(live_name)
         return names
