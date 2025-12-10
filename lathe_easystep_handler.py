@@ -1914,6 +1914,7 @@ class HandlerClass:
     def _refresh_operation_list(self, select_index: int | None = None):
         """Synchronisiert die linke Operationsliste mit dem internen Modell."""
         if self.list_ops is None:
+            self._update_parting_contour_choices()
             return
 
         current = self.list_ops.currentRow()
@@ -2009,6 +2010,7 @@ class HandlerClass:
 
             self._refresh_operation_list(select_index=len(self.model.operations) - 1)
             self._refresh_preview()
+            self._update_parting_ready_state()
 
     def _handle_delete_operation(self):
         if self.list_ops is None:
@@ -2019,6 +2021,7 @@ class HandlerClass:
         self.model.remove_operation(idx)
         self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
         self._refresh_preview()
+        self._update_parting_ready_state()
 
     def _handle_move_up(self):
         if self.list_ops is None:
