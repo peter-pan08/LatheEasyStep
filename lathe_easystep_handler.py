@@ -1407,6 +1407,11 @@ class HandlerClass:
 
     # ---- Signalanschlüsse ---------------------------------------------
     def _connect_signals(self):
+        # Stelle sicher, dass die Kern-Widgets vorhanden sind, bevor wir Signale verbinden
+        self._ensure_core_widgets()
+        if self.tab_params is None:
+            self.tab_params = self._get_widget_by_name("tabParams")
+
         self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
         self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
         self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
@@ -1420,7 +1425,7 @@ class HandlerClass:
             self.list_ops.clicked.connect(self._mark_operation_user_selected)
             self._list_ops_click_connected = True
         if self.tab_params and not getattr(self, "_tab_params_connected", False):
-            self.tab_params.currentChanged.connect(self._update_parting_ready_state)
+            self.tab_params.currentChanged.connect(self._handle_tab_changed)
             self._tab_params_connected = True
 
         # Parameterfelder
@@ -1623,6 +1628,11 @@ class HandlerClass:
         ready = bool(name) and (not available or name in available)
         self.btn_add.setEnabled(ready)
 
+    def _handle_tab_changed(self, *_args, **_kwargs):
+        """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
+        self._update_parting_contour_choices()
+        self._update_parting_ready_state()
+
     def _fallback_contour_name(self, idx: int) -> str:
         return f"Kontur {idx + 1}"
 
@@ -1652,6 +1662,8 @@ class HandlerClass:
 
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
+        if self.tab_params is None:
+            self.tab_params = self._get_widget_by_name("tabParams")
         idx = self.tab_params.currentIndex() if self.tab_params else 0
         mapping = {
             0: OpType.PROGRAM_HEADER,  # Programmkopf
@@ -1909,6 +1921,7 @@ class HandlerClass:
     def _refresh_operation_list(self, select_index: int | None = None):
         """Synchronisiert die linke Operationsliste mit dem internen Modell."""
         if self.list_ops is None:
+            self._update_parting_contour_choices()
             return
 
         current = self.list_ops.currentRow()
@@ -2004,6 +2017,7 @@ class HandlerClass:
 
             self._refresh_operation_list(select_index=len(self.model.operations) - 1)
             self._refresh_preview()
+            self._update_parting_ready_state()
 
     def _handle_delete_operation(self):
         if self.list_ops is None:
@@ -2014,6 +2028,7 @@ class HandlerClass:
         self.model.remove_operation(idx)
         self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
         self._refresh_preview()
+        self._update_parting_ready_state()
 
     def _handle_move_up(self):
         if self.list_ops is None:
