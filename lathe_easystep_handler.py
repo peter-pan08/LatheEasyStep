@@ -1536,6 +1536,17 @@ class HandlerClass:
             contour_idx += 1
         if getattr(self, "contour_name", None):
             live_name = self.contour_name.text().strip()
+            if not live_name:
+                # Wenn der Nutzer noch keinen Namen vergeben hat, aber bereits
+                # Segmente eingetragen sind, vergeben wir einen Fallback-Namen,
+                # damit die Kontur im Abspan-Tab auswählbar wird.
+                if getattr(self, "contour_segments", None) and self.contour_segments.rowCount() > 0:
+                    live_name = self._fallback_contour_name(self._contour_count())
+                    try:
+                        self.contour_name.blockSignals(True)
+                        self.contour_name.setText(live_name)
+                    finally:
+                        self.contour_name.blockSignals(False)
             if live_name and live_name not in names:
                 names.append(live_name)
         return names
@@ -1971,6 +1982,8 @@ class HandlerClass:
             if item:
                 item.setText(self._describe_operation(op, idx + 1))
         self._refresh_preview()
+        if op.op_type == OpType.CONTOUR:
+            self._update_parting_contour_choices()
 
     # ---- Button-Handler -----------------------------------------------
     def _handle_add_operation(self):
@@ -2017,6 +2030,9 @@ class HandlerClass:
 
             self._refresh_operation_list(select_index=len(self.model.operations) - 1)
             self._refresh_preview()
+            # Abspan-Auswahl sofort auffrischen, damit neue Konturen unmittelbar
+            # auswählbar sind.
+            self._update_parting_contour_choices()
             self._update_parting_ready_state()
 
     def _handle_delete_operation(self):
@@ -2028,6 +2044,7 @@ class HandlerClass:
         self.model.remove_operation(idx)
         self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
         self._refresh_preview()
+        self._update_parting_contour_choices()
         self._update_parting_ready_state()
 
     def _handle_move_up(self):
