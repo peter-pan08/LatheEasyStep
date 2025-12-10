@@ -1060,7 +1060,7 @@ class HandlerClass:
         """Besorgt Widgets robuster: erst direct Attribute, dann UI-Baum."""
 
         widget = getattr(self.w, name, None)
-        if widget:
+        if widget is not None:
             return widget
 
         root = self.root_widget or self._find_root_widget()
@@ -1228,6 +1228,13 @@ class HandlerClass:
         self._setup_param_maps()
         self._connect_signals()
         self._debug_widget_names()
+        try:
+            print(
+                "[LatheEasyStep][debug] finalize: parting_contour=",
+                self._get_widget_by_name("parting_contour"),
+            )
+        except Exception:
+            pass
         self._update_parting_contour_choices()
         self._update_parting_ready_state()
 
@@ -1528,7 +1535,15 @@ class HandlerClass:
         names: List[str] = []
         contour_idx = 0
         for op in self.model.operations:
+            if op is None:
+                continue
             if op.op_type != OpType.CONTOUR:
+                try:
+                    print(
+                        f"[LatheEasyStep][debug] contour-scan skip op type {op.op_type}"
+                    )
+                except Exception:
+                    pass
                 continue
             name = self._contour_name_or_fallback(op, contour_idx)
             if name and name not in names:
@@ -1536,17 +1551,59 @@ class HandlerClass:
             contour_idx += 1
         if getattr(self, "contour_name", None):
             live_name = self.contour_name.text().strip()
+            if not live_name:
+                # Wenn der Nutzer noch keinen Namen vergeben hat, aber bereits
+                # Segmente eingetragen sind, vergeben wir einen Fallback-Namen,
+                # damit die Kontur im Abspan-Tab auswählbar wird.
+                if getattr(self, "contour_segments", None) and self.contour_segments.rowCount() > 0:
+                    live_name = self._fallback_contour_name(self._contour_count())
+                    try:
+                        self.contour_name.blockSignals(True)
+                        self.contour_name.setText(live_name)
+                    finally:
+                        self.contour_name.blockSignals(False)
             if live_name and live_name not in names:
                 names.append(live_name)
         return names
 
     def _current_parting_contour_name(self) -> str:
         """Gibt den aktuell ausgewählten Kontur-Namen im Abspan-Tab zurück."""
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             return ""
         return self.parting_contour.currentText().strip()
+
+    def _debug_contour_state(self, context: str = ""):
+        """Zusätzliche Debug-Ausgabe für die Kontur-Erkennung im Abspan-Tab."""
+        prefix = f"[LatheEasyStep][debug] parting contour ({context})" if context else "[LatheEasyStep][debug] parting contour"
+        try:
+            op_infos = []
+            contour_idx = 0
+            for idx, op in enumerate(self.model.operations):
+                if op.op_type != OpType.CONTOUR:
+                    continue
+                name = self._contour_name_or_fallback(op, contour_idx)
+                segs = op.params.get("segments") if isinstance(op.params, dict) else None
+                seg_count = len(segs) if isinstance(segs, list) else "n/a"
+                path_len = len(op.path) if getattr(op, "path", None) else 0
+                op_infos.append(
+                    f"op#{idx} contour_idx={contour_idx} name='{name}' segments={seg_count} path_len={path_len}"
+                )
+                contour_idx += 1
+
+            live_name = self.contour_name.text().strip() if getattr(self, "contour_name", None) else ""
+            live_rows = self.contour_segments.rowCount() if getattr(self, "contour_segments", None) else 0
+            available = self._available_contour_names()
+            print(prefix)
+            print(f"  ops: {op_infos if op_infos else 'keine Kontur-Operationen'}")
+            print(f"  live contour widget name='{live_name}' rows={live_rows}")
+            print(f"  available names for parting: {available}")
+            if getattr(self, "parting_contour", None):
+                current = self.parting_contour.currentText().strip()
+                print(f"  parting combo current text='{current}' editable={self.parting_contour.isEditable()}")
+        except Exception as exc:
+            print(f"[LatheEasyStep][debug] parting contour debug failed: {exc}")
 
     def _resolve_contour_path(self, contour_name: str) -> List[Tuple[float, float]]:
         if not contour_name:
@@ -1594,11 +1651,13 @@ class HandlerClass:
 
     def _update_parting_contour_choices(self):
         """Befüllt die Kontur-Auswahl im Abspan-Tab dynamisch."""
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
+            print("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh")
             return
 
+        self._debug_contour_state("before refresh")
         names = self._available_contour_names()
         current = self.parting_contour.currentText().strip()
         self.parting_contour.blockSignals(True)
@@ -1611,6 +1670,7 @@ class HandlerClass:
             self.parting_contour.setCurrentIndex(0)
         self.parting_contour.blockSignals(False)
         self._update_parting_ready_state()
+        self._debug_contour_state("after refresh")
 
     def _update_parting_ready_state(self, *args, **kwargs):
         if self.btn_add is None:
@@ -1618,14 +1678,14 @@ class HandlerClass:
         if self._current_op_type() != OpType.ABSPANEN:
             self.btn_add.setEnabled(True)
             return
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
-        if not getattr(self, "parting_contour", None):
+        if getattr(self, "parting_contour", None) is None:
             self.btn_add.setEnabled(False)
             return
         available = self._available_contour_names()
         name = self._current_parting_contour_name()
-        ready = bool(name) and (not available or name in available)
+        ready = bool(name) and name in available
         self.btn_add.setEnabled(ready)
 
     def _handle_tab_changed(self, *_args, **_kwargs):
@@ -1971,6 +2031,8 @@ class HandlerClass:
             if item:
                 item.setText(self._describe_operation(op, idx + 1))
         self._refresh_preview()
+        if op.op_type == OpType.CONTOUR:
+            self._update_parting_contour_choices()
 
     # ---- Button-Handler -----------------------------------------------
     def _handle_add_operation(self):
@@ -2014,9 +2076,17 @@ class HandlerClass:
             op = Operation(op_type, params)
             self.model.update_geometry(op)
             self.model.add_operation(op)
+            try:
+                debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
+                print(f"[LatheEasyStep][debug] operations now: {debug_ops}")
+            except Exception:
+                pass
 
             self._refresh_operation_list(select_index=len(self.model.operations) - 1)
             self._refresh_preview()
+            # Abspan-Auswahl sofort auffrischen, damit neue Konturen unmittelbar
+            # auswählbar sind.
+            self._update_parting_contour_choices()
             self._update_parting_ready_state()
 
     def _handle_delete_operation(self):
@@ -2028,6 +2098,7 @@ class HandlerClass:
         self.model.remove_operation(idx)
         self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
         self._refresh_preview()
+        self._update_parting_contour_choices()
         self._update_parting_ready_state()
 
     def _handle_move_up(self):
