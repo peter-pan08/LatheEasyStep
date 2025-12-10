@@ -263,15 +263,18 @@
               </widget>
              </item>
              <item row="6" column="1">
-              <widget class="QDoubleSpinBox" name="program_zi">
-               <property name="suffix">
-                <string> mm</string>
-               </property>
-               <property name="maximum">
-                <double>1000.000000000000000</double>
-               </property>
-              </widget>
-             </item>
+             <widget class="QDoubleSpinBox" name="program_zi">
+              <property name="suffix">
+               <string> mm</string>
+              </property>
+              <property name="minimum">
+               <double>-2000.000000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>1000.000000000000000</double>
+              </property>
+             </widget>
+            </item>
              <item row="7" column="0">
               <widget class="QLabel" name="label_prog_zb">
                <property name="text">
