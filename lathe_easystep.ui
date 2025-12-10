@@ -921,13 +921,47 @@
              </widget>
             </item>
             <item row="13" column="0">
+             <widget class="QLabel" name="label_face_pause">
+              <property name="text">
+               <string>Vorschubunterbrechung</string>
+              </property>
+             </widget>
+            </item>
+            <item row="13" column="1">
+             <widget class="QCheckBox" name="face_pause_enabled">
+              <property name="text">
+               <string>aktivieren</string>
+              </property>
+             </widget>
+            </item>
+            <item row="14" column="0">
+             <widget class="QLabel" name="label_face_pause_distance">
+              <property name="text">
+               <string>Unterbrechungsabstand</string>
+              </property>
+             </widget>
+            </item>
+            <item row="14" column="1">
+             <widget class="QDoubleSpinBox" name="face_pause_distance">
+              <property name="suffix">
+               <string> mm</string>
+              </property>
+              <property name="maximum">
+               <double>1000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>1.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="15" column="0">
              <widget class="QLabel" name="label_face_spindle">
               <property name="text">
                <string>Drehzahl</string>
               </property>
              </widget>
             </item>
-            <item row="13" column="1">
+            <item row="15" column="1">
              <widget class="QDoubleSpinBox" name="face_spindle">
               <property name="suffix">
                <string> U/min</string>
@@ -943,14 +977,14 @@
               </property>
              </widget>
             </item>
-            <item row="14" column="0">
+            <item row="16" column="0">
              <widget class="QLabel" name="label_face_tool">
               <property name="text">
                <string>Werkzeug</string>
               </property>
              </widget>
             </item>
-            <item row="14" column="1">
+            <item row="16" column="1">
              <widget class="QSpinBox" name="face_tool">
               <property name="minimum">
                <number>1</number>
@@ -963,14 +997,14 @@
               </property>
              </widget>
             </item>
-            <item row="15" column="0">
+            <item row="17" column="0">
              <widget class="QLabel" name="label_face_coolant">
               <property name="text">
                <string>Kühlung</string>
               </property>
              </widget>
             </item>
-            <item row="15" column="1">
+            <item row="17" column="1">
              <widget class="QCheckBox" name="face_coolant">
               <property name="text">
                <string>Kühlmittel einschalten</string>
