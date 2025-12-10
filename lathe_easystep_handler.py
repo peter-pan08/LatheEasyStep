@@ -1166,6 +1166,12 @@ class HandlerClass:
         print(f"[LatheEasyStep] debug buttons: {btns}")
         print(f"[LatheEasyStep] debug list widgets: {lists}")
 
+    def _connect_button_once(self, button, handler, flag_name: str):
+        """Verbindet Buttons nur einmal, egal wie oft _connect_signals aufgerufen wird."""
+        if button and not getattr(self, flag_name, False):
+            button.clicked.connect(handler)
+            setattr(self, flag_name, True)
+
     def _ensure_core_widgets(self):
         """Sucht fehlende Kern-Widgets (Liste/Buttons/Tabs) im UI-Baum nach."""
         root = (
@@ -1222,24 +1228,12 @@ class HandlerClass:
                 self.tab_params = candidates[0]
 
         # Falls wir erst jetzt Buttons gefunden haben: Signale verbinden
-        if self.btn_add and not getattr(self, "_btn_add_connected", False):
-            self.btn_add.clicked.connect(self._handle_add_operation)
-            self._btn_add_connected = True
-        if self.btn_delete and not getattr(self, "_btn_delete_connected", False):
-            self.btn_delete.clicked.connect(self._handle_delete_operation)
-            self._btn_delete_connected = True
-        if self.btn_move_up and not getattr(self, "_btn_move_up_connected", False):
-            self.btn_move_up.clicked.connect(self._handle_move_up)
-            self._btn_move_up_connected = True
-        if self.btn_move_down and not getattr(self, "_btn_move_down_connected", False):
-            self.btn_move_down.clicked.connect(self._handle_move_down)
-            self._btn_move_down_connected = True
-        if self.btn_new_program and not getattr(self, "_btn_new_program_connected", False):
-            self.btn_new_program.clicked.connect(self._handle_new_program)
-            self._btn_new_program_connected = True
-        if self.btn_generate and not getattr(self, "_btn_generate_connected", False):
-            self.btn_generate.clicked.connect(self._handle_generate_gcode)
-            self._btn_generate_connected = True
+        self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
+        self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
+        self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
+        self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
+        self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
+        self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
 
     def _check_unit_change(self):
         """Pollt die Einheit-Combo und triggert _apply_unit_suffix() bei Änderung."""
@@ -1325,18 +1319,12 @@ class HandlerClass:
 
     # ---- Signalanschlüsse ---------------------------------------------
     def _connect_signals(self):
-        if self.btn_add:
-            self.btn_add.clicked.connect(self._handle_add_operation)
-        if self.btn_delete:
-            self.btn_delete.clicked.connect(self._handle_delete_operation)
-        if self.btn_move_up:
-            self.btn_move_up.clicked.connect(self._handle_move_up)
-        if self.btn_move_down:
-            self.btn_move_down.clicked.connect(self._handle_move_down)
-        if self.btn_new_program:
-            self.btn_new_program.clicked.connect(self._handle_new_program)
-        if self.btn_generate:
-            self.btn_generate.clicked.connect(self._handle_generate_gcode)
+        self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
+        self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
+        self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
+        self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
+        self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
+        self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
         if self.list_ops and not getattr(self, "_list_ops_connected", False):
             self.list_ops.currentRowChanged.connect(self._handle_selection_change)
             self._list_ops_connected = True
