@@ -1521,12 +1521,14 @@ class HandlerClass:
     # ---- Abspan-Helfer ----------------------------------------------
     def _available_contour_names(self) -> List[str]:
         names: List[str] = []
+        contour_idx = 0
         for op in self.model.operations:
             if op.op_type != OpType.CONTOUR:
                 continue
-            name = str(op.params.get("name") or "").strip()
+            name = self._contour_name_or_fallback(op, contour_idx)
             if name and name not in names:
                 names.append(name)
+            contour_idx += 1
         if getattr(self, "contour_name", None):
             live_name = self.contour_name.text().strip()
             if live_name and live_name not in names:
@@ -1544,11 +1546,13 @@ class HandlerClass:
     def _resolve_contour_path(self, contour_name: str) -> List[Tuple[float, float]]:
         if not contour_name:
             return []
+        contour_idx = 0
         for op in self.model.operations:
             if op.op_type != OpType.CONTOUR:
                 continue
-            name = str(op.params.get("name") or "").strip()
+            name = self._contour_name_or_fallback(op, contour_idx)
             if name != contour_name:
+                contour_idx += 1
                 continue
             if not op.path:
                 self.model.update_geometry(op)
@@ -1556,6 +1560,8 @@ class HandlerClass:
                 return list(op.path or [])
             except Exception:
                 return []
+            finally:
+                contour_idx += 1
         # Fallback: aktuelle Kontur-Eingabe verwenden, auch wenn noch keine Operation
         if (
             getattr(self, "contour_name", None)
@@ -1617,6 +1623,33 @@ class HandlerClass:
         ready = bool(name) and (not available or name in available)
         self.btn_add.setEnabled(ready)
 
+    def _fallback_contour_name(self, idx: int) -> str:
+        return f"Kontur {idx + 1}"
+
+    def _contour_count(self) -> int:
+        return sum(1 for op in self.model.operations if op.op_type == OpType.CONTOUR)
+
+    def _contour_name_or_fallback(self, op: Operation, idx: int) -> str:
+        name = str(op.params.get("name") or "").strip()
+        if not name:
+            name = self._fallback_contour_name(idx)
+            try:
+                op.params["name"] = name
+            except Exception:
+                pass
+        return name
+
+    def _contour_sequence_index(self, target: Operation) -> int | None:
+        """Zählt nur Kontur-Operationen und gibt deren Reihenindex zurück."""
+        idx = 0
+        for op in self.model.operations:
+            if op.op_type != OpType.CONTOUR:
+                continue
+            if op is target:
+                return idx
+            idx += 1
+        return None
+
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
         idx = self.tab_params.currentIndex() if self.tab_params else 0
@@ -1651,7 +1684,15 @@ class HandlerClass:
         if op_type == OpType.CONTOUR:
             params["segments"] = self._collect_contour_segments()
             if getattr(self, "contour_name", None):
-                params["name"] = self.contour_name.text().strip()
+                name = self.contour_name.text().strip()
+                if not name:
+                    name = self._fallback_contour_name(self._contour_count())
+                    # UI optional anreichern, damit Nutzer den vergebenen Namen sieht
+                    try:
+                        self.contour_name.setText(name)
+                    except Exception:
+                        pass
+                params["name"] = name
         elif op_type == OpType.ABSPANEN:
             contour_name = self._current_parting_contour_name()
             params["contour_name"] = contour_name
@@ -2554,6 +2595,10 @@ class HandlerClass:
             return f"{number}: Programmkopf ({npv})"
         if op.op_type == OpType.CONTOUR:
             name = op.params.get("name", "") if isinstance(op.params, dict) else ""
+            if not name:
+                seq_idx = self._contour_sequence_index(op)
+                if seq_idx is not None:
+                    name = self._fallback_contour_name(seq_idx)
             name_suffix = f" [{name}]" if name else ""
             return f"{number}: Kontur{name_suffix}{suffix}"
         if op.op_type == OpType.FACE:
@@ -2569,6 +2614,11 @@ class HandlerClass:
             return f"{number}: Planen {mode_label} (Z {start_z}→{end_z}){coolant_hint}{suffix}"
         if op.op_type == OpType.ABSPANEN:
             name = op.params.get("contour_name", "") if isinstance(op.params, dict) else ""
+            if not name:
+                # Falls die Referenz ohne Namen angelegt wurde, bestmöglichen Fallback anzeigen
+                seq_idx = self._contour_sequence_index(op)
+                if seq_idx is not None:
+                    name = self._fallback_contour_name(seq_idx)
             side_idx = int(op.params.get("side", 0)) if isinstance(op.params, dict) else 0
             side_label = "außen" if side_idx == 0 else "innen"
             name_suffix = f" [{name}]" if name else ""
