@@ -139,7 +139,19 @@ class ProgramModel:
             lines.append(f"( {op.op_type.upper()} )")
             lines.extend(gcode_for_operation(op))
         lines.extend(["M9", "M30", "%"])
-        return lines
+
+        # Zeilennummerierung wie im LinuxCNC-Postprozessor: alle Zeilen außer
+        # den Prozent-Klammern erhalten ein N-Präfix mit einer Schrittweite von 10.
+        numbered: List[str] = []
+        n = 10
+        for line in lines:
+            if line.strip() == "%":
+                numbered.append(line)
+                continue
+            numbered.append(f"N{n} {line}")
+            n += 10
+
+        return numbered
 
 
 # ----------------------------------------------------------------------
