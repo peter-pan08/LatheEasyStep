@@ -910,7 +910,6 @@ class HandlerClass:
         self.face_depth_max = getattr(self.w, "face_depth_max", None)
 
         # Kontur-Widgets
-        self.contour_side = getattr(self.w, "contour_side", None)
         self.contour_start_x = getattr(self.w, "contour_start_x", None)
         self.contour_start_z = getattr(self.w, "contour_start_z", None)
         self.contour_name = getattr(self.w, "contour_name", None)
@@ -1083,8 +1082,6 @@ class HandlerClass:
             self.face_edge_type.currentIndexChanged.connect(self._update_face_visibility)
 
         # Kontur-Widgets sicherstellen
-        if self.contour_side is None and root:
-            self.contour_side = root.findChild(QtWidgets.QComboBox, "contour_side")
         if self.contour_start_x is None and root:
             self.contour_start_x = root.findChild(QtWidgets.QDoubleSpinBox, "contour_start_x")
         if self.contour_start_z is None and root:
@@ -1297,7 +1294,6 @@ class HandlerClass:
                 "coolant": self._get_widget_by_name("face_coolant"),
             },
             OpType.CONTOUR: {
-                "side": self._get_widget_by_name("contour_side"),
                 "start_x": self._get_widget_by_name("contour_start_x"),
                 "start_z": self._get_widget_by_name("contour_start_z"),
                 "coord_mode": self._get_widget_by_name("contour_coord_mode"),
@@ -1433,9 +1429,6 @@ class HandlerClass:
         if getattr(self, "contour_start_z", None) and not getattr(self, "_contour_start_z_connected", False):
             self.contour_start_z.valueChanged.connect(self._update_contour_preview_temp)
             self._contour_start_z_connected = True
-        if getattr(self, "contour_side", None) and not getattr(self, "_contour_side_connected", False):
-            self.contour_side.currentIndexChanged.connect(self._update_contour_preview_temp)
-            self._contour_side_connected = True
         if getattr(self, "contour_name", None) and not getattr(self, "_contour_name_connected", False):
             self.contour_name.textChanged.connect(self._update_contour_preview_temp)
             self._contour_name_connected = True
@@ -1507,6 +1500,8 @@ class HandlerClass:
             self.program_zt = self._get_widget_by_name("program_zt")
         if self.program_sc is None:
             self.program_sc = self._get_widget_by_name("program_sc")
+        if self.program_name is None:
+            self.program_name = self._get_widget_by_name("program_name")
 
         header: Dict[str, object] = {}
         if self.program_npv:
