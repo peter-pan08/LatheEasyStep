@@ -676,6 +676,9 @@ def gcode_for_face(op: Operation) -> List[str]:
     edge_size = max(p.get("edge_size", 0.0), 0.0)
     spindle = p.get("spindle", 0.0)
     coolant_enabled = bool(p.get("coolant", False))
+    pause_enabled = bool(p.get("pause_enabled", False))
+    pause_distance = max(p.get("pause_distance", 0.0), 0.0)
+    pause_duration = 0.5
 
     tool_num = int(p.get("tool", 0))
 
@@ -723,7 +726,21 @@ def gcode_for_face(op: Operation) -> List[str]:
 
             lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
             lines.append(f"G0 Z{z_next:.3f}")
-            lines.append(f"G1 X{x_limit_rough:.3f} F{feed:.3f}")
+
+            if pause_enabled and pause_distance > 0.0:
+                x_curr = x0
+                direction = 1 if x_limit_rough >= x0 else -1
+                while True:
+                    next_x = x_curr + direction * pause_distance
+                    if (direction > 0 and next_x >= x_limit_rough) or (direction < 0 and next_x <= x_limit_rough):
+                        next_x = x_limit_rough
+                        lines.append(f"G1 X{next_x:.3f} F{feed:.3f}")
+                        break
+                    lines.append(f"G1 X{next_x:.3f} F{feed:.3f}")
+                    lines.append(f"G4 P{pause_duration:.1f}")
+                    x_curr = next_x
+            else:
+                lines.append(f"G1 X{x_limit_rough:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
 
             z_curr = z_next
@@ -908,6 +925,10 @@ class HandlerClass:
         self.face_finish_allow_z = getattr(self.w, "face_finish_allow_z", None)
         self.label_face_depth_max = getattr(self.w, "label_face_depth_max", None)
         self.face_depth_max = getattr(self.w, "face_depth_max", None)
+        self.label_face_pause = getattr(self.w, "label_face_pause", None)
+        self.face_pause_enabled = getattr(self.w, "face_pause_enabled", None)
+        self.label_face_pause_distance = getattr(self.w, "label_face_pause_distance", None)
+        self.face_pause_distance = getattr(self.w, "face_pause_distance", None)
 
         # Kontur-Widgets
         self.contour_start_x = getattr(self.w, "contour_start_x", None)
@@ -1287,6 +1308,8 @@ class HandlerClass:
                 "finish_allow_z": self._get_widget_by_name("face_finish_allow_z"),
                 "finish_direction": self._get_widget_by_name("face_finish_direction"),
                 "depth_max": self._get_widget_by_name("face_depth_max"),
+                "pause_enabled": self._get_widget_by_name("face_pause_enabled"),
+                "pause_distance": self._get_widget_by_name("face_pause_distance"),
                 "mode": self._get_widget_by_name("face_mode"),
                 "edge_type": self._get_widget_by_name("face_edge_type"),
                 "edge_size": self._get_widget_by_name("face_edge_size"),
@@ -2286,6 +2309,14 @@ class HandlerClass:
                 self.label_face_depth_max = root.findChild(QtWidgets.QLabel, "label_face_depth_max")
             if self.face_depth_max is None:
                 self.face_depth_max = root.findChild(QtWidgets.QDoubleSpinBox, "face_depth_max")
+            if self.label_face_pause is None:
+                self.label_face_pause = root.findChild(QtWidgets.QLabel, "label_face_pause")
+            if self.face_pause_enabled is None:
+                self.face_pause_enabled = root.findChild(QtWidgets.QCheckBox, "face_pause_enabled")
+            if self.label_face_pause_distance is None:
+                self.label_face_pause_distance = root.findChild(QtWidgets.QLabel, "label_face_pause_distance")
+            if self.face_pause_distance is None:
+                self.face_pause_distance = root.findChild(QtWidgets.QDoubleSpinBox, "face_pause_distance")
             if self.label_face_edge_size is None:
                 self.label_face_edge_size = root.findChild(QtWidgets.QLabel, "label_face_edge_size")
             if self.face_edge_size is None:
@@ -2312,6 +2343,15 @@ class HandlerClass:
             self.label_face_depth_max.setVisible(is_rough)
         if self.face_depth_max:
             self.face_depth_max.setVisible(is_rough)
+
+        if self.label_face_pause:
+            self.label_face_pause.setVisible(is_rough)
+        if self.face_pause_enabled:
+            self.face_pause_enabled.setVisible(is_rough)
+        if self.label_face_pause_distance:
+            self.label_face_pause_distance.setVisible(is_rough)
+        if self.face_pause_distance:
+            self.face_pause_distance.setVisible(is_rough)
 
         # Kantenform
         if self.label_face_edge_size:
