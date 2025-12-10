@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 from weakref import WeakSet
@@ -156,7 +157,11 @@ class ProgramModel:
             numbered.append(f"N{n} {line}")
             n += 1
 
-        return numbered
+        # Zeichensatz vereinheitlichen: LinuxCNC erwartet ASCII, daher alle
+        # Zeilen transliterieren und unzulässige Zeichen ersetzen.
+        sanitized = [_sanitize_gcode_text(line) for line in numbered]
+
+        return sanitized
 
 
 # ----------------------------------------------------------------------
@@ -577,16 +582,43 @@ def gcode_for_keyway(op: Operation) -> List[str]:
     return lines
 
 
-def gcode_for_contour(op: Operation) -> List[str]:
-    """Einfacher Kontur-G-Code: Pfad linear abfahren, Fasen/Radius nur kommentieren."""
-    p = op.params
-    safe_z = float(p.get("safe_z", 2.0))
-    feed = float(p.get("feed", 0.2))
+def _sanitize_gcode_text(text: str) -> str:
+    """Ersetzt Umlaute/Akzente durch ASCII, um falsche Zeichensätze zu vermeiden."""
+    translit = {
+        "ä": "ae",
+        "Ä": "Ae",
+        "ö": "oe",
+        "Ö": "Oe",
+        "ü": "ue",
+        "Ü": "Ue",
+        "ß": "ss",
+    }
 
+    for src, repl in translit.items():
+        text = text.replace(src, repl)
+
+    try:
+        text.encode("ascii")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("ascii", "replace").decode("ascii")
+
+
+def gcode_for_contour(op: Operation) -> List[str]:
+    """Kontur nur als Kommentar anhängen, damit kein Fahrbefehl entsteht."""
+    p = op.params
     lines: List[str] = ["(KONTUR)"]
+
+    name = str(p.get("name") or "").strip()
+    if name:
+        lines.append(f"(Name: {name})")
 
     side_idx = int(p.get("side", 0))
     lines.append("(Seite: Außen)" if side_idx == 0 else "(Seite: Innen)")
+
+    # Punkte als reine Information (keine G0/G1-Befehle)
+    for idx, (x, z) in enumerate(op.path, start=1):
+        lines.append(f"(P{idx}: X={x:.3f} Z={z:.3f})")
 
     segments = p.get("segments") or []
     for i, seg in enumerate(segments, start=1):
@@ -595,7 +627,6 @@ def gcode_for_contour(op: Operation) -> List[str]:
         if edge != "none" and edge_size > 0.0:
             lines.append(f"(Segment {i}: Kante={edge}, Maß={edge_size:.3f})")
 
-    lines.extend(gcode_from_path(op.path, feed, safe_z))
     return lines
 
 
@@ -649,6 +680,7 @@ def gcode_for_face(op: Operation) -> List[str]:
 
     if tool_num > 0:
         lines.append(f"(Werkzeug T{tool_num:02d})")
+        lines.append(f"T{tool_num:02d} M6")
 
     # lokale Drehzahl, falls gesetzt
     if spindle and spindle > 0:
@@ -840,6 +872,8 @@ class HandlerClass:
         self.program_xt = getattr(self.w, "program_xt", None)
         self.program_zt = getattr(self.w, "program_zt", None)
         self.program_sc = getattr(self.w, "program_sc", None)
+
+        self.program_name = getattr(self.w, "program_name", None)
 
         self.program_xra = getattr(self.w, "program_xra", None)
         self.label_prog_xra = getattr(self.w, "label_prog_xra", None)
@@ -1486,6 +1520,9 @@ class HandlerClass:
         header["zt"] = _val(self.program_zt)
         header["sc"] = _val(self.program_sc)
 
+        if self.program_name:
+            header["program_name"] = self.program_name.text().strip()
+
         # Drehzahlbegrenzung (S3 nur, wenn Gegenspindel aktiv)
         header["has_subspindle"] = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
         header["s1_max"] = float(self.program_s1.value()) if self.program_s1 else 0.0
@@ -1931,11 +1968,10 @@ class HandlerClass:
         self._refresh_preview()
 
     def _handle_generate_gcode(self):
-        filepath = os.path.expanduser("~/linuxcnc/nc_files/conv_lathe.ngc")
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-        # Programmkopf holen, inkl. Drehzahlbegrenzungen
         header = self._collect_program_header()
+
+        filepath = self._build_program_filepath(header.get("program_name", ""))
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         self.model.program_settings = header
         self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
 
@@ -1947,6 +1983,20 @@ class HandlerClass:
             open_fn(filepath)
         else:
             print(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar")
+
+    def _build_program_filepath(self, name_raw: str | None) -> str:
+        base = (name_raw or "").strip()
+        if not base:
+            base = "conv_lathe"
+
+        # Dateinamen säubern: Nur Buchstaben/Ziffern/_/- behalten, Leerzeichen -> _
+        base = base.replace(" ", "_")
+        base = re.sub(r"[^A-Za-z0-9_\-]", "", base)
+        if not base:
+            base = "conv_lathe"
+
+        filename = base if base.lower().endswith(".ngc") else f"{base}.ngc"
+        return os.path.expanduser(os.path.join("~/linuxcnc/nc_files", filename))
 
     def _handle_param_change(self):
         self._update_selected_operation()
