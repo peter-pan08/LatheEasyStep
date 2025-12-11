@@ -1329,7 +1329,9 @@ class HandlerClass:
 
         root = self.root_widget or self._find_root_widget()
         if root:
-            widget = root.findChild(QtWidgets.QWidget, name)
+            widget = root.findChild(
+                QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively
+            )
         return widget
 
     # ---- QtVCP lifecycle ---------------------------------------------
@@ -1547,11 +1549,15 @@ class HandlerClass:
                 "btnNewProgram" if name == "btn_new_program" else
                 "btnGenerate" if name == "btn_generate" else name
             )
-            obj = root.findChild(cls, obj_name)
+            obj = root.findChild(cls, obj_name, QtCore.Qt.FindChildrenRecursively)
             if obj is None:
-                obj = root.findChild(QtCore.QObject, obj_name)
+                obj = root.findChild(
+                    QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively
+                )
             if obj is None:
-                obj = root.findChild(QtWidgets.QWidget, obj_name)
+                obj = root.findChild(
+                    QtWidgets.QWidget, obj_name, QtCore.Qt.FindChildrenRecursively
+                )
             if obj:
                 setattr(self, name, obj)
             return getattr(self, name, None)
