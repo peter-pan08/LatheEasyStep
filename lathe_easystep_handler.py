@@ -813,7 +813,31 @@ def _sanitize_gcode_text(text: str) -> str:
         return text.encode("ascii", "replace").decode("ascii")
 
 
-def gcode_for_contour(op: Operation) -> List[str]:
+def _contour_retract_positions(
+    settings: Dict[str, object],
+    side_idx: int,
+    fallback_x: float,
+    fallback_z: float,
+) -> Tuple[float, float]:
+    def _pick(candidate: object, default: float) -> float:
+        try:
+            if candidate is not None and float(candidate) != 0.0:
+                return float(candidate)
+        except Exception:
+            pass
+        return default
+
+    if side_idx == 0:
+        retract_x = _pick(settings.get("xra"), fallback_x)
+        retract_z = _pick(settings.get("zra"), fallback_z)
+    else:
+        retract_x = _pick(settings.get("xri"), fallback_x)
+        retract_z = _pick(settings.get("zri"), fallback_z)
+
+    return retract_x, retract_z
+
+
+def gcode_for_contour(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
     """Erzeugt einen G71/G70-Workflow für LinuxCNC 2.10 (Fanuc-Style)."""
 
     p = op.params
@@ -837,6 +861,7 @@ def gcode_for_contour(op: Operation) -> List[str]:
     rough_feed = max(float(p.get("rough_feed", 0.25)), 0.01)
     finish_feed = max(float(p.get("finish_feed", rough_feed)), 0.01)
     safe_z = float(p.get("safe_z", 2.0))
+    settings = settings or {}
 
     lines: List[str] = ["(KONTUR)"]
     if name:
@@ -856,8 +881,18 @@ def gcode_for_contour(op: Operation) -> List[str]:
     block_end = block_numbers[-1]
 
     # Anfahrbewegung und Zyklen
+    xs = [p[0] for p in path]
     start_x, start_z = path[0]
-    lines.append(f"G0 X{start_x:.3f} Z{safe_z:.3f}")
+    entry_x = max(xs) if side_idx == 0 else min(xs)
+    retract_x, retract_z = _contour_retract_positions(
+        settings, side_idx, entry_x, safe_z
+    )
+    safe_z = retract_z
+    lines.append(
+        f"(Sicherheitsposition aus Programm: X{retract_x:.3f} Z{retract_z:.3f})"
+    )
+    lines.append(f"G0 X{retract_x:.3f} Z{retract_z:.3f}")
+    lines.append(f"G0 X{entry_x:.3f}")
     lines.append(f"G71 U{rough_depth:.3f} W{retract:.3f}")
     lines.append(
         f"G71 P{block_start} Q{block_end} U{finish_allow_x:.3f} "
@@ -1033,7 +1068,7 @@ def gcode_for_operation(
     if op.op_type == OpType.FACE:
         return gcode_for_face(op)
     if op.op_type == OpType.CONTOUR:
-        return gcode_for_contour(op)
+        return gcode_for_contour(op, settings or {})
     if op.op_type == OpType.TURN:
         return gcode_from_path(op.path,
                                op.params.get("feed", 0.2),
