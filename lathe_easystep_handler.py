@@ -159,6 +159,10 @@ class ProgramModel:
             if stripped.startswith("("):
                 numbered.append(line)
                 continue
+            if re.match(r"^N\d+\s", stripped, flags=re.IGNORECASE):
+                # Nutzerdefinierte Blocknummer beibehalten (z. B. für G71 P/Q)
+                numbered.append(line)
+                continue
             numbered.append(f"N{n} {line}")
             n += 1
 
@@ -810,27 +814,64 @@ def _sanitize_gcode_text(text: str) -> str:
 
 
 def gcode_for_contour(op: Operation) -> List[str]:
-    """Kontur nur als Kommentar anhängen, damit kein Fahrbefehl entsteht."""
-    p = op.params
-    lines: List[str] = ["(KONTUR)"]
+    """Erzeugt einen G71/G70-Workflow für LinuxCNC 2.10 (Fanuc-Style)."""
 
+    p = op.params
     name = str(p.get("name") or "").strip()
+    side_idx = int(p.get("side", 0))
+
+    path = op.path or []
+    if len(path) < 2:
+        # Fallback: nur Kommentare ausgeben, wenn keine Kontur vorhanden ist
+        lines: List[str] = ["(KONTUR)"]
+        if name:
+            lines.append(f"(Name: {name})")
+        lines.append("(Keine Konturpunkte definiert)")
+        return lines
+
+    # Standardwerte gemäß LinuxCNC-Handbuch (G71/G70), solange kein eigenes UI-Feld existiert
+    rough_depth = max(float(p.get("rough_depth", 0.5)), 0.05)
+    retract = max(float(p.get("retract", 1.0)), 0.1)
+    finish_allow_x = max(float(p.get("finish_allow_x", 0.2)), 0.0)
+    finish_allow_z = max(float(p.get("finish_allow_z", 0.1)), 0.0)
+    rough_feed = max(float(p.get("rough_feed", 0.25)), 0.01)
+    finish_feed = max(float(p.get("finish_feed", rough_feed)), 0.01)
+    safe_z = float(p.get("safe_z", 2.0))
+
+    lines: List[str] = ["(KONTUR)"]
     if name:
         lines.append(f"(Name: {name})")
-
-    side_idx = int(p.get("side", 0))
     lines.append("(Seite: Außen)" if side_idx == 0 else "(Seite: Innen)")
+    lines.append("(Rauhen: G71, Schlichten: G70)")
+    lines.append(f"(Zustellung: {rough_depth:.3f} mm, Rückzug: {retract:.3f} mm)")
+    lines.append(
+        f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm,"
+        f" Vorschub Schruppen/Schlichten: {rough_feed:.3f}/{finish_feed:.3f})"
+    )
 
-    # Punkte als reine Information (keine G0/G1-Befehle)
-    for idx, (x, z) in enumerate(op.path, start=1):
-        lines.append(f"(P{idx}: X={x:.3f} Z={z:.3f})")
+    # Konturblöcke nummerieren, damit P/Q klar referenzierbar sind
+    block_start = 500
+    block_step = 10
+    block_numbers = [block_start + i * block_step for i in range(len(path))]
+    block_end = block_numbers[-1]
 
-    segments = p.get("segments") or []
-    for i, seg in enumerate(segments, start=1):
-        edge = seg.get("edge", "none")
-        edge_size = float(seg.get("edge_size", 0.0))
-        if edge != "none" and edge_size > 0.0:
-            lines.append(f"(Segment {i}: Kante={edge}, Maß={edge_size:.3f})")
+    # Anfahrbewegung und Zyklen
+    start_x, start_z = path[0]
+    lines.append(f"G0 X{start_x:.3f} Z{safe_z:.3f}")
+    lines.append(f"G71 U{rough_depth:.3f} W{retract:.3f}")
+    lines.append(
+        f"G71 P{block_start} Q{block_end} U{finish_allow_x:.3f} "
+        f"W{finish_allow_z:.3f} F{rough_feed:.3f}"
+    )
+
+    # Kontur als Fanuc-kompatible Blöcke (G18 Drehmaschine, X Durchmesser)
+    lines.append(f"N{block_numbers[0]} G0 Z{start_z:.3f}")
+    for bn, (x, z) in zip(block_numbers[1:], path[1:]):
+        lines.append(f"N{bn} G1 X{x:.3f} Z{z:.3f}")
+
+    # Schlichtzyklus
+    lines.append(f"G70 P{block_start} Q{block_end} F{finish_feed:.3f}")
+    lines.append(f"G0 Z{safe_z:.3f}")
 
     return lines
 
