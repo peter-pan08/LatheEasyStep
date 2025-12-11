@@ -856,8 +856,10 @@ def gcode_for_contour(op: Operation) -> List[str]:
     block_end = block_numbers[-1]
 
     # Anfahrbewegung und Zyklen
+    xs = [p[0] for p in path]
     start_x, start_z = path[0]
-    lines.append(f"G0 X{start_x:.3f} Z{safe_z:.3f}")
+    entry_x = max(xs) if side_idx == 0 else min(xs)
+    lines.append(f"G0 X{entry_x:.3f} Z{safe_z:.3f}")
     lines.append(f"G71 U{rough_depth:.3f} W{retract:.3f}")
     lines.append(
         f"G71 P{block_start} Q{block_end} U{finish_allow_x:.3f} "
