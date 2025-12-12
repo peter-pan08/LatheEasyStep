@@ -933,8 +933,8 @@ def gcode_for_face(op: Operation) -> List[str]:
     # nicht deutlich kleiner ausfällt.
     desired_depth = depth_per_pass if depth_per_pass > 0 else depth_max
     if desired_depth <= 0.0:
-        desired_depth = depth_total
-    desired_depth = max(min(desired_depth, depth_total), 0.0)
+        desired_depth = depth_total or 1.0  # nie 0, sonst Division durch 0
+    desired_depth = max(min(desired_depth, depth_total if depth_total > 0 else desired_depth), 0.0)
 
     finish_allow_x = max(p.get("finish_allow_x", 0.0), 0.0)
     finish_allow_z = max(p.get("finish_allow_z", 0.0), 0.0)
@@ -1127,6 +1127,7 @@ class HandlerClass:
         self.w = widgets
         self.paths = paths
         self.model = ProgramModel()
+        self.root_widget = None  # wird nach Panel-Suche gesetzt
         self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
 
@@ -1135,6 +1136,14 @@ class HandlerClass:
         self.contour_preview = getattr(self.w, "contourPreview", None)
         self.list_ops = getattr(self.w, "listOperations", None)
         self.tab_params = getattr(self.w, "tabParams", None)
+
+        # Standard-Tab auf „Planen“ umschalten, damit beim ersten Klick
+        # sofort ein Bearbeitungsschritt hinzugefügt wird (statt nur Programmkopf).
+        if self.tab_params is not None:
+            try:
+                self.tab_params.setCurrentIndex(1)  # 0=Programmkopf, 1=Planen
+            except Exception:
+                pass
 
         self.btn_add = getattr(self.w, "btnAdd", None)
         self.btn_delete = getattr(self.w, "btnDelete", None)
@@ -1149,9 +1158,6 @@ class HandlerClass:
         self.program_shape = getattr(self.w, "program_shape", None)
         self.program_retract_mode = getattr(self.w, "program_retract_mode", None)
         self.program_has_subspindle = getattr(self.w, "program_has_subspindle", None)
-
-        # Root-Widget des Panels (für globale Suche nach Labels/Spinboxen)
-        self.root_widget = self._find_root_widget()
 
         # falls das Objekt in der .ui anders heißt: automatisch finden
         if self.program_shape is None:
@@ -1243,6 +1249,13 @@ class HandlerClass:
         self.label_parting_pause = getattr(self.w, "label_parting_pause", None)
         self.label_parting_pause_distance = getattr(self.w, "label_parting_pause_distance", None)
 
+        # Root-Widget des Panels (für globale Suche nach Labels/Spinboxen)
+        self.root_widget = self._find_root_widget()
+
+        # Nach vollständiger Initialisierung aller Widget-Attribute
+        # sicherstellen, dass Kern-Widgets gefunden und Signale verbunden werden.
+        self._force_attach_core_widgets()
+
         # Parameter-Widgets für jede Operation
         self._setup_param_maps()
         self._connect_signals()
@@ -1259,8 +1272,73 @@ class HandlerClass:
         )
 
     # ---- interne Helfer zur Widget-Suche ------------------------------
+    def _force_attach_core_widgets(self):
+        """Robuste Suche nach Liste/Buttons direkt im Panel-Baum und erneutes Verbinden."""
+        app = QtWidgets.QApplication.instance()
+        root = self._find_root_widget()
+        # Suche primär im Panel-Baum, fallback global allWidgets (embedded-Fall)
+        search_roots = []
+        if root:
+            search_roots.append(root)
+        if app:
+            search_roots.append(app)  # signalisiert global search below
+
+        def _grab(name: str, cls):
+            # zuerst in allen bekannten Wurzel-Widgets suchen
+            for r in search_roots:
+                if isinstance(r, QtWidgets.QApplication):
+                    # global: durch allWidgets iterieren
+                    for w in r.allWidgets():
+                        try:
+                            if w.objectName() == name and isinstance(w, cls):
+                                return w
+                        except Exception:
+                            continue
+                        # Zusatz: falls Name passt, aber Typ nicht exakt, trotzdem zurückgeben
+                        if w.objectName() == name:
+                            return w
+                    continue
+                obj = r.findChild(cls, name, QtCore.Qt.FindChildrenRecursively)
+                if obj:
+                    return obj
+                obj = r.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
+                if obj:
+                    return obj
+            return None
+
+        self.list_ops = self.list_ops or _grab("listOperations", QtWidgets.QListWidget)
+        self.tab_params = self.tab_params or _grab("tabParams", QtWidgets.QTabWidget)
+        self.btn_add = self.btn_add or _grab("btnAdd", QtWidgets.QPushButton)
+        self.btn_delete = self.btn_delete or _grab("btnDelete", QtWidgets.QPushButton)
+        self.btn_move_up = self.btn_move_up or _grab("btnMoveUp", QtWidgets.QPushButton)
+        self.btn_move_down = self.btn_move_down or _grab("btnMoveDown", QtWidgets.QPushButton)
+        self.btn_new_program = self.btn_new_program or _grab("btnNewProgram", QtWidgets.QPushButton)
+        self.btn_generate = self.btn_generate or _grab("btnGenerate", QtWidgets.QPushButton)
+        # Sichtbarkeit/Größe sicherstellen, falls das Widget eingebettet "verschwunden" ist
+        if self.list_ops:
+            try:
+                self.list_ops.setMinimumWidth(220)
+                self.list_ops.show()
+                self.list_ops.raise_()
+                # Stelle sicher, dass der Text sichtbar ist (Theme-Unabhängig)
+                self.list_ops.setStyleSheet(
+                    "QListWidget { background: #e6e6e6; color: black; }"
+                    "QListWidget::item:selected { background: #4fa3f7; color: white; }"
+                )
+            except Exception:
+                pass
     def _find_root_widget(self):
-        """Beliebiges Widget aus self.w nehmen und dessen window() als Root verwenden."""
+        """Suche das Panel auch im eingebetteten Zustand."""
+        app = QtWidgets.QApplication.instance()
+        if app:
+            # eingebettete Panels sind NICHT topLevelWidgets(), daher allWidgets()
+            for widget in app.allWidgets():
+                try:
+                    if widget.objectName() == "LatheConversationalPanel":
+                        return widget
+                except Exception:
+                    continue
+        # Fallback: irgend ein QWidget aus self.w
         for name in dir(self.w):
             if name.startswith("_"):
                 continue
@@ -1269,16 +1347,25 @@ class HandlerClass:
             except AttributeError:
                 continue
             if isinstance(obj, QtWidgets.QWidget):
-                return obj.window()
-        app = QtWidgets.QApplication.instance()
+                return obj  # kein .window(), wir wollen den Embed-Baum
+        # letzter Fallback: erstes Toplevel
         if app:
-            # bevorzugt das Panel selbst, sonst erstes Toplevel
-            for widget in app.topLevelWidgets():
-                if isinstance(widget, QtWidgets.QWidget):
-                    if widget.objectName() == "LatheConversationalPanel":
-                        return widget
-                    if widget.window() == widget:
-                        return widget
+            tops = app.topLevelWidgets()
+            if tops:
+                return tops[0]
+        return None
+
+    def _find_any_widget(self, obj_name: str):
+        """Globale Suche per objectName in allen Widgets (embedded-sicher)."""
+        app = QtWidgets.QApplication.instance()
+        if not app:
+            return None
+        for w in app.allWidgets():
+            try:
+                if w.objectName() == obj_name:
+                    return w
+            except Exception:
+                continue
         return None
 
     def _find_unit_combo(self):
@@ -1491,6 +1578,34 @@ class HandlerClass:
     def _finalize_ui_ready(self):
         """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
         self._ensure_core_widgets()
+        # Nach vollständigem UI-Aufbau explizit auf „Planen“ schalten,
+        # damit der erste Klick auf „Schritt hinzufügen“ eine Bearbeitung anlegt.
+        if self.tab_params is not None and self.tab_params.currentIndex() == 0:
+            try:
+                self.tab_params.setCurrentIndex(1)
+            except Exception:
+                pass
+        self._force_attach_core_widgets()
+        # Hart nach den Kern-Widgets suchen (embedded-sicher via objectName)
+        self.list_ops = self.list_ops or self._find_any_widget("listOperations")
+        self.tab_params = self.tab_params or self._find_any_widget("tabParams")
+        self.btn_add = self.btn_add or self._find_any_widget("btnAdd")
+        self.btn_delete = self.btn_delete or self._find_any_widget("btnDelete")
+        self.btn_move_up = self.btn_move_up or self._find_any_widget("btnMoveUp")
+        self.btn_move_down = self.btn_move_down or self._find_any_widget("btnMoveDown")
+        self.btn_new_program = self.btn_new_program or self._find_any_widget("btnNewProgram")
+        self.btn_generate = self.btn_generate or self._find_any_widget("btnGenerate")
+        # auch Kontur-Buttons per objectName auflösen
+        self.contour_add_segment = self.contour_add_segment or self._find_any_widget("contour_add_segment")
+        self.contour_delete_segment = self.contour_delete_segment or self._find_any_widget("contour_delete_segment")
+        self.contour_move_up = self.contour_move_up or self._find_any_widget("contour_move_up")
+        self.contour_move_down = self.contour_move_down or self._find_any_widget("contour_move_down")
+        self._ensure_contour_widgets()
+        self._init_contour_table()
+        try:
+            print(f"[LatheEasyStep] core widgets FIX: add={self.btn_add} del={self.btn_delete} list={self.list_ops}")
+        except Exception:
+            pass
         self._setup_param_maps()
         self._connect_signals()
         self._debug_widget_names()
@@ -1501,8 +1616,32 @@ class HandlerClass:
             )
         except Exception:
             pass
+        # Nach vollständigem Aufbau sicherstellen, dass die Kern-Widgets
+        # wirklich aus dem Panel stammen (nicht aus dem Host-GUI-Baum).
+        self._ensure_core_widgets()
         self._update_parting_contour_choices()
         self._update_parting_ready_state()
+
+    def _ensure_contour_widgets(self):
+        """Sucht fehlende Kontur-Widgets (Start X/Z, Tabelle, Name) robust über objectName."""
+        root = self.root_widget or self._find_root_widget()
+        def grab(name: str):
+            return (
+                getattr(self, name, None)
+                or self._find_any_widget(name)
+                or (root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively) if root else None)
+            )
+        self.contour_start_x = grab("contour_start_x")
+        self.contour_start_z = grab("contour_start_z")
+        self.contour_name = grab("contour_name")
+        self.contour_segments = grab("contour_segments")
+        if self.contour_segments is None and root:
+            tables = root.findChildren(QtWidgets.QTableWidget)
+            if tables:
+                self.contour_segments = tables[0]
+        self.contour_edge_type = grab("contour_edge_type")
+        self.contour_edge_size = grab("contour_edge_size")
+        self.label_contour_edge_size = grab("label_contour_edge_size")
 
     def _debug_widget_names(self):
         """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
@@ -1570,6 +1709,11 @@ class HandlerClass:
         self.btn_move_down = _find("btn_move_down", QtWidgets.QPushButton)
         self.btn_new_program = _find("btn_new_program", QtWidgets.QPushButton)
         self.btn_generate = _find("btn_generate", QtWidgets.QPushButton)
+        # Falls wir die standard Liste nicht finden, versuche ersatzweise gcode_list
+        if self.list_ops is None:
+            alt = root.findChild(QtWidgets.QListWidget, "gcode_list", QtCore.Qt.FindChildrenRecursively)
+            if alt:
+                self.list_ops = alt
 
         # Fallbacks, falls die Typ-Suche scheitert
         if self.list_ops is None:
@@ -1757,30 +1901,20 @@ class HandlerClass:
 
     def _connect_contour_signals(self):
         """Verbindet alle Kontur-Widgets nur einmal."""
-        if getattr(self, "contour_add_segment", None):
-            self._connect_button_once(
-                self.contour_add_segment,
-                self._handle_contour_add_segment,
-                "_contour_add_connected",
-            )
-        if getattr(self, "contour_delete_segment", None):
-            self._connect_button_once(
-                self.contour_delete_segment,
-                self._handle_contour_delete_segment,
-                "_contour_delete_connected",
-            )
-        if getattr(self, "contour_move_up", None):
-            self._connect_button_once(
-                self.contour_move_up,
-                self._handle_contour_move_up,
-                "_contour_move_up_connected",
-            )
-        if getattr(self, "contour_move_down", None):
-            self._connect_button_once(
-                self.contour_move_down,
-                self._handle_contour_move_down,
-                "_contour_move_down_connected",
-            )
+        self._ensure_contour_widgets()
+        for btn_attr, handler, flag in (
+            ("contour_add_segment", self._handle_contour_add_segment, "_contour_add_connected"),
+            ("contour_delete_segment", self._handle_contour_delete_segment, "_contour_delete_connected"),
+            ("contour_move_up", self._handle_contour_move_up, "_contour_move_up_connected"),
+            ("contour_move_down", self._handle_contour_move_down, "_contour_move_down_connected"),
+        ):
+            btn = getattr(self, btn_attr, None)
+            if btn and not getattr(self, flag, False):
+                try:
+                    btn.clicked.connect(handler)
+                    setattr(self, flag, True)
+                except Exception:
+                    pass
 
         if getattr(self, "contour_segments", None) and not getattr(self, "_contour_table_connected", False):
             self.contour_segments.itemChanged.connect(self._handle_contour_table_change)
@@ -2015,7 +2149,7 @@ class HandlerClass:
     def _current_op_type(self) -> str:
         if self.tab_params is None:
             self.tab_params = self._get_widget_by_name("tabParams")
-        idx = self.tab_params.currentIndex() if self.tab_params else 0
+        idx = self.tab_params.currentIndex() if self.tab_params else 1  # Default=Planen
         mapping = {
             0: OpType.PROGRAM_HEADER,  # Programmkopf
             1: OpType.FACE,            # Planen
@@ -2272,27 +2406,69 @@ class HandlerClass:
 
     def _refresh_operation_list(self, select_index: int | None = None):
         """Synchronisiert die linke Operationsliste mit dem internen Modell."""
-        if self.list_ops is None:
+        root = self.root_widget or self._find_root_widget()
+
+        # Alle ListWidgets einsammeln, die potentiell die Operationsliste darstellen.
+        list_widgets: list[QtWidgets.QListWidget] = []
+        if self.list_ops:
+            list_widgets.append(self.list_ops)
+        if root:
+            for w in root.findChildren(QtWidgets.QListWidget):
+                if w not in list_widgets:
+                    list_widgets.append(w)
+
+        if not list_widgets:
             self._update_parting_contour_choices()
             return
 
-        current = self.list_ops.currentRow()
-        self.list_ops.blockSignals(True)
-        self._op_row_user_selected = False
-        self.list_ops.clear()
-        for i, op in enumerate(self.model.operations):
-            self.list_ops.addItem(self._describe_operation(op, i + 1))
+        # Für alle gefundenen Listen identisch updaten.
+        for lst in list_widgets:
+            current = lst.currentRow()
+            lst.blockSignals(True)
+            self._op_row_user_selected = False
+            lst.clear()
+            for i, op in enumerate(self.model.operations):
+                lst.addItem(self._describe_operation(op, i + 1))
 
-        if select_index is None:
-            select_index = current
-        if select_index is None:
-            select_index = -1
+            if select_index is None:
+                target_idx = current
+            else:
+                target_idx = select_index
+            if target_idx is None:
+                target_idx = -1
 
-        if 0 <= select_index < self.list_ops.count():
-            self.list_ops.setCurrentRow(select_index)
-        elif self.list_ops.count() > 0:
-            self.list_ops.setCurrentRow(self.list_ops.count() - 1)
-        self.list_ops.blockSignals(False)
+            if 0 <= target_idx < lst.count():
+                lst.setCurrentRow(target_idx)
+            elif lst.count() > 0:
+                lst.setCurrentRow(lst.count() - 1)
+            lst.blockSignals(False)
+            try:
+                items = [lst.item(i).text() for i in range(lst.count())]
+                print(
+                    f"[LatheEasyStep][debug] list '{lst.objectName()}' "
+                    f"count={lst.count()} items={items} vis={lst.isVisible()} "
+                    f"size={lst.size()}"
+                )
+                # Sichtbarkeit erzwingen – eigener Style gegen dunkle QSS
+                lst.setStyleSheet(
+                    "QListWidget { background: #f5f5f5; color: #000000; }"
+                    "QListWidget::item:selected { background: #4fa3f7; color: #ffffff; }"
+                )
+                lst.show()
+                lst.raise_()
+                lst.setMinimumWidth(220)
+            except Exception:
+                pass
+            try:
+                lst.repaint()
+                lst.update()
+                lst.scrollToBottom()
+            except Exception:
+                pass
+
+        # list_ops-Referenz auf das erste (sichtbare) ListWidget setzen, falls bisher None
+        if self.list_ops is None and list_widgets:
+            self.list_ops = list_widgets[0]
         self._update_parting_contour_choices()
 
     def _ensure_preview_widgets(self):
@@ -2330,6 +2506,7 @@ class HandlerClass:
     def _handle_add_operation(self):
         # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
         self._ensure_core_widgets()
+        self._force_attach_core_widgets()
         try:
             print("[LatheEasyStep] add operation triggered")
         except Exception:
@@ -2375,6 +2552,16 @@ class HandlerClass:
                 pass
 
             self._refresh_operation_list(select_index=len(self.model.operations) - 1)
+            # Fallback: direkt Item hinzufügen, falls _refresh_operation_list nichts tut
+            if self.list_ops:
+                try:
+                    idx = self.list_ops.count() - 1
+                    if idx < 0:
+                        idx = 0
+                    self.list_ops.addItem(self._describe_operation(op, len(self.model.operations)))
+                    self.list_ops.setCurrentRow(len(self.model.operations) - 1)
+                except Exception:
+                    pass
             self._refresh_preview()
             # Abspan-Auswahl sofort auffrischen, damit neue Konturen unmittelbar
             # auswählbar sind.
@@ -2418,12 +2605,34 @@ class HandlerClass:
         table = self.contour_segments
         if table is None:
             return
-        if table.columnCount() < 5:
-            table.setColumnCount(5)
-            table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß"])
+        # immer sicherstellen, dass 5 Spalten und Header vorhanden sind
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß"])
+        try:
+            header = table.horizontalHeader()
+            header.setStretchLastSection(True)
+        except Exception:
+            pass
+        try:
+            table.setStyleSheet(
+                "QTableWidget { background: #f5f5f5; color: #000000; gridline-color: #808080; }"
+                "QHeaderView::section { background: #d0d0d0; color: #000000; }"
+                "QTableWidget::item { color: #000000; background: #ffffff; }"
+            )
+            table.setAlternatingRowColors(True)
+            table.setShowGrid(True)
+        except Exception:
+            pass
+        try:
+            widths = [60, 80, 80, 80, 80]
+            for i, w in enumerate(widths):
+                table.setColumnWidth(i, w)
+        except Exception:
+            pass
 
     # ---- Kontur: Segment-Tabelle --------------------------------------
     def _handle_contour_add_segment(self):
+        self._ensure_contour_widgets()
         table = self.contour_segments
         if table is None:
             return
@@ -2443,10 +2652,19 @@ class HandlerClass:
         table.insertRow(row)
 
         item_cls = QtWidgets.QTableWidgetItem
-        table.setItem(row, 0, item_cls("XZ"))
-        # X/Z leer lassen, damit sie nicht automatisch auf 0 gezogen werden
-        table.setItem(row, 1, item_cls(""))
-        table.setItem(row, 2, item_cls(""))
+        def _mk_item(text: str) -> QtWidgets.QTableWidgetItem:
+            it = item_cls(text)
+            try:
+                it.setForeground(QtGui.QBrush(QtGui.QColor("#000000")))
+                it.setBackground(QtGui.QBrush(QtGui.QColor("#ffffff")))
+            except Exception:
+                pass
+            return it
+
+        table.setItem(row, 0, _mk_item("XZ"))
+        # X/Z sichtbar vorbelegen (letzter Wert oder Startwert)
+        table.setItem(row, 1, _mk_item(f"{default_x:.3f}"))
+        table.setItem(row, 2, _mk_item(f"{default_z:.3f}"))
 
         # Vorlage verwenden (Kante/Maß)
         edge_text = self._contour_edge_template_text
@@ -2455,10 +2673,29 @@ class HandlerClass:
             if edge_text.lower().startswith(("f", "r"))
             else 0.0
         )
-        table.setItem(row, 3, item_cls(edge_text))
-        table.setItem(row, 4, item_cls(f"{edge_size:.3f}"))
+        table.setItem(row, 3, _mk_item(edge_text))
+        table.setItem(row, 4, _mk_item(f"{edge_size:.3f}"))
 
         table.setCurrentCell(row, 0)
+        try:
+            table.setRowHeight(row, 22)
+        except Exception:
+            pass
+        # Sichtbarkeit sicherstellen
+        try:
+            table.show()
+            table.raise_()
+        except Exception:
+            pass
+        try:
+            cells = []
+            for r in range(table.rowCount()):
+                cells.append(
+                    [table.item(r, c).text() if table.item(r, c) else "" for c in range(table.columnCount())]
+                )
+            print(f"[LatheEasyStep][debug] contour rows={table.rowCount()} data={cells}")
+        except Exception:
+            pass
         # neuer Datensatz -> Vorlage-Modus, nicht automatisch Zeile editieren
         self._contour_row_user_selected = False
         self._update_selected_operation()
@@ -2614,21 +2851,36 @@ class HandlerClass:
         self._refresh_preview()
 
     def _handle_generate_gcode(self):
-        header = self._collect_program_header()
+        """G-Code erzeugen, Datei schreiben und Benutzer informieren."""
+        try:
+            header = self._collect_program_header()
 
-        filepath = self._build_program_filepath(header.get("program_name", ""))
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        self.model.program_settings = header
-        self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
+            filepath = self._build_program_filepath(header.get("program_name", ""))
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            self.model.program_settings = header
+            self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
 
-        lines = self.model.generate_gcode()
-        with open(filepath, "w") as f:
-            f.write("\n".join(lines))
-        open_fn = getattr(Action, "CALLBACK_OPEN_PROGRAM", None)
-        if callable(open_fn):
-            open_fn(filepath)
-        else:
-            print(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar")
+            lines = self.model.generate_gcode()
+            with open(filepath, "w") as f:
+                f.write("\n".join(lines))
+            open_fn = getattr(Action, "CALLBACK_OPEN_PROGRAM", None)
+            if callable(open_fn):
+                open_fn(filepath)
+            else:
+                QtWidgets.QMessageBox.information(
+                    self.root_widget or None,
+                    "LatheEasyStep",
+                    f"Programm gespeichert unter:\n{filepath}\n"
+                    "Automatisches Öffnen ist nicht verfügbar.",
+                )
+                print(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self.root_widget or None,
+                "LatheEasyStep",
+                f"Fehler beim Erzeugen des Programms:\n{e}",
+            )
+            raise
 
     def _build_program_filepath(self, name_raw: str | None) -> str:
         base = (name_raw or "").strip()
