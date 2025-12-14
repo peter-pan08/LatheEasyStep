@@ -1333,7 +1333,7 @@ class HandlerClass:
         def _panel_from(widget: QtWidgets.QWidget | None):
             while widget:
                 try:
-                    if widget.objectName() == "LatheConversationalPanel":
+                    if widget.objectName() in ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel"):
                         return widget
                 except Exception:
                     pass
@@ -1447,6 +1447,17 @@ class HandlerClass:
                         return w
                 except Exception:
                     continue
+        return None
+
+    def _panel_from_widget(self, widget: QtWidgets.QWidget | None):
+        """Hilfsfunktion: finde den Panel-Elternteil zu einem Widget."""
+        while widget:
+            try:
+                if widget.objectName() in ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel"):
+                    return widget
+            except Exception:
+                pass
+            widget = widget.parentWidget()
         return None
 
     def _find_unit_combo(self):
@@ -1705,7 +1716,9 @@ class HandlerClass:
 
     def _ensure_contour_widgets(self):
         """Sucht fehlende Kontur-Widgets (Start X/Z, Tabelle, Name) robust über objectName."""
-        root = self.root_widget or self._find_root_widget()
+        root = self.root_widget or self._panel_from_widget(self.list_ops) or self._find_root_widget()
+        if root and self.root_widget is None:
+            self.root_widget = root
         def grab(name: str):
             return (
                 getattr(self, name, None)
@@ -1776,6 +1789,8 @@ class HandlerClass:
         """Sucht fehlende Kern-Widgets (Liste/Buttons/Tabs) im UI-Baum nach."""
         root = (
             self.root_widget
+            or self._panel_from_widget(self.list_ops)
+            or self._panel_from_widget(self.contour_segments)
             or (self.program_unit.window() if self.program_unit else None)
             or (self.preview.window() if self.preview else None)
             or self._find_root_widget()
