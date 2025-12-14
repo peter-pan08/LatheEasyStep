@@ -1715,26 +1715,36 @@ class HandlerClass:
         self.contour_start_x = grab("contour_start_x")
         self.contour_start_z = grab("contour_start_z")
         self.contour_name = grab("contour_name")
+        # Tabelle im gleichen Fenster wie die Operationsliste suchen
+        candidates: list[QtWidgets.QTableWidget] = []
         table = getattr(self, "contour_segments", None) or grab("contour_segments")
-        if table is None and root:
-            table = root.findChild(QtWidgets.QTableWidget, "contour_segments", QtCore.Qt.FindChildrenRecursively)
-        if table is None and root:
-            tables = root.findChildren(QtWidgets.QTableWidget)
-            if tables:
-                table = tables[0]
-        if table is None and self.list_ops is not None:
+        if table:
+            candidates.append(table)
+        if root:
+            candidates.extend(root.findChildren(QtWidgets.QTableWidget, "contour_segments"))
+            candidates.extend(root.findChildren(QtWidgets.QTableWidget))
+        app = QtWidgets.QApplication.instance()
+        if app:
+            candidates.extend([w for w in app.allWidgets() if isinstance(w, QtWidgets.QTableWidget) and w.objectName() == "contour_segments"])
+        # beste Übereinstimmung: gleicher window()-Ancestor wie list_ops, sonst erster Treffer
+        def _same_window(w):
             try:
-                window = self.list_ops.window()
-                if window:
-                    table = window.findChild(QtWidgets.QTableWidget, "contour_segments", QtCore.Qt.FindChildrenRecursively)
+                return self.list_ops and w.window() == self.list_ops.window()
             except Exception:
-                pass
-        if table is None:
-            table = self._find_any_widget("contour_segments")
-        self.contour_segments = table
+                return False
+        chosen = None
+        for c in candidates:
+            if _same_window(c):
+                chosen = c
+                break
+        if chosen is None and candidates:
+            chosen = candidates[0]
+        self.contour_segments = chosen
         if self.contour_segments:
             try:
-                self.contour_segments.setMinimumHeight(140)
+                # genug Platz für ~4-5 Zeilen, darüber Scrollbalken
+                self.contour_segments.setMinimumHeight(180)
+                self.contour_segments.setMaximumHeight(240)
                 self.contour_segments.setMinimumWidth(260)
                 self.contour_segments.show()
                 self.contour_segments.raise_()
