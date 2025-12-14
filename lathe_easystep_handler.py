@@ -1345,6 +1345,16 @@ class HandlerClass:
         if isinstance(cand, QtWidgets.QWidget):
             return cand
 
+        app = QtWidgets.QApplication.instance()
+        # bekannte Panel-Namen direkt suchen
+        if app:
+            for widget in app.allWidgets():
+                try:
+                    if widget.objectName() in ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel"):
+                        return widget
+                except Exception:
+                    continue
+
         # aus bestehenden Widgets den Panel-Elternteil hochlaufen
         for w in filter(
             None,
@@ -1363,7 +1373,6 @@ class HandlerClass:
             if panel:
                 return panel
 
-        app = QtWidgets.QApplication.instance()
         if app:
             # eingebettete Panels sind NICHT topLevelWidgets(), daher allWidgets()
             for widget in app.allWidgets():
@@ -1381,6 +1390,15 @@ class HandlerClass:
                 parent_panel = _panel_from(lists[0])
                 if parent_panel:
                     return parent_panel
+            # versuche, den Kontur-Tabellen-Container als Root zu nutzen
+            try:
+                tables = [w for w in app.allWidgets() if getattr(w, "objectName", lambda: "")() == "contour_segments"]
+            except Exception:
+                tables = []
+            for t in tables:
+                panel = _panel_from(t)
+                if panel:
+                    return panel
         # Fallback: irgend ein QWidget aus self.w
         for name in dir(self.w):
             if name.startswith("_"):
@@ -1411,6 +1429,11 @@ class HandlerClass:
                 page = parent.currentWidget()
                 if page and page not in roots:
                     roots.append(page)
+        # Gemeinsame Ahnen von bekannten Kern-Widgets ergänzen
+        if not roots:
+            for w in [getattr(self, "list_ops", None), getattr(self, "contour_segments", None)]:
+                if isinstance(w, QtWidgets.QWidget):
+                    roots.append(w.window())
 
         for r in roots:
             obj = r.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
@@ -1692,11 +1715,31 @@ class HandlerClass:
         self.contour_start_x = grab("contour_start_x")
         self.contour_start_z = grab("contour_start_z")
         self.contour_name = grab("contour_name")
-        self.contour_segments = grab("contour_segments")
-        if self.contour_segments is None and root:
+        table = getattr(self, "contour_segments", None) or grab("contour_segments")
+        if table is None and root:
+            table = root.findChild(QtWidgets.QTableWidget, "contour_segments", QtCore.Qt.FindChildrenRecursively)
+        if table is None and root:
             tables = root.findChildren(QtWidgets.QTableWidget)
             if tables:
-                self.contour_segments = tables[0]
+                table = tables[0]
+        if table is None and self.list_ops is not None:
+            try:
+                window = self.list_ops.window()
+                if window:
+                    table = window.findChild(QtWidgets.QTableWidget, "contour_segments", QtCore.Qt.FindChildrenRecursively)
+            except Exception:
+                pass
+        if table is None:
+            table = self._find_any_widget("contour_segments")
+        self.contour_segments = table
+        if self.contour_segments:
+            try:
+                self.contour_segments.setMinimumHeight(140)
+                self.contour_segments.setMinimumWidth(260)
+                self.contour_segments.show()
+                self.contour_segments.raise_()
+            except Exception:
+                pass
         self.contour_edge_type = grab("contour_edge_type")
         self.contour_edge_size = grab("contour_edge_size")
         self.label_contour_edge_size = grab("label_contour_edge_size")
