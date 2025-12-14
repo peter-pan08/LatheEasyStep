@@ -2542,11 +2542,23 @@ class HandlerClass:
                     edge_txt = _edge_to_text(seg.get("edge"))
                     size_val = f"{float(seg.get('edge_size', 0.0) or 0.0):.3f}"
 
-                    table.setItem(r, 0, QtWidgets.QTableWidgetItem(mode_txt))
-                    table.setItem(r, 1, QtWidgets.QTableWidgetItem(x_val))
-                    table.setItem(r, 2, QtWidgets.QTableWidgetItem(z_val))
-                    table.setItem(r, 3, QtWidgets.QTableWidgetItem(edge_txt))
-                    table.setItem(r, 4, QtWidgets.QTableWidgetItem(size_val))
+                    def _mk(text: str) -> QtWidgets.QTableWidgetItem:
+                        it = QtWidgets.QTableWidgetItem(text)
+                        try:
+                            it.setFlags(
+                                QtCore.Qt.ItemIsSelectable
+                                | QtCore.Qt.ItemIsEnabled
+                                | QtCore.Qt.ItemIsEditable
+                            )
+                        except Exception:
+                            pass
+                        return it
+
+                    table.setItem(r, 0, _mk(mode_txt))
+                    table.setItem(r, 1, _mk(x_val))
+                    table.setItem(r, 2, _mk(z_val))
+                    table.setItem(r, 3, _mk(edge_txt))
+                    table.setItem(r, 4, _mk(size_val))
 
                 table.blockSignals(False)
                 if table.rowCount() > 0:
@@ -2813,6 +2825,11 @@ class HandlerClass:
         table.setColumnCount(5)
         table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß"])
         try:
+            table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        except Exception:
+            pass
+        try:
             header = table.horizontalHeader()
             header.setStretchLastSection(True)
         except Exception:
@@ -2858,6 +2875,14 @@ class HandlerClass:
         item_cls = QtWidgets.QTableWidgetItem
         def _mk_item(text: str) -> QtWidgets.QTableWidgetItem:
             it = item_cls(text)
+            try:
+                it.setFlags(
+                    QtCore.Qt.ItemIsSelectable
+                    | QtCore.Qt.ItemIsEnabled
+                    | QtCore.Qt.ItemIsEditable
+                )
+            except Exception:
+                pass
             try:
                 it.setForeground(QtGui.QBrush(QtGui.QColor("#000000")))
                 it.setBackground(QtGui.QBrush(QtGui.QColor("#ffffff")))
