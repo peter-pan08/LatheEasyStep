@@ -1739,19 +1739,27 @@ class HandlerClass:
         app = QtWidgets.QApplication.instance()
         if app:
             candidates.extend([w for w in app.allWidgets() if isinstance(w, QtWidgets.QTableWidget) and w.objectName() == "contour_segments"])
-        # beste Übereinstimmung: gleicher window()-Ancestor wie list_ops, sonst erster Treffer
-        def _same_window(w):
+        # beste Übereinstimmung anhand Score wählen
+        def _score_table(w: QtWidgets.QTableWidget) -> int:
+            score = 0
+            if w.objectName() == "contour_segments":
+                score += 10
+            if self._panel_from_widget(w):
+                score += 5
             try:
-                return self.list_ops and w.window() == self.list_ops.window()
+                if self.list_ops and w.window() == self.list_ops.window():
+                    score += 3
             except Exception:
-                return False
-        chosen = None
-        for c in candidates:
-            if _same_window(c):
-                chosen = c
-                break
-        if chosen is None and candidates:
-            chosen = candidates[0]
+                pass
+            try:
+                if w.isVisible():
+                    score += 1
+            except Exception:
+                pass
+            return score
+
+        chosen = max(candidates, key=_score_table) if candidates else None
+
         self.contour_segments = chosen
         if self.contour_segments:
             try:
@@ -1763,6 +1771,16 @@ class HandlerClass:
                 self.contour_segments.raise_()
             except Exception:
                 pass
+        try:
+            names = []
+            for c in candidates:
+                parent = c.parentWidget()
+                names.append(
+                    f"{c.objectName()} vis={c.isVisible()} score={_score_table(c)} parent={parent.objectName() if parent else None}"
+                )
+            print(f"[LatheEasyStep][debug] contour table candidates: {names}, chosen={getattr(self.contour_segments, 'objectName', lambda: None)() if self.contour_segments else None}")
+        except Exception:
+            pass
         self.contour_edge_type = grab("contour_edge_type")
         self.contour_edge_size = grab("contour_edge_size")
         self.label_contour_edge_size = grab("label_contour_edge_size")
@@ -2480,6 +2498,66 @@ class HandlerClass:
             else:
                 widget.setValue(val)
             widget.blockSignals(False)
+
+        if op.op_type == OpType.CONTOUR:
+            self._ensure_contour_widgets()
+            self._init_contour_table()
+
+            if getattr(self, "contour_name", None):
+                try:
+                    self.contour_name.blockSignals(True)
+                    self.contour_name.setText(str(op.params.get("name") or "").strip())
+                finally:
+                    self.contour_name.blockSignals(False)
+
+            table = getattr(self, "contour_segments", None)
+            if table is not None:
+                segs = op.params.get("segments") or []
+                table.blockSignals(True)
+                table.setRowCount(0)
+
+                def _mode_to_text(m: str) -> str:
+                    m = (m or "xz").lower()
+                    if m == "x":
+                        return "X"
+                    if m == "z":
+                        return "Z"
+                    return "XZ"
+
+                def _edge_to_text(e: str) -> str:
+                    e = (e or "none").lower()
+                    if e in ("chamfer", "fase"):
+                        return "Fase"
+                    if e == "radius":
+                        return "Radius"
+                    return "Keine"
+
+                for r, seg in enumerate(segs):
+                    table.insertRow(r)
+                    mode_txt = _mode_to_text(seg.get("mode"))
+                    x_empty = bool(seg.get("x_empty", False))
+                    z_empty = bool(seg.get("z_empty", False))
+                    x_val = "" if x_empty else f"{float(seg.get('x', 0.0)):.3f}"
+                    z_val = "" if z_empty else f"{float(seg.get('z', 0.0)):.3f}"
+                    edge_txt = _edge_to_text(seg.get("edge"))
+                    size_val = f"{float(seg.get('edge_size', 0.0) or 0.0):.3f}"
+
+                    table.setItem(r, 0, QtWidgets.QTableWidgetItem(mode_txt))
+                    table.setItem(r, 1, QtWidgets.QTableWidgetItem(x_val))
+                    table.setItem(r, 2, QtWidgets.QTableWidgetItem(z_val))
+                    table.setItem(r, 3, QtWidgets.QTableWidgetItem(edge_txt))
+                    table.setItem(r, 4, QtWidgets.QTableWidgetItem(size_val))
+
+                table.blockSignals(False)
+                if table.rowCount() > 0:
+                    table.setCurrentCell(0, 0)
+
+            self._contour_row_user_selected = False
+            self._sync_contour_edge_controls()
+            self._update_contour_preview_temp()
+            self._update_parting_contour_choices()
+            self._update_parting_ready_state()
+            return
 
         if op.op_type == OpType.ABSPANEN and getattr(self, "parting_contour", None):
             name = str(op.params.get("contour_name") or "")
