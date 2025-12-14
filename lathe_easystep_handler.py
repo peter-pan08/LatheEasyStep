@@ -1327,8 +1327,42 @@ class HandlerClass:
                 )
             except Exception:
                 pass
+
     def _find_root_widget(self):
         """Suche das Panel auch im eingebetteten Zustand."""
+        def _panel_from(widget: QtWidgets.QWidget | None):
+            while widget:
+                try:
+                    if widget.objectName() == "LatheConversationalPanel":
+                        return widget
+                except Exception:
+                    pass
+                widget = widget.parentWidget()
+            return None
+
+        # direkter Zugriff über widgets-Container
+        cand = getattr(self.w, "LatheConversationalPanel", None)
+        if isinstance(cand, QtWidgets.QWidget):
+            return cand
+
+        # aus bestehenden Widgets den Panel-Elternteil hochlaufen
+        for w in filter(
+            None,
+            [
+                getattr(self, "root_widget", None),
+                getattr(self, "preview", None),
+                getattr(self, "contour_preview", None),
+                getattr(self, "list_ops", None),
+                getattr(self, "tab_params", None),
+                getattr(self, "tab_program", None),
+                getattr(self, "program_unit", None),
+                self.w if isinstance(self.w, QtWidgets.QWidget) else None,
+            ],
+        ):
+            panel = _panel_from(w)
+            if panel:
+                return panel
+
         app = QtWidgets.QApplication.instance()
         if app:
             # eingebettete Panels sind NICHT topLevelWidgets(), daher allWidgets()
@@ -1357,15 +1391,19 @@ class HandlerClass:
 
     def _find_any_widget(self, obj_name: str):
         """Globale Suche per objectName in allen Widgets (embedded-sicher)."""
+        root = self.root_widget or self._find_root_widget()
+        if root:
+            obj = root.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
+            if obj:
+                return obj
         app = QtWidgets.QApplication.instance()
-        if not app:
-            return None
-        for w in app.allWidgets():
-            try:
-                if w.objectName() == obj_name:
-                    return w
-            except Exception:
-                continue
+        if app:
+            for w in app.allWidgets():
+                try:
+                    if w.objectName() == obj_name:
+                        return w
+                except Exception:
+                    continue
         return None
 
     def _find_unit_combo(self):
