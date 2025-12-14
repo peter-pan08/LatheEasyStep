@@ -1370,19 +1370,17 @@ class HandlerClass:
                 try:
                     if widget.objectName() == "LatheConversationalPanel":
                         return widget
-                    # Fallback: Tab-Seiten durchsuchen, falls Panel darin eingebettet ist
-                    if isinstance(widget, QtWidgets.QTabWidget):
-                        for i in range(widget.count()):
-                            page = widget.widget(i)
-                            if page and page.findChild(QtCore.QObject, "LatheConversationalPanel", QtCore.Qt.FindChildrenRecursively):
-                                return page.findChild(QtCore.QObject, "LatheConversationalPanel", QtCore.Qt.FindChildrenRecursively)
-                            if page and page.findChild(QtCore.QObject, "listOperations", QtCore.Qt.FindChildrenRecursively):
-                                return page
-                    # allgemeiner Fallback: Widget, das die Kern-Widgets enthält
-                    if widget.findChild(QtCore.QObject, "listOperations", QtCore.Qt.FindChildrenRecursively):
-                        return widget
                 except Exception:
                     continue
+            # Panel nicht direkt gefunden: Liste suchen und zu Eltern hochlaufen
+            try:
+                lists = [w for w in app.allWidgets() if getattr(w, "objectName", lambda: "")() == "listOperations"]
+            except Exception:
+                lists = []
+            if lists:
+                parent_panel = _panel_from(lists[0])
+                if parent_panel:
+                    return parent_panel
         # Fallback: irgend ein QWidget aus self.w
         for name in dir(self.w):
             if name.startswith("_"):
