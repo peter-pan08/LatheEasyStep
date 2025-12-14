@@ -1370,6 +1370,17 @@ class HandlerClass:
                 try:
                     if widget.objectName() == "LatheConversationalPanel":
                         return widget
+                    # Fallback: Tab-Seiten durchsuchen, falls Panel darin eingebettet ist
+                    if isinstance(widget, QtWidgets.QTabWidget):
+                        for i in range(widget.count()):
+                            page = widget.widget(i)
+                            if page and page.findChild(QtCore.QObject, "LatheConversationalPanel", QtCore.Qt.FindChildrenRecursively):
+                                return page.findChild(QtCore.QObject, "LatheConversationalPanel", QtCore.Qt.FindChildrenRecursively)
+                            if page and page.findChild(QtCore.QObject, "listOperations", QtCore.Qt.FindChildrenRecursively):
+                                return page
+                    # allgemeiner Fallback: Widget, das die Kern-Widgets enthält
+                    if widget.findChild(QtCore.QObject, "listOperations", QtCore.Qt.FindChildrenRecursively):
+                        return widget
                 except Exception:
                     continue
         # Fallback: irgend ein QWidget aus self.w
@@ -1391,9 +1402,20 @@ class HandlerClass:
 
     def _find_any_widget(self, obj_name: str):
         """Globale Suche per objectName in allen Widgets (embedded-sicher)."""
+        roots: list[QtWidgets.QWidget] = []
         root = self.root_widget or self._find_root_widget()
         if root:
-            obj = root.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
+            roots.append(root)
+        # Tab-Seiten als zusätzliche Roots berücksichtigen, falls eingebettet
+        if root and root.parent():
+            parent = root.parent()
+            if isinstance(parent, QtWidgets.QTabWidget):
+                page = parent.currentWidget()
+                if page and page not in roots:
+                    roots.append(page)
+
+        for r in roots:
+            obj = r.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
             if obj:
                 return obj
         app = QtWidgets.QApplication.instance()
