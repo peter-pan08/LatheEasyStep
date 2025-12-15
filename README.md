@@ -1,213 +1,55 @@
-# LatheEasyStep  
-**Ein moderner, intuitiver, schrittbasierter CNC-Dreh-Programmierassistent für LinuxCNC – inspiriert von Siemens ShopTurn**
+# LatheEasyStep – kurzes Handbuch
 
----
+LatheEasyStep ist ein QtVCP-Makro, das im QtDragon-Panel unter **Macros→LatheEasyStep** eingebettet wird. Es ersetzt das direkte G-Code-Tippen durch eine Schritt-für-Schritt-Maske, in der jeder Arbeitsschritt (Planen/Facing, Kontur/Contour, Abspanen/Parting, Gewinde/Thread, Einstich/Abstich, Bohren/Drilling, Keilnut/Keyway) seinen eigenen Tab mit Werkzeug-, Spindel-, Vorschub- und Kühlparametern hat. Links befindet sich die Liste der Schritte, rechts die Parameterübersicht mit der 2D-Vorschau; optional wird unten der generierte G-Code angezeigt.
 
-## 🚀 Projektziel
+## What this does
 
-LatheEasyStep soll ein **vollwertiges, interaktives, visuelles Programmierwerkzeug** für CNC-Drehmaschinen unter LinuxCNC werden – ähnlich dem, was Siemens mit **ShopTurn** anbietet:
+1. Rohteil definieren (Programmtab): Einheit, Rohteilform, Werkzeugwechsel, Rückzugsebenen, Sicherheitsabstände, Sprache (Deutsch oder English) und Spindelgrenzen.
+2. Schritte bearbeiten: „Schritt hinzufügen“ erstellt einen neuen Workstep, „Schritt löschen“ entfernt ihn. Pfeile verschieben die Schritte in der Liste.
+3. Tab-spezifische Parameter ausfüllen (Werkzeugnummer, Drehzahl, Vorschub, Kühlung, reduzierte Zonen, Spanbruch-Modi, Gewindestandards oder Schneidenbreiten).
+4. Vorschau prüfen; „G-Code erzeugen“ schreibt `~/linuxcnc/nc_files/lathe_easystep.ngc`, öffnet die Datei und ergänzt Kommentare für Toolwechsel, Kühlung und reduzierte Bereiche.
 
-- Programmierung durch **Arbeitsschritte**, nicht durch G-Code  
-- Ein **kontextbasiertes Dialogsystem**, das immer nur die wirklich relevanten Eingabefelder zeigt  
-- Grafische **2D-Vorschau** der Schritte und später vollständige Konturvorschau  
-- Automatische **G-Code-Erzeugung**  
-- Vollständige Integration als **QtVCP-Panel** für *QtDragon Lathe*
+## What you can do
 
-Dieses Projekt dient nicht der Erweiterung der aktuellen *lathemacros*, sondern dem Aufbau einer **neuen, modernen, modularen und langfristig erweiterbaren Programmierumgebung** für LinuxCNC-Drehanwendungen.
+1. Define the stock in the Program tab – unit, stock shape, tool-change offsets, retract planes, safety margins, language (Deutsch or English), and spindle limits.
+2. Add and remove worksteps, and reorder them with the arrow buttons.
+3. Fill the relevant parameters in each tab (tool number, spindle RPM, feed, coolant, reduced feed zones, chip-breaking and thread presets, cutting width).
+4. Review the preview; “G-Code erzeugen” writes `~/linuxcnc/nc_files/lathe_easystep.ngc`, opens it, and annotates tool changes, coolant, and slow-down zones.
 
----
+## Einbindung in die GUI
 
-## 📌 Warum ein komplett neuer Ansatz?
+LatheEasyStep definiert die UI in `macros/LatheEasyStep/lathe_easystep.ui` und die Logik im Handler `lathe_easystep_handler.py`. Beim Start von `qtdragon_lathe` wird das Makro geladen und landet im „Macros“-Tab der Host-GUI. Screenshots und UI-Layouts findest du unter `macros/LatheEasyStep/doc/Bilder/`.
 
-Bestehende Lösungen (lathemacros etc.) sind historisch gewachsen, überladen oder inkonsistent und basieren auf einem rein G-Code-zentrierten Workflow.
+## GUI integration
 
-LatheEasyStep soll:
+The UI lives in `macros/LatheEasyStep/lathe_easystep.ui` and the handler logic in `lathe_easystep_handler.py`. When `qtdragon_lathe` starts, the macro is embedded into the host GUI’s “Macros” tab. See `macros/LatheEasyStep/doc/Bilder/` for screenshots of the layout.
 
-- **klar strukturiert**
-- **erweiterbar**
-- **UI-geführt**
-- **benutzerfreundlich**
-- **nah am ShopTurn-Arbeitsablauf**
+## Sprache wechseln
 
-sein.  
-Damit können auch Anfänger effizient Programme erstellen, ohne CAD/CAM zu benötigen.
+Die Sprache wählst du oben links im Programm-Tab unter **Sprache**.  
+ - Standard: **Deutsch**  
+ - Auf **English** umstellen: Labels, Combos, Buttons und Tab-Titel (auch wenn das Panel eingebettet läuft) werden übersetzt.  
+ - QtVCP speichert die Auswahl in den Preferences (`~/.config/QtVcp/qtdragon_lathe.conf`), sodass die Einstellung beim nächsten Start automatisch erhalten bleibt.  
+ - Es gibt kein separates INI-Flag; wähle einmal im Dialog und die Einstellung bleibt erhalten.
 
----
+## Language switch
 
-## 🧱 Projektarchitektur
+Set the language at the Program tab’s **Sprache** combo (top-left):  
+ - Default: **Deutsch**  
+ - Select **English** to translate labels, combo entries, buttons, and tab titles (even within the embedded panel).  
+ - QtVCP remembers the choice in `~/.config/QtVcp/qtdragon_lathe.conf`, so the preference survives restarts.  
+ - There is no extra INI flag; change it once and the next session keeps the language.
 
-### 1. **Program Model (Grundstruktur)**
+## Referenzen
 
-LatheEasyStep arbeitet intern mit einem strukturierten Datenmodell:
+- Aktueller Funktionsumfang, Felder und G-Code-Erzeugung: `macros/LatheEasyStep/doc/milestone1_spec.md`  
+- Gilt für LinuxCNC 2.10 mit QtDragon `qtdragon_lathe`-Panel  
+- Screenshots: `macros/LatheEasyStep/doc/Bilder/`
 
-Program
-├── Global Settings (Rohteil, Maßeinheit, Nullpunkt, Werkzeug, Drehzahl etc.)
-├── Worksteps [Liste]
-│ └── Workstep (Typ + Parameter)
-└── G-Code Generator
+## References
 
-### 2. **Worksteps (Arbeitsschritte)**
-
-Eine Operation (Workstep) besteht aus:
-
-- Typ (z.B. „Planen“, „Längsdrehen“, „Bohren“ …)
-- UI-Maske mit genau den passenden Parametern
-- 2D-Vorschau (Geometriepfad)
-- G-Code-Generatorfunktion
-
-### 3. **Modularität**
-
-Neue Arbeitsschritte können später leicht hinzugefügt werden.  
-Gleiches gilt für:
-
-- Zyklen (z.B. Gewinde, Stechoperationen)
-- Konturbausteine (Linie, Radius, Fase)
-- Rohteildefinitionen
-- Werkzeugverwaltung
-
----
-
-## 🧭 Roadmap (Schritt-für-Schritt)
-
-### **Phase 1 – Minimalfunktionalität**  
-*Basis schaffen, um schnell ein funktionierendes Grundsystem zu erhalten.*
-
-#### ✔ UI Grundlayout
-- Linke Seite: **Arbeitsplan (Liste der Schritte)**
-- Rechts oben: Parameter der gewählten Operation
-- Rechts unten: **2D-Vorschau**
-- Oben: Kopfbereich mit Programmname und Rohteilform
-
-#### ✔ Arbeitsschritt-Typen (erste Version)
-1. **Planen**  
-2. **Längsdrehen**
-
-Nur die absolut notwendigen Parameter anzeigen:
-- Start-Ø  
-- End-Ø  
-- Länge Z  
-- Vorschub  
-- Sicherheits-Z  
-
-#### ✔ Geometrie-Builder
-Entwicklung der Funktionen:
-- `build_face_path()`
-- `build_turn_path()`
-
-#### ✔ Preview
-Einbindung eines universellen 2D-Zeichenwidgets:
-- schwarze Fläche
-- gelbe/lime Pfade
-- automatische Skalierung
-
-#### ✔ G-Code Export
-Einheitliche Ausgabe nach:
-
-~/linuxcnc/nc_files/lathe_easystep.ngc
-
-oder über Action → direkt laden.
-
----
-
-### **Phase 2 – Erweiterung**
-Nachdem alles stabil läuft:
-
-#### ➕ Weitere Arbeitsschritte
-- Ausdrehen
-- Bohren
-- Gewinde
-- Nut
-- Abspanen
-- Freistich
-- Einstiche außen/innen
-
-#### ➕ Kontur-Editor (großer Meilenstein)
-Analog Siemens:  
-Linie, Radius, Punktfolge, Spiegeln, Drehen, Taschenkonturen …
-
-#### ➕ Rohteilgenerator
-Zylinder, Rohr, Rechteck, N-Eck – mit dynamischer Vorschau.
-
-#### ➕ Grafische Simulation
-- Komplettes Werkstück als Kontur
-- Schrittweise Vorschau
-- Werkzeugwegüberlagerung
-
----
-
-## 🛠 Technische Grundlagen
-
-### Das Projekt basiert auf:
-- **QtVCP (QtPy/QWidgets)**
-- Python 3
-- LinuxCNC ab 2.9/2.10
-- eigenes UI (`lathe_easystep.ui`)
-- eigenes Handler-Script (`lathe_easystep_handler.py`)
-
-### Struktur im Repo:
-
-/ui/lathe_easystep.ui
-/src/lathe_easystep_handler.py
-/src/model/program.py
-/src/model/workstep.py
-/src/geometry/.py
-/src/gcode/.py
-/README.md
-
-
----
-
-## 📄 Beispielablauf (Sollverhalten)
-
-Ein Nutzer möchte ein einfaches Teil drehen:
-
-1. Programm starten → „Neues Programm“
-2. Rohteil definieren (z.B. Zylinder Ø40 x 60)
-3. Schritt „Planen“ hinzufügen  
-   - Start-Ø: 40  
-   - Ziel-Z: 0  
-4. Schritt „Längsdrehen“ hinzufügen  
-   - Start-Ø: 40  
-   - End-Ø: 20  
-   - Länge: 30  
-5. Vorschau zeigt die beiden Schritte grafisch
-6. „G-Code erzeugen“ → Datei fertig
-
-Das ist **1:1 das Siemens-Konzept**, aber LinuxCNC-freundlich umgesetzt.
-
----
-
-## 🤝 Ziel für die Community
-
-LatheEasyStep soll:
-
-- das **erste echte ShopTurn-ähnliche System** für LinuxCNC werden
-- vollständig Open Source sein
-- modular erweiterbar
-- für Hobby- und Industrieanwender geeignet
-- langfristig Wartbar bleiben
-
-Wenn wir das schaffen, wird es **einer der wichtigsten Beiträge für LinuxCNC auf Drehmaschinen** in den letzten Jahren.
-
----
-
-## 💬 Mitmachen
-
-Pull-Requests, Issues und Feature-Vorschläge sind willkommen.  
-Die Architektur wird bewusst offen dokumentiert, damit andere Entwickler ohne Hürden beitragen können.
-
----
-
-## 📧 Kontakt
-
-Projektbetreuer: *Matthias*  
-Unterstützung durch ChatGPT (architektonische Planung, technische Umsetzungshinweise)
-
----
-
-## 📜 Lizenz
-
-Wird empfohlen: **GPLv3** (wie LinuxCNC) oder **MIT** (offenere Nutzung).  
-Bitte im Repo ergänzen.
+- Current feature set, fields, and G-code generation: `macros/LatheEasyStep/doc/milestone1_spec.md`  
+- Targets LinuxCNC 2.10 with the QtDragon `qtdragon_lathe` panel  
+- UI screenshots: `macros/LatheEasyStep/doc/Bilder/`
 
 ---
