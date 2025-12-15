@@ -1,142 +1,110 @@
 # LatheEasyStep – Milestone 1 Spezifikation
 ## Umfang
 
-Milestone 1 umfasst:
+Milestone 1 deckt den aktuellen Stand des LatheEasyStep-Makros ab:
 
-- Programm-Reiter:
-  - Name des Programms
-  - Maßeinheit (mm / inch)
-  - Rohteilform (für später, aktuell rein informativ)
-  - Basis-Rohteilmaße:
-    - XA (Außendurchmesser)
-    - XI (Innendurchmesser, nur bei Rohr relevant)
-    - L (Länge in Z)
-- Operationstypen:
-  - Planen (FACE)
-  - Längsdrehen (TURN)
-- 2D-Vorschau im X–Z-Schnitt
-- G-Code-Erzeugung in `~/linuxcnc/nc_files/lathe_easystep.ngc`
-
-Keine Werkzeugtabellen, keine Vorschub/Schnittdaten-Automatik – das kommt später.
+- **Programm-Reiter** mit Sprache (Deutsch/English), Rohteilparametern, Einheitenwahl, Rückzugsebene, Werkzeugwechselabständen und Spindelgrenzen sowie Tool- und Kühllogik.
+- **Operationen** über eigene Tabs: Planen (Facing), Kontur (Contour), Abspanen (Parting), Gewinde (Thread), Einstich/Abstich (Groove/Parting), Bohren (Drilling) und Keilnut (Keyway). Jeder Tab bietet Werkzeug-, Spindel-, Vorschub- und Kühlungsfelder plus spezielle Optionen (Thread-Standards, reduzierte Zonen, Spanbruchmodi, Schneidenbreiten, Tool-Nummer, etc.).
+- **2D-Vorschau** im X–Z-Schnitt mit synchronisierter Operationsliste.
+- **G-Code-Erstellung** nach LinuxCNC-Standards inkl. Kommentare, Kühlung, reduzierter Vorschubbereich und Werkzeughandhabung; Datei `~/linuxcnc/nc_files/lathe_easystep.ngc` wird aktualisiert.
+- **Mehrsprachigkeit**: Tab-Titel, Labels, Combos und Buttons wechseln beim Sprachschalter auf dem Programm-Reiter (Deutsch ist Default, Englisch schaltet alle Texte um). Die Tab-Überschriften folgen auch im eingebetteten QtDragon-Panel (Program / Facing / ...).
 
 ---
 
 ## 2. Koordinaten- und Zeichenkonventionen
 
-- Koordinatensystem: LinuxCNC Standard für Drehbank
-  - X: Durchmesserbezogen (G18, X = Durchmesser)
-  - Z: Längsachse, Z=0 wird als Spannfutter-nahe Fläche angenommen
-- Vorzeichen:
-  - Minus-Z in Richtung Reitstock
-  - Tiefen / Längen in Z werden im UI „positiv“ eingegeben, der Handler macht daraus negative Z-Werte.
-- Einheiten:
-  - `Program.Unit = mm` → G21
-  - `Program.Unit = inch` → G20
-- Sicherheitsposition:
-  - `safe_z` pro Operation (Standard +2.0 mm)
-  - Vorschubwerte sind mm/U (Drehbank-Stil).
+- Koordinatensystem: LinuxCNC-Standard für Drehbank (G18). X bezeichnet Durchmesser, Z die Laufachse.
+- Vorzeichen: Tiefe Z-Werte werden im Handler automatisch negativ gesetzt, die Anwender geben positive Werte ein (z. B. „Tiefe 2 mm“ bedeutet `Z-2`).
+- Einheitenswitch: `Program.Unit = mm` → `G21`, `Program.Unit = inch` → `G20`.
+- Sicherheitsposition: `safe_z` pro Operation (Standard +2,0 mm vor der Materialoberfläche).
+- Vorschub: mm/U bzw. mm/U bei Drehoperationen, linearer Vorschub bei Kontur.
 
 ---
 
 ## 3. Programm-Reiter (Programm-Parameter)
 
-### Felder (Milestone 1)
+| Feld | Beschreibung |
+| --- | --- |
+| Sprache | Combo `program_language` (Deutsch/English), beeinflusst alle Labels, Tab-Titel und Combo-Einträge. |
+| Programmname | Freies Textfeld `program_name` für Kommentare im G-Code. |
+| Maßeinheit | `program_unit` (mm / inch) steuert G20/G21 und Suffixe der Spinboxen. |
+| Rohteilform | `program_shape` (Zylinder, Rohr, Rechteck, N-Eck) – aktuell informativ, später für Plausibilitätschecks. |
+| XA / XI / L | Rohteilmaße für Kommentare (Außendurchmesser, Innendurchmesser, Länge). |
+| Rückzug | `program_retract_mode` (einfach/erweitert/alle) mit separaten Ebenen für X/Z, Werkzeugwechsel > `program_xt`, `program_zt`. |
+| Sicherheit | `program_sc`, `program_s1`, `program_s3` zur Kontrolle von Sicherheitsabstand und Drehzahlgrenzen. |
+| Werkzeugmanagement | `program_xt`/`program_zt` steuern Werkzeugwechsel, `program_has_subspindle` aktiviert Gegenspindel-Optionen. |
 
-| UI-Name          | interne Variable | Typ           | Einheit | Bemerkung                          |
-|------------------|------------------|---------------|--------|------------------------------------|
-| Programmname     | `program_name`   | Text          | –      | Nur Kommentar im G-Code           |
-| Maßeinheit       | `program_unit`   | Combo (mm/inch) | –    | Steuert G20/G21                   |
-| Rohteilform      | `program_shape`  | Combo         | –      | Informativ, später für Checks     |
-| XA Außendurchm.  | `program_xa`     | DoubleSpinBox | mm/inch| Info, aktuell nur im Kommentar    |
-| XI Innendurchm.  | `program_xi`     | DoubleSpinBox | mm/inch| Nur relevant bei „Rohr“           |
-| Länge L          | `program_l`      | DoubleSpinBox | mm/inch| Info, später für Plausibilitätscheck |
+Alle Werte landen in `ProgramModel.program_settings` und werden im Header sowie bei G-Code-Generierung genutzt.
 
-Diese Felder landen gesammelt im `ProgramModel.program_settings` und werden beim G-Code-Header ausgegeben:
+---
 
-```gcode
-(LatheEasyStep – auto generated)
-(Program: Welle_01)
-(Stock: XA=40.000 XI=0.000 L=80.000 mm)
-G18 G90 G40 G80
-G54
-G21
+## 4. Planen (Face)
 
-4. Operation „Planen“ (FACE)
-UI-Felder
-Bezeichnung	interner Schlüssel	Einheit	Bedeutung
-Startdurchmesser (X)	start_diameter	mm/inch	aktueller Außendurchmesser beim Zustellen
-Ziel-Z	target_z	mm/inch	Endfläche nach Planen (i. d. R. 0.0)
-Sicherheits-Z	safe_z	mm/inch	Position, auf der Werkzeug frei verfährt
-Vorschub (mm/U)	feed	mm/U	Zustellvorschub
-Geometrie-Pfad
+- Felder: Werkzeug, Spindel, Kühlung, Vorschub, Finish-Richtung, Finish-Übermaß (X/Z), Kantenform/-größe, Pause mit Distanz.
+- G-Code: `G0 X{start} Z{safe_z}`, dann `G1` zu Ziel, ggf. Finish-Z.
+- Spindel- und Werkzeugnummer müssen immer angegeben werden, sonst wird der Schritt übersprungen.
+- Kühlungswahl („Aus“/„Ein“) dokumentiert den Zustand mit Kommentar.
 
-(x_start, safe_z) -> (x_start, z_target) -> (0, z_target)
+## 5. Kontur (Contour)
 
+- Unterstützt Start-/Endpunkte, Koordinatenmodus und Auswahl gespeicherter Konturen.
+- Kontursegments-Buttons (`Segment +`, `Segment -`, Verschieben) bleiben aktiv, Tab-Titel übersetzt.
+- Vorschub und Sicherheitsz definieren, ob die Zufuhr auf `safe_z` zurückgeht.
 
-Beispiel-G-Code (vereinfacht)
+## 6. Abspanen (Parting)
 
-( Operation 1: face )
-G0 X50.000 Z2.000
-G1 Z0.000 F0.200
-G1 X0.000 Z0.000
+- Felder: Werkzeug, Spindel, Kühlung, Vorschub, Tiefe pro Pass, Strategie (Schruppen/Schlichten), Konturwahl, Pause.
+- Kühlung per Combo – wirkt sich auf generierten G-Code aus (`(Coolant On/Off)`).
+- Pause-Checkbox mit Distanz unterbricht den Vorschub an definiertem Abstand.
 
-5. Operation „Längsdrehen“ (TURN)
-UI-Felder
-Bezeichnung	interner Schlüssel	Einheit	Bedeutung
-Startdurchmesser (X)	start_diameter	mm/inch	aktueller Durchmesser am Start
-Enddurchmesser (X)	end_diameter	mm/inch	Ziel-Durchmesser am Ende der Kontur
-Länge (Z)	length	mm/inch	axiale Bearbeitungslänge (positiv eingegeben)
-Sicherheits-Z	safe_z	mm/inch	wie oben
-Vorschub (mm/U)	feed	mm/U	wie oben
-Geometrie-Pfad
+## 7. Gewinde (Thread)
 
-(x_start, safe_z) -> (x_start, 0.0) -> (x_end, -|length|)
+- Werkzeug, Spindel, Kühlung, Gewindetyp (Innen/Außen), Standardgewinde-Liste (M2 … M25), Major-Durchmesser, Steigung, Gewindelänge, Passanzahl, Sicherheits-Z.
+- Standardgewinde füllen Major/Pitch automatisch, man kann eigene Werte eingeben.
+- G-Code nutzt Tool-/Spindle-Zuordnung und generiert passende Comments.
 
-Beispiel-G-Code
+## 8. Einstich/Abstich (Groove/Parting)
 
-( Operation 2: turn )
-G0 X40.000 Z2.000
-G1 Z0.000 F0.200
-G1 X30.000 Z-20.000
+- Felder: Werkzeug, Spindel, Kühlung, Durchmesser, Breite, Schneidenbreite, Tiefe, Z-Position, Vorschub, Sicherheits-Z.
+- Abstech-Optionen: `reduced_feed_start_x`, `reduced_feed`, `reduced_rpm` definieren eine Zone mit reduzierter Drehzahl/Vorschub ab einer `X`-Position.
+- Schneidenbreite ist erforderlich für präzise Werkzeugwege.
+- G-Code: Wechselt ab der Schwellenposition automatisch die Vorschub-/Drehzahlangaben, kommentiert den reduzierten Abschnitt.
 
-6. G-Code-Datei und Integration
+## 9. Bohren (Drilling)
 
-Dateiname: ~/linuxcnc/nc_files/lathe_easystep.ngc
+- Felder: Werkzeugnummer, Spindel, Kühlung, Modus (Normal / Spanbruch / Spanbruch + Rückzug), Bohrdurchmesser, Tiefe, Vorschub, Sicherheits-Z.
+- Modus `Normal` generiert `G81`; die Spanbruch-Modi erzeugen `G83` mit `Q`-Wert und optionalem Rückzug zwischen den Einstichen (`retract`).
+- Die Kombos für Kühlung und Modus sind übersetzt und werden beim Sprachwechsel angepasst.
 
-Erzeugung:
+## 10. Keilnut (Keyway)
 
-vorhandene Datei wird überschrieben
+- Felder: Modus (Axial/Face), Radialseite, Kühlung, Anzahl, Startwinkel, Startdurchmesser/Z, Nutlänge/Tiefe, Schneidenbreite, Kopffreiheit, Zustellung/Passe.
+- Kühlungsoption analog zu anderen Tabs, Schneidenbreite wichtig für Wegberechnung und G-Code-Korrektheit.
+- Die generierte Routine nutzt definierte Hilfsvariablen (`#<_nut_length>` etc.) und setzt Tool-/Spindelkommandos.
 
-nach dem Schreiben: Action.CALLBACK_OPEN_PROGRAM(path)
+---
 
-Kopf/Konstanten:
+## 11. G-Code-Generierung
 
-G18 G90 G40 G80
+- Datei `~/linuxcnc/nc_files/lathe_easystep.ngc` wird bei jedem Generieren neu geschrieben und anschließend mit `Action.CALLBACK_OPEN_PROGRAM` geöffnet.
+- Standardheader: `(LatheEasyStep – auto generated)`, `(Program: ...)`, `(Stock: ...)`, `G18 G90 G40 G80`, `G54`, `G20`/`G21` je nach Einheit.
+- Toolwechsel: `Tnn M6`, gefolgt von `Snn M3` bei gesetzter Spindelzahl. Kommentare dokumentieren Kühlung, Translationsmodus und reduzierte Bereiche.
+- Bohren: `G81` oder `G83`, Rückzug auf `safe_z` mit `G0`, Abschluss `G80`.
+- Grooves/Parting: G1 in X/Z, bei reduzierter Zone wird `F`/`S` angepasst und kommentiert.
+- Gewinde und Kontur: `G0` zum Start, dann `G1` mit feed, ggf. Modals.
+- Coolant/Zufuhroptionen werden als Kommentare ergänzt (z. B. `(Coolant On)`), realer Befehl wie `M8/M9` kann später ergänzt.
 
-G54
+---
 
-G20 oder G21 je nach Einheit
+## 12. Milestone-Checkliste
 
-Ende:
-
-M9
-
-M30
-
-%
-
-7. Milestone-Checkliste
-
-Panel startet ohne Python-Traceback.
-
-Programmreiter lässt sich öffnen, Werte bleiben in der Session erhalten.
-
-„Planen“-Operation erzeugt sichtbare Kontur in der Vorschau.
-
-„Längsdrehen“-Operation erzeugt sichtbare Kontur in der Vorschau.
-
-Schritte können hinzugefügt, gelöscht und verschoben werden.
-
-G-Code-Datei wird erzeugt und lässt sich in LinuxCNC öffnen.
-
-Beispielteil mit 1× Planen + 1× Längsdrehen ergibt plausiblen G-Code.
+- [x] Panel startet ohne Python-Traceback und findet `tabParams` auch eingebettet in QtDragon.
+- [x] Programm-Tab lässt sich öffnen, Spracheinstellung und Werte bleiben erhalten.
+- [x] Jeder Operationstyp hat einen eigenen Tab mit obligatorischer Werkzeug-/Spindelwahl.
+- [x] Planen/Kontur/Abspanen/Gewinde/Groove/Bohren/Keilnut erzeugen Vorschau-OPs und synchronisieren mit der Operationenliste.
+- [x] G-Code wird erzeugt (Standardzyklen, Tool/Spindle, reduzierte Bereiche, Kommentare) und unter `~/linuxcnc/nc_files/lathe_easystep.ngc` geschrieben.
+- [x] Sprachwechsel setzt Labels, Combo-Einträge, Buttons und Tab-Titel auf Englisch, inklusive der eingebetteten QtDragon-Tabs.
+- [x] Thread-Tab bietet ISO-Standardgewinde und füllt Major/Pitch automatisch.
+- [x] Groove-Tab verarbeitet reduzierte Drehzahlen/Vorschübe ab einer X-Grenze und erfordert Schneidenbreite.
+- [x] Bohren-Tab deckt Normal-, Spanbruch- und Spanbruch+Rückzug-Modi mit `G81`/`G83` ab.
+- [x] Keilnut-Tab bietet Axial/Face-Modi, Radialseite und Kühlung sowie Schneidenbreite, die im G-Code mit Variablen dokumentiert wird.

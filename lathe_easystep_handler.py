@@ -32,8 +32,250 @@ class OpType:
 @dataclass
 class Operation:
     op_type: str
-    params: Dict[str, float]
+    params: Dict[str, object]
     path: List[Tuple[float, float]] = field(default_factory=list)
+
+
+STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
+    ("M2", 2.0, 0.4),
+    ("M2.5", 2.5, 0.45),
+    ("M3", 3.0, 0.5),
+    ("M3.5", 3.5, 0.6),
+    ("M4", 4.0, 0.7),
+    ("M5", 5.0, 0.8),
+    ("M6", 6.0, 1.0),
+    ("M7", 7.0, 1.0),
+    ("M8", 8.0, 1.25),
+    ("M9", 9.0, 1.25),
+    ("M10", 10.0, 1.5),
+    ("M11", 11.0, 1.5),
+    ("M12", 12.0, 1.75),
+    ("M13", 13.0, 1.75),
+    ("M14", 14.0, 2.0),
+    ("M15", 15.0, 2.0),
+    ("M16", 16.0, 2.0),
+    ("M17", 17.0, 2.0),
+    ("M18", 18.0, 2.5),
+    ("M19", 19.0, 2.5),
+    ("M20", 20.0, 2.5),
+    ("M21", 21.0, 2.5),
+    ("M22", 22.0, 2.5),
+    ("M23", 23.0, 3.0),
+    ("M24", 24.0, 3.0),
+    ("M25", 25.0, 3.0),
+]
+THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
+DRILL_MODE_LABELS: Tuple[str, str, str] = (
+    "Normal",
+    "Spanbruch",
+    "Spanbruch + Rückzug",
+)
+
+DEFAULT_LANGUAGE = "de"
+LANGUAGE_WIDGET_NAME = "program_language"
+
+TAB_TRANSLATIONS = {
+    "tabProgram": {"de": "Programm", "en": "Program"},
+    "tabFace": {"de": "Planen", "en": "Facing"},
+    "tabContour": {"de": "Kontur", "en": "Contour"},
+    "tabParting": {"de": "Abspanen", "en": "Parting"},
+    "tabThread": {"de": "Gewinde", "en": "Thread"},
+    "tabGroove": {"de": "Einstich/Abstich", "en": "Groove/Parting"},
+    "tabDrill": {"de": "Bohren", "en": "Drilling"},
+    "tabKeyway": {"de": "Keilnut", "en": "Keyway"},
+}
+TAB_ORDER = [
+    "tabProgram",
+    "tabFace",
+    "tabContour",
+    "tabParting",
+    "tabThread",
+    "tabGroove",
+    "tabDrill",
+    "tabKeyway",
+]
+PANEL_WIDGET_NAMES = ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel")
+
+TEXT_TRANSLATIONS = {
+    "label_prog_npv": {"de": "Nullpunktverschiebung", "en": "Work Offset"},
+    "label_prog_unit": {"de": "Maßeinheit", "en": "Units"},
+    "label_prog_shape": {"de": "Rohteilform", "en": "Stock Shape"},
+    "label_prog_xa": {"de": "XA Außendurchmesser (mm)", "en": "XA Outer Diameter (mm)"},
+    "label_prog_xi": {"de": "XI Innendurchmesser (mm)", "en": "XI Inner Diameter (mm)"},
+    "label_prog_za": {"de": "ZA Anfangsmaß (mm)", "en": "ZA Start Z (mm)"},
+    "label_prog_zi": {"de": "ZI Endmaß (mm)", "en": "ZI End Z (mm)"},
+    "label_prog_zb": {"de": "ZB Bearbeitungsmaß (mm)", "en": "ZB Machining Z (mm)"},
+    "label_prog_w": {"de": "Breite W (mm)", "en": "Width W (mm)"},
+    "label_prog_l": {"de": "Länge L (mm)", "en": "Length L (mm)"},
+    "label_prog_n": {"de": "Kantenanzahl N", "en": "Edge Count N"},
+    "label_prog_sw": {"de": "Schlüsselweite SW (mm)", "en": "Key Width SW (mm)"},
+    "label_prog_retract_mode": {"de": "Rückzug", "en": "Retract"},
+    "label_prog_xra": {"de": "XRA äußere Rückzugsebene (mm)", "en": "XRA Outer Retract Plane (mm)"},
+    "label_prog_xri": {"de": "XRI innere Rückzugsebene (mm)", "en": "XRI Inner Retract Plane (mm)"},
+    "label_prog_zra": {"de": "ZRA äußere Rückzugsebene (mm)", "en": "ZRA Outer Retract Plane (mm)"},
+    "label_prog_zri": {"de": "ZRI innere Rückzugsebene (mm)", "en": "ZRI Inner Retract Plane (mm)"},
+    "label_prog_xt": {"de": "Werkzeugwechsel XT (mm)", "en": "XT Tool Change (mm)"},
+    "label_prog_zt": {"de": "Werkzeugwechsel ZT (mm)", "en": "ZT Tool Change (mm)"},
+    "label_prog_sc": {"de": "Sicherheitsabstand SC (mm)", "en": "Safety Clearance SC (mm)"},
+    "label_prog_s1": {"de": "max. Drehzahl S1 (U/min)", "en": "Max Spindle S1 (RPM)"},
+    "label_prog_s3": {"de": "max. Drehzahl S3 (U/min)", "en": "Max Spindle S3 (RPM)"},
+    "program_has_subspindle": {"de": "Gegenspindel vorhanden", "en": "Subspindle available"},
+    "label_prog_name": {"de": "Programmname", "en": "Program Name"},
+    "label_language": {"de": "Sprache", "en": "Language"},
+
+    "label_face_start_x": {"de": "Start-X (Roh-Ø)", "en": "Start X (Raw ø)"},
+    "label_face_start_z": {"de": "Start-Z", "en": "Start Z"},
+    "label_face_end_x": {"de": "End-X", "en": "End X"},
+    "label_face_end_z": {"de": "End-Z", "en": "End Z"},
+    "label_face_mode": {"de": "Strategie", "en": "Strategy"},
+    "label_face_finish_direction": {"de": "Schlichtrichtung", "en": "Finish Direction"},
+    "label_face_depth_max": {"de": "max. Zustellung", "en": "Max Depth"},
+    "label_face_finish_allow_x": {"de": "Schlichtaufmaß X", "en": "Finish Allowance X"},
+    "label_face_finish_allow_z": {"de": "Schlichtaufmaß Z", "en": "Finish Allowance Z"},
+    "label_face_edge_type": {"de": "Kantenform", "en": "Edge Type"},
+    "label_face_edge_size": {"de": "Kantengröße", "en": "Edge Size"},
+    "label_3": {"de": "Sicherheits-Z", "en": "Safety Z"},
+    "label_4": {"de": "Vorschub", "en": "Feed"},
+    "label_face_pause": {"de": "Vorschubunterbrechung", "en": "Feed Interrupt"},
+    "face_pause_enabled": {"de": "aktivieren", "en": "Enable"},
+    "label_face_pause_distance": {"de": "Unterbrechungsabstand", "en": "Pause Distance"},
+    "label_face_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
+    "label_face_tool": {"de": "Werkzeug", "en": "Tool"},
+    "label_face_coolant": {"de": "Kühlung", "en": "Coolant"},
+    "face_coolant": {"de": "Kühlmittel einschalten", "en": "Enable coolant"},
+
+    "label_contour_start_x": {"de": "Start X", "en": "Start X"},
+    "label_contour_start_z": {"de": "Start Z", "en": "Start Z"},
+    "label_contour_coord_mode": {"de": "Koordinaten", "en": "Coordinates"},
+    "label_contour_name": {"de": "Konturname", "en": "Contour Name"},
+    "contour_add_segment": {"de": "Segment +", "en": "Segment +"},
+    "contour_delete_segment": {"de": "Segment -", "en": "Segment -"},
+    "label_contour_edge_type": {"de": "Kante", "en": "Edge"},
+    "label_contour_edge_size": {"de": "Kantenmaß", "en": "Edge Size"},
+
+    "label_parting_contour": {"de": "Kontur", "en": "Contour"},
+    "label_parting_side": {"de": "Seite", "en": "Side"},
+    "label_parting_tool": {"de": "Werkzeug", "en": "Tool"},
+    "label_parting_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
+    "label_parting_coolant": {"de": "Kühlung", "en": "Coolant"},
+    "label_parting_feed": {"de": "Vorschub", "en": "Feed"},
+    "label_parting_depth": {"de": "Zustellung", "en": "Depth"},
+    "label_parting_mode": {"de": "Strategie", "en": "Strategy"},
+    "label_parting_pause": {"de": "Vorschubunterbrechung", "en": "Feed Interrupt"},
+    "parting_pause_enabled": {"de": "aktivieren", "en": "Enable"},
+    "label_parting_pause_distance": {"de": "Unterbrechungsabstand", "en": "Pause Distance"},
+
+    "label_thread_orientation": {"de": "Gewindetyp", "en": "Thread Type"},
+    "label_thread_standard": {"de": "Standardgewinde", "en": "Thread Standard"},
+    "label_thread_tool": {"de": "Werkzeug", "en": "Tool"},
+    "label_thread_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
+    "label_thread_coolant": {"de": "Kühlung", "en": "Coolant"},
+    "label_15": {"de": "Major Diameter", "en": "Major Diameter"},
+    "label_16": {"de": "Pitch", "en": "Pitch"},
+    "label_17": {"de": "Laenge (Z)", "en": "Length (Z)"},
+    "label_18": {"de": "Passes", "en": "Passes"},
+    "label_19": {"de": "Sicherheits-Z", "en": "Safety Z"},
+
+    "label_groove_tool": {"de": "Werkzeug", "en": "Tool"},
+    "label_groove_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
+    "label_groove_coolant": {"de": "Kühlung", "en": "Coolant"},
+    "label_20": {"de": "Durchmesser", "en": "Diameter"},
+    "label_21": {"de": "Breite", "en": "Width"},
+    "label_groove_cutting_width": {"de": "Schneidenbreite", "en": "Cutting Width"},
+    "label_22": {"de": "Tiefe", "en": "Depth"},
+    "label_23": {"de": "Z-Position", "en": "Z Position"},
+    "label_24": {"de": "Vorschub", "en": "Feed"},
+    "label_25": {"de": "Sicherheits-Z", "en": "Safety Z"},
+    "label_groove_reduced_feed_start_x": {"de": "Abstech-X", "en": "Parting X"},
+    "label_groove_reduced_feed": {"de": "Abstech-Vorschub", "en": "Parting Feed"},
+    "label_groove_reduced_rpm": {"de": "Abstech-Drehzahl", "en": "Parting Spindle"},
+
+    "label_drill_tool": {"de": "Werkzeug", "en": "Tool"},
+    "label_drill_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
+    "label_drill_coolant": {"de": "Kühlung", "en": "Coolant"},
+    "label_drill_mode": {"de": "Bohren Art", "en": "Drilling Mode"},
+    "label_26": {"de": "Hole Diameter", "en": "Hole Diameter"},
+    "label_27": {"de": "Tiefe", "en": "Depth"},
+    "label_28": {"de": "Feed", "en": "Feed"},
+    "label_29": {"de": "Sicherheits-Z", "en": "Safety Z"},
+
+    "label_30": {"de": "Modus", "en": "Mode"},
+    "label_31": {"de": "Radialseite", "en": "Radial Side"},
+    "label_key_coolant": {"de": "Kühlung", "en": "Coolant"},
+    "label_32": {"de": "Nutanzahl", "en": "Slot Count"},
+    "label_33": {"de": "Startwinkel (°)", "en": "Start Angle (°)"},
+    "label_34": {"de": "Startdurchmesser", "en": "Start Diameter"},
+    "label_35": {"de": "Start Z", "en": "Start Z"},
+    "label_36": {"de": "Nutlänge", "en": "Slot Length"},
+    "label_37": {"de": "Nuttiefe", "en": "Slot Depth"},
+    "label_key_cutting_width": {"de": "Schneidenbreite", "en": "Cutting Width"},
+    "label_38": {"de": "Kopffreiheit", "en": "Top Clearance"},
+    "label_39": {"de": "Zustellung pro Pass", "en": "Depth per Pass"},
+    "label_40": {"de": "Eintauchvorschub", "en": "Plunge Feed"},
+    "label_41": {"de": "C-Achse benutzen", "en": "Use C Axis"},
+    "label_42": {"de": "C-Achse Schalter", "en": "C Axis Switch"},
+    "label_43": {"de": "C-Achse Schalter P", "en": "C Axis Switch P"},
+
+    "btnAdd": {"de": "Schritt hinzufügen", "en": "Add Step"},
+    "btnDelete": {"de": "Schritt löschen", "en": "Delete Step"},
+    "btnMoveUp": {"de": "Nach oben", "en": "Move Up"},
+    "btnMoveDown": {"de": "Nach unten", "en": "Move Down"},
+    "btnNewProgram": {"de": "Neues Programm", "en": "New Program"},
+    "btnGenerate": {"de": "Programm erzeugen", "en": "Generate Program"},
+}
+
+COMBO_OPTION_TRANSLATIONS = {
+    "program_shape": {
+        "de": ["Zylinder", "Rohr", "Rechteck", "N-Eck"],
+        "en": ["Cylinder", "Tube", "Rectangle", "Polygon"],
+    },
+    "program_retract_mode": {
+        "de": ["einfach", "erweitert", "alle"],
+        "en": ["Simple", "Extended", "All"],
+    },
+    "face_mode": {
+        "de": ["Schruppen", "Schlichten", "Schruppen + Schlichten"],
+        "en": ["Rough", "Finish", "Rough + Finish"],
+    },
+    "face_finish_direction": {
+        "de": ["Außen → Innen", "Innen → Außen"],
+        "en": ["Outside → Inside", "Inside → Outside"],
+    },
+    "face_edge_type": {
+        "de": ["Keine", "Fase", "Radius"],
+        "en": ["None", "Chamfer", "Radius"],
+    },
+    "contour_coord_mode": {"de": ["Absolut", "Inkremental"], "en": ["Absolute", "Incremental"]},
+    "contour_edge_type": {
+        "de": ["Keine", "Fase", "Radius"],
+        "en": ["None", "Chamfer", "Radius"],
+    },
+    "parting_side": {"de": ["Außenseite", "Innenseite"], "en": ["Outside", "Inside"]},
+    "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
+    "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
+    "thread_orientation": {"de": ["Aussengewinde", "Innengewinde"], "en": ["External", "Internal"]},
+    "thread_standard": {"de": ["Benutzerdefiniert"], "en": ["Custom"]},
+    "thread_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
+    "groove_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
+    "drill_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
+    "drill_mode": {"de": ["Normal", "Spanbruch", "Spanbruch + Rückzug"], "en": ["Normal", "Chip Break", "Chip Break + Retract"]},
+    "key_mode": {"de": ["Axial (Z)", "Face (X)"], "en": ["Axial (Z)", "Face (X)"]},
+    "key_radial_side": {
+        "de": ["Außen (Welle)", "Innen (Bohrung)"],
+        "en": ["Outside (shaft)", "Inside (bore)"],
+    },
+    "key_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
+    "program_language": {"de": ["Deutsch", "English"], "en": ["German", "English"]},
+}
+
+BUTTON_TRANSLATIONS = {
+    "btnAdd": {"de": "Schritt hinzufügen", "en": "Add Step"},
+    "btnDelete": {"de": "Schritt löschen", "en": "Delete Step"},
+    "btnMoveUp": {"de": "Nach oben", "en": "Move Up"},
+    "btnMoveDown": {"de": "Nach unten", "en": "Move Down"},
+    "btnNewProgram": {"de": "Neues Programm", "en": "New Program"},
+    "btnGenerate": {"de": "Programm erzeugen", "en": "Generate Program"},
+}
 
 
 class ProgramModel:
@@ -392,6 +634,9 @@ def build_thread_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 def build_groove_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     diameter = params.get("diameter", 0.0)
     width = params.get("width", 0.0)
+    cutting_width = max(
+        params.get("cutting_width", params.get("width", 0.0)) or 0.0, 0.0
+    )
     depth = abs(params.get("depth", 0.0))
     z_pos = params.get("z", 0.0)
     safe_z = params.get("safe_z", 2.0)
@@ -399,8 +644,8 @@ def build_groove_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
         (diameter, safe_z),
         (diameter, z_pos),
         (diameter - depth, z_pos),
-        (diameter - depth, z_pos - width),
-        (diameter, z_pos - width),
+        (diameter - depth, z_pos - cutting_width),
+        (diameter, z_pos - cutting_width),
     ]
 
 
@@ -583,6 +828,129 @@ def gcode_from_path(path: List[Tuple[float, float]],
         lines.append(f"G1 Z{z0:.3f} F{feed:.3f}")
     for x, z in path[1:]:
         lines.append(f"G1 X{x:.3f} Z{z:.3f}")
+    return lines
+
+
+def _append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle_value: object | None):
+    tool_num = 0
+    try:
+        if tool_value is not None:
+            tool_num = int(float(tool_value))
+    except Exception:
+        tool_num = 0
+    if tool_num > 0:
+        lines.append(f"(Werkzeug T{tool_num:02d})")
+        lines.append(f"T{tool_num:02d} M6")
+
+    rpm = _float_or_none(spindle_value)
+    if rpm and rpm > 0:
+        rpm_value = int(round(rpm))
+        if rpm_value > 0:
+            lines.append(f"S{rpm_value} M3")
+
+
+def gcode_for_drill(op: Operation) -> List[str]:
+    path = op.path or []
+    if not path:
+        return []
+    lines: List[str] = []
+    _append_tool_and_spindle(
+        lines,
+        op.params.get("tool"),
+        op.params.get("spindle"),
+    )
+    safe_z = float(op.params.get("safe_z", 2.0))
+    feed = float(op.params.get("feed", 0.12))
+    depth_z = path[-1][1]
+    mode_raw = op.params.get("mode", 0)
+    mode_idx = 0
+    try:
+        mode_idx = int(float(mode_raw))
+    except Exception:
+        mode_idx = 0
+    mode_idx = max(0, min(mode_idx, len(DRILL_MODE_LABELS) - 1))
+    lines.append(f"({DRILL_MODE_LABELS[mode_idx]})")
+    x_start = path[0][0]
+    lines.append(f"G0 X{x_start:.3f} Z{safe_z:.3f}")
+    if mode_idx == 0:
+        lines.append(
+            f"G81 X{x_start:.3f} Z{depth_z:.3f} R{safe_z:.3f} F{feed:.3f}"
+        )
+    else:
+        depth_range = abs(depth_z - safe_z)
+        peck_depth = max(depth_range / 4.0, 0.5)
+        peck_depth = min(peck_depth, depth_range or 0.5)
+        if peck_depth <= 0.0:
+            peck_depth = abs(depth_z) or 0.5
+        lines.append(
+            f"G83 X{x_start:.3f} Z{depth_z:.3f} R{safe_z:.3f} Q{peck_depth:.3f} F{feed:.3f}"
+        )
+    lines.append(f"G0 Z{safe_z:.3f}")
+    lines.append("G80")
+    return lines
+
+
+def _float_or_none(value: object | None) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _should_activate_abstech(
+    start_x: float, threshold: float, current_x: float
+) -> bool:
+    if start_x >= threshold:
+        return current_x <= threshold
+    return current_x >= threshold
+
+
+def gcode_for_groove(op: Operation) -> List[str]:
+    path = op.path or []
+    if not path:
+        return []
+    safe_z = float(op.params.get("safe_z", 2.0))
+    feed = float(op.params.get("feed", 0.15))
+    reduced_feed = _float_or_none(op.params.get("reduced_feed"))
+    if reduced_feed is not None and reduced_feed <= 0.0:
+        reduced_feed = None
+    reduced_rpm = _float_or_none(op.params.get("reduced_rpm"))
+    if reduced_rpm is not None and reduced_rpm <= 0.0:
+        reduced_rpm = None
+    reduced_start_x = _float_or_none(op.params.get("reduced_feed_start_x"))
+    lines: List[str] = []
+    _append_tool_and_spindle(
+        lines,
+        op.params.get("tool"),
+        op.params.get("spindle"),
+    )
+    start_x = path[0][0]
+    lines.append(f"G0 X{start_x:.3f} Z{safe_z:.3f}")
+    feed_current = feed
+    need_feed = True
+    abstech_active = False
+    for x, z in path[1:]:
+        if (
+            not abstech_active
+            and (reduced_feed is not None or reduced_rpm is not None)
+            and reduced_start_x is not None
+            and _should_activate_abstech(start_x, reduced_start_x, x)
+        ):
+            abstech_active = True
+            lines.append(f"(Abstechbereich ab X{reduced_start_x:.3f})")
+            if reduced_rpm is not None:
+                rpm_value = int(round(reduced_rpm))
+                if rpm_value > 0:
+                    lines.append(f"(Reduzierte Drehzahl S{rpm_value})")
+                    lines.append(f"S{rpm_value} M3")
+            if reduced_feed is not None:
+                feed_current = reduced_feed
+                need_feed = True
+        coords = ["G1", f"X{x:.3f}", f"Z{z:.3f}"]
+        if need_feed:
+            coords.append(f"F{feed_current:.3f}")
+            need_feed = False
+        lines.append(" ".join(coords))
     return lines
 
 
@@ -781,6 +1149,9 @@ def gcode_for_keyway(op: Operation) -> List[str]:
     lines.append(f"#<_start_z_input> = {p.get('start_z', 0.0):.3f}")
     lines.append(f"#<_nut_length> = {p.get('nut_length', 0.0):.3f}")
     lines.append(f"#<_nut_depth> = {p.get('nut_depth', 0.0):.3f}")
+    cutting_width = float(p.get("cutting_width", 0.0))
+    lines.append(f"#<_cutting_width> = {cutting_width:.3f}")
+    lines.append(f"#<_key_cutting_width> = {cutting_width:.3f}")
     lines.append(f"#<_depth_per_pass> = {p.get('depth_per_pass', 0.1):.3f}")
     lines.append(f"#<_top_clearance> = {p.get('top_clearance', 0.0):.3f}")
     lines.append(f"#<_plunge_feed> = {p.get('plunge_feed', 200.0):.3f}")
@@ -1078,13 +1449,9 @@ def gcode_for_operation(
                                op.params.get("feed", 0.15),
                                op.params.get("safe_z", 2.0))
     if op.op_type == OpType.DRILL:
-        return gcode_from_path(op.path,
-                               op.params.get("feed", 0.12),
-                               op.params.get("safe_z", 2.0))
+        return gcode_for_drill(op)
     if op.op_type == OpType.GROOVE:
-        return gcode_from_path(op.path,
-                               op.params.get("feed", 0.15),
-                               op.params.get("safe_z", 2.0))
+        return gcode_for_groove(op)
     if op.op_type == OpType.ABSPANEN:
         return gcode_for_abspanen(op, settings or {})
     if op.op_type == OpType.THREAD:
@@ -1098,8 +1465,36 @@ def gcode_for_operation(
         initial_depth = max(thread_depth * 0.1, pitch * 0.05)
         peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
 
-        return [
-            f"G0 X{major_diameter:.3f} Z{safe_z:.3f}",
+        orientation_raw = op.params.get("orientation", 0)
+        orientation_idx = 0
+        if isinstance(orientation_raw, (int, float)):
+            orientation_idx = max(
+                0,
+                min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1),
+            )
+        orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
+        standard_data = op.params.get("standard")
+        standard_label = ""
+        if isinstance(standard_data, dict):
+            std_label_tmp = standard_data.get("label")
+            if isinstance(std_label_tmp, str):
+                standard_label = std_label_tmp
+
+        comments: List[str] = []
+        if standard_label and standard_label != "Benutzerdefiniert":
+            comments.append(f"(Normgewinde: {standard_label})")
+        comments.append(f"(Gewindetyp: {orientation_label})")
+
+        lines: List[str] = []
+        _append_tool_and_spindle(
+            lines,
+            op.params.get("tool"),
+            op.params.get("spindle"),
+        )
+        lines.extend(comments)
+
+        lines.append(f"G0 X{major_diameter:.3f} Z{safe_z:.3f}")
+        lines.append(
             (
                 "G76 "
                 f"P{pitch:.4f} "
@@ -1111,8 +1506,9 @@ def gcode_for_operation(
                 "Q29.5 "
                 f"H{spring_passes:d} "
                 "E0.0 L0"
-            ),
-        ]
+            )
+        )
+        return lines
     if op.op_type == OpType.KEYWAY:
         return gcode_for_keyway(op)
     return []
@@ -1130,6 +1526,9 @@ class HandlerClass:
         self.root_widget = None  # wird nach Panel-Suche gesetzt
         self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
+        self._thread_standard_populated = False
+        self._thread_standard_signal_connected = False
+        self._thread_applying_standard = False
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
@@ -1249,6 +1648,14 @@ class HandlerClass:
         self.label_parting_pause = getattr(self.w, "label_parting_pause", None)
         self.label_parting_pause_distance = getattr(self.w, "label_parting_pause_distance", None)
 
+        # Gewinde-Widgets
+        self.thread_standard = getattr(self.w, "thread_standard", None)
+        self.thread_orientation = getattr(self.w, "thread_orientation", None)
+        self.thread_tool = getattr(self.w, "thread_tool", None)
+        self.thread_spindle = getattr(self.w, "thread_spindle", None)
+        self.thread_major_diameter = getattr(self.w, "thread_major_diameter", None)
+        self.thread_pitch = getattr(self.w, "thread_pitch", None)
+
         # Root-Widget des Panels (für globale Suche nach Labels/Spinboxen)
         self.root_widget = self._find_root_widget()
 
@@ -1260,6 +1667,7 @@ class HandlerClass:
         self._setup_param_maps()
         self._connect_signals()
         self._connect_contour_signals()
+        self._setup_thread_helpers()
         self._apply_unit_suffix()
         self._update_program_visibility()
         self._update_parting_mode_visibility()
@@ -1333,7 +1741,7 @@ class HandlerClass:
         def _panel_from(widget: QtWidgets.QWidget | None):
             while widget:
                 try:
-                    if widget.objectName() in ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel"):
+                    if widget.objectName() in PANEL_WIDGET_NAMES:
                         return widget
                 except Exception:
                     pass
@@ -1341,16 +1749,17 @@ class HandlerClass:
             return None
 
         # direkter Zugriff über widgets-Container
-        cand = getattr(self.w, "LatheConversationalPanel", None)
-        if isinstance(cand, QtWidgets.QWidget):
-            return cand
+        for panel_name in PANEL_WIDGET_NAMES:
+            cand = getattr(self.w, panel_name, None)
+            if isinstance(cand, QtWidgets.QWidget):
+                return cand
 
         app = QtWidgets.QApplication.instance()
         # bekannte Panel-Namen direkt suchen
         if app:
             for widget in app.allWidgets():
                 try:
-                    if widget.objectName() in ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel"):
+                    if widget.objectName() in PANEL_WIDGET_NAMES:
                         return widget
                 except Exception:
                     continue
@@ -1377,7 +1786,7 @@ class HandlerClass:
             # eingebettete Panels sind NICHT topLevelWidgets(), daher allWidgets()
             for widget in app.allWidgets():
                 try:
-                    if widget.objectName() == "LatheConversationalPanel":
+                    if widget.objectName() in PANEL_WIDGET_NAMES:
                         return widget
                 except Exception:
                     continue
@@ -1449,11 +1858,29 @@ class HandlerClass:
                     continue
         return None
 
+    def _find_panel_tab_widget(self) -> QtWidgets.QTabWidget | None:
+        """Suche das TabWidget innerhalb des eingebetteten Panels."""
+        root = self._find_root_widget()
+        if root is None:
+            return None
+        tab_widget = root.findChild(
+            QtWidgets.QTabWidget, "tabParams", QtCore.Qt.FindChildrenRecursively
+        )
+        if tab_widget:
+            return tab_widget
+        expected_tabs = set(TAB_TRANSLATIONS.keys())
+        for candidate in root.findChildren(QtWidgets.QTabWidget):
+            for idx in range(candidate.count()):
+                page = candidate.widget(idx)
+                if page and page.objectName() in expected_tabs:
+                    return candidate
+        return None
+
     def _panel_from_widget(self, widget: QtWidgets.QWidget | None):
         """Hilfsfunktion: finde den Panel-Elternteil zu einem Widget."""
         while widget:
             try:
-                if widget.objectName() in ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel"):
+                if widget.objectName() in PANEL_WIDGET_NAMES:
                     return widget
             except Exception:
                 pass
@@ -1664,6 +2091,7 @@ class HandlerClass:
         # Finaler Versuch nach vollständigem UI-Aufbau
         self._ensure_core_widgets()
         self._connect_signals()
+        self._setup_thread_helpers()
         self._debug_widget_names()
         QtCore.QTimer.singleShot(0, self._finalize_ui_ready)
 
@@ -1700,6 +2128,7 @@ class HandlerClass:
             pass
         self._setup_param_maps()
         self._connect_signals()
+        self._setup_thread_helpers()
         self._debug_widget_names()
         try:
             print(
@@ -1713,6 +2142,7 @@ class HandlerClass:
         self._ensure_core_widgets()
         self._update_parting_contour_choices()
         self._update_parting_ready_state()
+        self._apply_tab_titles(self._current_language_code())
 
     def _ensure_contour_widgets(self):
         """Sucht fehlende Kontur-Widgets (Start X/Z, Tabelle, Name) robust über objectName."""
@@ -1784,6 +2214,79 @@ class HandlerClass:
         self.contour_edge_type = grab("contour_edge_type")
         self.contour_edge_size = grab("contour_edge_size")
         self.label_contour_edge_size = grab("label_contour_edge_size")
+
+    def _ensure_thread_widgets(self):
+        """Sichert sich die relevanten Widgets im Gewinde-Tab."""
+        if self.thread_standard is None:
+            self.thread_standard = self._get_widget_by_name("thread_standard")
+        if self.thread_orientation is None:
+            self.thread_orientation = self._get_widget_by_name("thread_orientation")
+        if self.thread_tool is None:
+            self.thread_tool = self._get_widget_by_name("thread_tool")
+        if self.thread_spindle is None:
+            self.thread_spindle = self._get_widget_by_name("thread_spindle")
+        if self.thread_major_diameter is None:
+            self.thread_major_diameter = self._get_widget_by_name("thread_major_diameter")
+        if self.thread_pitch is None:
+            self.thread_pitch = self._get_widget_by_name("thread_pitch")
+
+    def _populate_thread_standard_options(self):
+        combo = self.thread_standard
+        if combo is None or self._thread_standard_populated:
+            return
+
+        def _compact(value: float) -> str:
+            text = f"{value:.3f}".rstrip("0").rstrip(".")
+            return text if text else "0"
+
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Benutzerdefiniert", {"label": "Benutzerdefiniert"})
+        for name, diameter, pitch in STANDARD_METRIC_THREAD_SPECS:
+            pitch_text = _compact(pitch)
+            label = f"{name} x {pitch_text}"
+            combo.addItem(
+                label,
+                {"label": label, "major": diameter, "pitch": pitch},
+            )
+        combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        self._thread_standard_populated = True
+
+    def _setup_thread_helpers(self):
+        self._ensure_thread_widgets()
+        combo = self.thread_standard
+        if combo is None:
+            return
+        if not self._thread_standard_populated:
+            self._populate_thread_standard_options()
+        if not self._thread_standard_signal_connected:
+            try:
+                combo.currentIndexChanged.connect(self._apply_standard_thread_selection)
+                self._thread_standard_signal_connected = True
+            except Exception:
+                pass
+        self._apply_standard_thread_selection()
+
+    def _apply_standard_thread_selection(self, *_args, **_kwargs):
+        if self._thread_applying_standard:
+            return
+        combo = self.thread_standard
+        if combo is None:
+            return
+        data = combo.currentData()
+        if not isinstance(data, dict):
+            return
+        major = data.get("major")
+        pitch = data.get("pitch")
+        self._thread_applying_standard = True
+        try:
+            if isinstance(major, (int, float)) and self.thread_major_diameter:
+                self.thread_major_diameter.setValue(float(major))
+            if isinstance(pitch, (int, float)) and self.thread_pitch:
+                self.thread_pitch.setValue(float(pitch))
+        finally:
+            self._thread_applying_standard = False
 
     def _debug_widget_names(self):
         """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
@@ -1922,6 +2425,11 @@ class HandlerClass:
                 "coord_mode": self._get_widget_by_name("contour_coord_mode"),
             },
             OpType.THREAD: {
+                "tool": self._get_widget_by_name("thread_tool"),
+                "spindle": self._get_widget_by_name("thread_spindle"),
+                "coolant": self._get_widget_by_name("thread_coolant"),
+                "orientation": self._get_widget_by_name("thread_orientation"),
+                "standard": self._get_widget_by_name("thread_standard"),
                 "major_diameter": self._get_widget_by_name("thread_major_diameter"),
                 "pitch": self._get_widget_by_name("thread_pitch"),
                 "length": self._get_widget_by_name("thread_length"),
@@ -1929,14 +2437,25 @@ class HandlerClass:
                 "safe_z": self._get_widget_by_name("thread_safe_z"),
             },
             OpType.GROOVE: {
+                "tool": self._get_widget_by_name("groove_tool"),
+                "spindle": self._get_widget_by_name("groove_spindle"),
+                "coolant": self._get_widget_by_name("groove_coolant"),
                 "diameter": self._get_widget_by_name("groove_diameter"),
                 "width": self._get_widget_by_name("groove_width"),
+                "cutting_width": self._get_widget_by_name("groove_cutting_width"),
                 "depth": self._get_widget_by_name("groove_depth"),
                 "z": self._get_widget_by_name("groove_z"),
                 "feed": self._get_widget_by_name("groove_feed"),
                 "safe_z": self._get_widget_by_name("groove_safe_z"),
+                "reduced_feed_start_x": self._get_widget_by_name("groove_reduced_feed_start_x"),
+                "reduced_feed": self._get_widget_by_name("groove_reduced_feed"),
+                "reduced_rpm": self._get_widget_by_name("groove_reduced_rpm"),
             },
             OpType.DRILL: {
+                "tool": self._get_widget_by_name("drill_tool"),
+                "spindle": self._get_widget_by_name("drill_spindle"),
+                "coolant": self._get_widget_by_name("drill_coolant"),
+                "mode": self._get_widget_by_name("drill_mode"),
                 "diameter": self._get_widget_by_name("drill_diameter"),
                 "depth": self._get_widget_by_name("drill_depth"),
                 "feed": self._get_widget_by_name("drill_feed"),
@@ -1945,12 +2464,14 @@ class HandlerClass:
             OpType.KEYWAY: {
                 "mode": self._get_widget_by_name("key_mode"),
                 "radial_side": self._get_widget_by_name("key_radial_side"),
+                "coolant": self._get_widget_by_name("key_coolant"),
                 "slot_count": self._get_widget_by_name("key_slot_count"),
                 "slot_start_angle": self._get_widget_by_name("key_slot_start_angle"),
                 "start_x_dia": self._get_widget_by_name("key_start_diameter"),
                 "start_z": self._get_widget_by_name("key_start_z"),
                 "nut_length": self._get_widget_by_name("key_nut_length"),
                 "nut_depth": self._get_widget_by_name("key_nut_depth"),
+                "cutting_width": self._get_widget_by_name("key_cutting_width"),
                 "top_clearance": self._get_widget_by_name("key_top_clearance"),
                 "depth_per_pass": self._get_widget_by_name("key_depth_per_pass"),
                 "plunge_feed": self._get_widget_by_name("key_plunge_feed"),
@@ -1962,6 +2483,7 @@ class HandlerClass:
                 "side": self._get_widget_by_name("parting_side"),
                 "tool": self._get_widget_by_name("parting_tool"),
                 "spindle": self._get_widget_by_name("parting_spindle"),
+                "coolant": self._get_widget_by_name("parting_coolant"),
                 "feed": self._get_widget_by_name("parting_feed"),
                 "depth_per_pass": self._get_widget_by_name("parting_depth_per_pass"),
                 "mode": self._get_widget_by_name("parting_mode"),
@@ -2026,6 +2548,90 @@ class HandlerClass:
         if self.program_has_subspindle and self.program_has_subspindle not in self._connected_global_widgets:
             self.program_has_subspindle.toggled.connect(self._update_subspindle_visibility)
             self._connected_global_widgets.add(self.program_has_subspindle)
+        self._apply_language_texts()
+        lang_combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
+        if lang_combo and not getattr(self, "_language_connected", False):
+            lang_combo.currentIndexChanged.connect(self._handle_language_change)
+            self._language_connected = True
+
+    def _current_language_code(self) -> str:
+        combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
+        if combo is None:
+            return DEFAULT_LANGUAGE
+        return "en" if combo.currentIndex() == 1 else "de"
+
+    def _handle_language_change(self, *_args):
+        self._apply_language_texts()
+
+    def _apply_language_texts(self):
+        lang = self._current_language_code()
+        for name, translations in TEXT_TRANSLATIONS.items():
+            widget = self._get_widget_by_name(name)
+            if widget is None:
+                continue
+            text = translations.get(lang)
+            if text is not None:
+                try:
+                    widget.setText(text)
+                except Exception:
+                    pass
+        self._apply_combo_translations(lang)
+        self._apply_tab_titles(lang)
+        self._apply_button_translations(lang)
+
+    def _apply_combo_translations(self, lang: str):
+        for name, options in COMBO_OPTION_TRANSLATIONS.items():
+            widget = self._get_widget_by_name(name)
+            if widget is None or lang not in options:
+                continue
+            current_index = widget.currentIndex()
+            widget.blockSignals(True)
+            widget.clear()
+            for entry in options[lang]:
+                widget.addItem(entry)
+            widget.setCurrentIndex(max(0, min(current_index, widget.count() - 1)))
+            widget.blockSignals(False)
+
+    def _apply_tab_titles(self, lang: str):
+        tab_widget = self._find_panel_tab_widget() or self.tab_params
+        if tab_widget is None:
+            return
+        self.tab_params = tab_widget
+        count = tab_widget.count()
+        for idx in range(count):
+            title = None
+            translations = None
+            tab_widget_page = tab_widget.widget(idx)
+            if tab_widget_page is not None:
+                tab_name = tab_widget_page.objectName()
+                translations = TAB_TRANSLATIONS.get(tab_name)
+            if translations is None and idx < len(TAB_ORDER):
+                translations = TAB_TRANSLATIONS.get(TAB_ORDER[idx])
+            if translations:
+                title = translations.get(lang)
+            if title is None:
+                current_text = self.tab_params.tabText(idx).strip()
+                for translations in TAB_TRANSLATIONS.values():
+                    if current_text in translations.values():
+                        title = translations.get(lang)
+                        break
+            if title:
+                try:
+                    self.tab_params.setTabText(idx, title)
+                except Exception:
+                    pass
+
+    def _apply_button_translations(self, lang: str):
+        for name, translations in BUTTON_TRANSLATIONS.items():
+            button = self._get_widget_by_name(name)
+            if button is None:
+                continue
+            text = translations.get(lang)
+            if text is not None:
+                try:
+                    button.setText(text)
+                except Exception:
+                    pass
 
         # Planen-spezifische Logik
         if getattr(self, "face_mode", None) and self.face_mode not in self._connected_param_widgets:
@@ -2296,26 +2902,30 @@ class HandlerClass:
         idx = self.tab_params.currentIndex() if self.tab_params else 1  # Default=Planen
         mapping = {
             0: OpType.PROGRAM_HEADER,  # Programmkopf
-            1: OpType.FACE,            # Planen
-            2: OpType.CONTOUR,         # Kontur
-            3: OpType.THREAD,
-            4: OpType.GROOVE,
-            5: OpType.DRILL,
-            6: OpType.KEYWAY,
-            7: OpType.ABSPANEN,
+            1: OpType.FACE,
+            2: OpType.CONTOUR,
+            3: OpType.ABSPANEN,
+            4: OpType.THREAD,
+            5: OpType.GROOVE,
+            6: OpType.DRILL,
+            7: OpType.KEYWAY,
         }
         return mapping.get(idx, OpType.FACE)
 
-    def _collect_params(self, op_type: str) -> Dict[str, float]:
+    def _collect_params(self, op_type: str) -> Dict[str, object]:
         widgets = self.param_widgets.get(op_type, {})
-        params: Dict[str, float] = {}
+        params: Dict[str, object] = {}
         for key, widget in widgets.items():
             if widget is None:
                 continue
             if isinstance(widget, QtWidgets.QSpinBox):
                 params[key] = float(widget.value())
             elif isinstance(widget, QtWidgets.QComboBox):
-                params[key] = float(widget.currentIndex())
+                data = widget.currentData()
+                if data is not None:
+                    params[key] = data
+                else:
+                    params[key] = float(widget.currentIndex())
             elif isinstance(widget, QtWidgets.QAbstractButton):
                 params[key] = float(widget.isChecked())
             else:  # QDoubleSpinBox
@@ -3145,11 +3755,11 @@ class HandlerClass:
             type_to_tab = {
                 OpType.FACE: 1,
                 OpType.CONTOUR: 2,
-                OpType.THREAD: 3,
-                OpType.GROOVE: 4,
-                OpType.DRILL: 5,
-                OpType.KEYWAY: 6,
-                OpType.ABSPANEN: 7,
+                OpType.ABSPANEN: 3,
+                OpType.THREAD: 4,
+                OpType.GROOVE: 5,
+                OpType.DRILL: 6,
+                OpType.KEYWAY: 7,
             }
             self.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
         self._load_params_to_form(op)
@@ -3482,6 +4092,23 @@ class HandlerClass:
             side_label = "außen" if side_idx == 0 else "innen"
             name_suffix = f" [{name}]" if name else ""
             return f"{number}: Abspanen{name_suffix} ({side_label}){suffix}"
+        if op.op_type == OpType.THREAD:
+            orientation_raw = op.params.get("orientation", 0)
+            orientation_idx = 0
+            if isinstance(orientation_raw, (int, float)):
+                orientation_idx = int(max(0, min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1)))
+            orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
+            standard_data = op.params.get("standard")
+            detail = ""
+            if isinstance(standard_data, dict):
+                label = standard_data.get("label")
+                if label:
+                    detail = label
+            if not detail:
+                major = float(op.params.get("major_diameter", 0.0))
+                pitch = float(op.params.get("pitch", 0.0))
+                detail = f"Ø{major:.2f} P{pitch:.2f}"
+            return f"{number}: Gewinde ({orientation_label}) {detail}{suffix}"
         return f"{number}: {op.op_type.title()}{suffix}"
 
     def _renumber_operations(self):
