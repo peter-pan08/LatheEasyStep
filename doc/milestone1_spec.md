@@ -108,3 +108,16 @@ Alle Werte landen in `ProgramModel.program_settings` und werden im Header sowie 
 - [x] Groove-Tab verarbeitet reduzierte Drehzahlen/Vorschübe ab einer X-Grenze und erfordert Schneidenbreite.
 - [x] Bohren-Tab deckt Normal-, Spanbruch- und Spanbruch+Rückzug-Modi mit `G81`/`G83` ab.
 - [x] Keilnut-Tab bietet Axial/Face-Modi, Radialseite und Kühlung sowie Schneidenbreite, die im G-Code mit Variablen dokumentiert wird.
+
+## English summary
+
+- Panel and tabs are embedded inside the QtDragon macros tab and locate `tabParams` even when nested.
+- Program tab preserves language, units, stock metadata, tool change offsets, and spindle limits between sessions.
+- Every workstep gets its own tab (Facing, Contour, Parting, Thread, Groove/Parting, Drilling, Keyway) with mandatory tool+spindle settings.
+- Path preview and operation list stay in sync for Face, Contour, Parting, Thread, Groove, Drilling, and Keyway.
+- G-code output (`~/linuxcnc/nc_files/lathe_easystep.ngc`) uses standard cycles, documents coolant/reduced zones, and includes tool/spindle commands.
+- Language switch translates labels, combos, buttons, and tab titles (embedded QtDragon included).
+- Thread tab provides ISO metric standards, autopopulating major diameter and pitch.
+- Groove tab supports reduced RPM/feed zones triggered by an X threshold and requires cutting width.
+- Drill tab covers Normal, Chip-Break, and Chip-Break + Retract modes using `G81`/`G83`.
+- Keyway tab supports axial/face modes, radial side selection, coolant, and cutting width exported into helper variables for the generated G-code.
