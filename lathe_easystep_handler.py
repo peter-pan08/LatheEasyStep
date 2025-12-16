@@ -1270,6 +1270,44 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
 
     offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
 
+    # Optional: parallel-X slicing (robustes Schrupp-Verfahren)
+    slice_strategy = op.params.get("slice_strategy")
+    slice_step = float(op.params.get("slice_step", depth_per_pass or 1.0))
+    allow_undercut = bool(op.params.get("allow_undercut", False))
+    external = side_idx == 0  # AuÃŸen/Innen
+
+    if slice_strategy == "parallel_x":
+        # Ziel-X bestimmen je nach Außen/Innen
+        xs = [p[0] for p in path] if path else [stock_x]
+        x_target = min(xs) if external else max(xs)
+        try:
+            from slicer import rough_turn_parallel_x
+        except Exception:
+            rough_turn_parallel_x = None
+
+        if rough_turn_parallel_x:
+            rough_lines = rough_turn_parallel_x(
+                path,
+                external=external,
+                x_stock=stock_x,
+                x_target=x_target,
+                step_x=slice_step,
+                safe_z=safe_z,
+                feed=feed,
+                allow_undercut=allow_undercut,
+            )
+            lines.extend(rough_lines)
+
+            # Finish optional
+            if mode_idx in (1, 2):
+                lines.append("(Schlichtschnitt Plan)")
+                lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+                for (x, z) in path:
+                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+                lines.append(f"G0 Z{safe_z:.3f}")
+
+            return lines
+
     if tool_num > 0:
         lines.append(f"(Werkzeug T{tool_num:02d})")
         lines.append(f"T{tool_num:02d} M6")
