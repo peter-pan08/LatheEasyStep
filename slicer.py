@@ -96,6 +96,9 @@ def rough_turn_parallel_x(
     safe_z: float,
     feed: float,
     allow_undercut: bool = False,
+    pause_enabled: bool = False,
+    pause_distance: float = 0.0,
+    pause_duration: float = 0.5,
 ) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
@@ -138,7 +141,16 @@ def rough_turn_parallel_x(
             lines.append(f"G0 Z{safe_z:.3f}")
             lines.append(f"G0 X{x_cut:.3f}")
             lines.append(f"G0 Z{za:.3f}")
-            lines.append(f"G1 Z{zb:.3f} F{feed:.3f}")
+            # Z movement is a segment from (x_cut, za) to (x_cut, zb)
+            if pause_enabled and pause_distance > 0 and abs(zb - za) > pause_distance:
+                # use the compact pause sub call
+                lines.append(
+                    "o<step_line_pause> call "
+                    f"[{x_cut:.3f}] [{za:.3f}] [{x_cut:.3f}] [{zb:.3f}] "
+                    f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+                )
+            else:
+                lines.append(f"G1 Z{zb:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
 
     return lines
@@ -153,6 +165,9 @@ def rough_turn_parallel_z(
     safe_z: float,
     feed: float,
     allow_undercut: bool = False,
+    pause_enabled: bool = False,
+    pause_distance: float = 0.0,
+    pause_duration: float = 0.5,
 ) -> List[str]:
     """Slicing parallel to Z (horizontal bands)."""
     segs = segments_from_polyline(path)
@@ -210,7 +225,15 @@ def rough_turn_parallel_z(
             lines.append(f"G0 Z{safe_z:.3f}")
             lines.append(f"G0 X{x_cut:.3f}")
             lines.append(f"G0 Z{band_lo:.3f}")
-            lines.append(f"G1 Z{band_hi:.3f} F{feed:.3f}")
+            # Z movement is a segment from (x_cut, band_lo) to (x_cut, band_hi)
+            if pause_enabled and pause_distance > 0 and abs(band_hi - band_lo) > pause_distance:
+                lines.append(
+                    "o<step_line_pause> call "
+                    f"[{x_cut:.3f}] [{band_lo:.3f}] [{x_cut:.3f}] [{band_hi:.3f}] "
+                    f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+                )
+            else:
+                lines.append(f"G1 Z{band_hi:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
 
     return lines

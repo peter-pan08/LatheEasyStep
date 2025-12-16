@@ -1290,11 +1290,11 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
 
     offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
 
-    # Optional: parallel-X slicing (robustes Schrupp-Verfahren)
+    # Optional: slicing (robustes Schrupp-Verfahren)
     slice_strategy = op.params.get("slice_strategy")
     slice_step = float(op.params.get("slice_step", depth_per_pass or 1.0))
     allow_undercut = bool(op.params.get("allow_undercut", False))
-    external = side_idx == 0  # AuÃŸen/Innen
+    external = side_idx == 0  # Außen/Innen
 
     # Accept either a string code (e.g. 'parallel_x') or the combo index (0=none,1=parallel_x)
     strategy_code = None
@@ -1331,12 +1331,15 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
                 safe_z=safe_z,
                 feed=feed,
                 allow_undercut=allow_undercut,
+                pause_enabled=pause_enabled,
+                pause_distance=pause_distance,
+                pause_duration=pause_duration,
             )
             lines.extend(rough_lines)
 
-            # Finish optional
+            # Finish optional (Kontur 1x)
             if mode_idx in (1, 2):
-                lines.append("(Schlichtschnitt Plan)")
+                lines.append("(Schlichtschnitt Kontur)")
                 lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
                 for (x, z) in path:
                     lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
@@ -1353,22 +1356,26 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
         if rough_turn_parallel_z:
             z_vals = [p[1] for p in path] if path else [0.0]
             z_stock = max(z_vals) if external else min(z_vals)
+            z_target = min(z_vals) if external else max(z_vals)
             # step_z reuses slice_step UI
             rough_lines = rough_turn_parallel_z(
                 path,
                 external=external,
                 z_stock=z_stock,
-                z_target=x_target if False else (min(z_vals) if external else max(z_vals)),
+                z_target=z_target,
                 step_z=slice_step,
                 safe_z=safe_z,
                 feed=feed,
                 allow_undercut=allow_undercut,
+                pause_enabled=pause_enabled,
+                pause_distance=pause_distance,
+                pause_duration=pause_duration,
             )
             lines.extend(rough_lines)
 
-            # Finish optional
+            # Finish optional (Kontur 1x)
             if mode_idx in (1, 2):
-                lines.append("(Schlichtschnitt Plan)")
+                lines.append("(Schlichtschnitt Kontur)")
                 lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
                 for (x, z) in path:
                     lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
@@ -1376,23 +1383,33 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
 
             return lines
 
-    if tool_num > 0:
-        lines.append(f"(Werkzeug T{tool_num:02d})")
-        lines.append(f"T{tool_num:02d} M6")
+    # ------------------------------------------------------------------
+    # NO SILENT FALLBACK FOR ROUGHING
+    #
+    # The old offset-path roughing produces non-CAM behavior on tapers:
+    # it re-traverses too much contour per pass -> very low chip load at
+    # entry/exit, bad surface, tool life impact.
+    #
+    # Therefore:
+    # - Roughing requires a slicing strategy (parallel_x / parallel_z)
+    # - If not available, we emit a clear warning and (optionally) only
+    #   run Finish (single contour pass) if selected.
+    # ------------------------------------------------------------------
 
-    if spindle and spindle > 0:
-        lines.append(f"S{int(spindle)} M3")
+    if mode_idx == 0:
+        lines.append("(WARN: Abspanen-Schruppen ohne Slicing ist deaktiviert)")
+        lines.append("(      Bitte in 'Abspanen -> Slicing Strategy' Parallel X oder Parallel Z wählen.)")
+        # Optional: If user selected "Rough only", stop here.
+        # If user actually wants finish too, they should choose mode 2 in UI.
+        return lines
 
-    mode_label = "Schrupp" if mode_idx == 0 else "Schlicht"
-    for idx, offset in enumerate(offsets, start=1):
-        lines.append(f"(Abspan-Pass {idx} {mode_label}: Offset {offset:.3f} mm)")
-        pass_path = _offset_abspanen_path(path, stock_x, offset)
-        lines.extend(
-            _gcode_for_abspanen_pass(
-                pass_path, feed, safe_z, pause_enabled, pause_distance, pause_duration
-            )
-        )
-
+    # Finish-only (mode_idx == 1) without slicing: single contour pass
+    _append_tool_and_spindle(lines, tool_num, spindle)
+    lines.append("(Schlichtschnitt Kontur)")
+    lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+    for (x, z) in path:
+        lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+    lines.append(f"G0 Z{safe_z:.3f}")
     return lines
 
 
