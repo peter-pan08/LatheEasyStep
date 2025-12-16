@@ -1438,6 +1438,9 @@
             </item>
             <item row="11" column="1">
              <widget class="QComboBox" name="parting_slice_strategy">
+              <property name="toolTip">
+               <string>Wähle Slicing-Strategie: Keine / Parallel X / Parallel Z</string>
+              </property>
               <item>
                <property name="text">
                 <string>Keine</string>
@@ -1446,6 +1449,11 @@
               <item>
                <property name="text">
                 <string>Parallel X</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Parallel Z</string>
                </property>
               </item>
              </widget>
@@ -1459,6 +1467,9 @@
             </item>
             <item row="12" column="1">
              <widget class="QDoubleSpinBox" name="parting_slice_step">
+              <property name="toolTip">
+               <string>Schrittweite für Slicing (mm) — Abstand zwischen Bändern</string>
+              </property>
               <property name="suffix">
                <string> mm</string>
               </property>
@@ -1479,6 +1490,9 @@
             </item>
             <item row="13" column="1">
              <widget class="QCheckBox" name="parting_allow_undercut">
+              <property name="toolTip">
+               <string>Erlaubt Hinterschnitte (Schnitte, die über die Kontur hinausgehen)</string>
+              </property>
               <property name="text">
                <string>erlauben</string>
               </property>

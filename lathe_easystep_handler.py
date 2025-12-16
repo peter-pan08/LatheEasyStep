@@ -286,7 +286,7 @@ COMBO_OPTION_TRANSLATIONS = {
     "parting_side": {"de": ["Außenseite", "Innenseite"], "en": ["Outside", "Inside"]},
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
-    "parting_slice_strategy": {"de": ["Keine", "Parallel X"], "en": ["None", "Parallel X"]},
+    "parting_slice_strategy": {"de": ["Keine", "Parallel X", "Parallel Z"], "en": ["None", "Parallel X", "Parallel Z"]},
     "thread_orientation": {"de": ["Aussengewinde", "Innengewinde"], "en": ["External", "Internal"]},
     "thread_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "groove_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
@@ -1300,7 +1300,13 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
     strategy_code = None
     try:
         if isinstance(slice_strategy, (int, float)):
-            strategy_code = "parallel_x" if int(slice_strategy) == 1 else None
+            idx = int(slice_strategy)
+            if idx == 1:
+                strategy_code = "parallel_x"
+            elif idx == 2:
+                strategy_code = "parallel_z"
+            else:
+                strategy_code = None
         elif isinstance(slice_strategy, str):
             strategy_code = slice_strategy
     except Exception:
@@ -1322,6 +1328,38 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
                 x_stock=stock_x,
                 x_target=x_target,
                 step_x=slice_step,
+                safe_z=safe_z,
+                feed=feed,
+                allow_undercut=allow_undercut,
+            )
+            lines.extend(rough_lines)
+
+            # Finish optional
+            if mode_idx in (1, 2):
+                lines.append("(Schlichtschnitt Plan)")
+                lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+                for (x, z) in path:
+                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+                lines.append(f"G0 Z{safe_z:.3f}")
+
+            return lines
+
+    if strategy_code == "parallel_z":
+        try:
+            from slicer import rough_turn_parallel_z
+        except Exception:
+            rough_turn_parallel_z = None
+
+        if rough_turn_parallel_z:
+            z_vals = [p[1] for p in path] if path else [0.0]
+            z_stock = max(z_vals) if external else min(z_vals)
+            # step_z reuses slice_step UI
+            rough_lines = rough_turn_parallel_z(
+                path,
+                external=external,
+                z_stock=z_stock,
+                z_target=x_target if False else (min(z_vals) if external else max(z_vals)),
+                step_z=slice_step,
                 safe_z=safe_z,
                 feed=feed,
                 allow_undercut=allow_undercut,
