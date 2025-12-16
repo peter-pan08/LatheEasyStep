@@ -185,6 +185,10 @@ TEXT_TRANSLATIONS = {
     "label_parting_pause": {"de": "Vorschubunterbrechung", "en": "Feed Interrupt"},
     "parting_pause_enabled": {"de": "aktivieren", "en": "Enable"},
     "label_parting_pause_distance": {"de": "Unterbrechungsabstand", "en": "Pause Distance"},
+    "label_parting_slice_strategy": {"de": "Slicing-Strategie", "en": "Slicing Strategy"},
+    "label_parting_slice_step": {"de": "Slicing-Schritt", "en": "Slicing Step"},
+    "label_parting_allow_undercut": {"de": "Hinterschnitt erlauben", "en": "Allow Undercut"},
+    "parting_allow_undercut": {"de": "erlauben", "en": "allow"},
 
     "label_thread_orientation": {"de": "Gewindetyp", "en": "Thread Type"},
     "label_thread_standard": {"de": "Standardgewinde", "en": "Thread Standard"},
@@ -282,6 +286,7 @@ COMBO_OPTION_TRANSLATIONS = {
     "parting_side": {"de": ["Außenseite", "Innenseite"], "en": ["Outside", "Inside"]},
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
+    "parting_slice_strategy": {"de": ["Keine", "Parallel X"], "en": ["None", "Parallel X"]},
     "thread_orientation": {"de": ["Aussengewinde", "Innengewinde"], "en": ["External", "Internal"]},
     "thread_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "groove_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
@@ -1276,7 +1281,17 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
     allow_undercut = bool(op.params.get("allow_undercut", False))
     external = side_idx == 0  # AuÃŸen/Innen
 
-    if slice_strategy == "parallel_x":
+    # Accept either a string code (e.g. 'parallel_x') or the combo index (0=none,1=parallel_x)
+    strategy_code = None
+    try:
+        if isinstance(slice_strategy, (int, float)):
+            strategy_code = "parallel_x" if int(slice_strategy) == 1 else None
+        elif isinstance(slice_strategy, str):
+            strategy_code = slice_strategy
+    except Exception:
+        strategy_code = None
+
+    if strategy_code == "parallel_x":
         # Ziel-X bestimmen je nach Außen/Innen
         xs = [p[0] for p in path] if path else [stock_x]
         x_target = min(xs) if external else max(xs)
@@ -1849,6 +1864,12 @@ class HandlerClass:
         self.parting_mode = getattr(self.w, "parting_mode", None)
         self.parting_pause_enabled = getattr(self.w, "parting_pause_enabled", None)
         self.parting_pause_distance = getattr(self.w, "parting_pause_distance", None)
+        self.label_parting_slice_strategy = getattr(self.w, "label_parting_slice_strategy", None)
+        self.parting_slice_strategy = getattr(self.w, "parting_slice_strategy", None)
+        self.label_parting_slice_step = getattr(self.w, "label_parting_slice_step", None)
+        self.parting_slice_step = getattr(self.w, "parting_slice_step", None)
+        self.label_parting_allow_undercut = getattr(self.w, "label_parting_allow_undercut", None)
+        self.parting_allow_undercut = getattr(self.w, "parting_allow_undercut", None)
         self.label_parting_depth = getattr(self.w, "label_parting_depth", None)
         self.label_parting_pause = getattr(self.w, "label_parting_pause", None)
         self.label_parting_pause_distance = getattr(self.w, "label_parting_pause_distance", None)
@@ -2934,6 +2955,9 @@ class HandlerClass:
                 "mode": self._get_widget_by_name("parting_mode"),
                 "pause_enabled": self._get_widget_by_name("parting_pause_enabled"),
                 "pause_distance": self._get_widget_by_name("parting_pause_distance"),
+                "slice_strategy": self._get_widget_by_name("parting_slice_strategy"),
+                "slice_step": self._get_widget_by_name("parting_slice_step"),
+                "allow_undercut": self._get_widget_by_name("parting_allow_undercut"),
             },
         }
 
@@ -3324,6 +3348,12 @@ class HandlerClass:
             self.parting_pause_enabled,
             self.label_parting_pause_distance,
             self.parting_pause_distance,
+            self.label_parting_slice_strategy,
+            self.parting_slice_strategy,
+            self.label_parting_slice_step,
+            self.parting_slice_step,
+            self.label_parting_allow_undercut,
+            self.parting_allow_undercut,
         ):
             if widget is not None:
                 widget.setVisible(show_roughing)
@@ -3567,7 +3597,23 @@ class HandlerClass:
             widget.blockSignals(True)
             val = op.params[key]
             if isinstance(widget, QtWidgets.QComboBox):
-                widget.setCurrentIndex(int(val))
+                try:
+                    widget.setCurrentIndex(int(val))
+                except Exception:
+                    # Support string codes for certain combo boxes (e.g. slice strategy)
+                    try:
+                        if key == "slice_strategy" and isinstance(val, str):
+                            # map common codes to indices: 0=None,1=parallel_x
+                            v = 1 if val == "parallel_x" else 0
+                            widget.setCurrentIndex(int(v))
+                        else:
+                            # fallback: try to find a text match (language-specific)
+                            txt = str(val).strip()
+                            idx = widget.findText(txt)
+                            if idx >= 0:
+                                widget.setCurrentIndex(idx)
+                    except Exception:
+                        pass
             elif isinstance(widget, QtWidgets.QAbstractButton):
                 widget.setChecked(bool(val))
             else:

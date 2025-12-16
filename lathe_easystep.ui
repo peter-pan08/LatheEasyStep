@@ -1429,6 +1429,61 @@
               </property>
              </widget>
             </item>
+            <item row="11" column="0">
+             <widget class="QLabel" name="label_parting_slice_strategy">
+              <property name="text">
+               <string>Slicing-Strategie</string>
+              </property>
+             </widget>
+            </item>
+            <item row="11" column="1">
+             <widget class="QComboBox" name="parting_slice_strategy">
+              <item>
+               <property name="text">
+                <string>Keine</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Parallel X</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item row="12" column="0">
+             <widget class="QLabel" name="label_parting_slice_step">
+              <property name="text">
+               <string>Slicing-Schritt</string>
+              </property>
+             </widget>
+            </item>
+            <item row="12" column="1">
+             <widget class="QDoubleSpinBox" name="parting_slice_step">
+              <property name="suffix">
+               <string> mm</string>
+              </property>
+              <property name="maximum">
+               <double>100.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>0.500000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="13" column="0">
+             <widget class="QLabel" name="label_parting_allow_undercut">
+              <property name="text">
+               <string>Hinterschnitt erlauben</string>
+              </property>
+             </widget>
+            </item>
+            <item row="13" column="1">
+             <widget class="QCheckBox" name="parting_allow_undercut">
+              <property name="text">
+               <string>erlauben</string>
+              </property>
+             </widget>
+            </item>
            </layout>
           </widget>
           
