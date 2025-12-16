@@ -70,6 +70,15 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 - Pause aktivieren: Hake *Pause aktivieren* an und setze **Pause-Abstand** (mm). Wenn ein Segment länger als der Abstand ist, wird an passenden Stellen `o<step_line_pause> call ...` aufgerufen.
 - Verhalten im G-Code: Bei Bedarf wird im Header die Subroutine `o<step_line_pause>` angelegt und `o<step_line_pause> call ...` im Pass-Body aufgerufen. Ist keine Operation mit Pause vorhanden, wird die Subroutine nicht erzeugt.
 
+### Neuerungen (Slicing & UI) — Kurz
+- Slicing-Strategien: Zusätzlich zu **Parallel X** gibt es jetzt **Parallel Z** (horizontaler Band-Slicing). Diese Strategien sind in **Abspanen → Slicing Strategy** auswählbar (Optionen: None, Parallel X, Parallel Z).
+- Slicing‑Parameter: `Slicing Step` (mm) bestimmt die Bandbreite; `Allow Undercut` erlaubt/verbietet Pässe, die über die Kontur hinausgehen. Wenn **Allow Undercut** deaktiviert ist, überspringt der Slicer Pässe, die nicht erreichbar oder deutlich außerhalb der Kontur wären.
+- Pausen & Sicherheit: Vorschub‑Unterbrechungen bleiben weiterhin **auf Schruppen beschränkt**; beim Schlichten werden sie unterdrückt und die Pause‑Widgets ausgeblendet.
+- Tooltips & Lokalisierung: Die neuen UI‑Tooltips und What'sThis‑Texte sind in `lathe_easystep.ui` als englische Quelltexte hinterlegt (für Qt‑Linguist) und werden zur Laufzeit in DE/EN gesetzt. Dadurch sind Designer-Extrakt und Laufzeit‑Lokalisierung konsistent.
+- G-Code-Header: O‑Subs (`o<step_x_pause>`, `o<step_line_pause>`) werden nur eingefügt, wenn mindestens ein Arbeitsschritt sie tatsächlich benötigt (reduziert unnötige Subs).
+- Tests: Neue Unit‑Tests wurden hinzugefügt: `tests/test_parting_slice.py`, `tests/test_parting_tooltips.py`, `tests/test_parting_visibility.py`, `tests/test_slicer_extra.py`.
+- Datum & Hinweis: Änderungen vorgenommen am 2025-12-16; siehe die Tests für Beispiele der erwarteten G‑Code-Ausgabe.
+
 ### Kurze Anleitung: Gewindeschneiden
 - Presets: Das Dropdown `Standardgewinde` enthält metrische und TR-Profile. Bei Auswahl werden Steigung & Nenndurchmesser gesetzt; weitere Werte (Zustellungen, Peak-Offset, Zustellwinkel, Retract usw.) werden sinnvoll vorbelegt, aber **nur** wenn die entsprechenden Felder zuvor leer (0) waren — so werden Benutzerwerte nicht überschrieben.
 - Preset übernehmen: Der Button **Preset übernehmen** erzwingt das Überschreiben aller Gewinde-Parameter mit den Preset-Werten, falls du schnell auf sichere Standardwerte wechseln willst.
@@ -86,10 +95,17 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 
 ### Quick guide: Parting & feed interruption
 - Mode selection: In the **Parting** tab choose **Rough** when you want feed interruption; **Finish** hides and ignores pause options.
- - UI: The **Parting** tab now includes **Slicing Strategy**, **Slicing Step** and **Allow Undercut** options to enable the new parallel-X roughing strategy (select "Parallel X" and set a step to activate).
- - UI: The **Parting** tab now includes **Slicing Strategy**, **Slicing Step** and **Allow Undercut** options to enable the new parallel-X roughing strategy (select "Parallel X" and set a step to activate). If **Allow Undercut** is disabled, the slicer avoids passes that would cut beyond the drawn contour (safer for fragile profiles).
 - Enable pause: Tick *Pause enabled* and set **Pause distance** (mm). If a segment is longer than the distance, `o<step_line_pause> call ...` will be used.
-- G-code behavior: When needed the header gets `o<step_line_pause> sub` and calls `o<step_line_pause> call ...` in the pass body. If no operation uses pauses the sub is omitted.
+- G-code behavior: When needed the header gets `o<step_line_pause>` sub and calls `o<step_line_pause> call ...` in the pass body. If no operation uses pauses the sub is omitted.
+
+### New (Slicing & UI) — Short
+- Slicing strategies: In addition to **Parallel X**, there is now **Parallel Z** (horizontal band slicing). Select the strategy in **Parting → Slicing Strategy** (options: None, Parallel X, Parallel Z).
+- Slicing parameters: `Slicing Step` (mm) controls the band thickness; `Allow Undercut` permits or forbids passes that extend beyond the contour. When **Allow Undercut** is disabled, the slicer skips passes that would clearly cut outside the contour.
+- Pauses & safety: Feed interruptions remain restricted to **Rough**; they are suppressed during Finish and the pause widgets are hidden.
+- Tooltips & localization: The new UI tooltips and What'sThis texts are stored as English source strings in `lathe_easystep.ui` (for Qt‑Linguist) and are set at runtime for DE/EN, ensuring consistent designer extraction and runtime localization.
+- G-code header: O-subs (`o<step_x_pause>`, `o<step_line_pause>`) are only injected if at least one step actually needs them.
+- Tests: New unit tests included: `tests/test_parting_slice.py`, `tests/test_parting_tooltips.py`, `tests/test_parting_visibility.py`, `tests/test_slicer_extra.py`.
+- Date & note: Changes made on 2025-12-16; see tests for example expected outputs.
 
 ### Quick guide: Thread cutting
 - Presets: The `Standard thread` dropdown contains metric and TR profiles. Selecting a preset sets pitch & nominal diameter; additional parameters (depths, first cut, peak offset, infeed angle, retract, etc.) are **pre-filled** but only when the fields were previously empty (0), so user values are preserved.
