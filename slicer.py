@@ -103,6 +103,11 @@ def rough_turn_parallel_x(
     lines: List[str] = []
     lines.append("(ABSPANEN Rough - parallel X slicing)")
 
+    # bounding X of contour path (used to limit undercuts)
+    xs = [p[0] for p in path] if path else []
+    min_x = min(xs) if xs else None
+    max_x = max(xs) if xs else None
+
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
         z_intervals: List[Tuple[float, float]] = []
@@ -120,6 +125,16 @@ def rough_turn_parallel_x(
 
         for (za, zb) in z_work:
             x_cut = x_lo if external else x_hi
+            # if undercuts are not allowed, skip cuts where the X cut position
+            # lies clearly outside the contour X-range
+            if not allow_undercut and min_x is not None and max_x is not None:
+                eps = 1e-6
+                if external and x_cut < min_x - eps:
+                    # would undercut beyond contour's min X
+                    continue
+                if (not external) and x_cut > max_x + eps:
+                    # internal undercut beyond contour's max X
+                    continue
             lines.append(f"G0 Z{safe_z:.3f}")
             lines.append(f"G0 X{x_cut:.3f}")
             lines.append(f"G0 Z{za:.3f}")
