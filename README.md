@@ -86,6 +86,7 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 
 ### Quick guide: Parting & feed interruption
 - Mode selection: In the **Parting** tab choose **Rough** when you want feed interruption; **Finish** hides and ignores pause options.
+ - UI: The **Parting** tab now includes **Slicing Strategy**, **Slicing Step** and **Allow Undercut** options to enable the new parallel-X roughing strategy (select "Parallel X" and set a step to activate).
 - Enable pause: Tick *Pause enabled* and set **Pause distance** (mm). If a segment is longer than the distance, `o<step_line_pause> call ...` will be used.
 - G-code behavior: When needed the header gets `o<step_line_pause> sub` and calls `o<step_line_pause> call ...` in the pass body. If no operation uses pauses the sub is omitted.
 
