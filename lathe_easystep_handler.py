@@ -329,6 +329,21 @@ THREAD_TOOLTIP_TRANSLATIONS = {
     "thread_l": {"de": "G76-L (Option / Mehrstart)", "en": "G76-L (option / multi-start)"},
 }
 
+PARTING_TOOLTIP_TRANSLATIONS = {
+    "parting_slice_strategy": {
+        "de": "Wählt die Slicing-Strategie für Schruppschnitte (z.B. 'Parallel X')",
+        "en": "Choose slicing strategy for rough passes (e.g. 'Parallel X')",
+    },
+    "parting_slice_step": {
+        "de": "Abstand zwischen X-Bändern beim Parallel-X-Slicing (mm)",
+        "en": "Step between X-bands for parallel-X slicing (mm)",
+    },
+    "parting_allow_undercut": {
+        "de": "Erlaubt Hinterschnitte (Schnitt über Kontur hinaus)",
+        "en": "Allow undercuts (cut beyond contour)",
+    },
+}
+
 
 class ProgramModel:
     def __init__(self):
@@ -3055,6 +3070,10 @@ class HandlerClass:
             self._apply_thread_tooltips(lang)
         except Exception:
             pass
+        try:
+            self._apply_parting_tooltips(lang)
+        except Exception:
+            pass
 
     def _apply_combo_translations(self, lang: str):
         for name, options in COMBO_OPTION_TRANSLATIONS.items():
@@ -3158,6 +3177,18 @@ class HandlerClass:
         if getattr(self, "contour_segments", None) and not getattr(self, "_contour_table_connected", False):
             self.contour_segments.itemChanged.connect(self._handle_contour_table_change)
             self.contour_segments.currentCellChanged.connect(self._handle_contour_row_select)
+
+    def _apply_parting_tooltips(self, lang: str):
+        """Setzt Tooltips für bekannte Abspanen-Widgets gemäß Sprache."""
+        for name, translations in PARTING_TOOLTIP_TRANSLATIONS.items():
+            widget = self._get_widget_by_name(name)
+            if widget is None:
+                continue
+            text = translations.get(lang) or translations.get("de")
+            try:
+                widget.setToolTip(text)
+            except Exception:
+                pass
             self._contour_table_connected = True
 
         if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
