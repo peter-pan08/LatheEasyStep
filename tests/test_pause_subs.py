@@ -22,10 +22,19 @@ def test_face_finish_suppresses_step_x():
 
 def test_abspanen_rough_includes_step_line_sub_and_call():
     m = ProgramModel()
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "feed": 0.15}, path=[(0.0, 0.0), (10.0, -2.0)])]
+    # enable Parallel X slicing so roughing occurs and calls are generated
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 0.1, "feed": 0.15, "slice_strategy": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     g = "\n".join(m.generate_gcode())
     assert "o<step_line_pause> sub" in g
     assert "o<step_line_pause> call" in g
+
+
+def test_abspanen_rough_without_slicing_warns_and_has_no_call():
+    m = ProgramModel()
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "feed": 0.15}, path=[(0.0, 0.0), (10.0, -2.0)])]
+    g = "\n".join(m.generate_gcode())
+    assert "(WARN: Abspanen-Schruppen ohne Slicing ist deaktiviert)" in g
+    assert "o<step_line_pause> call" not in g
 
 
 def test_abspanen_finish_suppresses_step_line():
