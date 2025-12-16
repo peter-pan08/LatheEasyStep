@@ -3225,6 +3225,11 @@ class HandlerClass:
             text = translations.get(lang) or translations.get("de")
             try:
                 widget.setToolTip(text)
+                try:
+                    widget.setWhatsThis(text)
+                except Exception:
+                    # some widgets may not implement setWhatsThis
+                    pass
             except Exception:
                 pass
             self._contour_table_connected = True

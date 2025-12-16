@@ -31,6 +31,8 @@ class FakeWidget:
         self._current = int(idx)
     def count(self):
         return len(self._items)
+    def setWhatsThis(self, text):
+        self._whatsthis = text
 
 
 class FakeCombo:
@@ -74,8 +76,12 @@ def test_parting_tooltips_set_for_de_and_en():
     h._apply_parting_tooltips("de")
     assert widgets["parting_slice_strategy"]._tooltip is not None
     assert "Slicing-Strategie" in widgets["parting_slice_strategy"]._tooltip
+    assert widgets["parting_slice_strategy"]._whatsthis is not None
+    assert "Slicing-Strategie" in widgets["parting_slice_strategy"]._whatsthis
 
     # Apply English directly
     h._apply_parting_tooltips("en")
     assert widgets["parting_slice_strategy"]._tooltip is not None
     assert "slicing" in widgets["parting_slice_strategy"]._tooltip.lower()
+    assert widgets["parting_slice_strategy"]._whatsthis is not None
+    assert "choose slicing strategy" in widgets["parting_slice_strategy"]._whatsthis.lower()
