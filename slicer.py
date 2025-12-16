@@ -313,6 +313,49 @@ def _abspanen_offsets(stock_x: float, path: List[Point], depth_per_pass: float) 
     return offsets
 
 
+# ----------------------------------------------------------------------
+# Generic helpers useful for CAM modules
+# ----------------------------------------------------------------------
+
+def gcode_from_path(path: List[Point], feed: float, safe_z: float) -> List[str]:
+    """Generate simple G-Code from a polyline path (first point is start)."""
+    lines: List[str] = []
+    if not path:
+        return lines
+    x0, z0 = path[0]
+    lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
+    if len(path) > 1:
+        lines.append(f"G1 Z{z0:.3f} F{feed:.3f}")
+    for x, z in path[1:]:
+        lines.append(f"G1 X{x:.3f} Z{z:.3f}")
+    return lines
+
+
+def _contour_retract_positions(settings: Dict[str, object], side_idx: int, fallback_x: float, fallback_z: float) -> Tuple[float, float]:
+    """Return (retract_x, retract_z) using settings or fallbacks.
+
+    This mirrors the logic previously in the handler and is useful for CAM
+    operations that need to pick a safe retract point based on program
+    settings.
+    """
+    def _pick(candidate: object, default: float) -> float:
+        try:
+            if candidate is not None and float(candidate) != 0.0:
+                return float(candidate)
+        except Exception:
+            pass
+        return default
+
+    if side_idx == 0:
+        retract_x = _pick(settings.get("xra"), fallback_x)
+        retract_z = _pick(settings.get("zra"), fallback_z)
+    else:
+        retract_x = _pick(settings.get("xri"), fallback_x)
+        retract_z = _pick(settings.get("zri"), fallback_z)
+
+    return retract_x, retract_z
+
+
 def _emit_segment_with_pauses(
     lines: List[str],
     start: Point,

@@ -989,8 +989,15 @@ def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
 # ----------------------------------------------------------------------
 # G-code helpers
 # ----------------------------------------------------------------------
-def gcode_from_path(path: List[Tuple[float, float]],
-                    feed: float, safe_z: float) -> List[str]:
+def gcode_from_path(path: List[Tuple[float, float]], feed: float, safe_z: float) -> List[str]:
+    try:
+        from slicer import gcode_from_path as _s
+    except Exception:
+        _s = None
+
+    if _s:
+        return _s([(x, z) for x, z in path], feed, safe_z)
+
     lines: List[str] = []
     if not path:
         return lines
@@ -1324,6 +1331,14 @@ def _contour_retract_positions(
     fallback_x: float,
     fallback_z: float,
 ) -> Tuple[float, float]:
+    try:
+        from slicer import _contour_retract_positions as _s
+    except Exception:
+        _s = None
+
+    if _s:
+        return _s(settings, side_idx, fallback_x, fallback_z)
+
     def _pick(candidate: object, default: float) -> float:
         try:
             if candidate is not None and float(candidate) != 0.0:
