@@ -1432,7 +1432,7 @@
             <item row="11" column="0">
              <widget class="QLabel" name="label_parting_slice_strategy">
               <property name="text">
-               <string>Slicing-Strategie</string>
+               <string>Slicing Strategy</string>
               </property>
              </widget>
             </item>
@@ -1471,7 +1471,7 @@
             <item row="12" column="1">
              <widget class="QDoubleSpinBox" name="parting_slice_step">
               <property name="toolTip">
-               <string>Schrittweite für Slicing (mm) — Abstand zwischen Bändern</string>
+               <string>Step between X/Z bands for slicing (mm) — distance between bands</string>
               </property>
                 <property name="whatsthis">
                  <string>Step between X/Z bands for slicing (mm)</string>
@@ -1490,20 +1490,20 @@
             <item row="13" column="0">
              <widget class="QLabel" name="label_parting_allow_undercut">
               <property name="text">
-               <string>Hinterschnitt erlauben</string>
+               <string>Allow Undercut</string>
               </property>
              </widget>
             </item>
             <item row="13" column="1">
              <widget class="QCheckBox" name="parting_allow_undercut">
               <property name="toolTip">
-               <string>Erlaubt Hinterschnitte (Schnitte, die über die Kontur hinausgehen)</string>
+               <string>Allow undercuts (cuts that go beyond the contour)</string>
               </property>
                 <property name="whatsthis">
                  <string>Allow undercuts (cuts that go beyond the contour)</string>
                 </property>
               <property name="text">
-               <string>erlauben</string>
+               <string>allow</string>
               </property>
              </widget>
             </item>
