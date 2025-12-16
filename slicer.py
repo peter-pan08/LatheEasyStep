@@ -217,24 +217,27 @@ def rough_turn_parallel_z(
 
         lines.append(f"(Pass {pass_i}: Z-band [{band_lo:.3f},{band_hi:.3f}])")
         for (xa, xb) in x_work:
-            x_cut = xa if external else xb
-            # skip undercutting if not allowed
+            # treat interval [xa, xb] as the X-range to cut at this Z band
+            x_start = xa
+            x_end = xb
+            # skip undercutting if not allowed (entire interval outside contour X range)
             if not allow_undercut and min_x is not None and max_x is not None:
                 eps = 1e-6
-                if x_cut < min_x - eps or x_cut > max_x + eps:
+                if x_end < min_x - eps or x_start > max_x + eps:
                     continue
+
             lines.append(f"G0 Z{safe_z:.3f}")
-            lines.append(f"G0 X{x_cut:.3f}")
+            lines.append(f"G0 X{x_start:.3f}")
             lines.append(f"G0 Z{band_lo:.3f}")
-            # Z movement is a segment from (x_cut, band_lo) to (x_cut, band_hi)
-            if pause_enabled and pause_distance > 0 and abs(band_hi - band_lo) > pause_distance:
+            # X movement is a segment from (x_start, band_lo) to (x_end, band_lo)
+            if pause_enabled and pause_distance > 0 and abs(x_end - x_start) > pause_distance:
+                # use the compact X-based step pause sub
                 lines.append(
-                    "o<step_line_pause> call "
-                    f"[{x_cut:.3f}] [{band_lo:.3f}] [{x_cut:.3f}] [{band_hi:.3f}] "
-                    f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+                    "o<step_x_pause> call "
+                    f"[{x_start:.3f}] [{x_end:.3f}] [{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
                 )
             else:
-                lines.append(f"G1 Z{band_hi:.3f} F{feed:.3f}")
+                lines.append(f"G1 X{x_end:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
 
     return lines
