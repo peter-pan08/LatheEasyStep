@@ -49,3 +49,10 @@ def test_parallel_z_respects_undercut():
     count_allow = sum(1 for ln in lines_allow if ln.startswith('(Pass'))
     count_no = sum(1 for ln in lines_no if ln.startswith('(Pass'))
     assert count_no <= count_allow
+
+
+def test_parallel_z_horizontal_cut():
+    path = [(19.0, 0.0), (20.5, -1.5), (22.0, -3.0)]
+    lines = rough_turn_parallel_z(path, external=True, z_stock=0.0, z_target=-3.0, step_z=0.5, safe_z=2.0, feed=0.15)
+    # Expect at least one horizontal X movement (G1 X...)
+    assert any(ln.startswith('G1 X') for ln in lines)
