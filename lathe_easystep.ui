@@ -1441,7 +1441,7 @@
               <property name="toolTip">
                <string>Wähle Slicing-Strategie: Keine / Parallel X / Parallel Z</string>
               </property>
-                <property name="whatsthis">
+                <property name="whatsThis">
                  <string>Choose slicing strategy for rough passes: None / Parallel X / Parallel Z</string>
                 </property>
               <item>
@@ -1473,7 +1473,7 @@
               <property name="toolTip">
                <string>Step between X/Z bands for slicing (mm) — distance between bands</string>
               </property>
-                <property name="whatsthis">
+                <property name="whatsThis">
                  <string>Step between X/Z bands for slicing (mm)</string>
                 </property>
               <property name="suffix">
@@ -1499,7 +1499,7 @@
               <property name="toolTip">
                <string>Allow undercuts (cuts that go beyond the contour)</string>
               </property>
-                <property name="whatsthis">
+                <property name="whatsThis">
                  <string>Allow undercuts (cuts that go beyond the contour)</string>
                 </property>
               <property name="text">
