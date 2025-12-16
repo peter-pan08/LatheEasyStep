@@ -1,6 +1,7 @@
 """Slicing helpers for roughing (parallel X / parallel Z)"""
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
+import math
 
 Point = Tuple[float, float]  # (x, z)
 
@@ -236,4 +237,278 @@ def rough_turn_parallel_z(
                 lines.append(f"G1 Z{band_hi:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
 
+    return lines
+
+
+# ----------------------------------------------------------------------
+# Abspanen (Parting) generator helpers
+# ----------------------------------------------------------------------
+
+def _abspanen_safe_z(settings: Dict[str, object], side_idx: int, path: List[Point]) -> float:
+    if side_idx == 0:
+        safe_candidates = [settings.get("zra"), settings.get("zri")]
+    else:
+        safe_candidates = [settings.get("zri"), settings.get("zra")]
+    for candidate in safe_candidates:
+        try:
+            if candidate is not None and float(candidate) != 0.0:
+                return float(candidate)
+        except Exception:
+            continue
+    if path:
+        return path[0][1] + 2.0
+    return 2.0
+
+
+def _offset_abspanen_path(path: List[Point], stock_x: float, offset: float) -> List[Point]:
+    if offset <= 1e-6:
+        return list(path)
+
+    xs = [p[0] for p in path]
+    min_x, max_x = min(xs), max(xs)
+    adjusted: List[Point] = []
+
+    if stock_x >= max_x:
+        for x, z in path:
+            adjusted.append((min(x + offset, stock_x), z))
+    elif stock_x <= min_x:
+        for x, z in path:
+            adjusted.append((max(x - offset, stock_x), z))
+    else:
+        for x, z in path:
+            adjusted.append((x + offset, z))
+
+    return adjusted
+
+
+def _abspanen_offsets(stock_x: float, path: List[Point], depth_per_pass: float) -> List[float]:
+    if not path:
+        return [0.0]
+
+    xs = [p[0] for p in path]
+    min_x, max_x = min(xs), max(xs)
+
+    if stock_x >= max_x:
+        start_offset = stock_x - min_x
+    elif stock_x <= min_x:
+        start_offset = max_x - stock_x
+    else:
+        start_offset = 0.0
+
+    if start_offset <= 1e-6:
+        return [0.0]
+
+    if depth_per_pass <= 0:
+        return [start_offset, 0.0]
+
+    passes = math.ceil(start_offset / depth_per_pass)
+    offsets: List[float] = []
+    for i in range(0, passes + 1):
+        current = max(round(start_offset - i * depth_per_pass, 6), 0.0)
+        if offsets and abs(offsets[-1] - current) < 1e-6:
+            continue
+        offsets.append(current)
+    if offsets[-1] != 0.0:
+        offsets.append(0.0)
+    return offsets
+
+
+def _emit_segment_with_pauses(
+    lines: List[str],
+    start: Point,
+    end: Point,
+    feed: float,
+    pause_enabled: bool,
+    pause_distance: float,
+    pause_duration: float,
+):
+    x0, z0 = start
+    x1, z1 = end
+    dx, dz = x1 - x0, z1 - z0
+    length = math.hypot(dx, dz)
+
+    if pause_enabled and pause_distance > 0.0 and length > pause_distance:
+        lines.append(
+            "o<step_line_pause> call "
+            f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
+            f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+        )
+        return
+
+    lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
+
+
+def _gcode_for_abspanen_pass(
+    path: List[Point],
+    feed: float,
+    safe_z: float,
+    pause_enabled: bool,
+    pause_distance: float,
+    pause_duration: float,
+) -> List[str]:
+    if not path:
+        return []
+
+    lines: List[str] = []
+    x0, z0 = path[0]
+    lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
+    lines.append(f"G0 Z{z0:.3f}")
+    lines.append(f"G1 X{x0:.3f} Z{z0:.3f} F{feed:.3f}")
+
+    prev = path[0]
+    for point in path[1:]:
+        _emit_segment_with_pauses(
+            lines, prev, point, feed, pause_enabled, pause_distance, pause_duration
+        )
+        prev = point
+
+    lines.append(f"G0 Z{safe_z:.3f}")
+    return lines
+
+
+def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: Dict[str, object]) -> List[str]:
+    """Generates G-code for an Abspanen operation.
+
+    This consolidates the previous handler behavior and uses the slicing helpers
+    when requested.
+    """
+    lines: List[str] = ["(ABSPANEN)"]
+
+    if not path:
+        return lines
+
+    side_idx = int(p.get("side", 0))
+    feed = float(p.get("feed", 0.15))
+    depth_per_pass = max(float(p.get("depth_per_pass", 0.0)), 0.0)
+    pause_enabled = bool(p.get("pause_enabled", False))
+    pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
+    pause_duration = 0.5
+    mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten
+
+    # harte Sicherung: Unterbrechung nur beim Schruppen
+    if mode_idx != 0:
+        pause_enabled = False
+
+    tool_num = int(p.get("tool", 0))
+    spindle = float(p.get("spindle", 0.0))
+
+    stock_x = settings.get("xa") if side_idx == 0 else settings.get("xi")
+    try:
+        stock_x = float(stock_x) if stock_x is not None else None
+    except Exception:
+        stock_x = None
+    if stock_x is None:
+        stock_x = max(point[0] for point in path)
+
+    safe_z = _abspanen_safe_z(settings, side_idx, path)
+
+    offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
+
+    # slicing arguments
+    slice_strategy = p.get("slice_strategy")
+    slice_step = float(p.get("slice_step", depth_per_pass or 1.0))
+    allow_undercut = bool(p.get("allow_undercut", False))
+    external = side_idx == 0
+
+    # Accept either index or code
+    strategy_code = None
+    try:
+        if isinstance(slice_strategy, (int, float)):
+            idx = int(slice_strategy)
+            if idx == 1:
+                strategy_code = "parallel_x"
+            elif idx == 2:
+                strategy_code = "parallel_z"
+            else:
+                strategy_code = None
+        elif isinstance(slice_strategy, str):
+            strategy_code = slice_strategy
+    except Exception:
+        strategy_code = None
+
+    if strategy_code == "parallel_x":
+        xs = [pp[0] for pp in path] if path else [stock_x]
+        x_target = min(xs) if external else max(xs)
+        rough_lines = rough_turn_parallel_x(
+            path,
+            external=external,
+            x_stock=stock_x,
+            x_target=x_target,
+            step_x=slice_step,
+            safe_z=safe_z,
+            feed=feed,
+            allow_undercut=allow_undercut,
+            pause_enabled=pause_enabled,
+            pause_distance=pause_distance,
+            pause_duration=pause_duration,
+        )
+        lines.extend(rough_lines)
+
+        # Finish optional (Kontur 1x)
+        if mode_idx in (1, 2):
+            lines.append("(Schlichtschnitt Kontur)")
+            lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            for (x, z) in path:
+                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+            lines.append(f"G0 Z{safe_z:.3f}")
+
+        return lines
+
+    if strategy_code == "parallel_z":
+        z_vals = [pp[1] for pp in path] if path else [0.0]
+        z_stock = max(z_vals) if external else min(z_vals)
+        z_target = min(z_vals) if external else max(z_vals)
+        rough_lines = rough_turn_parallel_z(
+            path,
+            external=external,
+            z_stock=z_stock,
+            z_target=z_target,
+            step_z=slice_step,
+            safe_z=safe_z,
+            feed=feed,
+            allow_undercut=allow_undercut,
+            pause_enabled=pause_enabled,
+            pause_distance=pause_distance,
+            pause_duration=pause_duration,
+        )
+        lines.extend(rough_lines)
+
+        # Finish optional (Kontur 1x)
+        if mode_idx in (1, 2):
+            lines.append("(Schlichtschnitt Kontur)")
+            lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            for (x, z) in path:
+                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+            lines.append(f"G0 Z{safe_z:.3f}")
+
+        return lines
+
+    # No slicing selected
+    if mode_idx == 0:
+        lines.append("(WARN: Abspanen-Schruppen ohne Slicing ist deaktiviert)")
+        lines.append("(      Bitte in 'Abspanen -> Slicing Strategy' Parallel X oder Parallel Z wählen.)")
+        return lines
+
+    # Finish-only (mode_idx == 1) without slicing: single contour pass
+    # append tool and spindle
+    try:
+        tool_num = int(float(tool_num))
+    except Exception:
+        tool_num = 0
+    if tool_num > 0:
+        lines.append(f"(Werkzeug T{tool_num:02d})")
+        lines.append(f"T{tool_num:02d} M6")
+    try:
+        rpm = float(spindle)
+    except Exception:
+        rpm = 0.0
+    if rpm and rpm > 0:
+        rpm_value = int(round(rpm))
+        lines.append(f"S{rpm_value} M3")
+
+    lines.append("(Schlichtschnitt Kontur)")
+    lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+    for (x, z) in path:
+        lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+    lines.append(f"G0 Z{safe_z:.3f}")
     return lines
