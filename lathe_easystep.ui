@@ -1474,6 +1474,26 @@
              </item>
             </widget>
            </item>
+           <item row="3" column="0">
+            <widget class="QLabel" name="label_thread_preset">
+             <property name="text">
+              <string>Preset</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QPushButton" name="btn_thread_preset">
+             <property name="text">
+              <string>Preset übernehmen</string>
+             </property>
+             <property name="toolTip">
+              <string>Preset anwenden (überschreibt alle Gewinde-Parameter)</string>
+             </property>
+             <property name="whatsThis">
+              <string>Apply preset (overwrites all thread parameters)</string>
+             </property>
+            </widget>
+           </item>
            <item row="4" column="0">
             <widget class="QLabel" name="label_thread_tool">
              <property name="text">
@@ -1533,9 +1553,9 @@
             </widget>
            </item>
            <item row="7" column="0">
-           <widget class="QLabel" name="label_15">
+           <widget class="QLabel" name="label_thread_major_diameter">
              <property name="text">
-              <string>Major Diameter</string>
+              <string>Außendurchmesser (mm)</string>
              </property>
             </widget>
            </item>
@@ -1550,9 +1570,9 @@
             </widget>
            </item>
            <item row="8" column="0">
-           <widget class="QLabel" name="label_16">
+           <widget class="QLabel" name="label_thread_pitch">
              <property name="text">
-              <string>Pitch</string>
+              <string>Steigung (mm)</string>
              </property>
             </widget>
            </item>
@@ -1567,9 +1587,9 @@
             </widget>
            </item>
            <item row="9" column="0">
-           <widget class="QLabel" name="label_17">
+           <widget class="QLabel" name="label_thread_length">
              <property name="text">
-              <string>Laenge (Z)</string>
+              <string>Gewindelänge Z1 (mm)</string>
              </property>
             </widget>
            </item>
@@ -1581,12 +1601,18 @@
              <property name="value">
               <double>20.000000000000000</double>
              </property>
+             <property name="toolTip">
+              <string>Z-Ende relativ/absolut – je nach Modell</string>
+             </property>
+             <property name="whatsThis">
+              <string>Thread length Z1 (mm)</string>
+             </property>
             </widget>
            </item>
            <item row="10" column="0">
-            <widget class="QLabel" name="label_18">
+            <widget class="QLabel" name="label_thread_passes">
              <property name="text">
-              <string>Passes</string>
+              <string>Schruppschnitte (Anzahl)</string>
              </property>
             </widget>
            </item>
@@ -1598,17 +1624,95 @@
              <property name="value">
               <number>4</number>
              </property>
-            </widget>
-           </item>
-           <item row="11" column="0">
-            <widget class="QLabel" name="label_19">
-             <property name="text">
-              <string>Sicherheits-Z</string>
+             <property name="toolTip">
+              <string>Schruppschnitte (Anzahl)</string>
+             </property>
+             <property name="whatsThis">
+              <string>Rough passes (count)</string>
              </property>
             </widget>
            </item>
-           <item row="11" column="1">
-            <widget class="QDoubleSpinBox" name="thread_safe_z">
+           <item row="11" column="0">
+            <widget class="QLabel" name="label_thread_safe_z">
+             <property name="text">
+              <string>Sicherheits-Z (mm)</string>
+             </property>
+            </widget>
+           </item>
+          <item row="11" column="1">
+           <widget class="QDoubleSpinBox" name="thread_safe_z">
+            <property name="minimum">
+             <double>-1000.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1000.000000000000000</double>
+            </property>
+            <property name="value">
+             <double>2.000000000000000</double>
+            </property>
+            <property name="toolTip">
+             <string>Startpunkt vor dem G76/G32</string>
+            </property>
+            <property name="whatsThis">
+             <string>Start point before G76/G32</string>
+            </property>
+           </widget>
+          </item>
+           <item row="12" column="0">
+            <widget class="QLabel" name="label_thread_depth">
+             <property name="text">
+              <string>Gewindetiefe (K)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="12" column="1">
+            <widget class="QDoubleSpinBox" name="thread_depth">
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>0.000000000000000</double>
+             </property>
+             <property name="toolTip">
+              <string>Bei Bedarf nachregeln (Material gibt nach)</string>
+             </property>
+             <property name="whatsThis">
+              <string>Adjust if needed (material gives way)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="13" column="0">
+            <widget class="QLabel" name="label_thread_first_depth">
+             <property name="text">
+              <string>Startzustellung (J)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="13" column="1">
+            <widget class="QDoubleSpinBox" name="thread_first_depth">
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>0.000000000000000</double>
+             </property>
+             <property name="toolTip">
+              <string>Erste Zustellung; Rest verteilt sich</string>
+             </property>
+             <property name="whatsThis">
+              <string>First cut; remainder distributed</string>
+             </property>
+            </widget>
+           </item>
+           <item row="14" column="0">
+            <widget class="QLabel" name="label_thread_peak_offset">
+             <property name="text">
+              <string>Peak Offset (I)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="14" column="1">
+            <widget class="QDoubleSpinBox" name="thread_peak_offset">
              <property name="minimum">
               <double>-1000.000000000000000</double>
              </property>
@@ -1616,12 +1720,130 @@
               <double>1000.000000000000000</double>
              </property>
              <property name="value">
-              <double>2.000000000000000</double>
+              <double>0.000000000000000</double>
+             </property>
+             <property name="toolTip">
+              <string>Für Spitzen/Flankenform; oft negativ</string>
+             </property>
+             <property name="whatsThis">
+              <string>For crest/face offset; often negative</string>
              </property>
             </widget>
            </item>
-          </layout>
-         </widget>
+           <item row="15" column="0">
+            <widget class="QLabel" name="label_thread_retract_r">
+             <property name="text">
+              <string>Retract R</string>
+             </property>
+            </widget>
+           </item>
+           <item row="15" column="1">
+            <widget class="QDoubleSpinBox" name="thread_retract_r">
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>1.500000000000000</double>
+             </property>
+             <property name="toolTip">
+              <string>Rückzug am Ende eines Schnitts</string>
+             </property>
+             <property name="whatsThis">
+              <string>Retract at end of cut</string>
+             </property>
+            </widget>
+           </item>
+           <item row="16" column="0">
+            <widget class="QLabel" name="label_thread_infeed_q">
+             <property name="text">
+              <string>Infeed Q</string>
+             </property>
+            </widget>
+           </item>
+           <item row="16" column="1">
+            <widget class="QDoubleSpinBox" name="thread_infeed_q">
+             <property name="maximum">
+              <double>1000.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>29.500000000000000</double>
+             </property>
+             <property name="toolTip">
+              <string>Zustellwinkel Q (°)</string>
+             </property>
+             <property name="whatsThis">
+              <string>Infeed angle Q (°)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="17" column="0">
+            <widget class="QLabel" name="label_thread_spring_passes">
+             <property name="text">
+              <string>Federdurchgänge (H)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="17" column="1">
+            <widget class="QSpinBox" name="thread_spring_passes">
+             <property name="maximum">
+              <number>20</number>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="toolTip">
+              <string>Leerschnitte (Anzahl)</string>
+             </property>
+             <property name="whatsThis">
+              <string>Spring passes (count)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="18" column="0">
+            <widget class="QLabel" name="label_thread_e">
+             <property name="text">
+              <string>E-Wert</string>
+             </property>
+            </widget>
+           </item>
+           <item row="18" column="1">
+            <widget class="QDoubleSpinBox" name="thread_e">
+             <property name="value">
+              <double>0.000000000000000</double>
+             </property>
+             <property name="toolTip">
+              <string>G76-E (Fein/Option)</string>
+             </property>
+             <property name="whatsThis">
+              <string>G76-E (finish/option)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="19" column="0">
+            <widget class="QLabel" name="label_thread_l">
+             <property name="text">
+              <string>L-Wiederholungen</string>
+             </property>
+            </widget>
+           </item>
+           <item row="19" column="1">
+            <widget class="QSpinBox" name="thread_l">
+             <property name="maximum">
+              <number>20</number>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="toolTip">
+              <string>G76-L (Option / Mehrstart)</string>
+             </property>
+             <property name="whatsThis">
+              <string>G76-L (option / multi-start)</string>
+             </property>
+            </widget>
+           </item>
+         </layout>
+        </widget>
          
          <widget class="QWidget" name="tabGroove">
           <attribute name="title">

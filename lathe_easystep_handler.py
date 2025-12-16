@@ -64,6 +64,27 @@ STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
     ("M24", 24.0, 3.0),
     ("M25", 25.0, 3.0),
 ]
+STANDARD_TR_THREAD_SPECS: List[Tuple[str, float, float]] = [
+    ("Tr 10", 10.0, 2.0),
+    ("Tr 12", 12.0, 3.0),
+    ("Tr 14", 14.0, 3.0),
+    ("Tr 16", 16.0, 4.0),
+    ("Tr 18", 18.0, 4.0),
+    ("Tr 20", 20.0, 4.0),
+    ("Tr 22", 22.0, 5.0),
+    ("Tr 24", 24.0, 5.0),
+    ("Tr 26", 26.0, 5.0),
+    ("Tr 28", 28.0, 5.0),
+    ("Tr 30", 30.0, 6.0),
+    ("Tr 32", 32.0, 6.0),
+    ("Tr 36", 36.0, 6.0),
+    ("Tr 40", 40.0, 7.0),
+    # Zusätzliche TR-Größen (erweiterte Auswahl)
+    ("Tr 45", 45.0, 7.0),
+    ("Tr 50", 50.0, 8.0),
+    ("Tr 55", 55.0, 8.0),
+    ("Tr 60", 60.0, 10.0),
+]
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
 DRILL_MODE_LABELS: Tuple[str, str, str] = (
     "Normal",
@@ -170,11 +191,19 @@ TEXT_TRANSLATIONS = {
     "label_thread_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_thread_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
     "label_thread_coolant": {"de": "Kühlung", "en": "Coolant"},
-    "label_15": {"de": "Major Diameter", "en": "Major Diameter"},
-    "label_16": {"de": "Pitch", "en": "Pitch"},
-    "label_17": {"de": "Laenge (Z)", "en": "Length (Z)"},
-    "label_18": {"de": "Passes", "en": "Passes"},
-    "label_19": {"de": "Sicherheits-Z", "en": "Safety Z"},
+    "label_thread_major_diameter": {"de": "Major-Durchmesser (mm)", "en": "Major Diameter (mm)"},
+    "label_thread_pitch": {"de": "Steigung (mm)", "en": "Pitch (mm)"},
+    "label_thread_length": {"de": "Gewindelänge Z1 (mm)", "en": "Thread length Z1 (mm)"},
+    "label_thread_passes": {"de": "Schruppschnitte (Anzahl)", "en": "Rough passes (count)"},
+    "label_thread_safe_z": {"de": "Sicherheits-Z (mm)", "en": "Safe Z (mm)"},
+    "label_thread_depth": {"de": "Gewindetiefe K (mm)", "en": "Thread depth K (mm)"},
+    "label_thread_first_depth": {"de": "Erste Zustellung J (mm)", "en": "First cut J (mm)"},
+    "label_thread_peak_offset": {"de": "Spitzenabzug I (mm)", "en": "Crest offset I (mm)"},
+    "label_thread_retract_r": {"de": "Rückzug R (mm)", "en": "Retract R (mm)"},
+    "label_thread_infeed_q": {"de": "Zustellwinkel Q (°)", "en": "Infeed angle Q (°)"},
+    "label_thread_spring_passes": {"de": "Leerschnitte H (Anzahl)", "en": "Spring passes H (count)"},
+    "label_thread_e": {"de": "G76-E (Fein/Option)", "en": "G76-E (finish/option)"},
+    "label_thread_l": {"de": "G76-L (Option / Mehrstart)", "en": "G76-L (option / multi-start)"},
 
     "label_groove_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_groove_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
@@ -254,7 +283,6 @@ COMBO_OPTION_TRANSLATIONS = {
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
     "thread_orientation": {"de": ["Aussengewinde", "Innengewinde"], "en": ["External", "Internal"]},
-    "thread_standard": {"de": ["Benutzerdefiniert"], "en": ["Custom"]},
     "thread_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "groove_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "drill_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
@@ -275,6 +303,25 @@ BUTTON_TRANSLATIONS = {
     "btnMoveDown": {"de": "Nach unten", "en": "Move Down"},
     "btnNewProgram": {"de": "Neues Programm", "en": "New Program"},
     "btnGenerate": {"de": "Programm erzeugen", "en": "Generate Program"},
+    "btn_thread_preset": {"de": "Preset übernehmen", "en": "Apply preset"},
+}
+
+# Tooltips für Gewinde-Widgets (de / en)
+THREAD_TOOLTIP_TRANSLATIONS = {
+    "thread_length": {
+        "de": "Z-Ende relativ/absolut – je nach Modell",
+        "en": "Z end relative/absolute – depends on model",
+    },
+    "thread_safe_z": {"de": "Startpunkt vor dem G76/G32", "en": "Start point before G76/G32"},
+    "thread_passes": {"de": "Schruppschnitte (Anzahl)", "en": "Rough passes (count)"},
+    "thread_depth": {"de": "Bei Bedarf nachregeln (Material gibt nach)", "en": "Adjust if needed (material gives way)"},
+    "thread_first_depth": {"de": "Erste Zustellung; Rest verteilt sich", "en": "First cut; remainder distributed"},
+    "thread_peak_offset": {"de": "Für Spitzen/Flankenform; oft negativ", "en": "For crest/face offset; often negative"},
+    "thread_retract_r": {"de": "Rückzug am Ende eines Schnitts", "en": "Retract at end of cut"},
+    "thread_infeed_q": {"de": "Zustellwinkel Q (°)", "en": "Infeed angle Q (°)"},
+    "thread_spring_passes": {"de": "Leerschnitte (Anzahl)", "en": "Spring passes (count)"},
+    "thread_e": {"de": "G76-E (Fein/Option)", "en": "G76-E (finish/option)"},
+    "thread_l": {"de": "G76-L (Option / Mehrstart)", "en": "G76-L (option / multi-start)"},
 }
 
 
@@ -374,6 +421,108 @@ class ProgramModel:
         if npv_code:
             lines.append(npv_code)
 
+        # Erzeuge O-Word-Subs nur, wenn ein Schritt sie wirklich benötigt.
+        # Face (X-Schritte) benötigt o<step_x_pause> nur bei (Schrupp bzw. Schrupp+Schlicht) + Pause aktiviert + Abstand>0
+        need_step_x = any(
+            op.op_type == OpType.FACE
+            and int(op.params.get("mode", 0)) in (0, 2)
+            and bool(op.params.get("pause_enabled", False))
+            and float(op.params.get("pause_distance", 0.0)) > 0.0
+            for op in self.operations
+        )
+        # Abspanen benötigt o<step_line_pause> nur bei Modus Schruppen + Pause aktiviert + Abstand>0
+        need_step_line = any(
+            op.op_type == OpType.ABSPANEN
+            and int(op.params.get("mode", 0)) == 0
+            and bool(op.params.get("pause_enabled", False))
+            and float(op.params.get("pause_distance", 0.0)) > 0.0
+            for op in self.operations
+        )
+
+        if need_step_x:
+            lines.extend(
+                [
+                    "o<step_x_pause> sub",
+                    "  #<x0>   = #1",
+                    "  #<x1>   = #2",
+                    "  #<step> = ABS[#3]",
+                    "  #<f>    = #4",
+                    "  #<p>    = #5",
+                    "",
+                    "  o10 if [#<step> LE 0]",
+                    "    G1 X[#<x1>] F[#<f>]",
+                    "    o<step_x_pause> return",
+                    "  o10 endif",
+                    "",
+                    "  #<dir> = 1",
+                    "  o11 if [#<x1> LT #<x0>]",
+                    "    #<dir> = -1",
+                    "  o11 endif",
+                    "",
+                    "  #<x> = #<x0>",
+                    "  o20 while [[#<dir> * (#<x1> - #<x>)] GT 0.000001]",
+                    "    #<xnext> = #<x> + #<dir>*#<step>",
+                    "    o21 if [[#<dir> * (#<x1> - #<xnext>)] LT 0]",
+                    "      #<xnext> = #<x1>",
+                    "    o21 endif",
+                    "",
+                    "    G1 X[#<xnext>] F[#<f>]",
+                    "    o22 if [#<xnext> NE #<x1>]",
+                    "      G4 P[#<p>]",
+                    "    o22 endif",
+                    "",
+                    "    #<x> = #<xnext>",
+                    "  o20 endwhile",
+                    "o<step_x_pause> endsub",
+                ]
+            )
+
+        if need_step_line:
+            lines.extend(
+                [
+                    "o<step_line_pause> sub",
+                    "  #<x0>   = #1",
+                    "  #<z0>   = #2",
+                    "  #<x1>   = #3",
+                    "  #<z1>   = #4",
+                    "  #<step> = ABS[#5]",
+                    "  #<f>    = #6",
+                    "  #<p>    = #7",
+                    "",
+                    "  #<dx> = #<x1> - #<x0>",
+                    "  #<dz> = #<z1> - #<z0>",
+                    "  #<len> = SQRT[[#<dx>*#<dx>] + [#<dz>*#<dz>]]",
+                    "",
+                    "  o10 if [[#<step> LE 0] OR [#<len> LE #<step>]]",
+                    "    G1 X[#<x1>] Z[#<z1>] F[#<f>]",
+                    "    o<step_line_pause> return",
+                    "  o10 endif",
+                    "",
+                    "  #<n> = FIX[#<len> / #<step>]",
+                    "",
+                    "  #<i> = 1",
+                    "  o20 while [#<i> LE #<n>]",
+                    "    #<t> = [#<i> * #<step>] / #<len>",
+                    "    o21 if [#<t> GT 1]",
+                    "      #<t> = 1",
+                    "    o21 endif",
+                    "",
+                    "    #<x> = #<x0> + #<dx>*#<t>",
+                    "    #<z> = #<z0> + #<dz>*#<t>",
+                    "",
+                    "    G1 X[#<x>] Z[#<z>] F[#<f>]",
+                    "    o22 if [#<t> LT 1]",
+                    "      G4 P[#<p>]",
+                    "    o22 endif",
+                    "",
+                    "    #<i> = #<i> + 1",
+                    "  o20 endwhile",
+                    "",
+                    "  G1 X[#<x1>] Z[#<z1>] F[#<f>]",
+                    "o<step_line_pause> endsub",
+                ]
+            )
+
         # Drehzahlbegrenzung aus Programmkopf (nur als Kommentar)
         s1_max = settings.get("s1_max", 0)
         s3_max = settings.get("s3_max", 0)
@@ -399,6 +548,9 @@ class ProgramModel:
                 numbered.append(line)
                 continue
             if stripped.startswith("("):
+                numbered.append(line)
+                continue
+            if re.match(r"^[oO]\s*<", stripped):
                 numbered.append(line)
                 continue
             if re.match(r"^N\d+\s", stripped, flags=re.IGNORECASE):
@@ -1043,16 +1195,12 @@ def _emit_segment_with_pauses(
     length = math.hypot(dx, dz)
 
     if pause_enabled and pause_distance > 0.0 and length > pause_distance:
-        steps = int(length // pause_distance)
-        for i in range(1, steps + 1):
-            t = min((i * pause_distance) / length, 1.0)
-            xi = x0 + dx * t
-            zi = z0 + dz * t
-            lines.append(f"G1 X{xi:.3f} Z{zi:.3f} F{feed:.3f}")
-            if t < 1.0:
-                lines.append(f"G4 P{pause_duration:.1f}")
-        if length % pause_distance < 1e-4:
-            return
+        lines.append(
+            "o<step_line_pause> call "
+            f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
+            f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+        )
+        return
 
     lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
 
@@ -1102,6 +1250,10 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
     pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
     pause_duration = 0.5
     mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten
+
+    # harte Sicherung: Unterbrechung nur beim Schruppen
+    if mode_idx != 0:
+        pause_enabled = False
 
     tool_num = int(p.get("tool", 0))
     spindle = float(p.get("spindle", 0.0))
@@ -1377,17 +1529,11 @@ def gcode_for_face(op: Operation) -> List[str]:
             lines.append(f"G0 Z{z_next:.3f}")
 
             if pause_enabled and pause_distance > 0.0:
-                x_curr = x0
-                direction = 1 if x_limit_rough >= x0 else -1
-                while True:
-                    next_x = x_curr + direction * pause_distance
-                    if (direction > 0 and next_x >= x_limit_rough) or (direction < 0 and next_x <= x_limit_rough):
-                        next_x = x_limit_rough
-                        lines.append(f"G1 X{next_x:.3f} F{feed:.3f}")
-                        break
-                    lines.append(f"G1 X{next_x:.3f} F{feed:.3f}")
-                    lines.append(f"G4 P{pause_duration:.1f}")
-                    x_curr = next_x
+                lines.append(
+                    "o<step_x_pause> call "
+                    f"[{x0:.3f}] [{x_limit_rough:.3f}] "
+                    f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+                )
             else:
                 lines.append(f"G1 X{x_limit_rough:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
@@ -1424,9 +1570,6 @@ def gcode_for_face(op: Operation) -> List[str]:
 
         lines.append(f"G0 Z{safe_z:.3f}")
 
-    if coolant_enabled:
-        lines.append("M9")
-
     return lines
 
 
@@ -1455,15 +1598,38 @@ def gcode_for_operation(
     if op.op_type == OpType.ABSPANEN:
         return gcode_for_abspanen(op, settings or {})
     if op.op_type == OpType.THREAD:
-        safe_z = op.params.get("safe_z", 2.0)
-        major_diameter = op.params.get("major_diameter", 0.0)
-        pitch = op.params.get("pitch", 1.5)
-        length = op.params.get("length", 0.0)
-        spring_passes = max(0, int(op.params.get("passes", 1)))
+        safe_z = float(op.params.get("safe_z", 2.0))
+        major_diameter = float(op.params.get("major_diameter", 0.0))
+        pitch = float(op.params.get("pitch", 1.5))
+        length = float(op.params.get("length", 0.0))
 
-        thread_depth = pitch * 0.6134
-        initial_depth = max(thread_depth * 0.1, pitch * 0.05)
-        peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
+        raw_thread_depth = op.params.get("thread_depth")
+        if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
+            thread_depth = float(raw_thread_depth)
+        else:
+            thread_depth = pitch * 0.6134
+
+        raw_first_depth = op.params.get("first_depth")
+        if isinstance(raw_first_depth, (int, float)) and raw_first_depth > 0:
+            first_depth = float(raw_first_depth)
+        else:
+            first_depth = max(thread_depth * 0.1, pitch * 0.05)
+
+        raw_peak_offset = op.params.get("peak_offset")
+        if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
+            peak_offset = float(raw_peak_offset)
+        else:
+            peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
+
+        retract_r = float(op.params.get("retract_r", 1.5))
+        infeed_q = float(op.params.get("infeed_q", 29.5))
+        spring_passes_raw = op.params.get("spring_passes")
+        if isinstance(spring_passes_raw, (int, float)) and spring_passes_raw > 0:
+            spring_passes = max(0, int(spring_passes_raw))
+        else:
+            spring_passes = max(0, int(op.params.get("passes", 1)))
+        e_val = float(op.params.get("e", 0.0))
+        l_val = int(float(op.params.get("l", 0)))
 
         orientation_raw = op.params.get("orientation", 0)
         orientation_idx = 0
@@ -1500,12 +1666,13 @@ def gcode_for_operation(
                 f"P{pitch:.4f} "
                 f"Z{-abs(length):.3f} "
                 f"I{peak_offset:.4f} "
-                f"J{initial_depth:.4f} "
-                "R1.5 "
+                f"J{first_depth:.4f} "
+                f"R{retract_r:.4f} "
                 f"K{thread_depth:.4f} "
-                "Q29.5 "
+                f"Q{infeed_q:.4f} "
                 f"H{spring_passes:d} "
-                "E0.0 L0"
+                f"E{e_val:.4f} "
+                f"L{l_val:d}"
             )
         )
         return lines
@@ -1655,6 +1822,19 @@ class HandlerClass:
         self.thread_spindle = getattr(self.w, "thread_spindle", None)
         self.thread_major_diameter = getattr(self.w, "thread_major_diameter", None)
         self.thread_pitch = getattr(self.w, "thread_pitch", None)
+        self.thread_length = getattr(self.w, "thread_length", None)
+        self.thread_passes = getattr(self.w, "thread_passes", None)
+        self.thread_safe_z = getattr(self.w, "thread_safe_z", None)
+        self.thread_depth = getattr(self.w, "thread_depth", None)
+        self.thread_peak_offset = getattr(self.w, "thread_peak_offset", None)
+        self.thread_first_depth = getattr(self.w, "thread_first_depth", None)
+        self.thread_retract_r = getattr(self.w, "thread_retract_r", None)
+        self.thread_infeed_q = getattr(self.w, "thread_infeed_q", None)
+        self.thread_spring_passes = getattr(self.w, "thread_spring_passes", None)
+        self.thread_e = getattr(self.w, "thread_e", None)
+        self.thread_l = getattr(self.w, "thread_l", None)
+        # Preset-Button (UI: btn_thread_preset)
+        self.btn_thread_preset = getattr(self.w, "btn_thread_preset", None)
 
         # Root-Widget des Panels (für globale Suche nach Labels/Spinboxen)
         self.root_widget = self._find_root_widget()
@@ -1927,18 +2107,63 @@ class HandlerClass:
         return None
 
     def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
-        """Besorgt Widgets robuster: erst direct Attribute, dann UI-Baum."""
+        """Besorgt Widgets robuster: erst direct Attribute, dann im Panel-priorisierten UI-Baum.
 
+        Suche-Prio:
+         1) attribute in self.w
+         2) Widget innerhalb eines bekannten Panel-Elternteils (PANEL_WIDGET_NAMES)
+         3) Suche im aktuellen Root (self.root_widget)
+         4) globale Suche (app.allWidgets)
+        """
+
+        # 1) direct attribute (fast path)
         widget = getattr(self.w, name, None)
         if widget is not None:
             return widget
 
+        app = QtWidgets.QApplication.instance()
+
+        # Helper: check if a widget is inside our panel
+        def _in_our_panel(w: QtWidgets.QWidget) -> bool:
+            while w is not None:
+                try:
+                    if w.objectName() in PANEL_WIDGET_NAMES:
+                        return True
+                except Exception:
+                    pass
+                w = w.parentWidget()
+            return False
+
+        # 2) Prefer any widget with matching objectName that lives under a known panel
+        if app:
+            for w in app.allWidgets():
+                try:
+                    if w.objectName() == name and _in_our_panel(w):
+                        return w
+                except Exception:
+                    continue
+
+        # 3) Search within current root widget (may be MainWindow or panel)
         root = self.root_widget or self._find_root_widget()
-        if root:
-            widget = root.findChild(
-                QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively
-            )
-        return widget
+        if root is not None:
+            try:
+                widget = root.findChild(
+                    QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively
+                )
+                if widget is not None:
+                    return widget
+            except Exception:
+                pass
+
+        # 4) Fallback: any widget with that name
+        if app:
+            for w in app.allWidgets():
+                try:
+                    if w.objectName() == name:
+                        return w
+                except Exception:
+                    continue
+        return None
 
     # ---- QtVCP lifecycle ---------------------------------------------
     def initialized__(self):
@@ -2229,6 +2454,36 @@ class HandlerClass:
             self.thread_major_diameter = self._get_widget_by_name("thread_major_diameter")
         if self.thread_pitch is None:
             self.thread_pitch = self._get_widget_by_name("thread_pitch")
+        if self.thread_length is None:
+            self.thread_length = self._get_widget_by_name("thread_length")
+        if self.thread_passes is None:
+            self.thread_passes = self._get_widget_by_name("thread_passes")
+        if self.thread_safe_z is None:
+            self.thread_safe_z = self._get_widget_by_name("thread_safe_z")
+        if self.thread_depth is None:
+            self.thread_depth = self._get_widget_by_name("thread_depth")
+        if self.thread_peak_offset is None:
+            self.thread_peak_offset = self._get_widget_by_name("thread_peak_offset")
+        if self.thread_first_depth is None:
+            self.thread_first_depth = self._get_widget_by_name("thread_first_depth")
+        if self.thread_retract_r is None:
+            self.thread_retract_r = self._get_widget_by_name("thread_retract_r")
+        if self.thread_infeed_q is None:
+            self.thread_infeed_q = self._get_widget_by_name("thread_infeed_q")
+        if self.thread_spring_passes is None:
+            self.thread_spring_passes = self._get_widget_by_name("thread_spring_passes")
+        if self.thread_e is None:
+            self.thread_e = self._get_widget_by_name("thread_e")
+        if self.thread_l is None:
+            self.thread_l = self._get_widget_by_name("thread_l")
+        # Preset-Button: ggf. noch suchen und verbinden
+        if self.btn_thread_preset is None:
+            self.btn_thread_preset = self._get_widget_by_name("btn_thread_preset")
+        if self.btn_thread_preset is not None and not getattr(self, "_thread_preset_connected", False):
+            try:
+                self._connect_button_once(self.btn_thread_preset, self._apply_thread_preset_force, "_thread_preset_connected")
+            except Exception:
+                pass
 
     def _populate_thread_standard_options(self):
         combo = self.thread_standard
@@ -2239,15 +2494,27 @@ class HandlerClass:
             text = f"{value:.3f}".rstrip("0").rstrip(".")
             return text if text else "0"
 
+        lang = self._current_language_code()
+        custom = "Custom" if lang == "en" else "Benutzerdefiniert"
+
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem("Benutzerdefiniert", {"label": "Benutzerdefiniert"})
+        combo.addItem(custom, {"label": custom})
+        # Metric threads (ISO 60°) -> profile "metric"
         for name, diameter, pitch in STANDARD_METRIC_THREAD_SPECS:
             pitch_text = _compact(pitch)
             label = f"{name} x {pitch_text}"
             combo.addItem(
                 label,
-                {"label": label, "major": diameter, "pitch": pitch},
+                {"label": label, "major": diameter, "pitch": pitch, "profile": "metric"},
+            )
+        # Trapezoidal threads -> profile "tr"
+        for name, diameter, pitch in STANDARD_TR_THREAD_SPECS:
+            pitch_text = _compact(pitch)
+            label = f"{name} x {pitch_text}"
+            combo.addItem(
+                label,
+                {"label": label, "major": diameter, "pitch": pitch, "profile": "tr"},
             )
         combo.setCurrentIndex(0)
         combo.blockSignals(False)
@@ -2266,6 +2533,13 @@ class HandlerClass:
                 self._thread_standard_signal_connected = True
             except Exception:
                 pass
+        # Connect preset button (force apply)
+        if self.btn_thread_preset is not None and not getattr(self, "_thread_preset_connected", False):
+            try:
+                self._connect_button_once(self.btn_thread_preset, self._apply_thread_preset_force, "_thread_preset_connected")
+            except Exception:
+                pass
+        # Apply a soft preset now (sets major/pitch + fills empty fields)
         self._apply_standard_thread_selection()
 
     def _apply_standard_thread_selection(self, *_args, **_kwargs):
@@ -2281,12 +2555,135 @@ class HandlerClass:
         pitch = data.get("pitch")
         self._thread_applying_standard = True
         try:
+            # Major & Pitch: immer setzen (sichtbar für den Benutzer)
             if isinstance(major, (int, float)) and self.thread_major_diameter:
                 self.thread_major_diameter.setValue(float(major))
             if isinstance(pitch, (int, float)) and self.thread_pitch:
                 self.thread_pitch.setValue(float(pitch))
+            # Soft-Fill für die restlichen Preset-Werte (nur wenn Felder 0 sind)
+            try:
+                self._apply_thread_preset(force=False)
+            except Exception:
+                pass
         finally:
             self._thread_applying_standard = False
+
+    def _set_if_zero(self, spin, value) -> bool:
+        """Setzt `spin` nur wenn der aktuellen Wert numerisch ~ 0 ist.
+
+        Returns True wenn gesetzt wurde, False sonst.
+        """
+        if spin is None:
+            return False
+        try:
+            curr = float(spin.value())
+            if abs(curr) < 1e-9:
+                spin.setValue(float(value))
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _apply_thread_preset(self, force: bool = False):
+        """Wendet das im Dropdown gewählte Preset an.
+
+        Wenn force==False: nur Felder befüllen, die noch 0 sind (soft-fill).
+        Wenn force==True: alle relevanten Felder überschreiben.
+        """
+        # Vermeide Rekursion
+        if getattr(self, "_thread_applying_standard", False):
+            return
+        combo = self.thread_standard
+        if combo is None:
+            return
+        data = combo.currentData()
+        if not isinstance(data, dict):
+            return
+
+        self._thread_applying_standard = True
+        try:
+            major = data.get("major")
+            pitch = data.get("pitch")
+            profile = data.get("profile", "metric")
+
+            # Major & Pitch: beim Wechsel immer sichtbar setzen (oder ersetzen bei force)
+            if isinstance(major, (int, float)) and self.thread_major_diameter:
+                if force or abs(float(self.thread_major_diameter.value())) < 1e-9:
+                    self.thread_major_diameter.setValue(float(major))
+            if isinstance(pitch, (int, float)) and self.thread_pitch:
+                if force or abs(float(self.thread_pitch.value())) < 1e-9:
+                    self.thread_pitch.setValue(float(pitch))
+
+            p = float(pitch) if isinstance(pitch, (int, float)) else 1.5
+
+            # Profil-spezifische Default-Werte
+            if profile == "tr":
+                depth = p * 0.50
+                q_angle = 15.0
+            else:
+                depth = p * 0.6134
+                q_angle = 29.5
+
+            first_depth = max(depth * 0.10, p * 0.05)
+            peak_offset = -max(depth * 0.50, p * 0.25)
+
+            # Soft-Set / Force-Set
+            changed = []
+            if force:
+                if self.thread_depth is not None:
+                    self.thread_depth.setValue(float(depth)); changed.append('depth')
+                if self.thread_first_depth is not None:
+                    self.thread_first_depth.setValue(float(first_depth)); changed.append('first_depth')
+                if self.thread_peak_offset is not None:
+                    self.thread_peak_offset.setValue(float(peak_offset)); changed.append('peak_offset')
+                if self.thread_retract_r is not None:
+                    self.thread_retract_r.setValue(1.5); changed.append('retract_r')
+                if self.thread_infeed_q is not None:
+                    self.thread_infeed_q.setValue(q_angle); changed.append('infeed_q')
+                if self.thread_spring_passes is not None:
+                    self.thread_spring_passes.setValue(1); changed.append('spring_passes')
+                if self.thread_e is not None:
+                    self.thread_e.setValue(0.0); changed.append('e')
+                if self.thread_l is not None:
+                    self.thread_l.setValue(0); changed.append('l')
+            else:
+                if self._set_if_zero(self.thread_depth, depth): changed.append('depth')
+                if self._set_if_zero(self.thread_first_depth, first_depth): changed.append('first_depth')
+                if self._set_if_zero(self.thread_peak_offset, peak_offset): changed.append('peak_offset')
+                if self._set_if_zero(self.thread_retract_r, 1.5): changed.append('retract_r')
+                if self._set_if_zero(self.thread_infeed_q, q_angle): changed.append('infeed_q')
+                # spring passes
+                if self.thread_spring_passes is not None:
+                    try:
+                        if force or int(self.thread_spring_passes.value()) == 0:
+                            self.thread_spring_passes.setValue(1); changed.append('spring_passes')
+                    except Exception:
+                        pass
+                if self._set_if_zero(self.thread_e, 0.0): changed.append('e')
+                if self.thread_l is not None:
+                    try:
+                        if force or int(self.thread_l.value()) == 0:
+                            self.thread_l.setValue(0); changed.append('l')
+                    except Exception:
+                        pass
+            # Debug-Ausgabe
+            try:
+                print(f"[LatheEasyStep] _apply_thread_preset: profile={profile}, pitch={p}, changed={changed}")
+            except Exception:
+                pass
+        finally:
+            self._thread_applying_standard = False
+
+    def _apply_thread_preset_force(self):
+        """Handler: Preset hart anwenden (Button)."""
+        try:
+            print("[LatheEasyStep] btn_thread_preset clicked: applying preset force")
+        except Exception:
+            pass
+        try:
+            self._apply_thread_preset(force=True)
+        except Exception:
+            pass
 
     def _debug_widget_names(self):
         """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
@@ -2379,6 +2776,8 @@ class HandlerClass:
         self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
         self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
         self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+        # Preset-Button: hartes Anwenden per Klick
+        self._connect_button_once(self.btn_thread_preset, self._apply_thread_preset_force, "_thread_preset_connected")
 
     def _check_unit_change(self):
         """Pollt die Einheit-Combo und triggert _apply_unit_suffix() bei Änderung."""
@@ -2435,6 +2834,14 @@ class HandlerClass:
                 "length": self._get_widget_by_name("thread_length"),
                 "passes": self._get_widget_by_name("thread_passes"),
                 "safe_z": self._get_widget_by_name("thread_safe_z"),
+                "thread_depth": self._get_widget_by_name("thread_depth"),
+                "peak_offset": self._get_widget_by_name("thread_peak_offset"),
+                "first_depth": self._get_widget_by_name("thread_first_depth"),
+                "retract_r": self._get_widget_by_name("thread_retract_r"),
+                "infeed_q": self._get_widget_by_name("thread_infeed_q"),
+                "spring_passes": self._get_widget_by_name("thread_spring_passes"),
+                "e": self._get_widget_by_name("thread_e"),
+                "l": self._get_widget_by_name("thread_l"),
             },
             OpType.GROOVE: {
                 "tool": self._get_widget_by_name("groove_tool"),
@@ -2562,6 +2969,8 @@ class HandlerClass:
 
     def _handle_language_change(self, *_args):
         self._apply_language_texts()
+        self._thread_standard_populated = False
+        self._setup_thread_helpers()
 
     def _apply_language_texts(self):
         lang = self._current_language_code()
@@ -2576,8 +2985,14 @@ class HandlerClass:
                 except Exception:
                     pass
         self._apply_combo_translations(lang)
+        self._handle_global_change()
         self._apply_tab_titles(lang)
         self._apply_button_translations(lang)
+        # Thread tooltips (localized)
+        try:
+            self._apply_thread_tooltips(lang)
+        except Exception:
+            pass
 
     def _apply_combo_translations(self, lang: str):
         for name, options in COMBO_OPTION_TRANSLATIONS.items():
@@ -2652,6 +3067,18 @@ class HandlerClass:
     def _connect_contour_signals(self):
         """Verbindet alle Kontur-Widgets nur einmal."""
         self._ensure_contour_widgets()
+
+    def _apply_thread_tooltips(self, lang: str):
+        """Setzt Tooltips für bekannte Thread-Widgets gemäß Sprache."""
+        for name, translations in THREAD_TOOLTIP_TRANSLATIONS.items():
+            widget = self._get_widget_by_name(name)
+            if widget is None:
+                continue
+            text = translations.get(lang) or translations.get("de")
+            try:
+                widget.setToolTip(text)
+            except Exception:
+                pass
         for btn_attr, handler, flag in (
             ("contour_add_segment", self._handle_contour_add_segment, "_contour_add_connected"),
             ("contour_delete_segment", self._handle_contour_delete_segment, "_contour_delete_connected"),
@@ -3891,22 +4318,19 @@ class HandlerClass:
     def _update_retract_visibility(self, widget=None, mode_in=None):
         """Zeigt/verbirgt Rückzugsebenen abhängig vom Rückzug-Modus."""
 
-        # Combo ermitteln
         combo = self.program_retract_mode
         if isinstance(widget, QtWidgets.QComboBox):
             combo = widget
 
-        # Modustext ermitteln
-        if mode_in is not None:
-            mode_text = str(mode_in)
-        elif combo is not None:
-            mode_text = combo.currentText()
-        else:
+        if combo is None:
             print("[LatheEasyStep] _update_retract_visibility: kein Combo / Modus")
             return
 
-        mode_norm = mode_text.strip().lower()
-        print(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, mode='{mode_text}', mode_norm='{mode_norm}'")
+        idx = combo.currentIndex()
+        if isinstance(mode_in, (int, float)):
+            idx = int(mode_in)
+
+        print(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, index={idx}")
 
         # Root-Widget wie in _update_program_visibility benutzen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
@@ -3931,29 +4355,21 @@ class HandlerClass:
         for name in all_widgets:
             show(name, False)
 
-        # --------- Modus-spezifische Sichtbarkeit --------------------
-        if mode_norm == "einfach":
-            # gemäß Siemens-Beispiel: XRA und ZRA auch im Modus "einfach"
+        if idx == 0:
             show("label_prog_xra", True)
             show("program_xra", True)
             show("label_prog_zra", True)
             show("program_zra", True)
-
-        elif mode_norm == "erweitert":
-            # erweiterte Kontrolle: außen + innere X-Ebene
+        elif idx == 1:
             show("label_prog_xra", True)
             show("program_xra", True)
             show("label_prog_zra", True)
             show("program_zra", True)
             show("label_prog_xri", True)
             show("program_xri", True)
-
-        elif mode_norm == "alle":
-            # alle Ebenen sichtbar (volle manuelle Kontrolle)
+        else:
             for name in all_widgets:
                 show(name, True)
-        else:
-            print(f"[LatheEasyStep] _update_retract_visibility: unbekannter Modus '{mode_norm}'")
 
     def _update_subspindle_visibility(self, *args, **kwargs):
         """Blendet S3-Felder aus/ein, wenn eine Gegenspindel vorhanden ist."""
