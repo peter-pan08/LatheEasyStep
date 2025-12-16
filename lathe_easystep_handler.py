@@ -1126,80 +1126,78 @@ def gcode_for_groove(op: Operation) -> List[str]:
     return lines
 
 
-def _abspanen_safe_z(settings: Dict[str, object], side_idx: int,
-                     path: List[Tuple[float, float]]) -> float:
-    if side_idx == 0:
-        safe_candidates = [settings.get("zra"), settings.get("zri")]
-    else:
-        safe_candidates = [settings.get("zri"), settings.get("zra")]
-    for candidate in safe_candidates:
-        try:
-            if candidate is not None and float(candidate) != 0.0:
-                return float(candidate)
-        except Exception:
-            continue
-    if path:
-        return path[0][1] + 2.0
-    return 2.0
+# _abspanen_safe_z moved to `slicer.py` (see generate_abspanen_gcode)
+# Retained for backwards compatibility: import from slicer at runtime if needed.
+def _abspanen_safe_z(settings: Dict[str, object], side_idx: int, path: List[Tuple[float, float]]) -> float:
+    try:
+        from slicer import _abspanen_safe_z as _s
+    except Exception:
+        # fallback minimal implementation
+        if path:
+            return path[0][1] + 2.0
+        return 2.0
+    return _s(settings, side_idx, [(x, z) for x, z in path])
 
 
-def _offset_abspanen_path(
-    path: List[Tuple[float, float]], stock_x: float, offset: float
-) -> List[Tuple[float, float]]:
-    if offset <= 1e-6:
-        return list(path)
-
-    xs = [p[0] for p in path]
-    min_x, max_x = min(xs), max(xs)
-    adjusted: List[Tuple[float, float]] = []
-
-    if stock_x >= max_x:
-        for x, z in path:
-            adjusted.append((min(x + offset, stock_x), z))
-    elif stock_x <= min_x:
-        for x, z in path:
-            adjusted.append((max(x - offset, stock_x), z))
-    else:
-        for x, z in path:
-            adjusted.append((x + offset, z))
-
-    return adjusted
-
-
-def _abspanen_offsets(
-    stock_x: float, path: List[Tuple[float, float]], depth_per_pass: float
-) -> List[float]:
-    if not path:
-        return [0.0]
-
-    xs = [p[0] for p in path]
-    min_x, max_x = min(xs), max(xs)
-
-    if stock_x >= max_x:
-        start_offset = stock_x - min_x
-    elif stock_x <= min_x:
-        start_offset = max_x - stock_x
-    else:
-        start_offset = 0.0
-
-    if start_offset <= 1e-6:
-        return [0.0]
-
-    if depth_per_pass <= 0:
-        return [start_offset, 0.0]
-
-    passes = math.ceil(start_offset / depth_per_pass)
-    offsets: List[float] = []
-    for i in range(0, passes + 1):
-        current = max(round(start_offset - i * depth_per_pass, 6), 0.0)
-        if offsets and abs(offsets[-1] - current) < 1e-6:
-            continue
-        offsets.append(current)
-    if offsets[-1] != 0.0:
-        offsets.append(0.0)
-    return offsets
+# _offset_abspanen_path moved to `slicer.py` (see generate_abspanen_gcode)
+# Backwards-compatible runtime import
+def _offset_abspanen_path(path: List[Tuple[float, float]], stock_x: float, offset: float) -> List[Tuple[float, float]]:
+    try:
+        from slicer import _offset_abspanen_path as _s
+        return _s([(x, z) for x, z in path], float(stock_x), float(offset))
+    except Exception:
+        if offset <= 1e-6:
+            return list(path)
+        adjusted = []
+        xs = [p[0] for p in path]
+        min_x, max_x = min(xs), max(xs)
+        if stock_x >= max_x:
+            for x, z in path:
+                adjusted.append((min(x + offset, stock_x), z))
+        elif stock_x <= min_x:
+            for x, z in path:
+                adjusted.append((max(x - offset, stock_x), z))
+        else:
+            for x, z in path:
+                adjusted.append((x + offset, z))
+        return adjusted
 
 
+# _abspanen_offsets moved to `slicer.py` (see generate_abspanen_gcode)
+# Backwards-compatible runtime import
+def _abspanen_offsets(stock_x: float, path: List[Tuple[float, float]], depth_per_pass: float) -> List[float]:
+    try:
+        from slicer import _abspanen_offsets as _s
+        return _s(float(stock_x), [(x, z) for x, z in path], float(depth_per_pass))
+    except Exception:
+        if not path:
+            return [0.0]
+        xs = [p[0] for p in path]
+        min_x, max_x = min(xs), max(xs)
+        if stock_x >= max_x:
+            start_offset = stock_x - min_x
+        elif stock_x <= min_x:
+            start_offset = max_x - stock_x
+        else:
+            start_offset = 0.0
+        if start_offset <= 1e-6:
+            return [0.0]
+        if depth_per_pass <= 0:
+            return [start_offset, 0.0]
+        passes = math.ceil(start_offset / depth_per_pass)
+        offsets: List[float] = []
+        for i in range(0, passes + 1):
+            current = max(round(start_offset - i * depth_per_pass, 6), 0.0)
+            if offsets and abs(offsets[-1] - current) < 1e-6:
+                continue
+            offsets.append(current)
+        if offsets[-1] != 0.0:
+            offsets.append(0.0)
+        return offsets
+
+
+# _emit_segment_with_pauses moved to `slicer.py` (see generate_abspanen_gcode)
+# Backwards-compatible runtime import
 def _emit_segment_with_pauses(
     lines: List[str],
     start: Tuple[float, float],
@@ -1209,22 +1207,26 @@ def _emit_segment_with_pauses(
     pause_distance: float,
     pause_duration: float,
 ):
-    x0, z0 = start
-    x1, z1 = end
-    dx, dz = x1 - x0, z1 - z0
-    length = math.hypot(dx, dz)
+    try:
+        from slicer import _emit_segment_with_pauses as _s
+        return _s(lines, start, end, feed, pause_enabled, pause_distance, pause_duration)
+    except Exception:
+        x0, z0 = start
+        x1, z1 = end
+        dx, dz = x1 - x0, z1 - z0
+        length = math.hypot(dx, dz)
+        if pause_enabled and pause_distance > 0.0 and length > pause_distance:
+            lines.append(
+                "o<step_line_pause> call "
+                f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
+                f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
+            )
+            return
+        lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
 
-    if pause_enabled and pause_distance > 0.0 and length > pause_distance:
-        lines.append(
-            "o<step_line_pause> call "
-            f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
-            f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
-        )
-        return
 
-    lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
-
-
+# _gcode_for_abspanen_pass moved to `slicer.py` (see generate_abspanen_gcode)
+# Backwards-compatible runtime import
 def _gcode_for_abspanen_pass(
     path: List[Tuple[float, float]],
     feed: float,
@@ -1233,184 +1235,41 @@ def _gcode_for_abspanen_pass(
     pause_distance: float,
     pause_duration: float,
 ) -> List[str]:
-    if not path:
-        return []
-
-    lines: List[str] = []
-    x0, z0 = path[0]
-    lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
-    lines.append(f"G0 Z{z0:.3f}")
-    lines.append(f"G1 X{x0:.3f} Z{z0:.3f} F{feed:.3f}")
-
-    prev = path[0]
-    for point in path[1:]:
-        _emit_segment_with_pauses(
-            lines, prev, point, feed, pause_enabled, pause_distance, pause_duration
-        )
-        prev = point
-
-    lines.append(f"G0 Z{safe_z:.3f}")
-    return lines
+    try:
+        from slicer import _gcode_for_abspanen_pass as _s
+        return _s([(x, z) for x, z in path], feed, safe_z, pause_enabled, pause_distance, pause_duration)
+    except Exception:
+        if not path:
+            return []
+        lines: List[str] = []
+        x0, z0 = path[0]
+        lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
+        lines.append(f"G0 Z{z0:.3f}")
+        lines.append(f"G1 X{x0:.3f} Z{z0:.3f} F{feed:.3f}")
+        prev = path[0]
+        for point in path[1:]:
+            _emit_segment_with_pauses(lines, prev, point, feed, pause_enabled, pause_distance, pause_duration)
+            prev = point
+        lines.append(f"G0 Z{safe_z:.3f}")
+        return lines
 
 
 def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
-    """Abspanen entlang einer Kontur mit Zustellungen und Unterbrechungen."""
+    """Thin wrapper: delegate Abspanen G-code generation to `slicer.generate_abspanen_gcode`.
 
-    p = op.params
-    path = list(op.path or [])
-    lines: List[str] = ["(ABSPANEN)"]
-
-    if not path:
-        return lines
-
-    side_idx = int(p.get("side", 0))
-    feed = float(p.get("feed", 0.15))
-    depth_per_pass = max(float(p.get("depth_per_pass", 0.0)), 0.0)
-    pause_enabled = bool(p.get("pause_enabled", False))
-    pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
-    pause_duration = 0.5
-    mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten
-
-    # harte Sicherung: Unterbrechung nur beim Schruppen
-    if mode_idx != 0:
-        pause_enabled = False
-
-    tool_num = int(p.get("tool", 0))
-    spindle = float(p.get("spindle", 0.0))
-
-    stock_x = settings.get("xa") if side_idx == 0 else settings.get("xi")
+    The full implementation lives in `slicer.py`; keeping a wrapper here keeps the public
+    API stable and simplifies importing in tests.
+    """
     try:
-        stock_x = float(stock_x) if stock_x is not None else None
+        from slicer import generate_abspanen_gcode
     except Exception:
-        stock_x = None
-    if stock_x is None:
-        stock_x = max(point[0] for point in path)
+        generate_abspanen_gcode = None
 
-    safe_z = _abspanen_safe_z(settings, side_idx, path)
+    if generate_abspanen_gcode:
+        return generate_abspanen_gcode(op.params, list(op.path or []), settings)
 
-    offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
-
-    # Optional: slicing (robustes Schrupp-Verfahren)
-    slice_strategy = op.params.get("slice_strategy")
-    slice_step = float(op.params.get("slice_step", depth_per_pass or 1.0))
-    allow_undercut = bool(op.params.get("allow_undercut", False))
-    external = side_idx == 0  # Außen/Innen
-
-    # Accept either a string code (e.g. 'parallel_x') or the combo index (0=none,1=parallel_x)
-    strategy_code = None
-    try:
-        if isinstance(slice_strategy, (int, float)):
-            idx = int(slice_strategy)
-            if idx == 1:
-                strategy_code = "parallel_x"
-            elif idx == 2:
-                strategy_code = "parallel_z"
-            else:
-                strategy_code = None
-        elif isinstance(slice_strategy, str):
-            strategy_code = slice_strategy
-    except Exception:
-        strategy_code = None
-
-    if strategy_code == "parallel_x":
-        # Ziel-X bestimmen je nach Außen/Innen
-        xs = [p[0] for p in path] if path else [stock_x]
-        x_target = min(xs) if external else max(xs)
-        try:
-            from slicer import rough_turn_parallel_x
-        except Exception:
-            rough_turn_parallel_x = None
-
-        if rough_turn_parallel_x:
-            rough_lines = rough_turn_parallel_x(
-                path,
-                external=external,
-                x_stock=stock_x,
-                x_target=x_target,
-                step_x=slice_step,
-                safe_z=safe_z,
-                feed=feed,
-                allow_undercut=allow_undercut,
-                pause_enabled=pause_enabled,
-                pause_distance=pause_distance,
-                pause_duration=pause_duration,
-            )
-            lines.extend(rough_lines)
-
-            # Finish optional (Kontur 1x)
-            if mode_idx in (1, 2):
-                lines.append("(Schlichtschnitt Kontur)")
-                lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
-                for (x, z) in path:
-                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-                lines.append(f"G0 Z{safe_z:.3f}")
-
-            return lines
-
-    if strategy_code == "parallel_z":
-        try:
-            from slicer import rough_turn_parallel_z
-        except Exception:
-            rough_turn_parallel_z = None
-
-        if rough_turn_parallel_z:
-            z_vals = [p[1] for p in path] if path else [0.0]
-            z_stock = max(z_vals) if external else min(z_vals)
-            z_target = min(z_vals) if external else max(z_vals)
-            # step_z reuses slice_step UI
-            rough_lines = rough_turn_parallel_z(
-                path,
-                external=external,
-                z_stock=z_stock,
-                z_target=z_target,
-                step_z=slice_step,
-                safe_z=safe_z,
-                feed=feed,
-                allow_undercut=allow_undercut,
-                pause_enabled=pause_enabled,
-                pause_distance=pause_distance,
-                pause_duration=pause_duration,
-            )
-            lines.extend(rough_lines)
-
-            # Finish optional (Kontur 1x)
-            if mode_idx in (1, 2):
-                lines.append("(Schlichtschnitt Kontur)")
-                lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
-                for (x, z) in path:
-                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-                lines.append(f"G0 Z{safe_z:.3f}")
-
-            return lines
-
-    # ------------------------------------------------------------------
-    # NO SILENT FALLBACK FOR ROUGHING
-    #
-    # The old offset-path roughing produces non-CAM behavior on tapers:
-    # it re-traverses too much contour per pass -> very low chip load at
-    # entry/exit, bad surface, tool life impact.
-    #
-    # Therefore:
-    # - Roughing requires a slicing strategy (parallel_x / parallel_z)
-    # - If not available, we emit a clear warning and (optionally) only
-    #   run Finish (single contour pass) if selected.
-    # ------------------------------------------------------------------
-
-    if mode_idx == 0:
-        lines.append("(WARN: Abspanen-Schruppen ohne Slicing ist deaktiviert)")
-        lines.append("(      Bitte in 'Abspanen -> Slicing Strategy' Parallel X oder Parallel Z wählen.)")
-        # Optional: If user selected "Rough only", stop here.
-        # If user actually wants finish too, they should choose mode 2 in UI.
-        return lines
-
-    # Finish-only (mode_idx == 1) without slicing: single contour pass
-    _append_tool_and_spindle(lines, tool_num, spindle)
-    lines.append("(Schlichtschnitt Kontur)")
-    lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
-    for (x, z) in path:
-        lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-    lines.append(f"G0 Z{safe_z:.3f}")
-    return lines
+    # Fallback: minimal output if module not available
+    return ["(ABSPANEN)"]
 
 
 def gcode_for_keyway(op: Operation) -> List[str]:
