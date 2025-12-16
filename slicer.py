@@ -142,3 +142,75 @@ def rough_turn_parallel_x(
             lines.append(f"G0 Z{safe_z:.3f}")
 
     return lines
+
+
+def rough_turn_parallel_z(
+    path: List[Point],
+    external: bool,
+    z_stock: float,
+    z_target: float,
+    step_z: float,
+    safe_z: float,
+    feed: float,
+    allow_undercut: bool = False,
+) -> List[str]:
+    """Slicing parallel to Z (horizontal bands)."""
+    segs = segments_from_polyline(path)
+
+    # compute Z passes from z_stock towards z_target
+    passes: List[Tuple[float, float]] = []
+    if step_z <= 0:
+        return []
+    if external:
+        z = z_stock
+        while z > z_target + 1e-9:
+            z_hi = z
+            z_lo = max(z_target, z - step_z)
+            passes.append((z_hi, z_lo))
+            z = z_lo
+    else:
+        z = z_stock
+        while z < z_target - 1e-9:
+            z_lo = z
+            z_hi = min(z_target, z + step_z)
+            passes.append((z_hi, z_lo))
+            z = z_hi
+
+    xs = [p[0] for p in path] if path else []
+    min_x = min(xs) if xs else None
+    max_x = max(xs) if xs else None
+
+    lines: List[str] = []
+    lines.append("(ABSPANEN Rough - parallel Z slicing)")
+
+    for pass_i, (z_hi, z_lo) in enumerate(passes, 1):
+        band_lo, band_hi = (z_lo, z_hi) if z_lo <= z_hi else (z_hi, z_lo)
+        x_intervals: List[Tuple[float, float]] = []
+        for s in segs:
+            # reuse intersect logic by swapping coordinates
+            # create a pseudo-segment in (z,x) space: treat z as 'x' and x as 'z'
+            pseudo = Segment(s.z0, s.x0, s.z1, s.x1)
+            hit = intersect_segment_with_x_band(pseudo, band_lo, band_hi)
+            if hit:
+                x_intervals.append(hit)
+        x_work = merge_intervals(x_intervals)
+
+        if not x_work:
+            lines.append(f"(Pass {pass_i}: no cut region in band Z[{band_lo:.3f},{band_hi:.3f}])")
+            continue
+
+        lines.append(f"(Pass {pass_i}: Z-band [{band_lo:.3f},{band_hi:.3f}])")
+        for (xa, xb) in x_work:
+            x_cut = xa if external else xb
+            # skip undercutting if not allowed
+            if not allow_undercut and min_x is not None and max_x is not None:
+                eps = 1e-6
+                if x_cut < min_x - eps or x_cut > max_x + eps:
+                    continue
+            lines.append(f"G0 Z{safe_z:.3f}")
+            lines.append(f"G0 X{x_cut:.3f}")
+            lines.append(f"G0 Z{band_lo:.3f}")
+            lines.append(f"G1 Z{band_hi:.3f} F{feed:.3f}")
+            lines.append(f"G0 Z{safe_z:.3f}")
+
+    return lines
