@@ -79,6 +79,13 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 - Tests: Neue Unit‑Tests wurden hinzugefügt: `tests/test_parting_slice.py`, `tests/test_parting_tooltips.py`, `tests/test_parting_visibility.py`, `tests/test_slicer_extra.py`.
 - Datum & Hinweis: Änderungen vorgenommen am 2025-12-16; siehe die Tests für Beispiele der erwarteten G‑Code-Ausgabe.
 
+Beispiel (Kurz) — Abspanen mit Parallel X und Pause:
+```gcode
+G0 X0.000 Z2.000
+o<step_line_pause> call [0.000] [-0.200] [0.000] [0.000] [0.100] [0.150] [0.500]
+```
+
+
 ### Kurze Anleitung: Gewindeschneiden
 - Presets: Das Dropdown `Standardgewinde` enthält metrische und TR-Profile. Bei Auswahl werden Steigung & Nenndurchmesser gesetzt; weitere Werte (Zustellungen, Peak-Offset, Zustellwinkel, Retract usw.) werden sinnvoll vorbelegt, aber **nur** wenn die entsprechenden Felder zuvor leer (0) waren — so werden Benutzerwerte nicht überschrieben.
 - Preset übernehmen: Der Button **Preset übernehmen** erzwingt das Überschreiben aller Gewinde-Parameter mit den Preset-Werten, falls du schnell auf sichere Standardwerte wechseln willst.
@@ -106,6 +113,13 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 - G-code header: O-subs (`o<step_x_pause>`, `o<step_line_pause>`) are only injected if at least one step actually needs them.
 - Tests: New unit tests included: `tests/test_parting_slice.py`, `tests/test_parting_tooltips.py`, `tests/test_parting_visibility.py`, `tests/test_slicer_extra.py`.
 - Date & note: Changes made on 2025-12-16; see tests for example expected outputs.
+
+Example (Short) — Parting with Parallel X and pause:
+```gcode
+G0 X0.000 Z2.000
+o<step_line_pause> call [0.000] [-0.200] [0.000] [0.000] [0.100] [0.150] [0.500]
+```
+
 
 ### Quick guide: Thread cutting
 - Presets: The `Standard thread` dropdown contains metric and TR profiles. Selecting a preset sets pitch & nominal diameter; additional parameters (depths, first cut, peak offset, infeed angle, retract, etc.) are **pre-filled** but only when the fields were previously empty (0), so user values are preserved.
