@@ -85,6 +85,26 @@ G0 X0.000 Z2.000
 o<step_line_pause> call [0.000] [-0.200] [0.000] [0.000] [0.100] [0.150] [0.500]
 ```
 
+Entwickler‑Hinweis — Refactor (2025-12-16) 🔧
+- Ziel: Trennung von UI/Handler und CAM‑Logik zur besseren Testbarkeit, Debugging und Wiederverwendbarkeit.
+- Neues Modul: `slicer.py` enthält die Abspanen-/Slicing‑Logik and CAM‑Hilfsfunktionen.
+- Wichtige API:
+  - `generate_abspanen_gcode(p: Dict[str,object], path: List[(x,z)], settings: Dict[str,object]) -> List[str]` — Hauptfunktion zur Generierung des G‑Codes für `OpType.ABSPANEN`.
+  - `rough_turn_parallel_x(...)`, `rough_turn_parallel_z(...)` — Kerndateien für Band‑Weises Schruppen.
+  - Hilfsfunktionen: `gcode_from_path`, `_abspanen_safe_z`, `_offset_abspanen_path`, `_abspanen_offsets`, `_emit_segment_with_pauses`, `_gcode_for_abspanen_pass`, `_contour_retract_positions`.
+- Verwendung: `lathe_easystep_handler.py` delegiert jetzt an `slicer.generate_abspanen_gcode(op.params, op.path, settings)`; Wrapper mit Fallbacks bleiben vorhanden.
+- Tests: Unit‑Tests für Slicer und Pause/Visibility befinden sich in `tests/` (mit `pytest` ausführen).
+
+Example (Developer note) — Refactor (2025-12-16) 🔧
+- Goal: separate UI/handler and CAM logic for better testability, debugging and reusability.
+- New module: `slicer.py` contains parting/slicing logic and CAM helper functions.
+- Key API:
+  - `generate_abspanen_gcode(p: Dict[str,object], path: List[(x,z)], settings: Dict[str,object]) -> List[str]` — main generator used by `OpType.ABSPANEN`.
+  - `rough_turn_parallel_x(...)`, `rough_turn_parallel_z(...)` — core band-wise roughing routines.
+  - Helpers: `gcode_from_path`, `_abspanen_safe_z`, `_offset_abspanen_path`, `_abspanen_offsets`, `_emit_segment_with_pauses`, `_gcode_for_abspanen_pass`, `_contour_retract_positions`.
+- Usage: `lathe_easystep_handler.py` now delegates to `slicer.generate_abspanen_gcode(op.params, op.path, settings)`; thin wrappers with fallbacks remain.
+- Tests: Unit tests for the slicer and pause/visibility logic live in `tests/` (run with `pytest`).
+
 
 ### Kurze Anleitung: Gewindeschneiden
 - Presets: Das Dropdown `Standardgewinde` enthält metrische und TR-Profile. Bei Auswahl werden Steigung & Nenndurchmesser gesetzt; weitere Werte (Zustellungen, Peak-Offset, Zustellwinkel, Retract usw.) werden sinnvoll vorbelegt, aber **nur** wenn die entsprechenden Felder zuvor leer (0) waren — so werden Benutzerwerte nicht überschrieben.
