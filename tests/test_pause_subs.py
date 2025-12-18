@@ -33,7 +33,7 @@ def test_abspanen_rough_without_slicing_warns_and_has_no_call():
     m = ProgramModel()
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "feed": 0.15}, path=[(0.0, 0.0), (10.0, -2.0)])]
     g = "\n".join(m.generate_gcode())
-    assert "(WARN: Abspanen-Schruppen ohne Slicing ist deaktiviert)" in g
+    assert "(WARN: Abspanen-Schruppen ohne Bearbeitungsrichtung ist deaktiviert)" in g
     assert "o<step_line_pause> call" not in g
 
 

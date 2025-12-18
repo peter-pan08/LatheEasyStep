@@ -30,17 +30,39 @@
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QListWidget" name="listOperations">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="minimumWidth">
-        <number>180</number>
-       </property>
-     </widget>
+      <layout class="QVBoxLayout" name="operationsLayout">
+       <item>
+        <widget class="QListWidget" name="listOperations">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumWidth">
+          <number>180</number>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="operationButtonsLayout">
+         <item>
+          <widget class="QPushButton" name="btn_save_step">
+           <property name="text">
+            <string>Step speichern</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btn_load_step">
+           <property name="text">
+            <string>Step laden</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
      </item>
      <item>
       <layout class="QVBoxLayout" name="rightLayout">
@@ -530,6 +552,112 @@
                </property>
               </widget>
              </item>
+
+            <!-- Rückzug-Optionen: Checkboxen um anzugeben ob die eingetragenen Rückzugswerte absolut oder inkremental sind -->
+            <item row="18" column="0" colspan="2">
+             <widget class="QGroupBox" name="group_retract_options">
+              <property name="title">
+               <string>Rückzug-Optionen</string>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <layout class="QVBoxLayout" name="retract_options_layout">
+               <item>
+                <widget class="QCheckBox" name="program_xra_absolute">
+                 <property name="text">
+                  <string>XRA als Absolut</string>
+                 </property>
+                 <property name="checked">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Wenn aktiviert, wird XRA als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="program_xri_absolute">
+                 <property name="text">
+                  <string>XRI als Absolut</string>
+                 </property>
+                 <property name="checked">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Wenn aktiviert, wird XRI als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="program_zra_absolute">
+                 <property name="text">
+                  <string>ZRA als Absolut</string>
+                 </property>
+                 <property name="checked">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Wenn aktiviert, wird ZRA als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="program_zri_absolute">
+                 <property name="text">
+                  <string>ZRI als Absolut</string>
+                 </property>
+                 <property name="checked">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Wenn aktiviert, wird ZRI als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="program_xt_absolute">
+                 <property name="text">
+                  <string>XT als Absolut</string>
+                 </property>
+                 <property name="checked">
+                  <bool>true</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Wenn aktiviert, wird XT als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: absolut).</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="program_zt_absolute">
+                 <property name="text">
+                  <string>ZT als Absolut</string>
+                 </property>
+                 <property name="checked">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Wenn aktiviert, wird ZT als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="label_retract_hint">
+                 <property name="text">
+                  <string><small>Hinweis: Aktiviert = Absolut, deaktiviert = Inkremental (Standard).</small></string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="styleSheet">
+                  <string>color: gray; font-size: 10px;</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+
              <item row="18" column="0">
               <widget class="QLabel" name="label_prog_xt">
                <property name="text">
@@ -1432,23 +1560,18 @@
             <item row="11" column="0">
              <widget class="QLabel" name="label_parting_slice_strategy">
               <property name="text">
-               <string>Slicing Strategy</string>
+               <string>Bearbeitungsrichtung</string>
               </property>
              </widget>
             </item>
             <item row="11" column="1">
              <widget class="QComboBox" name="parting_slice_strategy">
               <property name="toolTip">
-               <string>Wähle Slicing-Strategie: Keine / Parallel X / Parallel Z</string>
+               <string>Wähle Bearbeitungsrichtung: Parallel X oder Parallel Z</string>
               </property>
                 <property name="whatsThis">
-                 <string>Choose slicing strategy for rough passes: None / Parallel X / Parallel Z</string>
+                 <string>Wählt die Bearbeitungsrichtung für Schruppschnitte: Parallel X oder Parallel Z</string>
                 </property>
-              <item>
-               <property name="text">
-                <string>Keine</string>
-               </property>
-              </item>
               <item>
                <property name="text">
                 <string>Parallel X</string>
@@ -1464,23 +1587,29 @@
             <item row="12" column="0">
              <widget class="QLabel" name="label_parting_slice_step">
               <property name="text">
-               <string>Slicing-Schritt</string>
+               <string>Band-Abstand</string>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
               </property>
              </widget>
             </item>
             <item row="12" column="1">
              <widget class="QDoubleSpinBox" name="parting_slice_step">
               <property name="toolTip">
-               <string>Step between X/Z bands for slicing (mm) — distance between bands</string>
+               <string>Abstand zwischen X/Z-Bändern (mm) — Abstand zwischen den Bändern</string>
               </property>
                 <property name="whatsThis">
-                 <string>Step between X/Z bands for slicing (mm)</string>
+                 <string>Abstand zwischen X/Z-Bändern (mm)</string>
                 </property>
               <property name="suffix">
                <string> mm</string>
               </property>
               <property name="maximum">
                <double>100.000000000000000</double>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
               </property>
               <property name="value">
                <double>0.500000000000000</double>

@@ -75,13 +75,13 @@ def test_parting_tooltips_set_for_de_and_en():
     # Apply German directly to the parting tooltip helper
     h._apply_parting_tooltips("de")
     assert widgets["parting_slice_strategy"]._tooltip is not None
-    assert "Slicing-Strategie" in widgets["parting_slice_strategy"]._tooltip
+    assert "Bearbeitungsrichtung" in widgets["parting_slice_strategy"]._tooltip
     assert widgets["parting_slice_strategy"]._whatsthis is not None
-    assert "Slicing-Strategie" in widgets["parting_slice_strategy"]._whatsthis
+    assert "Bearbeitungsrichtung" in widgets["parting_slice_strategy"]._whatsthis
 
     # Apply English directly
     h._apply_parting_tooltips("en")
     assert widgets["parting_slice_strategy"]._tooltip is not None
-    assert "slicing" in widgets["parting_slice_strategy"]._tooltip.lower()
+    assert "roughing direction" in widgets["parting_slice_strategy"]._tooltip.lower()
     assert widgets["parting_slice_strategy"]._whatsthis is not None
-    assert "choose slicing strategy" in widgets["parting_slice_strategy"]._whatsthis.lower()
+    assert "choose the roughing direction" in widgets["parting_slice_strategy"]._whatsthis.lower()
