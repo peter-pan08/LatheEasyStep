@@ -233,3 +233,17 @@ def test_abspanen_respects_program_clearance_and_retract():
     g = "\n".join(m.generate_gcode())
     assert "G0 Z3.000" in g
     assert "G0 X45.000" in g
+
+
+def test_parallel_x_retract_default_incremental_behaviour():
+    # Ohne _absolute-Flag sollen XRA-Werte als Inkrement interpretiert werden
+    path = [(40.0, 0.0), (30.0, -10.0)]
+    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2}, path=path)
+    m = ProgramModel()
+    m.add_operation(op)
+    m.program_settings = {"xa": 40.0, "xra": 2.0}  # Standard: inkrementell
+    g = "\n".join(m.generate_gcode())
+    # Absoluter Rückzug auf X2.000 darf nicht auftreten
+    assert "G0 X2.000" not in g
+    # Rückzug soll relativ zum Schnitt erfolgen (hier 2 mm über dem aktuellen Schnittniveau)
+    assert any("G0 X42.000" in ln for ln in g.splitlines())

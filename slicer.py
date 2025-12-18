@@ -102,6 +102,8 @@ def rough_turn_parallel_x(
     pause_duration: float = 0.5,
     retract_x: Optional[float] = None,
     retract_z: Optional[float] = None,
+    retract_x_absolute: bool = True,
+    retract_z_absolute: bool = True,
 ) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
@@ -114,15 +116,41 @@ def rough_turn_parallel_x(
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
 
+    def _retract_x_value(base_x: float, target: Optional[float]) -> Optional[float]:
+        if target is None:
+            return None
+        try:
+            val = float(target)
+        except Exception:
+            return None
+        if retract_x_absolute:
+            return val
+        delta = val
+        return base_x + (delta if external else -delta)
+
+    def _retract_z_value(base_z: float, target: Optional[float]) -> Optional[float]:
+        if target is None:
+            return None
+        try:
+            val = float(target)
+        except Exception:
+            return None
+        if retract_z_absolute:
+            return val
+        # delta relativ zum aktuellen Band; nach oben hin auf safe_z begrenzen
+        return min(safe_z, base_z + val)
+
     # Start an der programmierten Rückzugsposition (falls vorhanden)
     current_x: Optional[float] = None
     current_z: Optional[float] = None
-    if retract_z is not None:
-        lines.append(f"G0 Z{retract_z:.3f}")
-        current_z = retract_z
-    if retract_x is not None:
-        lines.append(f"G0 X{retract_x:.3f}")
-        current_x = retract_x
+    start_rz = _retract_z_value(safe_z, retract_z)
+    start_rx = _retract_x_value(x_stock, retract_x)
+    if start_rz is not None:
+        lines.append(f"G0 Z{start_rz:.3f}")
+        current_z = start_rz
+    if start_rx is not None:
+        lines.append(f"G0 X{start_rx:.3f}")
+        current_x = start_rx
 
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
@@ -175,12 +203,14 @@ def rough_turn_parallel_x(
             if current_z != safe_z:
                 lines.append(f"G0 Z{safe_z:.3f}")
                 current_z = safe_z
-            if retract_x is not None and (current_x is None or abs(current_x - retract_x) > 1e-9):
-                lines.append(f"G0 X{retract_x:.3f}")
-                current_x = retract_x
-            if retract_z is not None and abs(current_z - retract_z) > 1e-9:
-                lines.append(f"G0 Z{retract_z:.3f}")
-                current_z = retract_z
+            rx_eff = _retract_x_value(x_cut, retract_x)
+            if rx_eff is not None and (current_x is None or abs(current_x - rx_eff) > 1e-9):
+                lines.append(f"G0 X{rx_eff:.3f}")
+                current_x = rx_eff
+            rz_eff = _retract_z_value(min(za, zb), retract_z)
+            if rz_eff is not None and abs(current_z - rz_eff) > 1e-9:
+                lines.append(f"G0 Z{rz_eff:.3f}")
+                current_z = rz_eff
 
     return lines
 
@@ -589,6 +619,12 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
         except Exception:
             retract_x_cfg, retract_z_cfg = (None, None)
+        if side_idx == 0:
+            retract_x_abs = settings.get("xra_absolute") if "xra_absolute" in settings else False
+            retract_z_abs = settings.get("zra_absolute") if "zra_absolute" in settings else False
+        else:
+            retract_x_abs = settings.get("xri_absolute") if "xri_absolute" in settings else False
+            retract_z_abs = settings.get("zri_absolute") if "zri_absolute" in settings else False
         if retract_x_cfg is None:
             retract_x_cfg = stock_x + sc if external else stock_x - sc
         if retract_z_cfg is None:
@@ -607,6 +643,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             pause_duration=pause_duration,
             retract_x=retract_x_cfg,
             retract_z=retract_z_cfg,
+            retract_x_absolute=bool(retract_x_abs),
+            retract_z_absolute=bool(retract_z_abs),
         )
         lines.extend(rough_lines)
         # document effective slice step in output for traceability
