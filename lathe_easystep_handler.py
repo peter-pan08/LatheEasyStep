@@ -1773,7 +1773,6 @@ class HandlerClass:
         self.label_prog_zri = getattr(self.w, "label_prog_zri", None)
 
         # Retract option checkboxes (absolute vs incremental)
-        self.group_retract_options = getattr(self.w, "group_retract_options", None)
         self.program_xra_absolute = getattr(self.w, "program_xra_absolute", None)
         self.program_xri_absolute = getattr(self.w, "program_xri_absolute", None)
         self.program_zra_absolute = getattr(self.w, "program_zra_absolute", None)
@@ -4684,10 +4683,14 @@ class HandlerClass:
         # alle Rückzugs-Widgets erst mal ausblenden
         all_widgets = [
             "label_prog_xra", "program_xra",
+            "program_xra_absolute",
             "label_prog_xri", "program_xri",
+            "program_xri_absolute",
             "label_prog_zra", "program_zra",
+            "program_zra_absolute",
             "label_prog_zri", "program_zri",
-            "group_retract_options",
+            "program_zri_absolute",
+            "label_retract_hint",
         ]
         for name in all_widgets:
             show(name, False)
@@ -4695,17 +4698,22 @@ class HandlerClass:
         if idx == 0:
             show("label_prog_xra", True)
             show("program_xra", True)
+            show("program_xra_absolute", True)
             show("label_prog_zra", True)
             show("program_zra", True)
-            show("group_retract_options", True)
+            show("program_zra_absolute", True)
+            show("label_retract_hint", True)
         elif idx == 1:
             show("label_prog_xra", True)
             show("program_xra", True)
+            show("program_xra_absolute", True)
             show("label_prog_zra", True)
             show("program_zra", True)
+            show("program_zra_absolute", True)
             show("label_prog_xri", True)
             show("program_xri", True)
-            show("group_retract_options", True)
+            show("program_xri_absolute", True)
+            show("label_retract_hint", True)
         else:
             for name in all_widgets:
                 show(name, True)
