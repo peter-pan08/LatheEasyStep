@@ -3,7 +3,7 @@ import os
 
 # Ensure local package directory is on sys.path so tests can import the slicer
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from slicer import rough_turn_parallel_x, rough_turn_parallel_z
+from slicer import generate_abspanen_gcode, rough_turn_parallel_x, rough_turn_parallel_z
 from lathe_easystep_handler import ProgramModel, Operation, OpType
 
 
@@ -247,3 +247,17 @@ def test_parallel_x_retract_default_incremental_behaviour():
     assert "G0 X2.000" not in g
     # Rückzug soll relativ zum Schnitt erfolgen (hier 2 mm über dem aktuellen Schnittniveau)
     assert any("G0 X42.000" in ln for ln in g.splitlines())
+
+
+def test_parallel_x_fallback_retracts_are_absolute():
+    # Ableitung aus Stock + SC bzw. safe_z muss absolut erfolgen, sonst wird der Rückzug verdoppelt
+    path = [(40.0, 0.0), (25.0, -5.0)]
+    params = {"mode": 0, "slice_strategy": 1, "depth_per_pass": 1.0, "feed": 0.15}
+    settings = {"sc": 1.0}
+    lines = generate_abspanen_gcode(params, path, settings)
+    # Rückzug in X: Stock 40 + SC 1 = 41 (nicht 81)
+    assert "G0 X41.000" in lines
+    assert "G0 X81.000" not in lines
+    # Rückzug in Z soll auf die absolute Sicherheitsposition führen (keine negativen G0-Z)
+    assert any(ln.startswith("G0 Z1.000") for ln in lines)
+    assert not any(ln.startswith("G0 Z-") for ln in lines)
