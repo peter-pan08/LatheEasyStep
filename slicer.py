@@ -545,14 +545,49 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         strategy_code = None
 
     if strategy_code == "parallel_x":
+        xs = [pp[0] for pp in path] if path else [stock_x]
+        x_target = min(xs) if external else max(xs)
+        rough_lines = rough_turn_parallel_x(
+            path,
+            external=external,
+            x_stock=stock_x,
+            x_target=x_target,
+            step_x=slice_step,
+            safe_z=safe_z,
+            feed=feed,
+            allow_undercut=allow_undercut,
+            pause_enabled=pause_enabled,
+            pause_distance=pause_distance,
+            pause_duration=pause_duration,
+        )
+        lines.extend(rough_lines)
+        # document effective slice step in output for traceability
+        lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
+
+        # Finish optional (Kontur 1x)
+        if mode_idx in (1, 2):
+            lines.append("(Schlichtschnitt Kontur)")
+            lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            for (x, z) in path:
+                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+            lines.append(f"G0 Z{safe_z:.3f}")
+
+        return lines
+
+    if strategy_code == "parallel_z":
         z_vals = [pp[1] for pp in path] if path else [0.0]
         z_stock = max(z_vals) if external else min(z_vals)
         z_target = min(z_vals) if external else max(z_vals)
+        # Determine configured retract positions (if present) and pass them
+        # through so the abspanen generator respects XRA/XRI/ZRA/ZRI settings.
         try:
             retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
         except Exception:
             retract_x_cfg, retract_z_cfg = (None, None)
 
+        # Determine whether the configured retracts are absolute or incremental
+        # (checkboxes in the UI). If flags are missing we assume absolute to
+        # preserve historical behaviour.
         if side_idx == 0:
             retract_x_abs = settings.get("xra_absolute") if "xra_absolute" in settings else False
             retract_z_abs = settings.get("zra_absolute") if "zra_absolute" in settings else False
@@ -581,8 +616,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             pause_duration=pause_duration,
         )
         lines.extend(rough_lines)
+        # document effective slice step in output for traceability
         lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
 
+        # Finish optional (Kontur 1x)
         if mode_idx in (1, 2):
             lines.append("(Schlichtschnitt Kontur)")
             lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
@@ -592,33 +629,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
 
         return lines
 
-    if strategy_code == "parallel_z":
-        xs = [pp[0] for pp in path] if path else [stock_x]
-        x_target = min(xs) if external else max(xs)
-        rough_lines = rough_turn_parallel_x(
-            path,
-            external=external,
-            x_stock=stock_x,
-            x_target=x_target,
-            step_x=slice_step,
-            safe_z=safe_z,
-            feed=feed,
-            allow_undercut=allow_undercut,
-            pause_enabled=pause_enabled,
-            pause_distance=pause_distance,
-            pause_duration=pause_duration,
-        )
-        lines.extend(rough_lines)
-        lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
-
-        if mode_idx in (1, 2):
-            lines.append("(Schlichtschnitt Kontur)")
-            lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
-            for (x, z) in path:
-                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-            lines.append(f"G0 Z{safe_z:.3f}")
-
-        return lines
     # No direction selected
     if mode_idx == 0:
         lines.append("(WARN: Abspanen-Schruppen ohne Bearbeitungsrichtung ist deaktiviert)")
