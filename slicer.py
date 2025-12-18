@@ -100,6 +100,8 @@ def rough_turn_parallel_x(
     pause_enabled: bool = False,
     pause_distance: float = 0.0,
     pause_duration: float = 0.5,
+    retract_x: Optional[float] = None,
+    retract_z: Optional[float] = None,
 ) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
@@ -111,6 +113,16 @@ def rough_turn_parallel_x(
     xs = [p[0] for p in path] if path else []
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
+
+    # Start an der programmierten Rückzugsposition (falls vorhanden)
+    current_x: Optional[float] = None
+    current_z: Optional[float] = None
+    if retract_z is not None:
+        lines.append(f"G0 Z{retract_z:.3f}")
+        current_z = retract_z
+    if retract_x is not None:
+        lines.append(f"G0 X{retract_x:.3f}")
+        current_x = retract_x
 
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
@@ -128,6 +140,9 @@ def rough_turn_parallel_x(
         lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
 
         for (za, zb) in z_work:
+            if abs(zb - za) < 1e-9:
+                # Degeneriertes Intervall -> kein Schnitt notwendig
+                continue
             x_cut = x_lo if external else x_hi
             # if undercuts are not allowed, skip cuts where the X cut position
             # lies clearly outside the contour X-range
@@ -140,8 +155,12 @@ def rough_turn_parallel_x(
                     # internal undercut beyond contour's max X
                     continue
             lines.append(f"G0 Z{safe_z:.3f}")
+            current_z = safe_z
             lines.append(f"G0 X{x_cut:.3f}")
-            lines.append(f"G1 Z{za:.3f} F{feed:.3f}")
+            current_x = x_cut
+            if current_z != za:
+                lines.append(f"G1 Z{za:.3f} F{feed:.3f}")
+                current_z = za
             # Z movement is a segment from (x_cut, za) to (x_cut, zb)
             if pause_enabled and pause_distance > 0 and abs(zb - za) > pause_distance:
                 # use the compact pause sub call
@@ -152,7 +171,16 @@ def rough_turn_parallel_x(
                 )
             else:
                 lines.append(f"G1 Z{zb:.3f} F{feed:.3f}")
-            lines.append(f"G0 Z{safe_z:.3f}")
+            current_z = zb
+            if current_z != safe_z:
+                lines.append(f"G0 Z{safe_z:.3f}")
+                current_z = safe_z
+            if retract_x is not None and (current_x is None or abs(current_x - retract_x) > 1e-9):
+                lines.append(f"G0 X{retract_x:.3f}")
+                current_x = retract_x
+            if retract_z is not None and abs(current_z - retract_z) > 1e-9:
+                lines.append(f"G0 Z{retract_z:.3f}")
+                current_z = retract_z
 
     return lines
 
@@ -323,9 +351,14 @@ def _abspanen_safe_z(settings: Dict[str, object], side_idx: int, path: List[Poin
                 return float(candidate)
         except Exception:
             continue
+    sc = 0.0
+    try:
+        sc = max(float(settings.get("sc", 0.0) or 0.0), 0.0)
+    except Exception:
+        sc = 0.0
     if path:
-        return path[0][1] + 2.0
-    return 2.0
+        return path[0][1] + (sc if sc > 0 else 2.0)
+    return sc if sc > 0 else 2.0
 
 
 def _offset_abspanen_path(path: List[Point], stock_x: float, offset: float) -> List[Point]:
@@ -527,6 +560,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     slice_step = depth_per_pass if depth_per_pass > 0.0 else 1.0
     allow_undercut = bool(p.get("allow_undercut", False))
     external = side_idx == 0
+    try:
+        sc = max(float(settings.get("sc", 0.0) or 0.0), 0.0)
+    except Exception:
+        sc = 0.0
 
     # Accept either index or code
     strategy_code = None
@@ -547,6 +584,15 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if strategy_code == "parallel_x":
         xs = [pp[0] for pp in path] if path else [stock_x]
         x_target = min(xs) if external else max(xs)
+        # Rückzugsposition aus dem Programmkopf verwenden (falls vorhanden)
+        try:
+            retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
+        except Exception:
+            retract_x_cfg, retract_z_cfg = (None, None)
+        if retract_x_cfg is None:
+            retract_x_cfg = stock_x + sc if external else stock_x - sc
+        if retract_z_cfg is None:
+            retract_z_cfg = safe_z
         rough_lines = rough_turn_parallel_x(
             path,
             external=external,
@@ -559,6 +605,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             pause_enabled=pause_enabled,
             pause_distance=pause_distance,
             pause_duration=pause_duration,
+            retract_x=retract_x_cfg,
+            retract_z=retract_z_cfg,
         )
         lines.extend(rough_lines)
         # document effective slice step in output for traceability
