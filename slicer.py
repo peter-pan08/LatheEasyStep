@@ -109,7 +109,7 @@ def rough_turn_parallel_x(
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
 
     lines: List[str] = []
-    lines.append("(ABSPANEN Rough - parallel X)")
+    lines.append("(ABSPANEN Rough - parallel Z)")
 
     # bounding X of contour path (used to limit undercuts)
     xs = [p[0] for p in path] if path else []
@@ -242,7 +242,7 @@ def rough_turn_parallel_z(
     pause_distance: float = 0.0,
     pause_duration: float = 0.5,
 ) -> List[str]:
-    """Parallel to Z (horizontal bands)."""
+    """Parallel to X (horizontal bands)."""
     segs = segments_from_polyline(path)
 
     # compute Z passes from z_stock towards z_target
@@ -269,7 +269,7 @@ def rough_turn_parallel_z(
     max_x = max(xs) if xs else None
 
     lines: List[str] = []
-    lines.append("(ABSPANEN Rough - parallel Z)")
+    lines.append("(ABSPANEN Rough - parallel X)")
     if not passes:
         return lines
 
@@ -316,7 +316,15 @@ def rough_turn_parallel_z(
             # choose the interval endpoint that is closer to the center (smaller X).
             # For internal stock the opposite applies (choose larger X).
             cut_target = min(xa, xb) if external else max(xa, xb)
-            lines.append(f"G1 X{cut_target:.3f} F{feed:.3f}")
+            _emit_segment_with_pauses(
+                lines,
+                (current_x, current_z),
+                (cut_target, band_lo),
+                feed,
+                pause_enabled=pause_enabled,
+                pause_distance=pause_distance,
+                pause_duration=pause_duration,
+            )
             current_x = cut_target
 
             # Determine retract Z: if a configured target exists, it may be
@@ -612,6 +620,73 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         strategy_code = None
 
     if strategy_code == "parallel_x":
+        z_vals = [pp[1] for pp in path] if path else [0.0]
+        z_stock = max(z_vals) if external else min(z_vals)
+        z_target = min(z_vals) if external else max(z_vals)
+        # Determine configured retract positions (if present) and pass them
+        # through so the abspanen generator respects XRA/XRI/ZRA/ZRI settings.
+        try:
+            retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
+        except Exception:
+            retract_x_cfg, retract_z_cfg = (None, None)
+
+        # Determine whether the configured retracts are absolute or incremental
+        # (checkboxes in the UI). If flags are missing we assume absolute to
+        # preserve historical behaviour.
+        if side_idx == 0:
+            retract_x_abs = settings.get("xra_absolute") if "xra_absolute" in settings else False
+            retract_z_abs = settings.get("zra_absolute") if "zra_absolute" in settings else False
+        else:
+            retract_x_abs = settings.get("xri_absolute") if "xri_absolute" in settings else False
+            retract_z_abs = settings.get("zri_absolute") if "zri_absolute" in settings else False
+
+        if retract_x_cfg is None:
+            # Rückzug auf Basis von Stock + Sicherheitsabstand (absolut)
+            retract_x_cfg = stock_x + sc if external else stock_x - sc
+            retract_x_abs = True
+        if retract_z_cfg is None:
+            retract_z_cfg = safe_z
+            retract_z_abs = True
+
+        rough_lines = rough_turn_parallel_z(
+            path,
+            external=external,
+            z_stock=z_stock,
+            z_target=z_target,
+            step_z=slice_step,
+            safe_z=safe_z,
+            feed=feed,
+            start_x=stock_x if external else (min(path_xs) if path_xs and not stock_from_settings else stock_x),
+            retract_delta_x=2.0,
+            retract_delta_z=2.0,
+            retract_x_target=retract_x_cfg,
+            retract_z_target=retract_z_cfg,
+            retract_x_absolute=bool(retract_x_abs),
+            retract_z_absolute=bool(retract_z_abs),
+            allow_undercut=allow_undercut,
+            pause_enabled=pause_enabled,
+            pause_distance=pause_distance,
+            pause_duration=pause_duration,
+        )
+        # sicherstellen, dass der Header den gewählten Richtungsmodus widerspiegelt
+        if rough_lines:
+            rough_lines[0] = "(ABSPANEN Rough - parallel X)"
+        lines.extend(rough_lines)
+        # document effective slice step in output for traceability
+        lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
+        lines.insert(2, f"#<_slice_step> = {slice_step:.3f}")
+
+        # Finish optional (Kontur 1x)
+        if mode_idx in (1, 2):
+            lines.append("(Schlichtschnitt Kontur)")
+            lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            for (x, z) in path:
+                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+            lines.append(f"G0 Z{safe_z:.3f}")
+
+        return lines
+
+    if strategy_code == "parallel_z":
         xs = [pp[0] for pp in path] if path else [stock_x]
         x_target = min(xs) if external else max(xs)
         # Rückzugsposition aus dem Programmkopf verwenden (falls vorhanden)
@@ -653,62 +728,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             retract_x_absolute=bool(retract_x_abs),
             retract_z_absolute=bool(retract_z_abs),
         )
-        lines.extend(rough_lines)
-        # document effective slice step in output for traceability
-        lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
-        lines.insert(2, f"#<_slice_step> = {slice_step:.3f}")
-
-        # Finish optional (Kontur 1x)
-        if mode_idx in (1, 2):
-            lines.append("(Schlichtschnitt Kontur)")
-            lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
-            for (x, z) in path:
-                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-            lines.append(f"G0 Z{safe_z:.3f}")
-
-        return lines
-
-    if strategy_code == "parallel_z":
-        z_vals = [pp[1] for pp in path] if path else [0.0]
-        z_stock = max(z_vals) if external else min(z_vals)
-        z_target = min(z_vals) if external else max(z_vals)
-        # Determine configured retract positions (if present) and pass them
-        # through so the abspanen generator respects XRA/XRI/ZRA/ZRI settings.
-        try:
-            retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
-        except Exception:
-            retract_x_cfg, retract_z_cfg = (None, None)
-
-        # Determine whether the configured retracts are absolute or incremental
-        # (checkboxes in the UI). If flags are missing we assume absolute to
-        # preserve historical behaviour.
-        if side_idx == 0:
-            retract_x_abs = settings.get("xra_absolute") if "xra_absolute" in settings else False
-            retract_z_abs = settings.get("zra_absolute") if "zra_absolute" in settings else False
-        else:
-            retract_x_abs = settings.get("xri_absolute") if "xri_absolute" in settings else False
-            retract_z_abs = settings.get("zri_absolute") if "zri_absolute" in settings else False
-
-        rough_lines = rough_turn_parallel_z(
-            path,
-            external=external,
-            z_stock=z_stock,
-            z_target=z_target,
-            step_z=slice_step,
-            safe_z=safe_z,
-            feed=feed,
-            start_x=stock_x if external else (min(path_xs) if path_xs and not stock_from_settings else stock_x),
-            retract_delta_x=2.0,
-            retract_delta_z=2.0,
-            retract_x_target=retract_x_cfg,
-            retract_z_target=retract_z_cfg,
-            retract_x_absolute=bool(retract_x_abs),
-            retract_z_absolute=bool(retract_z_abs),
-            allow_undercut=allow_undercut,
-            pause_enabled=pause_enabled,
-            pause_distance=pause_distance,
-            pause_duration=pause_duration,
-        )
+        if rough_lines:
+            rough_lines[0] = "(ABSPANEN Rough - parallel Z)"
         lines.extend(rough_lines)
         # document effective slice step in output for traceability
         lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
