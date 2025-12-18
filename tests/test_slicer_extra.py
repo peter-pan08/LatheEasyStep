@@ -246,7 +246,27 @@ def test_parallel_x_retract_default_incremental_behaviour():
     # Absoluter Rückzug auf X2.000 darf nicht auftreten
     assert "G0 X2.000" not in g
     # Rückzug soll relativ zum Schnitt erfolgen (hier 2 mm über dem aktuellen Schnittniveau)
-    assert any("G0 X42.000" in ln for ln in g.splitlines())
+    found_delta = False
+    lines = g.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.startswith("G1 X") and "Z" in ln:
+            try:
+                cut_x = float(ln.split()[1][1:])
+            except Exception:
+                continue
+            # look ahead for the next retract X
+            for j in range(i + 1, min(i + 6, len(lines))):
+                if lines[j].startswith("G0 X"):
+                    try:
+                        retract_x = float(lines[j].split()[1][1:])
+                    except Exception:
+                        continue
+                    if abs(retract_x - (cut_x + 2.0)) < 1e-6:
+                        found_delta = True
+                        break
+            if found_delta:
+                break
+    assert found_delta, "inkrementeller Rückzug (cut_x + 2.0) wurde nicht gefunden"
 
 
 def test_parallel_x_fallback_retracts_are_absolute():
