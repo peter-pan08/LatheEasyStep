@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from weakref import WeakSet
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -185,8 +186,8 @@ TEXT_TRANSLATIONS = {
     "label_parting_pause": {"de": "Vorschubunterbrechung", "en": "Feed Interrupt"},
     "parting_pause_enabled": {"de": "aktivieren", "en": "Enable"},
     "label_parting_pause_distance": {"de": "Unterbrechungsabstand", "en": "Pause Distance"},
-    "label_parting_slice_strategy": {"de": "Slicing-Strategie", "en": "Slicing Strategy"},
-    "label_parting_slice_step": {"de": "Slicing-Schritt", "en": "Slicing Step"},
+    "label_parting_slice_strategy": {"de": "Bearbeitungsrichtung", "en": "Roughing Direction"},
+    "label_parting_slice_step": {"de": "Band-Abstand", "en": "Band Spacing"},
     "label_parting_allow_undercut": {"de": "Hinterschnitt erlauben", "en": "Allow Undercut"},
     "parting_allow_undercut": {"de": "erlauben", "en": "allow"},
 
@@ -286,7 +287,7 @@ COMBO_OPTION_TRANSLATIONS = {
     "parting_side": {"de": ["Außenseite", "Innenseite"], "en": ["Outside", "Inside"]},
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
-    "parting_slice_strategy": {"de": ["Keine", "Parallel X", "Parallel Z"], "en": ["None", "Parallel X", "Parallel Z"]},
+    "parting_slice_strategy": {"de": ["Parallel X", "Parallel Z"], "en": ["Parallel X", "Parallel Z"]},
     "thread_orientation": {"de": ["Aussengewinde", "Innengewinde"], "en": ["External", "Internal"]},
     "thread_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "groove_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
@@ -309,7 +310,11 @@ BUTTON_TRANSLATIONS = {
     "btnNewProgram": {"de": "Neues Programm", "en": "New Program"},
     "btnGenerate": {"de": "Programm erzeugen", "en": "Generate Program"},
     "btn_thread_preset": {"de": "Preset übernehmen", "en": "Apply preset"},
+    "btn_save_step": {"de": "Step speichern", "en": "Save Step"},
+    "btn_load_step": {"de": "Step laden", "en": "Load Step"},
 }
+
+STEP_FILE_FILTER = "Lathe step files (*.step.json);;JSON (*.json)"
 
 # Tooltips für Gewinde-Widgets (de / en)
 THREAD_TOOLTIP_TRANSLATIONS = {
@@ -331,12 +336,12 @@ THREAD_TOOLTIP_TRANSLATIONS = {
 
 PARTING_TOOLTIP_TRANSLATIONS = {
     "parting_slice_strategy": {
-        "de": "Wählt die Slicing-Strategie für Schruppschnitte (z.B. 'Parallel X')",
-        "en": "Choose slicing strategy for rough passes (e.g. 'Parallel X')",
+        "de": "Wählt die axis-parallele Bearbeitungsrichtung für Schruppschnitte (Parallel X oder Parallel Z).",
+        "en": "Choose the roughing direction (axis-aligned: Parallel X or Parallel Z).",
     },
     "parting_slice_step": {
-        "de": "Abstand zwischen X-Bändern beim Parallel-X-Slicing (mm)",
-        "en": "Step between X-bands for parallel-X slicing (mm)",
+        "de": "Abstand zwischen X-Bändern (mm)",
+        "en": "Step between X-bands (mm)",
     },
     "parting_allow_undercut": {
         "de": "Erlaubt Hinterschnitte (Schnitt über Kontur hinaus)",
@@ -349,7 +354,8 @@ class ProgramModel:
     def __init__(self):
         self.operations: List[Operation] = []
         self.spindle_speed_max: float = 0.0
-        self.program_settings: Dict[str, object] = {}
+        # Default program settings: make line-number emission opt-out by default
+        self.program_settings: Dict[str, object] = {"emit_line_numbers": False}
 
     def add_operation(self, op: Operation):
         self.operations.append(op)
@@ -557,33 +563,37 @@ class ProgramModel:
             lines.extend(gcode_for_operation(op, settings))
         lines.extend(["M9", "M30", "%"])
 
-        # Zeilennummerierung wie im LinuxCNC-Postprozessor: Nur echte G-Code-
-        # Zeilen erhalten ein N-Präfix mit einer Schrittweite von 1. Kommentare
-        # bleiben unnummeriert, damit die Befehlszeilen bei N10 beginnen.
-        numbered: List[str] = []
-        n = 10
-        for line in lines:
-            stripped = line.strip()
-            if not stripped or stripped == "%":
-                numbered.append(line)
-                continue
-            if stripped.startswith("("):
-                numbered.append(line)
-                continue
-            if re.match(r"^[oO]\s*<", stripped):
-                numbered.append(line)
-                continue
-            if re.match(r"^N\d+\s", stripped, flags=re.IGNORECASE):
-                # Nutzerdefinierte Blocknummer beibehalten (z. B. für G71 P/Q)
-                numbered.append(line)
-                continue
-            numbered.append(f"N{n} {line}")
-            n += 1
+        # Zeilennummerierung: optional (konfigurierbar über settings['emit_line_numbers']).
+        # Standardverhalten ist jetzt, keine Nummern zu emittieren (projektweit default = False).
+        emit_numbers = bool(settings.get("emit_line_numbers", False))
 
-        # Zeichensatz vereinheitlichen: LinuxCNC erwartet ASCII, daher alle
-        # Zeilen transliterieren und unzulässige Zeichen ersetzen.
-        sanitized = [_sanitize_gcode_text(line) for line in numbered]
+        if emit_numbers:
+            numbered: List[str] = []
+            n = 10
+            for line in lines:
+                stripped = line.strip()
+                if not stripped or stripped == "%":
+                    numbered.append(line)
+                    continue
+                if stripped.startswith("("):
+                    numbered.append(line)
+                    continue
+                if re.match(r"^[oO]\s*<", stripped):
+                    numbered.append(line)
+                    continue
+                if re.match(r"^N\d+\s", stripped, flags=re.IGNORECASE):
+                    # Nutzerdefinierte Blocknummer beibehalten (z. B. für G71 P/Q)
+                    numbered.append(line)
+                    continue
+                numbered.append(f"N{n} {line}")
+                n += 1
 
+            sanitized = [_sanitize_gcode_text(line) for line in numbered]
+            return sanitized
+
+        # Nummerierung deaktiviert: entferne evtl. vorhandene Nutzer-Blocknummern
+        stripped_lines: List[str] = [re.sub(r"^[Nn]\d+\s+", "", line) for line in lines]
+        sanitized = [_sanitize_gcode_text(line) for line in stripped_lines]
         return sanitized
 
 
@@ -1272,11 +1282,23 @@ def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
     except Exception:
         generate_abspanen_gcode = None
 
-    if generate_abspanen_gcode:
-        return generate_abspanen_gcode(op.params, list(op.path or []), settings)
+    lines: List[str] = []
+    _append_tool_and_spindle(
+        lines,
+        op.params.get("tool"),
+        op.params.get("spindle"),
+    )
+    coolant_enabled = bool(op.params.get("coolant", False))
+    if coolant_enabled:
+        lines.append("(Coolant On)")
+        lines.append("M8")
 
-    # Fallback: minimal output if module not available
-    return ["(ABSPANEN)"]
+    if generate_abspanen_gcode:
+        lines.extend(generate_abspanen_gcode(op.params, list(op.path or []), settings))
+        return lines
+
+    lines.append("(ABSPANEN)")
+    return lines
 
 
 def gcode_for_keyway(op: Operation) -> List[str]:
@@ -1328,9 +1350,9 @@ def _sanitize_gcode_text(text: str) -> str:
 def _contour_retract_positions(
     settings: Dict[str, object],
     side_idx: int,
-    fallback_x: float,
-    fallback_z: float,
-) -> Tuple[float, float]:
+    fallback_x: Optional[float],
+    fallback_z: Optional[float],
+) -> Tuple[Optional[float], Optional[float]]:
     try:
         from slicer import _contour_retract_positions as _s
     except Exception:
@@ -1339,7 +1361,7 @@ def _contour_retract_positions(
     if _s:
         return _s(settings, side_idx, fallback_x, fallback_z)
 
-    def _pick(candidate: object, default: float) -> float:
+    def _pick(candidate: object, default: Optional[float]) -> Optional[float]:
         try:
             if candidate is not None and float(candidate) != 0.0:
                 return float(candidate)
@@ -1408,25 +1430,19 @@ def gcode_for_contour(op: Operation, settings: Dict[str, object] | None = None) 
         settings, side_idx, entry_x, safe_z
     )
     safe_z = retract_z
-    lines.append(
-        f"(Sicherheitsposition aus Programm: X{retract_x:.3f} Z{retract_z:.3f})"
-    )
-    lines.append(f"G0 X{retract_x:.3f} Z{retract_z:.3f}")
-    lines.append(f"G0 X{entry_x:.3f}")
-    lines.append(f"G71 U{rough_depth:.3f} W{retract:.3f}")
-    lines.append(
-        f"G71 P{block_start} Q{block_end} U{finish_allow_x:.3f} "
-        f"W{finish_allow_z:.3f} F{rough_feed:.3f}"
-    )
+    # Aus Sicherheits‑/Dokumentationsgründen nur kommentierte Konturinformationen ausgeben.
+    # Die Kontur wird nicht als ausführbare Bewegungsfolge in den Header geschrieben.
+    lines.append(f"(Sicherheitsposition aus Programm: X{retract_x:.3f} Z{retract_z:.3f})")
+    lines.append(f"(Kontur-Punkte: {len(path)})")
+    lines.append(f"(Startpunkt: X{start_x:.3f} Z{start_z:.3f})")
+    # Listen der ersten Punkte als Kommentar (kurz und lesbar)
+    sample_points = path[:5]
+    for (x, z) in sample_points:
+        lines.append(f"( Konturpunkt: X{x:.3f} Z{z:.3f} )")
+    if len(path) > len(sample_points):
+        lines.append(f"( ... +{len(path)-len(sample_points)} weitere Punkte )")
 
-    # Kontur als Fanuc-kompatible Blöcke (G18 Drehmaschine, X Durchmesser)
-    lines.append(f"N{block_numbers[0]} G0 Z{start_z:.3f}")
-    for bn, (x, z) in zip(block_numbers[1:], path[1:]):
-        lines.append(f"N{bn} G1 X{x:.3f} Z{z:.3f}")
-
-    # Schlichtzyklus
-    lines.append(f"G70 P{block_start} Q{block_end} F{finish_feed:.3f}")
-    lines.append(f"G0 Z{safe_z:.3f}")
+    lines.append(f"(Anmerkung: Kontur wird nur als Kommentar ausgegeben, nicht als Bewegungsbefehle)")
 
     return lines
 
@@ -1693,6 +1709,7 @@ class HandlerClass:
         self._thread_standard_populated = False
         self._thread_standard_signal_connected = False
         self._thread_applying_standard = False
+        self._step_last_dir: str | None = None
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
@@ -1755,6 +1772,15 @@ class HandlerClass:
         self.program_zri = getattr(self.w, "program_zri", None)
         self.label_prog_zri = getattr(self.w, "label_prog_zri", None)
 
+        # Retract option checkboxes (absolute vs incremental)
+        self.group_retract_options = getattr(self.w, "group_retract_options", None)
+        self.program_xra_absolute = getattr(self.w, "program_xra_absolute", None)
+        self.program_xri_absolute = getattr(self.w, "program_xri_absolute", None)
+        self.program_zra_absolute = getattr(self.w, "program_zra_absolute", None)
+        self.program_zri_absolute = getattr(self.w, "program_zri_absolute", None)
+        self.program_xt_absolute = getattr(self.w, "program_xt_absolute", None)
+        self.program_zt_absolute = getattr(self.w, "program_zt_absolute", None)
+
         self.program_s1 = getattr(self.w, "program_s1", None)
         self.label_prog_s1 = getattr(self.w, "label_prog_s1", None)
         self.program_s3 = getattr(self.w, "program_s3", None)
@@ -1810,8 +1836,20 @@ class HandlerClass:
         self.parting_pause_distance = getattr(self.w, "parting_pause_distance", None)
         self.label_parting_slice_strategy = getattr(self.w, "label_parting_slice_strategy", None)
         self.parting_slice_strategy = getattr(self.w, "parting_slice_strategy", None)
+        self._setup_parting_slice_strategy_items()
         self.label_parting_slice_step = getattr(self.w, "label_parting_slice_step", None)
         self.parting_slice_step = getattr(self.w, "parting_slice_step", None)
+        # Hide slice step widget by default because value is auto-managed
+        if self.label_parting_slice_step is not None:
+            try:
+                self.label_parting_slice_step.setVisible(False)
+            except Exception:
+                pass
+        if self.parting_slice_step is not None:
+            try:
+                self.parting_slice_step.setVisible(False)
+            except Exception:
+                pass
         self.label_parting_allow_undercut = getattr(self.w, "label_parting_allow_undercut", None)
         self.parting_allow_undercut = getattr(self.w, "parting_allow_undercut", None)
         self.label_parting_depth = getattr(self.w, "label_parting_depth", None)
@@ -2756,6 +2794,8 @@ class HandlerClass:
         self.btn_move_down = _find("btn_move_down", QtWidgets.QPushButton)
         self.btn_new_program = _find("btn_new_program", QtWidgets.QPushButton)
         self.btn_generate = _find("btn_generate", QtWidgets.QPushButton)
+        self.btn_save_step = _find("btn_save_step", QtWidgets.QPushButton)
+        self.btn_load_step = _find("btn_load_step", QtWidgets.QPushButton)
         # Falls wir die standard Liste nicht finden, versuche ersatzweise gcode_list
         if self.list_ops is None:
             alt = root.findChild(QtWidgets.QListWidget, "gcode_list", QtCore.Qt.FindChildrenRecursively)
@@ -2779,8 +2819,47 @@ class HandlerClass:
         self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
         self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
         self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+        self._connect_button_once(self.btn_save_step, self._handle_save_step, "_btn_save_step_connected")
+        self._connect_button_once(self.btn_load_step, self._handle_load_step, "_btn_load_step_connected")
         # Preset-Button: hartes Anwenden per Klick
         self._connect_button_once(self.btn_thread_preset, self._apply_thread_preset_force, "_thread_preset_connected")
+
+    def _setup_parting_slice_strategy_items(self):
+        combo = getattr(self, "parting_slice_strategy", None)
+        if combo is None:
+            return
+        for idx, data_value in enumerate((1, 2)):
+            if idx < combo.count():
+                combo.setItemData(idx, data_value, QtCore.Qt.UserRole)
+
+    def _select_slice_strategy_index(self, combo, value) -> bool:
+        combo = combo or getattr(self, "parting_slice_strategy", None)
+        if combo is None:
+            return False
+        self._setup_parting_slice_strategy_items()
+        try:
+            code = int(float(value))
+            if code <= 0:
+                code = 1
+            idx = combo.findData(code, QtCore.Qt.UserRole)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                return True
+        except Exception:
+            pass
+        if isinstance(value, str):
+            target = None
+            lowered = value.lower()
+            if lowered == "parallel_x":
+                target = "Parallel X"
+            elif lowered == "parallel_z":
+                target = "Parallel Z"
+            if target is not None:
+                idx = combo.findText(target)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+                    return True
+        return False
 
     def _check_unit_change(self):
         """Pollt die Einheit-Combo und triggert _apply_unit_suffix() bei Änderung."""
@@ -3016,6 +3095,7 @@ class HandlerClass:
                 widget.addItem(entry)
             widget.setCurrentIndex(max(0, min(current_index, widget.count() - 1)))
             widget.blockSignals(False)
+        self._setup_parting_slice_strategy_items()
 
     def _apply_tab_titles(self, lang: str):
         tab_widget = self._find_panel_tab_widget() or self.tab_params
@@ -3306,6 +3386,10 @@ class HandlerClass:
 
         mode_idx = self.parting_mode.currentIndex() if self.parting_mode else 0
         show_roughing = mode_idx == 0
+        # Note: the Slicing Step widget is intentionally hidden because the
+        # `slice_step` value is now auto-derived from `depth_per_pass` by
+        # default. We keep the Slicing Strategy visible but hide the explicit
+        # numeric entry to avoid confusion.
         for widget in (
             self.label_parting_depth,
             self.parting_depth_per_pass,
@@ -3315,13 +3399,18 @@ class HandlerClass:
             self.parting_pause_distance,
             self.label_parting_slice_strategy,
             self.parting_slice_strategy,
-            self.label_parting_slice_step,
-            self.parting_slice_step,
+            # slice_step intentionally omitted from visibility toggling
             self.label_parting_allow_undercut,
             self.parting_allow_undercut,
         ):
             if widget is not None:
                 widget.setVisible(show_roughing)
+
+        # Ensure the explicit Slicing Step field is always hidden because the
+        # slice step is auto-managed; hide both label and input if present.
+        for hidden_widget in (getattr(self, "label_parting_slice_step", None), getattr(self, "parting_slice_step", None)):
+            if hidden_widget is not None:
+                hidden_widget.setVisible(False)
 
     def _handle_tab_changed(self, *_args, **_kwargs):
         """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
@@ -3381,11 +3470,19 @@ class HandlerClass:
             if isinstance(widget, QtWidgets.QSpinBox):
                 params[key] = float(widget.value())
             elif isinstance(widget, QtWidgets.QComboBox):
-                data = widget.currentData()
-                if data is not None:
-                    params[key] = data
+                if key == "slice_strategy":
+                    idx = widget.currentIndex()
+                    data = widget.itemData(idx, QtCore.Qt.UserRole)
+                    if isinstance(data, (int, float)):
+                        params[key] = int(float(data))
+                    else:
+                        params[key] = idx + 1
                 else:
-                    params[key] = float(widget.currentIndex())
+                    data = widget.currentData()
+                    if data is not None:
+                        params[key] = data
+                    else:
+                        params[key] = float(widget.currentIndex())
             elif isinstance(widget, QtWidgets.QAbstractButton):
                 params[key] = float(widget.isChecked())
             else:  # QDoubleSpinBox
@@ -3469,6 +3566,16 @@ class HandlerClass:
         header["xri"] = _val(self.program_xri)
         header["zra"] = _val(self.program_zra)
         header["zri"] = _val(self.program_zri)
+
+        # Absolute vs incremental flags for the retract/tool positions. If the
+        # checkbox widget is missing, default to False (incremental) as per
+        # new default UX (user prefers entering incremental deltas).
+        header["xra_absolute"] = bool(self.program_xra_absolute.isChecked()) if self.program_xra_absolute else False
+        header["xri_absolute"] = bool(self.program_xri_absolute.isChecked()) if self.program_xri_absolute else False
+        header["zra_absolute"] = bool(self.program_zra_absolute.isChecked()) if self.program_zra_absolute else False
+        header["zri_absolute"] = bool(self.program_zri_absolute.isChecked()) if self.program_zri_absolute else False
+        header["xt_absolute"] = bool(self.program_xt_absolute.isChecked()) if self.program_xt_absolute else False
+        header["zt_absolute"] = bool(self.program_zt_absolute.isChecked()) if self.program_zt_absolute else False
 
         # Werkzeugwechsel-/Sicherheitspositionen
         header["xt"] = _val(self.program_xt)
@@ -3555,6 +3662,9 @@ class HandlerClass:
             table.setItem(row, 4, item_cls(f"{edge_size:.3f}"))
 
     def _load_params_to_form(self, op: Operation):
+        if op.op_type == OpType.PROGRAM_HEADER:
+            self._load_program_header_to_form(op.params)
+            return
         widgets = self.param_widgets.get(op.op_type, {})
         for key, widget in widgets.items():
             if widget is None or key not in op.params:
@@ -3562,27 +3672,33 @@ class HandlerClass:
             widget.blockSignals(True)
             val = op.params[key]
             if isinstance(widget, QtWidgets.QComboBox):
-                try:
-                    widget.setCurrentIndex(int(val))
-                except Exception:
-                    # Support string codes for certain combo boxes (e.g. slice strategy)
+                handled = False
+                if key == "slice_strategy":
+                    handled = self._select_slice_strategy_index(widget, val)
+                if not handled:
                     try:
-                        if key == "slice_strategy" and isinstance(val, str):
-                            # map common codes to indices: 0=None,1=parallel_x
-                            v = 1 if val == "parallel_x" else 0
-                            widget.setCurrentIndex(int(v))
-                        else:
-                            # fallback: try to find a text match (language-specific)
+                        widget.setCurrentIndex(int(val))
+                    except Exception:
+                        try:
                             txt = str(val).strip()
                             idx = widget.findText(txt)
                             if idx >= 0:
                                 widget.setCurrentIndex(idx)
-                    except Exception:
-                        pass
+                        except Exception:
+                            pass
             elif isinstance(widget, QtWidgets.QAbstractButton):
                 widget.setChecked(bool(val))
             else:
-                widget.setValue(val)
+                try:
+                    if isinstance(widget, QtWidgets.QSpinBox):
+                        widget.setValue(int(val))
+                    else:
+                        widget.setValue(val)
+                except Exception:
+                    try:
+                        widget.setValue(float(val))
+                    except Exception:
+                        pass
             widget.blockSignals(False)
 
         if op.op_type == OpType.CONTOUR:
@@ -3664,6 +3780,72 @@ class HandlerClass:
             self.parting_contour.blockSignals(False)
             self._update_parting_ready_state()
             self._update_parting_mode_visibility()
+
+    def _load_program_header_to_form(self, params: Dict[str, object]):
+        if not isinstance(params, dict):
+            return
+        self._collect_program_header()
+
+        def _set_combo(widget, value):
+            if widget is None or value is None:
+                return
+            try:
+                idx = widget.findText(str(value))
+            except Exception:
+                return
+            if idx >= 0:
+                widget.blockSignals(True)
+                widget.setCurrentIndex(idx)
+                widget.blockSignals(False)
+
+        def _set_value(widget, value):
+            if widget is None or value is None:
+                return
+            widget.blockSignals(True)
+            try:
+                if isinstance(widget, QtWidgets.QSpinBox):
+                    widget.setValue(int(float(value)))
+                else:
+                    widget.setValue(float(value))
+            except Exception:
+                try:
+                    widget.setValue(float(value))
+                except Exception:
+                    pass
+            finally:
+                widget.blockSignals(False)
+
+        _set_combo(self.program_npv, params.get("npv"))
+        _set_combo(self.program_unit, params.get("unit"))
+        _set_combo(self.program_shape, params.get("shape"))
+        _set_combo(self.program_retract_mode, params.get("retract_mode"))
+
+        _set_value(self.program_xa, params.get("xa"))
+        _set_value(self.program_xi, params.get("xi"))
+        _set_value(self.program_za, params.get("za"))
+        _set_value(self.program_zi, params.get("zi"))
+        _set_value(self.program_zb, params.get("zb"))
+        _set_value(self.program_w, params.get("w"))
+        _set_value(self.program_xt, params.get("xt"))
+        _set_value(self.program_zt, params.get("zt"))
+        _set_value(self.program_sc, params.get("sc"))
+        _set_value(self.program_s1, params.get("s1"))
+        _set_value(self.program_s3, params.get("s3"))
+
+        if self.program_has_subspindle is not None:
+            self.program_has_subspindle.blockSignals(True)
+            self.program_has_subspindle.setChecked(bool(params.get("has_subspindle")))
+            self.program_has_subspindle.blockSignals(False)
+
+        if self.program_name is not None:
+            self.program_name.blockSignals(True)
+            self.program_name.setText(str(params.get("program_name") or ""))
+            self.program_name.blockSignals(False)
+
+        self._apply_unit_suffix()
+        self._update_program_visibility()
+        self._update_retract_visibility()
+        self._update_subspindle_visibility()
 
     def _set_preview_paths(
         self,
@@ -3880,6 +4062,110 @@ class HandlerClass:
         self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
         self._refresh_preview()
         self._update_parting_contour_choices()
+
+    def _selected_operation_index(self) -> int:
+        if self.list_ops is None:
+            return -1
+        idx = self.list_ops.currentRow()
+        if 0 <= idx < len(self.model.operations):
+            return idx
+        return -1
+
+    def _operation_to_step_data(self, op: Operation) -> Dict[str, object]:
+        return {
+            "op_type": op.op_type,
+            "params": op.params,
+            "path": [[float(x), float(z)] for x, z in op.path],
+        }
+
+    def _step_data_to_operation(self, data: Dict[str, object]) -> Operation | None:
+        if not isinstance(data, dict):
+            return None
+        op_type = str(data.get("op_type") or OpType.FACE)
+        params_raw = data.get("params") or {}
+        if not isinstance(params_raw, dict):
+            params_raw = {}
+        params = {str(key): value for key, value in params_raw.items()}
+        path_data = data.get("path") or []
+        path: List[Tuple[float, float]] = []
+        for entry in path_data:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                try:
+                    x = float(entry[0])
+                    z = float(entry[1])
+                except Exception:
+                    continue
+                path.append((x, z))
+        return Operation(op_type, params, path)
+
+    def _insert_loaded_operation(self, op: Operation):
+        self.model.add_operation(op)
+        idx = len(self.model.operations) - 1
+        self._refresh_operation_list(select_index=idx)
+        if self.list_ops:
+            try:
+                self.list_ops.setCurrentRow(idx)
+            except Exception:
+                pass
+        self._refresh_preview()
+        self._update_parting_contour_choices()
+        self._handle_selection_change(idx)
+
+    def _handle_save_step(self):
+        idx = self._selected_operation_index()
+        if idx < 0:
+            parent = self.root_widget or self._find_root_widget()
+            QtWidgets.QMessageBox.warning(parent, "Step speichern", "Bitte zuerst eine Operation auswählen.")
+            return
+        parent = self.root_widget or self._find_root_widget()
+        start_dir = self._step_last_dir or QtCore.QDir.homePath()
+        default_name = os.path.join(start_dir, "lathe_step.step.json")
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            parent,
+            "Step speichern",
+            default_name,
+            STEP_FILE_FILTER,
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".step.json"):
+            file_path += ".step.json"
+
+        data = self._operation_to_step_data(self.model.operations[idx])
+        try:
+            with open(file_path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(parent, "Step speichern", f"Step konnte nicht gespeichert werden:\n{exc}")
+            return
+        self._step_last_dir = os.path.dirname(file_path)
+        QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
+
+    def _handle_load_step(self):
+        parent = self.root_widget or self._find_root_widget()
+        start_dir = self._step_last_dir or QtCore.QDir.homePath()
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            parent,
+            "Step laden",
+            start_dir,
+            STEP_FILE_FILTER,
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(parent, "Step laden", f"Step konnte nicht geöffnet werden:\n{exc}")
+            return
+
+        op = self._step_data_to_operation(data)
+        if op is None:
+            QtWidgets.QMessageBox.warning(parent, "Step laden", "Die ausgewählte Datei enthält keinen gültigen Step.")
+            return
+
+        self._insert_loaded_operation(op)
+        self._step_last_dir = os.path.dirname(file_path)
         self._update_parting_ready_state()
 
     def _handle_move_up(self):
@@ -4229,6 +4515,7 @@ class HandlerClass:
         op = self.model.operations[row]
         if self.tab_params:
             type_to_tab = {
+                OpType.PROGRAM_HEADER: 0,
                 OpType.FACE: 1,
                 OpType.CONTOUR: 2,
                 OpType.ABSPANEN: 3,
@@ -4400,6 +4687,7 @@ class HandlerClass:
             "label_prog_xri", "program_xri",
             "label_prog_zra", "program_zra",
             "label_prog_zri", "program_zri",
+            "group_retract_options",
         ]
         for name in all_widgets:
             show(name, False)
@@ -4409,6 +4697,7 @@ class HandlerClass:
             show("program_xra", True)
             show("label_prog_zra", True)
             show("program_zra", True)
+            show("group_retract_options", True)
         elif idx == 1:
             show("label_prog_xra", True)
             show("program_xra", True)
@@ -4416,6 +4705,7 @@ class HandlerClass:
             show("program_zra", True)
             show("label_prog_xri", True)
             show("program_xri", True)
+            show("group_retract_options", True)
         else:
             for name in all_widgets:
                 show(name, True)

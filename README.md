@@ -26,6 +26,17 @@ Die Sprache stellst du oben links im Programm-Tab über **Sprache** ein:
 - Aktueller Funktionsumfang, Felder und G-Code-Erzeugung: `macros/LatheEasyStep/doc/milestone1_spec.md`
 - Gilt für LinuxCNC 2.10 mit dem QtDragon-Panel `qtdragon_lathe`
 - Screenshots: `macros/LatheEasyStep/doc/Bilder/`
+## Step-Dateien speichern/laden
+
+Unterhalb der Operationsliste findest du die Buttons **Step speichern** / **Step laden**. Jeder Step wird als `.step.json`-Datei abgelegt (Vorschlagname `lathe_step.step.json`, Speicherort über den Dateidialog auswählbar) und enthält `op_type`, `params` und `path`. Beim Laden wird die gespeicherte Operation wieder eingefügt, die Liste springt auf den neuen Eintrag, Vorschau und Tabs werden aktualisiert und der Inhalt bleibt editierbar (auch der Programm-Tab bei Programmkopf-Operationen). So kannst du bewährte Arbeitsschritte sichern, teilen oder Schritt-für-Schritt-Programme wieder zusammensetzen.
+
+## Abspanen: Richtungsdefinition & Retractlogik
+
+- **Parallel zur X-Achse** steht für radiale Schnitte mit Messung in X, **Parallel zur Z-Achse** für axiale Schnitte entlang der Länge. Die Richtungen entsprechen lathe-üblichen Konventionen (radial vs. axial) und dürfen nicht vertauscht werden.
+- **Depth per pass** ist die einzige Quelle für die Zustellung. Slice-Parameter sind entfernt, das Feld bestimmt direkt die Z-Tiefe pro Pass (`#<_depth_per_pass>` im G-Code).
+- **Retracts** verwenden `XRA`/`XRI`/`ZRA`/`ZRI` nur, wenn sie gesetzt und als absolut markiert sind; ansonsten greifen inkrementale Deltas, damit das Werkzeug nur minimal aus dem Material fährt und nicht ständig `G0 Z2.000` ausführt.
+
+Diese Hinweise verhindern Missverständnisse bei Richtung, Zustellung und Sicherheitsbewegungen.
 
 ---
 
@@ -57,6 +68,10 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 - Current feature set, fields, and G-code generation: `macros/LatheEasyStep/doc/milestone1_spec.md`
 - Targets LinuxCNC 2.10 with the QtDragon `qtdragon_lathe` panel
 - UI screenshots: `macros/LatheEasyStep/doc/Bilder/`
+## Saving/loading steps
+
+Under the operation list you can use the Step save / Step load buttons. Files are written with a `.step.json` extension (default name `lathe_step.step.json`, save location selected in the dialog) and capture `op_type`, `params`, and `path`. Loading the JSON reinserts the stored operation, refreshes the list/preview, and leaves the values editable in the relevant tab (the Program tab opens automatically when a Program Header step is loaded).
+
 
 ## Änderungen & Nutzungshinweise (2025-12-16)
 
@@ -70,11 +85,13 @@ Select the language from the Program tab’s **Sprache** combo (top-left):
 - Pause aktivieren: Hake *Pause aktivieren* an und setze **Pause-Abstand** (mm). Wenn ein Segment länger als der Abstand ist, wird an passenden Stellen `o<step_line_pause> call ...` aufgerufen.
 - Verhalten im G-Code: Bei Bedarf wird im Header die Subroutine `o<step_line_pause>` angelegt und `o<step_line_pause> call ...` im Pass-Body aufgerufen. Ist keine Operation mit Pause vorhanden, wird die Subroutine nicht erzeugt.
 
-### Neuerungen (Slicing & UI) — Kurz
-- Slicing-Strategien: Zusätzlich zu **Parallel X** gibt es jetzt **Parallel Z** (horizontaler Band-Slicing). Diese Strategien sind in **Abspanen → Slicing Strategy** auswählbar (Optionen: None, Parallel X, Parallel Z).
-- Slicing‑Parameter: `Slicing Step` (mm) bestimmt die Bandbreite; `Allow Undercut` erlaubt/verbietet Pässe, die über die Kontur hinausgehen. Wenn **Allow Undercut** deaktiviert ist, überspringt der Slicer Pässe, die nicht erreichbar oder deutlich außerhalb der Kontur wären.
+### Neuerungen (Bearbeitungsrichtung & UI) — Kurz
+- Bearbeitungsrichtungen: Schrupp-Pässe müssen explizit über **Parallel X** oder **Parallel Z** gewählt werden; es gibt keine „Keine“-Option mehr. Die Auswahl befindet sich in **Abspanen → Bearbeitungsrichtung**.
+- Band‑Parameter: `Band-Abstand` (mm) bestimmt die Bandbreite; `Allow Undercut` erlaubt/verbietet Pässe, die über die Kontur hinausgehen. Wenn **Allow Undercut** deaktiviert ist, überspringt der Generator Pässe, die nicht erreichbar oder deutlich außerhalb der Kontur wären.
 - Pausen & Sicherheit: Vorschub‑Unterbrechungen bleiben weiterhin **auf Schruppen beschränkt**; beim Schlichten werden sie unterdrückt und die Pause‑Widgets ausgeblendet.
 - Tooltips & Lokalisierung: Die neuen UI‑Tooltips und What'sThis‑Texte sind in `lathe_easystep.ui` als englische Quelltexte hinterlegt (für Qt‑Linguist) und werden zur Laufzeit in DE/EN gesetzt. Dadurch sind Designer-Extrakt und Laufzeit‑Lokalisierung konsistent.
+- Schneidengeometrie: Der Spitzenradius wird in der LinuxCNC-`tool.db` definiert; passe Zustellungen und Band-Abstände so an, dass die Werkzeugspitze nicht mehr Material abträgt, als ihre Geometrie erlaubt.
+- Step-Persistenz: Unter der Operationsliste gibt es jetzt **Step speichern** / **Step laden**; einzelne Arbeitsschritte lassen sich als `.step.json` sichern und in neuen Programmen wieder einfügen. Das macht Parameter und Konturen nachprüfbar und erlaubt, bewährte Schritte wiederzuverwenden womit man Programme Schritt für Schritt zusammenbaut.
 - G-Code-Header: O‑Subs (`o<step_x_pause>`, `o<step_line_pause>`) werden nur eingefügt, wenn mindestens ein Arbeitsschritt sie tatsächlich benötigt (reduziert unnötige Subs).
 - Tests: Neue Unit‑Tests wurden hinzugefügt: `tests/test_parting_slice.py`, `tests/test_parting_tooltips.py`, `tests/test_parting_visibility.py`, `tests/test_slicer_extra.py`.
 - Datum & Hinweis: Änderungen vorgenommen am 2025-12-16; siehe die Tests für Beispiele der erwarteten G‑Code-Ausgabe.
@@ -125,11 +142,23 @@ Example (Developer note) — Refactor (2025-12-16) 🔧
 - Enable pause: Tick *Pause enabled* and set **Pause distance** (mm). If a segment is longer than the distance, `o<step_line_pause> call ...` will be used.
 - G-code behavior: When needed the header gets `o<step_line_pause>` sub and calls `o<step_line_pause> call ...` in the pass body. If no operation uses pauses the sub is omitted.
 
-### New (Slicing & UI) — Short
-- Slicing strategies: In addition to **Parallel X**, there is now **Parallel Z** (horizontal band slicing). Select the strategy in **Parting → Slicing Strategy** (options: None, Parallel X, Parallel Z).
-- Slicing parameters: `Slicing Step` (mm) controls the band thickness; `Allow Undercut` permits or forbids passes that extend beyond the contour. When **Allow Undercut** is disabled, the slicer skips passes that would clearly cut outside the contour.
+### Konturverhalten (wichtig)
+- Konturen, die in der Maske definiert sind, werden **nur als Kommentare** in den generierten G‑Code geschrieben (z. B. `(Konturpunkt: X40.000 Z2.000)`).
+- Es werden **keine** ausführbaren Bewegungsbefehle (z. B. `G0`, `G1`, `G71`, `G70` oder `N`‑Blöcke) aus der Kontur in den Programmkopf oder an den Anfang des Programms geschrieben. Dadurch wird verhindert, dass die Maschine unbeabsichtigt ohne Werkzeug fährt.
+
+### Sonstiges
+
+-### New (Bearbeitungsrichtung & UI) — Short
+- Roughing directions: Choose either **Parallel X** or **Parallel Z** (horizontal band processing) in **Parting → Bearbeitungsrichtung**; the "None" option is gone and a direction must be selected before roughing.
+- Band parameters: `Band-Abstand` (mm) controls the band thickness; `Allow Undercut` permits or forbids passes that extend beyond the contour. When **Allow Undercut** is disabled, the generator skips passes that would clearly cut outside the contour.
+  - Behavior clarification: `Band-Abstand` is now *auto-managed* by default and will be derived from the per‑pass depth (`depth_per_pass`) used for Abspanen when you don't set it explicitly. Because this field is auto-derived and easily confusing, the explicit `Band-Abstand` numeric input is hidden from the Abspanen UI — the generator still documents the chosen value in the G‑Code (`#<_slice_step> = X.XXX`). If you need manual control we can add an explicit "Manual band spacing" option to the UI to re-enable the field.
+
+- Lines numbers: The generator emits line numbers by default historically, but the project default has been changed to **disable** line numbers (`emit_line_numbers = False`) to keep generated G‑code more compact and readable. You can re-enable line numbers in the program settings if you need them for specific workflows.
 - Pauses & safety: Feed interruptions remain restricted to **Rough**; they are suppressed during Finish and the pause widgets are hidden.
+- Retract behavior: The generator now prefers existing program retract fields when they are set — `XRA`, `XRI`, `ZRA`, `ZRI` (e.g. `XRA=42`). When present, these values are used as **absolute** retract targets for rapid/reposition moves (you will see lines like `G0 X42.000` only if `XRA=42` is configured). If these fields are not set, the generator falls back to incremental retract deltas (relative moves) as before.
+- Absolute vs incremental: Jede der Retract‑Eingaben kann nun als **Absolut** oder **Inkremental** markiert werden (Checkboxen in den "Rückzug‑Optionen"). **Standardmäßig ist jetzt Inkremental** (Checkbox deaktiviert) — du kannst pro‑Feld auswählen, ob der eingegebene Wert als absolutes Koordinatziel oder als inkrementelles Delta interpretiert werden soll. Dies ist nützlich, wenn bestimmte Werkzeuge absolute Werte benötigen, um Kollisionen zu vermeiden.
 - Tooltips & localization: The new UI tooltips and What'sThis texts are stored as English source strings in `lathe_easystep.ui` (for Qt‑Linguist) and are set at runtime for DE/EN, ensuring consistent designer extraction and runtime localization.
+- Tool geometry: LinuxCNC's `tool.db` encodes the nose radius of the selected cutter; keep your depth-per-pass and band spacing within that radius so the tool does not try to remove more material than its geometry allows.
 - G-code header: O-subs (`o<step_x_pause>`, `o<step_line_pause>`) are only injected if at least one step actually needs them.
 - Tests: New unit tests included: `tests/test_parting_slice.py`, `tests/test_parting_tooltips.py`, `tests/test_parting_visibility.py`, `tests/test_slicer_extra.py`.
 - Date & note: Changes made on 2025-12-16; see tests for example expected outputs.

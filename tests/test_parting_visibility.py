@@ -35,6 +35,7 @@ def test_parting_visibility_rough_shows_widgets():
     h.parting_pause_distance = BoolWidget()
     h.label_parting_slice_strategy = BoolWidget()
     h.parting_slice_strategy = BoolWidget()
+    # slicing step is auto-managed and not shown in the UI
     h.label_parting_slice_step = BoolWidget()
     h.parting_slice_step = BoolWidget()
     h.label_parting_allow_undercut = BoolWidget()
@@ -45,6 +46,8 @@ def test_parting_visibility_rough_shows_widgets():
     assert h.parting_depth_per_pass.visible is True
     assert h.parting_pause_enabled.visible is True
     assert h.parting_slice_strategy.visible is True
+    # ensure slice_step remains hidden
+    assert h.parting_slice_step.visible is False
 
 
 def test_parting_visibility_finish_hides_widgets():
@@ -59,6 +62,7 @@ def test_parting_visibility_finish_hides_widgets():
     h.parting_pause_distance = BoolWidget()
     h.label_parting_slice_strategy = BoolWidget()
     h.parting_slice_strategy = BoolWidget()
+    # slicing step is auto-managed and not shown in the UI
     h.label_parting_slice_step = BoolWidget()
     h.parting_slice_step = BoolWidget()
     h.label_parting_allow_undercut = BoolWidget()
@@ -69,3 +73,5 @@ def test_parting_visibility_finish_hides_widgets():
     assert h.parting_depth_per_pass.visible is False
     assert h.parting_pause_enabled.visible is False
     assert h.parting_slice_strategy.visible is False
+    # slice_step should still be hidden
+    assert h.parting_slice_step.visible is False
