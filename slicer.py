@@ -626,9 +626,16 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             retract_x_abs = settings.get("xri_absolute") if "xri_absolute" in settings else False
             retract_z_abs = settings.get("zri_absolute") if "zri_absolute" in settings else False
         if retract_x_cfg is None:
+            # Die aus Stock + Sicherheitsabstand abgeleitete Rückzugsposition
+            # ist ein absolutes Ziel und darf nicht als inkrementales Delta
+            # interpretiert werden (sonst landen wir z. B. bei X81 statt X41).
             retract_x_cfg = stock_x + sc if external else stock_x - sc
+            retract_x_abs = True
         if retract_z_cfg is None:
+            # Ebenso ist der fallback auf safe_z absolut zu verstehen, damit
+            # der Rückzug nicht versehentlich ins Material fährt.
             retract_z_cfg = safe_z
+            retract_z_abs = True
         rough_lines = rough_turn_parallel_x(
             path,
             external=external,
@@ -649,6 +656,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         lines.extend(rough_lines)
         # document effective slice step in output for traceability
         lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
+        lines.insert(2, f"#<_slice_step> = {slice_step:.3f}")
 
         # Finish optional (Kontur 1x)
         if mode_idx in (1, 2):
@@ -704,6 +712,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         lines.extend(rough_lines)
         # document effective slice step in output for traceability
         lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
+        lines.insert(2, f"#<_slice_step> = {slice_step:.3f}")
 
         # Finish optional (Kontur 1x)
         if mode_idx in (1, 2):
