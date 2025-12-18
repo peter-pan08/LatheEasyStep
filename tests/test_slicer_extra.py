@@ -4,6 +4,7 @@ import os
 # Ensure local package directory is on sys.path so tests can import the slicer
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from slicer import rough_turn_parallel_x, rough_turn_parallel_z
+from lathe_easystep_handler import ProgramModel, Operation, OpType
 
 
 def test_parallel_x_allows_undercut_by_default():
@@ -132,7 +133,6 @@ def test_parallel_z_inward_progression():
 
 def test_parallel_z_respects_configured_retracts_via_generate():
     # Simulate a program-level setting (XRA, ZRA) and ensure generate_abspanen_gcode uses it
-    from lathe_easystep_handler import ProgramModel, Operation, OpType
     m = ProgramModel()
     # small contour where stock is at 40 and contour near 25
     path = [(40.0, 2.0), (25.0, -7.0)]
@@ -195,7 +195,6 @@ def test_parallel_z_retract_incremental_delta_behaviour():
 def test_parallel_z_retract_default_incremental_behaviour():
     # If a program setting provides 'xra' but no 'xra_absolute' flag, the
     # generator should treat the value as incremental (new default behaviour).
-    from lathe_easystep_handler import ProgramModel, Operation, OpType
     m = ProgramModel()
     path = [(40.0, 2.0), (25.0, -7.0)]
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15}, path=path)
@@ -207,3 +206,30 @@ def test_parallel_z_retract_default_incremental_behaviour():
     assert "G0 X2.000" not in g
     # And a retract X greater than the cut target should exist (we expect incremental addition)
     assert any(ln.startswith('G0 X') for ln in g.splitlines())
+
+
+def test_parallel_x_skips_degenerate_intervals():
+    # Horizontal Kontur -> Schnittbereich hat Länge 0 und darf keinen G1-Schnitt erzeugen
+    path = [(12.0, 0.0), (10.0, 0.0)]
+    lines = rough_turn_parallel_x(
+        path,
+        external=True,
+        x_stock=12.0,
+        x_target=10.0,
+        step_x=1.0,
+        safe_z=2.0,
+        feed=0.1,
+    )
+    assert not any(ln.startswith('G1 Z0.000') for ln in lines)
+
+
+def test_abspanen_respects_program_clearance_and_retract():
+    # Sicherheitsabstand SC und XRA aus dem Programmkopf sollen beim Abspanen verwendet werden
+    path = [(40.0, 0.0), (30.0, -10.0)]
+    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2}, path=path)
+    m = ProgramModel()
+    m.add_operation(op)
+    m.program_settings = {"sc": 3.0, "xa": 40.0, "xra": 45.0, "xra_absolute": True}
+    g = "\n".join(m.generate_gcode())
+    assert "G0 Z3.000" in g
+    assert "G0 X45.000" in g
