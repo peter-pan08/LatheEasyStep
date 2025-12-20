@@ -1302,6 +1302,11 @@
                <string>Maß</string>
               </property>
              </column>
+             <column>
+              <property name="text">
+               <string>Arc</string>
+              </property>
+             </column>
             </widget>
            </item>
          <item row="6" column="0" colspan="2">
@@ -1380,6 +1385,32 @@
              <property name="value">
               <double>0.000000000000000</double>
              </property>
+            </widget>
+           </item>
+           <item row="9" column="0">
+            <widget class="QLabel" name="label_contour_arc_side">
+             <property name="text">
+              <string>Bogenseite</string>
+             </property>
+            </widget>
+           </item>
+           <item row="9" column="1">
+            <widget class="QComboBox" name="contour_arc_side">
+             <item>
+              <property name="text">
+               <string>Auto</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Außen</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Innen</string>
+              </property>
+             </item>
             </widget>
            </item>
           </layout>

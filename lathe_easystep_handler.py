@@ -10,7 +10,17 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from weakref import WeakSet
 
-from qtpy import QtCore, QtGui, QtWidgets
+try:
+    from qtpy import QtCore, QtGui, QtWidgets
+except ModuleNotFoundError:
+    try:
+        from PyQt5 import QtCore, QtGui, QtWidgets
+        print("\n[lathe_easystep] INFO: 'qtpy' not found, falling back to PyQt5.\n")
+    except ModuleNotFoundError:
+        print("\n[lathe_easystep] WARNING: Python module 'qtpy' not found.")
+        print("[lathe_easystep] Install it with:  pip3 install --user qtpy")
+        print("[lathe_easystep] Or use a distro package if available.\n")
+        raise
 from qtvcp.core import Action
 
 
@@ -174,6 +184,7 @@ TEXT_TRANSLATIONS = {
     "contour_delete_segment": {"de": "Segment -", "en": "Segment -"},
     "label_contour_edge_type": {"de": "Kante", "en": "Edge"},
     "label_contour_edge_size": {"de": "Kantenmaß", "en": "Edge Size"},
+    "label_contour_arc_side": {"de": "Bogenseite", "en": "Arc Side"},
 
     "label_parting_contour": {"de": "Kontur", "en": "Contour"},
     "label_parting_side": {"de": "Seite", "en": "Side"},
@@ -283,6 +294,10 @@ COMBO_OPTION_TRANSLATIONS = {
     "contour_edge_type": {
         "de": ["Keine", "Fase", "Radius"],
         "en": ["None", "Chamfer", "Radius"],
+    },
+    "contour_arc_side": {
+        "de": ["Auto", "Außen", "Innen"],
+        "en": ["Auto", "Outer", "Inner"],
     },
     "parting_side": {"de": ["Außenseite", "Innenseite"], "en": ["Outside", "Inside"]},
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
@@ -941,6 +956,7 @@ def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
             {
                 "edge": str(seg.get("edge", "none")).lower(),
                 "edge_size": float(seg.get("edge_size", 0.0) or 0.0),
+                "arc_side": str(seg.get("arc_side", "auto")).lower(),
             }
         )
 
@@ -949,6 +965,125 @@ def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
 
     # Kanten/Übergänge anwenden, sobald ein Folgesegment vorhanden ist
     path: List[Tuple[float, float]] = [raw_points[0]]
+
+    def _append_points(points: List[Tuple[float, float]]) -> None:
+        last = path[-1]
+        for pt in points:
+            if pt != last:
+                path.append(pt)
+                last = pt
+
+    def _line_intersection(
+        p1: Tuple[float, float],
+        d1: Tuple[float, float],
+        p2: Tuple[float, float],
+        d2: Tuple[float, float],
+    ) -> Optional[Tuple[float, float]]:
+        denom = d1[0] * d2[1] - d1[1] * d2[0]
+        if abs(denom) < 1e-12:
+            return None
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        t = (dx * d2[1] - dy * d2[0]) / denom
+        return (p1[0] + d1[0] * t, p1[1] + d1[1] * t)
+
+    def _build_radius_arc(
+        p_prev: Tuple[float, float],
+        p_curr: Tuple[float, float],
+        p_next: Tuple[float, float],
+        dir1: Tuple[float, float],
+        dir2: Tuple[float, float],
+        len1: float,
+        len2: float,
+        radius: float,
+        arc_side: str,
+    ) -> Optional[List[Tuple[float, float]]]:
+        neg_dir1 = (-dir1[0], -dir1[1])
+        cos_theta = max(-1.0, min(1.0, neg_dir1[0] * dir2[0] + neg_dir1[1] * dir2[1]))
+        theta = math.acos(cos_theta)
+        if theta <= 1e-6:
+            return None
+        tan_half = math.tan(theta * 0.5)
+        if tan_half <= 0.0:
+            return None
+        t = radius * tan_half
+        max_t = min(len1, len2) * 0.499
+        if t <= 0.0 or t > max_t:
+            return None
+
+        start = (p_curr[0] - dir1[0] * t, p_curr[1] - dir1[1] * t)
+        end = (p_curr[0] + dir2[0] * t, p_curr[1] + dir2[1] * t)
+
+        cross = dir1[0] * dir2[1] - dir1[1] * dir2[0]
+        if abs(cross) < 1e-9:
+            return None
+        turn_dir = 1 if cross > 0 else -1
+
+        side = arc_side if arc_side in ("inner", "outer") else "inner"
+        desired = -1 if side == "outer" else 1
+        normal_sign = desired * turn_dir
+        if normal_sign == 0:
+            normal_sign = 1
+        if normal_sign > 0:
+            n1 = (-dir1[1], dir1[0])
+            n2 = (-dir2[1], dir2[0])
+        else:
+            n1 = (dir1[1], -dir1[0])
+            n2 = (dir2[1], -dir2[0])
+
+        center_start = (start[0] + n1[0] * radius, start[1] + n1[1] * radius)
+        center_end = (end[0] + n2[0] * radius, end[1] + n2[1] * radius)
+        center = _line_intersection(center_start, dir1, center_end, dir2)
+        if center is None:
+            return None
+
+        vec_start = (start[0] - center[0], start[1] - center[1])
+        vec_end = (end[0] - center[0], end[1] - center[1])
+        radius_len = math.hypot(vec_start[0], vec_start[1])
+        if radius_len <= 1e-9:
+            return None
+
+        angle_start = math.atan2(vec_start[1], vec_start[0])
+        angle_end = math.atan2(vec_end[1], vec_end[0])
+
+        ccw_tangent_start = (-vec_start[1], vec_start[0])
+        cw_tangent_start = (vec_start[1], -vec_start[0])
+        ccw_tangent_end = (-vec_end[1], vec_end[0])
+        cw_tangent_end = (vec_end[1], -vec_end[0])
+
+        dot1_ccw = ccw_tangent_start[0] * dir1[0] + ccw_tangent_start[1] * dir1[1]
+        dot1_cw = cw_tangent_start[0] * dir1[0] + cw_tangent_start[1] * dir1[1]
+        dot2_ccw = ccw_tangent_end[0] * dir2[0] + ccw_tangent_end[1] * dir2[1]
+        dot2_cw = cw_tangent_end[0] * dir2[0] + cw_tangent_end[1] * dir2[1]
+
+        score_ccw = dot1_ccw + dot2_ccw
+        score_cw = dot1_cw + dot2_cw
+        rotation_dir = 1 if score_ccw >= score_cw else -1
+
+        delta = angle_end - angle_start
+        if rotation_dir > 0:
+            while delta < 0.0:
+                delta += 2.0 * math.pi
+        else:
+            while delta > 0.0:
+                delta -= 2.0 * math.pi
+        if abs(delta) < 1e-6:
+            return None
+
+        steps = max(4, min(64, int(math.ceil(abs(delta) / (math.pi / 8)))))
+        points: List[Tuple[float, float]] = [start]
+        for step_idx in range(1, steps):
+            fraction = step_idx / steps
+            angle = angle_start + delta * fraction
+            points.append(
+                (
+                    center[0] + radius * math.cos(angle),
+                    center[1] + radius * math.sin(angle),
+                )
+            )
+        points.append(end)
+        return points
+
     for i in range(1, len(raw_points)):
         p_prev = raw_points[i - 1]
         p_curr = raw_points[i]
@@ -956,6 +1091,7 @@ def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
         edge_info = raw_meta[i - 1] if i - 1 < len(raw_meta) else {}
         edge_type = edge_info.get("edge", "none")
         edge_size = max(float(edge_info.get("edge_size", 0.0) or 0.0), 0.0)
+        arc_side = str(edge_info.get("arc_side", "auto")).lower()
         has_next = i < len(raw_points) - 1
 
         if edge_type in ("chamfer", "fase", "radius") and edge_size > 0 and has_next:
@@ -973,20 +1109,26 @@ def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
                 cut_start = (p_curr[0] - dir1[0] * offset, p_curr[1] - dir1[1] * offset)
                 cut_end = (p_curr[0] + dir2[0] * offset, p_curr[1] + dir2[1] * offset)
 
-                path.append(cut_start)
                 if edge_type.startswith(("chamfer", "fase")):
-                    path.append(cut_end)
-                else:  # radius -> einfache Approximation
-                    steps = 4
-                    for s in range(1, steps):
-                        t = s / steps
-                        path.append(
-                            (
-                                cut_start[0] * (1 - t) + cut_end[0] * t,
-                                cut_start[1] * (1 - t) + cut_end[1] * t,
-                            )
-                        )
-                    path.append(cut_end)
+                    _append_points([cut_start, cut_end])
+                    continue
+
+                arc_points = _build_radius_arc(
+                    p_prev,
+                    p_curr,
+                    p_next,
+                    dir1,
+                    dir2,
+                    len1,
+                    len2,
+                    edge_size,
+                    arc_side,
+                )
+                if arc_points:
+                    _append_points(arc_points)
+                    continue
+
+                _append_points([cut_start, cut_end])
                 continue
 
         # Standard: direkte Linie übernehmen
@@ -1818,8 +1960,11 @@ class HandlerClass:
         self.contour_edge_type = getattr(self.w, "contour_edge_type", None)
         self.label_contour_edge_size = getattr(self.w, "label_contour_edge_size", None)
         self.contour_edge_size = getattr(self.w, "contour_edge_size", None)
+        self.label_contour_arc_side = getattr(self.w, "label_contour_arc_side", None)
+        self.contour_arc_side = getattr(self.w, "contour_arc_side", None)
         self._contour_edge_template_text = "Keine"
         self._contour_edge_template_size = 0.0
+        self._contour_arc_template_text = "Auto"
         self._contour_row_user_selected = False
         self._op_row_user_selected = False
 
@@ -2479,6 +2624,8 @@ class HandlerClass:
         self.contour_edge_type = grab("contour_edge_type")
         self.contour_edge_size = grab("contour_edge_size")
         self.label_contour_edge_size = grab("label_contour_edge_size")
+        self.label_contour_arc_side = grab("label_contour_arc_side")
+        self.contour_arc_side = grab("contour_arc_side")
 
     def _ensure_thread_widgets(self):
         """Sichert sich die relevanten Widgets im Gewinde-Tab."""
@@ -3221,6 +3368,9 @@ class HandlerClass:
         if getattr(self, "contour_edge_size", None) and not getattr(self, "_contour_edge_size_connected", False):
             self.contour_edge_size.valueChanged.connect(self._handle_contour_edge_change)
             self._contour_edge_size_connected = True
+        if getattr(self, "contour_arc_side", None) and not getattr(self, "_contour_arc_side_connected", False):
+            self.contour_arc_side.currentIndexChanged.connect(self._handle_contour_arc_side_change)
+            self._contour_arc_side_connected = True
 
     # ---- Abspan-Helfer ----------------------------------------------
     def _available_contour_names(self) -> List[str]:
@@ -3530,6 +3680,22 @@ class HandlerClass:
             self.program_zt = self._get_widget_by_name("program_zt")
         if self.program_sc is None:
             self.program_sc = self._get_widget_by_name("program_sc")
+        if self.program_xra is None:
+            self.program_xra = self._get_widget_by_name("program_xra")
+        if self.program_xri is None:
+            self.program_xri = self._get_widget_by_name("program_xri")
+        if self.program_zra is None:
+            self.program_zra = self._get_widget_by_name("program_zra")
+        if self.program_zri is None:
+            self.program_zri = self._get_widget_by_name("program_zri")
+        if self.program_xra_absolute is None:
+            self.program_xra_absolute = self._get_widget_by_name("program_xra_absolute")
+        if self.program_xri_absolute is None:
+            self.program_xri_absolute = self._get_widget_by_name("program_xri_absolute")
+        if self.program_zra_absolute is None:
+            self.program_zra_absolute = self._get_widget_by_name("program_zra_absolute")
+        if self.program_zri_absolute is None:
+            self.program_zri_absolute = self._get_widget_by_name("program_zri_absolute")
         if self.program_name is None:
             self.program_name = self._get_widget_by_name("program_name")
 
@@ -3592,6 +3758,14 @@ class HandlerClass:
         else:
             header["s3_max"] = 0.0
 
+        print(
+            "[LatheEasyStep] program retract read:",
+            "xra=", header.get("xra"), "zra=", header.get("zra"),
+            "xri=", header.get("xri"), "zri=", header.get("zri"),
+            "xra_abs=", header.get("xra_absolute"), "zra_abs=", header.get("zra_absolute"),
+            "xri_abs=", header.get("xri_absolute"), "zri_abs=", header.get("zri_absolute"),
+        )
+
         return header
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
@@ -3606,6 +3780,7 @@ class HandlerClass:
             z_item = table.item(row, 2)
             edge_item = table.item(row, 3)
             size_item = table.item(row, 4)
+            arc_item = table.item(row, 5)
 
             mode_raw = mode_item.text().strip().lower() if mode_item else "xz"
             if mode_raw.startswith("xz"):
@@ -3635,6 +3810,14 @@ class HandlerClass:
             x_text = x_item.text().strip() if x_item and x_item.text() else ""
             z_text = z_item.text().strip() if z_item and z_item.text() else ""
 
+            arc_txt = arc_item.text().strip().lower() if arc_item and arc_item.text() else "auto"
+            if arc_txt.startswith("au"):
+                arc_side = "outer"
+            elif arc_txt.startswith("in"):
+                arc_side = "inner"
+            else:
+                arc_side = "auto"
+
             segments.append(
                 {
                     "mode": mode,
@@ -3644,12 +3827,19 @@ class HandlerClass:
                     "z_empty": z_text == "",
                     "edge": edge,
                     "edge_size": _to_float(size_item) if size_item else 0.0,
+                    "arc_side": arc_side,
                 }
             )
 
         return segments
 
-    def _write_contour_row(self, row: int, edge_text: str | None = None, edge_size: float | None = None):
+    def _write_contour_row(
+        self,
+        row: int,
+        edge_text: str | None = None,
+        edge_size: float | None = None,
+        arc_side_text: str | None = None,
+    ):
         """Schreibt Kante/Maß in die aktuelle Tabellenzeile und hält Typ/X/Z unberührt."""
         table = self.contour_segments
         if table is None or row < 0 or row >= table.rowCount():
@@ -3659,6 +3849,8 @@ class HandlerClass:
             table.setItem(row, 3, item_cls(edge_text))
         if edge_size is not None:
             table.setItem(row, 4, item_cls(f"{edge_size:.3f}"))
+        if arc_side_text is not None:
+            table.setItem(row, 5, item_cls(arc_side_text))
 
     def _load_params_to_form(self, op: Operation):
         if op.op_type == OpType.PROGRAM_HEADER:
@@ -3733,6 +3925,16 @@ class HandlerClass:
                         return "Radius"
                     return "Keine"
 
+                def _arc_to_text(side: str | None) -> str:
+                    if not side:
+                        return "Auto"
+                    side = side.lower()
+                    if side.startswith("ou"):
+                        return "Außen"
+                    if side.startswith("in"):
+                        return "Innen"
+                    return "Auto"
+
                 for r, seg in enumerate(segs):
                     table.insertRow(r)
                     mode_txt = _mode_to_text(seg.get("mode"))
@@ -3742,6 +3944,7 @@ class HandlerClass:
                     z_val = "" if z_empty else f"{float(seg.get('z', 0.0)):.3f}"
                     edge_txt = _edge_to_text(seg.get("edge"))
                     size_val = f"{float(seg.get('edge_size', 0.0) or 0.0):.3f}"
+                    arc_txt = _arc_to_text(seg.get("arc_side"))
 
                     def _mk(text: str) -> QtWidgets.QTableWidgetItem:
                         it = QtWidgets.QTableWidgetItem(text)
@@ -3760,6 +3963,7 @@ class HandlerClass:
                     table.setItem(r, 2, _mk(z_val))
                     table.setItem(r, 3, _mk(edge_txt))
                     table.setItem(r, 4, _mk(size_val))
+                    table.setItem(r, 5, _mk(arc_txt))
 
                 table.blockSignals(False)
                 if table.rowCount() > 0:
@@ -4192,9 +4396,9 @@ class HandlerClass:
         table = self.contour_segments
         if table is None:
             return
-        # immer sicherstellen, dass 5 Spalten und Header vorhanden sind
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß"])
+        # immer sicherstellen, dass 6 Spalten und Header vorhanden sind
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß", "Arc"])
         try:
             table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
@@ -4216,7 +4420,7 @@ class HandlerClass:
         except Exception:
             pass
         try:
-            widths = [60, 80, 80, 80, 80]
+            widths = [60, 80, 80, 80, 80, 80]
             for i, w in enumerate(widths):
                 table.setColumnWidth(i, w)
         except Exception:
@@ -4275,6 +4479,7 @@ class HandlerClass:
         )
         table.setItem(row, 3, _mk_item(edge_text))
         table.setItem(row, 4, _mk_item(f"{edge_size:.3f}"))
+        table.setItem(row, 5, _mk_item(self._contour_arc_template_text))
 
         table.setCurrentCell(row, 0)
         try:
@@ -4381,6 +4586,19 @@ class HandlerClass:
         # Anzeige/Eingaben nachziehen (zeigt entweder Zeile oder Vorlage)
         self._sync_contour_edge_controls()
 
+    def _handle_contour_arc_side_change(self, *args, **kwargs):
+        """Sichert Arc-Auswahl als Vorlage und trägt sie ggf. in die aktive Zeile ein."""
+        arc_text = self.contour_arc_side.currentText() if self.contour_arc_side else ""
+        self._contour_arc_template_text = arc_text
+
+        table = self.contour_segments
+        if table is not None and table.currentRow() >= 0 and self._contour_row_user_selected:
+            self._write_contour_row(table.currentRow(), arc_side_text=arc_text)
+            self._update_selected_operation()
+            self._update_contour_preview_temp()
+
+        self._sync_contour_edge_controls()
+
     def _update_contour_preview_temp(self):
         """Zeigt eine Vorschau der Kontur auch ohne ausgewählte Operation."""
         if self.preview is None:
@@ -4409,6 +4627,7 @@ class HandlerClass:
         row = table.currentRow()
         edge_txt = self._contour_edge_template_text
         size_val = self._contour_edge_template_size
+        arc_txt = self._contour_arc_template_text
 
         # Nur wenn der Benutzer aktiv eine Zeile ausgewählt/bearbeitet, zeigen wir deren Werte
         if row >= 0 and self._contour_row_user_selected:
@@ -4421,6 +4640,9 @@ class HandlerClass:
                     size_val = float(size_item.text())
                 except Exception:
                     size_val = 0.0
+            arc_item = table.item(row, 5)
+            if arc_item and arc_item.text():
+                arc_txt = arc_item.text().strip()
 
         # Edge combo
         if self.contour_edge_type:
@@ -4443,6 +4665,19 @@ class HandlerClass:
             self.contour_edge_size.setEnabled(enable_size)
             self.contour_edge_size.setValue(size_val)
             self.contour_edge_size.blockSignals(False)
+        enable_arc = True
+        if self.label_contour_arc_side:
+            self.label_contour_arc_side.setVisible(True)
+            self.label_contour_arc_side.setEnabled(enable_arc)
+        if self.contour_arc_side:
+            idx = self.contour_arc_side.findText(arc_txt, QtCore.Qt.MatchFixedString)
+            if idx < 0:
+                idx = 0
+            self.contour_arc_side.blockSignals(True)
+            self.contour_arc_side.setVisible(True)
+            self.contour_arc_side.setEnabled(enable_arc)
+            self.contour_arc_side.setCurrentIndex(idx)
+            self.contour_arc_side.blockSignals(False)
 
     def _handle_new_program(self):
         self.model.operations.clear()

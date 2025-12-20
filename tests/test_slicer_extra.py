@@ -1,9 +1,15 @@
 import sys
 import os
+import pytest
 
 # Ensure local package directory is on sys.path so tests can import the slicer
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from slicer import generate_abspanen_gcode, rough_turn_parallel_x, rough_turn_parallel_z
+from slicer import (
+    RetractCfg,
+    generate_abspanen_gcode,
+    rough_turn_parallel_x,
+    rough_turn_parallel_z,
+)
 from lathe_easystep_handler import ProgramModel, Operation, OpType
 
 
@@ -160,8 +166,7 @@ def test_parallel_z_retract_incremental_delta_behaviour():
         safe_z=4.0,
         feed=0.15,
         start_x=40.0,
-        retract_x_target=2.0,
-        retract_x_absolute=False,
+        retract_cfg=RetractCfg(x_value=2.0, z_value=None, x_absolute=False, z_absolute=True),
     )
     # find a pass: G1 Z... followed by G1 X<cut> then G0 X<retract>
     found = False
@@ -200,7 +205,7 @@ def test_parallel_z_retract_default_incremental_behaviour():
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15}, path=path)
     m.add_operation(op)
     # configure a small xra value which under absolute interpretation would be near X=2.0
-    m.program_settings = {"xra": 2.0}
+    m.program_settings = {"xra": 2.0, "zra": 5.0}
     g = "\n".join(m.generate_gcode())
     # Absolute G0 X2.000 should NOT appear, because the value is interpreted as incremental
     assert "G0 X2.000" not in g
@@ -229,9 +234,16 @@ def test_abspanen_respects_program_clearance_and_retract():
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2}, path=path)
     m = ProgramModel()
     m.add_operation(op)
-    m.program_settings = {"sc": 3.0, "xa": 40.0, "xra": 45.0, "xra_absolute": True}
+    m.program_settings = {
+        "sc": 3.0,
+        "xa": 40.0,
+        "xra": 45.0,
+        "xra_absolute": True,
+        "zra": 5.0,
+        "zra_absolute": True,
+    }
     g = "\n".join(m.generate_gcode())
-    assert "G0 Z3.000" in g
+    assert "G0 Z5.000" in g
     assert "G0 X45.000" in g
 
 
@@ -241,7 +253,7 @@ def test_parallel_x_retract_default_incremental_behaviour():
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2}, path=path)
     m = ProgramModel()
     m.add_operation(op)
-    m.program_settings = {"xa": 40.0, "xra": 2.0}  # Standard: inkrementell
+    m.program_settings = {"xa": 40.0, "xra": 2.0, "zra": 5.0}  # Standard: inkrementell
     g = "\n".join(m.generate_gcode())
     # Absoluter Rückzug auf X2.000 darf nicht auftreten
     assert "G0 X2.000" not in g
@@ -269,15 +281,9 @@ def test_parallel_x_retract_default_incremental_behaviour():
     assert found_delta, "inkrementeller Rückzug (cut_x + 2.0) wurde nicht gefunden"
 
 
-def test_parallel_x_fallback_retracts_are_absolute():
-    # Ableitung aus Stock + SC bzw. safe_z muss absolut erfolgen, sonst wird der Rückzug verdoppelt
+def test_parallel_x_retract_settings_required():
     path = [(40.0, 0.0), (25.0, -5.0)]
     params = {"mode": 0, "slice_strategy": 1, "depth_per_pass": 1.0, "feed": 0.15}
     settings = {"sc": 1.0}
-    lines = generate_abspanen_gcode(params, path, settings)
-    # Rückzug in X: Stock 40 + SC 1 = 41 (nicht 81)
-    assert "G0 X41.000" in lines
-    assert "G0 X81.000" not in lines
-    # Rückzug in Z soll auf die absolute Sicherheitsposition führen (keine negativen G0-Z)
-    assert any(ln.startswith("G0 Z1.000") for ln in lines)
-    assert not any(ln.startswith("G0 Z-") for ln in lines)
+    with pytest.raises(ValueError):
+        generate_abspanen_gcode(params, path, settings)
