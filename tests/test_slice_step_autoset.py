@@ -8,6 +8,7 @@ def test_slice_step_defaults_to_depth_per_pass_when_unset():
     params = {"mode": 0, "depth_per_pass": 0.75, "slice_strategy": 1, "feed": 0.15}
     op = Operation(OpType.ABSPANEN, params=params, path=path)
     m.operations = [op]
+    m.program_settings = {"xra": 60.0, "zra": 5.0}
     g = "\n".join(m.generate_gcode())
     # The generator documents the chosen slice_step in a #<_slice_step> comment
     assert "#<_slice_step> = 0.750" in g

@@ -5,12 +5,24 @@ import math
 
 Point = Tuple[float, float]  # (x, z)
 
+
+@dataclass(frozen=True)
+class RetractCfg:
+    x_value: Optional[float]
+    z_value: Optional[float]
+    x_absolute: bool
+    z_absolute: bool
+
+
 @dataclass
 class Segment:
     x0: float
     z0: float
     x1: float
     z1: float
+
+
+LEADOUT_LENGTH_DEFAULT = 2.0
 
 
 def segments_from_polyline(path: List[Point]) -> List[Segment]:
@@ -51,6 +63,134 @@ def intersect_segment_with_x_band(seg: Segment, x_lo: float, x_hi: float) -> Opt
     return (min(za, zb), max(za, zb))
 
 
+def _point_at(seg: Segment, t: float) -> Point:
+    return (seg.x0 + (seg.x1 - seg.x0) * t, seg.z0 + (seg.z1 - seg.z0) * t)
+
+
+def _parameter_on_segment(seg: Segment, point: Point, eps: float = 1e-6) -> Optional[float]:
+    dx = seg.x1 - seg.x0
+    dz = seg.z1 - seg.z0
+    seg_len_sq = dx * dx + dz * dz
+    if seg_len_sq < 1e-18:
+        return None
+    px = point[0] - seg.x0
+    pz = point[1] - seg.z0
+    t = (px * dx + pz * dz) / seg_len_sq
+    if t < -eps or t > 1.0 + eps:
+        return None
+    proj_x = seg.x0 + dx * t
+    proj_z = seg.z0 + dz * t
+    if abs(point[0] - proj_x) > eps or abs(point[1] - proj_z) > eps:
+        return None
+    return max(0.0, min(1.0, t))
+
+
+def infer_z_dir_from_path(path: List[Point]) -> int:
+    if not path:
+        return -1
+    zs = [p[1] for p in path]
+    z_min = min(zs)
+    z_max = max(zs)
+    if abs(z_min) > abs(z_max):
+        return -1
+    return +1
+
+
+def _find_contour_at_z_in_band(
+    segs: List[Segment],
+    z: float,
+    x_lo: float,
+    x_hi: float,
+    prefer_high_x: bool,
+    eps: float = 1e-6,
+) -> Optional[Tuple[Point, int, float]]:
+    best: Optional[Tuple[Point, int, float, float]] = None
+    for idx, seg in enumerate(segs):
+        dz = seg.z1 - seg.z0
+        if abs(dz) < 1e-12:
+            continue
+        t = (z - seg.z0) / dz
+        if t < -eps or t > 1.0 + eps:
+            continue
+        x = seg.x0 + (seg.x1 - seg.x0) * t
+        if x < x_lo - eps or x > x_hi + eps:
+            continue
+        clamp_t = max(0.0, min(1.0, t))
+        pt = (x, z)
+        candidate = (pt, idx, clamp_t, x)
+        if best is None:
+            best = candidate
+            continue
+        _, _, _, best_x = best
+        if prefer_high_x:
+            if x > best_x:
+                best = candidate
+        else:
+            if x < best_x:
+                best = candidate
+    if best is None:
+        return None
+    pt, idx, t, _ = best
+    return (pt, idx, t)
+
+
+def pick_entry_exit(z_low: float, z_high: float, z_dir: int) -> Tuple[float, float]:
+    if z_dir < 0:
+        return (z_high, z_low)
+    return (z_low, z_high)
+
+
+def pick_leadout_step_direction(seg_dx: float, seg_dz: float, z_dir: int, external: bool) -> int:
+    if abs(seg_dz) < 1e-12:
+        direction = +1 if seg_dx >= 0 else -1
+    else:
+        direction = +1 if (seg_dz * z_dir) > 0 else -1
+    if external and seg_dx * direction < 0:
+        direction *= -1
+    return direction
+
+
+def _advance_along_polyline(
+    segs: List[Segment],
+    seg_idx: int,
+    t: float,
+    length: float,
+    direction: int,
+    eps: float = 1e-6,
+) -> Point:
+    if not segs:
+        return (0.0, 0.0)
+    dir_sign = 1 if direction >= 0 else -1
+    current_idx = seg_idx
+    current_t = t
+    remaining = max(length, 0.0)
+    while remaining > eps:
+        seg = segs[current_idx]
+        seg_dx = seg.x1 - seg.x0
+        seg_dz = seg.z1 - seg.z0
+        seg_len = math.hypot(seg_dx, seg_dz)
+        if seg_len < 1e-12:
+            next_idx = current_idx + dir_sign
+            if not (0 <= next_idx < len(segs)):
+                return _point_at(seg, current_t)
+            current_idx = next_idx
+            current_t = 0.0 if dir_sign == 1 else 1.0
+            continue
+        remaining_on_seg = seg_len * ((1.0 - current_t) if dir_sign == 1 else current_t)
+        target_t = 1.0 if dir_sign == 1 else 0.0
+        if remaining_on_seg >= remaining - eps:
+            delta_t = remaining / seg_len
+            new_t = current_t + dir_sign * delta_t
+            return _point_at(seg, max(0.0, min(1.0, new_t)))
+        remaining -= remaining_on_seg
+        next_idx = current_idx + dir_sign
+        if not (0 <= next_idx < len(segs)):
+            return _point_at(seg, target_t)
+        current_idx = next_idx
+        current_t = 0.0 if direction == 1 else 1.0
+    return _point_at(segs[current_idx], current_t)
+
+
 def merge_intervals(intervals: List[Tuple[float, float]], gap: float = 1e-6) -> List[Tuple[float, float]]:
     if not intervals:
         return []
@@ -88,6 +228,39 @@ def compute_pass_x_levels(x_start: float, x_target: float, step: float, external
     return passes
 
 
+def emit_g0(lines: List[str], *, x: Optional[float] = None, z: Optional[float] = None) -> None:
+    """Emit a single G0 with both axes so retracts happen simultaneously."""
+    if x is None and z is None:
+        return
+    cmd = ["G0"]
+    if x is not None:
+        cmd.append(f"X{x:.3f}")
+    if z is not None:
+        cmd.append(f"Z{z:.3f}")
+    lines.append(" ".join(cmd))
+
+
+def resolve_retract_targets(
+    cfg: RetractCfg,
+    *,
+    external: bool,
+    current_x: float,
+    current_z: float,
+    safe_z: float,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Return the effective X/Z retract targets based on the config."""
+    rx = cfg.x_value
+    if rx is not None and not cfg.x_absolute:
+        rx = current_x + (rx if external else -rx)
+
+    rz = cfg.z_value
+    if rz is not None:
+        if not cfg.z_absolute:
+            rz = current_z + rz
+
+    return rx, rz
+
+
 def rough_turn_parallel_x(
     path: List[Point],
     external: bool,
@@ -100,10 +273,8 @@ def rough_turn_parallel_x(
     pause_enabled: bool = False,
     pause_distance: float = 0.0,
     pause_duration: float = 0.5,
-    retract_x: Optional[float] = None,
-    retract_z: Optional[float] = None,
-    retract_x_absolute: bool = True,
-    retract_z_absolute: bool = True,
+    retract_cfg: Optional[RetractCfg] = None,
+    leadout_length: float = LEADOUT_LENGTH_DEFAULT,
 ) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
@@ -116,35 +287,16 @@ def rough_turn_parallel_x(
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
 
-    def _retract_x_value(base_x: float, target: Optional[float]) -> Optional[float]:
-        if target is None:
-            return None
-        try:
-            val = float(target)
-        except Exception:
-            return None
-        if retract_x_absolute:
-            return val
-        delta = val
-        return base_x + (delta if external else -delta)
-
-    def _retract_z_value(base_z: float, target: Optional[float]) -> Optional[float]:
-        if target is None:
-            return None
-        try:
-            val = float(target)
-        except Exception:
-            return None
-        if retract_z_absolute:
-            return val
-        # delta relativ zum aktuellen Band; nach oben hin auf safe_z begrenzen
-        return min(safe_z, base_z + val)
-
-    # Start an der programmierten Rückzugsposition (falls vorhanden)
+    cfg = retract_cfg or RetractCfg(None, None, True, True)
     current_x: Optional[float] = None
     current_z: Optional[float] = None
-    start_rz = _retract_z_value(safe_z, retract_z)
-    start_rx = _retract_x_value(x_stock, retract_x)
+    start_rx, start_rz = resolve_retract_targets(
+        cfg,
+        external=external,
+        current_x=x_stock,
+        current_z=safe_z,
+        safe_z=safe_z,
+    )
     if start_rz is not None:
         lines.append(f"G0 Z{start_rz:.3f}")
         current_z = start_rz
@@ -152,64 +304,101 @@ def rough_turn_parallel_x(
         lines.append(f"G0 X{start_rx:.3f}")
         current_x = start_rx
 
+    z_dir = infer_z_dir_from_path(path)
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
-        z_intervals: List[Tuple[float, float]] = []
+        x_cut = x_lo if external else x_hi
+        eps_band = 1e-3
+        z_intervals: List[Tuple[float, float, Segment]] = []
         for s in segs:
-            hit = intersect_segment_with_x_band(s, band_lo, band_hi)
+            hit = intersect_segment_with_x_band(s, x_cut - eps_band, x_cut + eps_band)
             if hit:
-                z_intervals.append(hit)
-        z_work = merge_intervals(z_intervals)
-
-        if not z_work:
+                z_intervals.append((hit[0], hit[1], s))
+        if not z_intervals:
             lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
             continue
 
         lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
 
-        for (za, zb) in z_work:
+        for (za, zb, seg) in z_intervals:
             if abs(zb - za) < 1e-9:
                 # Degeneriertes Intervall -> kein Schnitt notwendig
                 continue
             x_cut = x_lo if external else x_hi
-            # if undercuts are not allowed, skip cuts where the X cut position
-            # lies clearly outside the contour X-range
             if not allow_undercut and min_x is not None and max_x is not None:
                 eps = 1e-6
                 if external and x_cut < min_x - eps:
-                    # would undercut beyond contour's min X
                     continue
                 if (not external) and x_cut > max_x + eps:
-                    # internal undercut beyond contour's max X
                     continue
-            lines.append(f"G0 Z{safe_z:.3f}")
-            current_z = safe_z
-            lines.append(f"G0 X{x_cut:.3f}")
+
+            emit_g0(lines, x=x_cut, z=safe_z)
             current_x = x_cut
-            if current_z != za:
-                lines.append(f"G1 Z{za:.3f} F{feed:.3f}")
-                current_z = za
-            # Z movement is a segment from (x_cut, za) to (x_cut, zb)
-            if pause_enabled and pause_distance > 0 and abs(zb - za) > pause_distance:
-                # use the compact pause sub call
+            current_z = safe_z
+
+            z_low = min(za, zb)
+            z_high = max(za, zb)
+            z_entry, z_exit = pick_entry_exit(z_low, z_high, z_dir)
+            if abs(current_z - z_entry) > 1e-9:
+                lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
+                current_z = z_entry
+
+            if pause_enabled and pause_distance > 0 and abs(z_entry - z_exit) > pause_distance:
                 lines.append(
                     "o<step_line_pause> call "
-                    f"[{x_cut:.3f}] [{za:.3f}] [{x_cut:.3f}] [{zb:.3f}] "
+                    f"[{x_cut:.3f}] [{z_entry:.3f}] [{x_cut:.3f}] [{z_exit:.3f}] "
                     f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
                 )
             else:
-                lines.append(f"G1 Z{zb:.3f} F{feed:.3f}")
-            current_z = zb
-            if current_z != safe_z:
-                lines.append(f"G0 Z{safe_z:.3f}")
-                current_z = safe_z
-            rx_eff = _retract_x_value(x_cut, retract_x)
-            if rx_eff is not None and (current_x is None or abs(current_x - rx_eff) > 1e-9):
-                lines.append(f"G0 X{rx_eff:.3f}")
+                if abs(current_z - z_exit) > 1e-9:
+                    lines.append(f"G1 Z{z_exit:.3f} F{feed:.3f}")
+                    current_z = z_exit
+            current_z = z_exit
+
+            found = _find_contour_at_z_in_band(
+                segs,
+                z_exit,
+                x_lo=band_lo,
+                x_hi=band_hi,
+                prefer_high_x=external,
+            )
+            leadout_len = max(leadout_length, 0.0)
+            if found:
+                contour_pt, seg_idx, t0 = found
+                x_c, z_c = contour_pt
+                if external and x_c < x_cut - 1e-6:
+                    found = None
+                if (not external) and x_c > x_cut + 1e-6:
+                    found = None
+            if found:
+                contour_pt, seg_idx, t0 = found
+                x_c, z_c = contour_pt
+                if abs(x_c - current_x) > 1e-9:
+                    lines.append(f"G1 X{x_c:.3f} F{feed:.3f}")
+                    current_x = x_c
+                current_z = z_exit
+                if leadout_len > 1e-9:
+                    seg = segs[seg_idx]
+                    direction = pick_leadout_step_direction(seg.x1 - seg.x0, seg.z1 - seg.z0, z_dir, external)
+                    leadout_point = _advance_along_polyline(segs, seg_idx, t0, leadout_len, direction)
+                    if abs(leadout_point[0] - current_x) > 1e-9 or abs(leadout_point[1] - current_z) > 1e-9:
+                        lines.append(f"G1 X{leadout_point[0]:.3f} Z{leadout_point[1]:.3f} F{feed:.3f}")
+                        current_x, current_z = leadout_point
+            else:
+                current_x = x_cut
+                current_z = z_exit
+
+            rx_eff, rz_eff = resolve_retract_targets(
+                cfg,
+                external=external,
+                current_x=current_x,
+                current_z=current_z,
+                safe_z=safe_z,
+            )
+            emit_g0(lines, x=rx_eff, z=rz_eff)
+            if rx_eff is not None:
                 current_x = rx_eff
-            rz_eff = _retract_z_value(min(za, zb), retract_z)
-            if rz_eff is not None and abs(current_z - rz_eff) > 1e-9:
-                lines.append(f"G0 Z{rz_eff:.3f}")
+            if rz_eff is not None:
                 current_z = rz_eff
 
     return lines
@@ -224,23 +413,12 @@ def rough_turn_parallel_z(
     safe_z: float,
     feed: float,
     start_x: float,
-    # fallback incremental retract deltas (kept for compatibility)
-    retract_delta_x: float = 2.0,
-    retract_delta_z: float = 2.0,
-    # Absolute retract targets (prefer these if provided). These correspond to
-    # the existing UI settings (xra/xri, zra/zri) and are preferred when set
-    # so the generator uses the user's configured retract positions.
-    retract_x_target: Optional[float] = None,
-    retract_z_target: Optional[float] = None,
-    # Flags to indicate whether the provided retract targets are absolute
-    # coordinates (True) or incremental deltas (False). Default False to match
-    # the new UI default (incremental).
-    retract_x_absolute: bool = False,
-    retract_z_absolute: bool = False,
     allow_undercut: bool = False,
     pause_enabled: bool = False,
     pause_distance: float = 0.0,
     pause_duration: float = 0.5,
+    leadout_length: float = LEADOUT_LENGTH_DEFAULT,
+    retract_cfg: Optional[RetractCfg] = None,
 ) -> List[str]:
     """Parallel to X (horizontal bands)."""
     segs = segments_from_polyline(path)
@@ -272,6 +450,8 @@ def rough_turn_parallel_z(
     lines.append("(ABSPANEN Rough - parallel X)")
     if not passes:
         return lines
+
+    cfg = retract_cfg or RetractCfg(None, None, True, True)
 
     current_x = start_x
     current_z = safe_z
@@ -327,45 +507,18 @@ def rough_turn_parallel_z(
             )
             current_x = cut_target
 
-            # Determine retract Z: if a configured target exists, it may be
-            # an absolute coordinate or an incremental delta depending on the
-            # user's checkbox. If flag missing we assume historical absolute
-            # behaviour.
-            if retract_z_target is not None:
-                try:
-                    rz = float(retract_z_target)
-                    if retract_z_absolute:
-                        retract_z = min(safe_z, rz)
-                    else:
-                        # interpret as delta from the current band low (incremental)
-                        retract_z = min(safe_z, band_lo + rz)
-                except Exception:
-                    retract_z = min(safe_z, band_lo + retract_delta_z)
-            else:
-                retract_z = min(safe_z, band_lo + retract_delta_z)
-            if retract_z != current_z:
-                lines.append(f"G0 Z{retract_z:.3f}")
-                current_z = retract_z
-
-            # Retract in X: if configured target exists and is absolute use it,
-            # otherwise interpret the value as an incremental delta relative
-            # to the current cut X position (or fall back to the configured
-            # incremental delta).
-            if retract_x_target is not None:
-                try:
-                    rx = float(retract_x_target)
-                    if retract_x_absolute:
-                        retract_x = rx
-                    else:
-                        retract_x = current_x + (rx if external else -rx)
-                except Exception:
-                    retract_x = current_x + (retract_delta_x if external else -retract_delta_x)
-            else:
-                retract_x = current_x + (retract_delta_x if external else -retract_delta_x)
-
-            if retract_x != current_x:
-                lines.append(f"G0 X{retract_x:.3f}")
-                current_x = retract_x
+            rx_eff, rz_eff = resolve_retract_targets(
+                cfg,
+                external=external,
+                current_x=current_x,
+                current_z=band_lo,
+                safe_z=safe_z,
+            )
+            emit_g0(lines, x=rx_eff, z=rz_eff)
+            if rz_eff is not None:
+                current_z = rz_eff
+            if rx_eff is not None:
+                current_x = rx_eff
 
     if had_pass and (current_x != start_x or current_z != safe_z):
         if current_z != safe_z:
@@ -377,27 +530,6 @@ def rough_turn_parallel_z(
 # ----------------------------------------------------------------------
 # Abspanen (Parting) generator helpers
 # ----------------------------------------------------------------------
-
-def _abspanen_safe_z(settings: Dict[str, object], side_idx: int, path: List[Point]) -> float:
-    if side_idx == 0:
-        safe_candidates = [settings.get("zra"), settings.get("zri")]
-    else:
-        safe_candidates = [settings.get("zri"), settings.get("zra")]
-    for candidate in safe_candidates:
-        try:
-            if candidate is not None and float(candidate) != 0.0:
-                return float(candidate)
-        except Exception:
-            continue
-    sc = 0.0
-    try:
-        sc = max(float(settings.get("sc", 0.0) or 0.0), 0.0)
-    except Exception:
-        sc = 0.0
-    if path:
-        return path[0][1] + (sc if sc > 0 else 2.0)
-    return sc if sc > 0 else 2.0
-
 
 def _offset_abspanen_path(path: List[Point], stock_x: float, offset: float) -> List[Point]:
     if offset <= 1e-6:
@@ -500,6 +632,17 @@ def _contour_retract_positions(
     return retract_x, retract_z
 
 
+def get_retract_cfg(settings: Dict[str, object], side_idx: int) -> RetractCfg:
+    x, z = _contour_retract_positions(settings, side_idx, None, None)
+    if side_idx == 0:
+        x_abs = bool(settings.get("xra_absolute", False))
+        z_abs = bool(settings.get("zra_absolute", False))
+    else:
+        x_abs = bool(settings.get("xri_absolute", False))
+        z_abs = bool(settings.get("zri_absolute", False))
+    return RetractCfg(x_value=x, z_value=z, x_absolute=x_abs, z_absolute=z_abs)
+
+
 def _emit_segment_with_pauses(
     lines: List[str],
     start: Point,
@@ -589,19 +732,21 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if stock_x is None:
         stock_x = max(path_xs) if path_xs else 0.0
 
-    safe_z = _abspanen_safe_z(settings, side_idx, path)
+    # band arguments
+    cfg = get_retract_cfg(settings, side_idx)
+    if cfg.x_value is None or float(cfg.x_value) == 0.0:
+        raise ValueError("XRA/XRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")
+    if cfg.z_value is None or float(cfg.z_value) == 0.0:
+        raise ValueError("ZRA/ZRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")
+    safe_z = float(cfg.z_value)
 
     offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
 
-    # band arguments
     slice_strategy = p.get("slice_strategy")
     slice_step = depth_per_pass if depth_per_pass > 0.0 else 1.0
     allow_undercut = bool(p.get("allow_undercut", False))
     external = side_idx == 0
-    try:
-        sc = max(float(settings.get("sc", 0.0) or 0.0), 0.0)
-    except Exception:
-        sc = 0.0
+    leadout_length = max(float(p.get("leadout_length", LEADOUT_LENGTH_DEFAULT)), 0.0)
 
     # Accept either index or code
     strategy_code = None
@@ -623,31 +768,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         z_vals = [pp[1] for pp in path] if path else [0.0]
         z_stock = max(z_vals) if external else min(z_vals)
         z_target = min(z_vals) if external else max(z_vals)
-        # Determine configured retract positions (if present) and pass them
-        # through so the abspanen generator respects XRA/XRI/ZRA/ZRI settings.
-        try:
-            retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
-        except Exception:
-            retract_x_cfg, retract_z_cfg = (None, None)
-
-        # Determine whether the configured retracts are absolute or incremental
-        # (checkboxes in the UI). If flags are missing we assume absolute to
-        # preserve historical behaviour.
-        if side_idx == 0:
-            retract_x_abs = settings.get("xra_absolute") if "xra_absolute" in settings else False
-            retract_z_abs = settings.get("zra_absolute") if "zra_absolute" in settings else False
-        else:
-            retract_x_abs = settings.get("xri_absolute") if "xri_absolute" in settings else False
-            retract_z_abs = settings.get("zri_absolute") if "zri_absolute" in settings else False
-
-        if retract_x_cfg is None:
-            # Rückzug auf Basis von Stock + Sicherheitsabstand (absolut)
-            retract_x_cfg = stock_x + sc if external else stock_x - sc
-            retract_x_abs = True
-        if retract_z_cfg is None:
-            retract_z_cfg = safe_z
-            retract_z_abs = True
-
         rough_lines = rough_turn_parallel_z(
             path,
             external=external,
@@ -657,16 +777,12 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             safe_z=safe_z,
             feed=feed,
             start_x=stock_x if external else (min(path_xs) if path_xs and not stock_from_settings else stock_x),
-            retract_delta_x=2.0,
-            retract_delta_z=2.0,
-            retract_x_target=retract_x_cfg,
-            retract_z_target=retract_z_cfg,
-            retract_x_absolute=bool(retract_x_abs),
-            retract_z_absolute=bool(retract_z_abs),
             allow_undercut=allow_undercut,
             pause_enabled=pause_enabled,
             pause_distance=pause_distance,
             pause_duration=pause_duration,
+            retract_cfg=cfg,
+            leadout_length=leadout_length,
         )
         # sicherstellen, dass der Header den gewählten Richtungsmodus widerspiegelt
         if rough_lines:
@@ -689,28 +805,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if strategy_code == "parallel_z":
         xs = [pp[0] for pp in path] if path else [stock_x]
         x_target = min(xs) if external else max(xs)
-        # Rückzugsposition aus dem Programmkopf verwenden (falls vorhanden)
-        try:
-            retract_x_cfg, retract_z_cfg = _contour_retract_positions(settings, side_idx, None, None)
-        except Exception:
-            retract_x_cfg, retract_z_cfg = (None, None)
-        if side_idx == 0:
-            retract_x_abs = settings.get("xra_absolute") if "xra_absolute" in settings else False
-            retract_z_abs = settings.get("zra_absolute") if "zra_absolute" in settings else False
-        else:
-            retract_x_abs = settings.get("xri_absolute") if "xri_absolute" in settings else False
-            retract_z_abs = settings.get("zri_absolute") if "zri_absolute" in settings else False
-        if retract_x_cfg is None:
-            # Die aus Stock + Sicherheitsabstand abgeleitete Rückzugsposition
-            # ist ein absolutes Ziel und darf nicht als inkrementales Delta
-            # interpretiert werden (sonst landen wir z. B. bei X81 statt X41).
-            retract_x_cfg = stock_x + sc if external else stock_x - sc
-            retract_x_abs = True
-        if retract_z_cfg is None:
-            # Ebenso ist der fallback auf safe_z absolut zu verstehen, damit
-            # der Rückzug nicht versehentlich ins Material fährt.
-            retract_z_cfg = safe_z
-            retract_z_abs = True
         rough_lines = rough_turn_parallel_x(
             path,
             external=external,
@@ -723,10 +817,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             pause_enabled=pause_enabled,
             pause_distance=pause_distance,
             pause_duration=pause_duration,
-            retract_x=retract_x_cfg,
-            retract_z=retract_z_cfg,
-            retract_x_absolute=bool(retract_x_abs),
-            retract_z_absolute=bool(retract_z_abs),
+            retract_cfg=cfg,
+            leadout_length=leadout_length,
         )
         if rough_lines:
             rough_lines[0] = "(ABSPANEN Rough - parallel Z)"
