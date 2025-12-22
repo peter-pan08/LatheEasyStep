@@ -25,6 +25,145 @@ class Segment:
 LEADOUT_LENGTH_DEFAULT = 2.0
 
 
+def _norm(vx: float, vz: float) -> Tuple[float, float]:
+    length = math.hypot(vx, vz)
+    if length < 1e-12:
+        return 0.0, 0.0
+    return vx / length, vz / length
+
+
+def _dot(ax: float, az: float, bx: float, bz: float) -> float:
+    return ax * bx + az * bz
+
+
+def _cross(ax: float, az: float, bx: float, bz: float) -> float:
+    return ax * bz - az * bx
+
+
+def _line_intersection(
+    P: Tuple[float, float],
+    v: Tuple[float, float],
+    Q: Tuple[float, float],
+    w: Tuple[float, float],
+) -> Optional[Tuple[float, float]]:
+    px, pz = P
+    vx, vz = v
+    qx, qz = Q
+    wx, wz = w
+    denom = _cross(vx, vz, wx, wz)
+    if abs(denom) < 1e-12:
+        return None
+    dx = qx - px
+    dz = qz - pz
+    t = _cross(dx, dz, wx, wz) / denom
+    return (px + vx * t, pz + vz * t)
+
+
+def fillet_arc(
+    p_prev: Point,
+    p_curr: Point,
+    p_next: Point,
+    radius: float,
+    *,
+    side: str = "auto",
+    chord: float = 0.2,
+) -> Optional[Dict[str, object]]:
+    """Return a fillet arc passing through p_curr with tangency to the two segments."""
+    if radius <= 0.0 or chord <= 0.0:
+        return None
+    x0, z0 = p_prev
+    x1, z1 = p_curr
+    x2, z2 = p_next
+
+    d1x, d1z = _norm(x0 - x1, z0 - z1)
+    d2x, d2z = _norm(x2 - x1, z2 - z1)
+    if abs(d1x) < 1e-12 and abs(d1z) < 1e-12:
+        return None
+    if abs(d2x) < 1e-12 and abs(d2z) < 1e-12:
+        return None
+
+    a1x, a1z = -d1x, -d1z
+    a2x, a2z = d2x, d2z
+    cos_theta = max(-1.0, min(1.0, _dot(a1x, a1z, a2x, a2z)))
+    theta = math.acos(cos_theta)
+    if theta <= 1e-6 or abs(math.pi - theta) < 1e-6:
+        return None
+
+    tan_half = math.tan(theta * 0.5)
+    if tan_half <= 0.0:
+        return None
+    tangential = radius * tan_half
+
+    T1 = (x1 + a1x * tangential, z1 + a1z * tangential)
+    T2 = (x1 + a2x * tangential, z1 + a2z * tangential)
+
+    turn = _cross(a1x, a1z, a2x, a2z)
+    if abs(turn) < 1e-9:
+        return None
+
+    n1L = (-a1z, a1x)
+    n1R = (a1z, -a1x)
+    n2L = (-a2z, a2x)
+    n2R = (a2z, -a2x)
+
+    candidates: List[Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]] = []
+    for n1 in (n1L, n1R):
+        for n2 in (n2L, n2R):
+            P = (T1[0] + n1[0] * radius, T1[1] + n1[1] * radius)
+            Q = (T2[0] + n2[0] * radius, T2[1] + n2[1] * radius)
+            center = _line_intersection(P, (a1x, a1z), Q, (a2x, a2z))
+            if center is None:
+                continue
+            candidates.append((center, n1, n2))
+    if not candidates:
+        return None
+
+    def score_center(center: Tuple[float, float]) -> float:
+        cx, cz = center
+        vx, vz = cx - x1, cz - z1
+        return turn * _cross(a1x, a1z, vx, vz)
+
+    side_lower = str(side or "auto").lower()
+    if side_lower == "outer":
+        chosen = min(candidates, key=lambda tup: score_center(tup[0]))
+    else:
+        chosen = max(candidates, key=lambda tup: score_center(tup[0]))
+
+    center = chosen[0]
+    cx, cz = center
+    vec_start = (T1[0] - cx, T1[1] - cz)
+    vec_end = (T2[0] - cx, T2[1] - cz)
+    angle_start = math.atan2(vec_start[1], vec_start[0])
+    angle_end = math.atan2(vec_end[1], vec_end[0])
+    ccw = turn > 0
+
+    def unwrap(a_start: float, a_end: float, ccw_dir: bool) -> Tuple[float, float]:
+        while ccw_dir and a_end < a_start:
+            a_end += 2.0 * math.pi
+        while not ccw_dir and a_end > a_start:
+            a_end -= 2.0 * math.pi
+        return a_start, a_end
+
+    a0, a1 = unwrap(angle_start, angle_end, ccw)
+    arc_length = abs(a1 - a0) * radius
+    chords = max(chord, 1e-6)
+    steps = max(4, int(math.ceil(arc_length / chords)))
+    points: List[Point] = []
+    delta = a1 - a0
+    for idx in range(steps + 1):
+        fraction = idx / steps
+        angle = a0 + delta * fraction
+        points.append((cx + radius * math.cos(angle), cz + radius * math.sin(angle)))
+
+    return {
+        "T1": T1,
+        "T2": T2,
+        "C": center,
+        "ccw": ccw,
+        "points": points,
+    }
+
+
 def segments_from_polyline(path: List[Point]) -> List[Segment]:
     segs: List[Segment] = []
     for (x0, z0), (x1, z1) in zip(path, path[1:]):
@@ -599,6 +738,60 @@ def gcode_from_path(path: List[Point], feed: float, safe_z: float) -> List[str]:
         lines.append(f"G1 Z{z0:.3f} F{feed:.3f}")
     for x, z in path[1:]:
         lines.append(f"G1 X{x:.3f} Z{z:.3f}")
+    return lines
+
+
+
+def gcode_from_primitives(
+    primitives: List[Dict[str, object]],
+    *,
+    start: Tuple[float, float],
+    feed: float,
+    safe_z: float,
+) -> List[str]:
+    """
+    Generate G-Code from a primitive list:
+      - {"type":"line","end":(x,z)}
+      - {"type":"arc","end":(x,z),"center":(cx,cz),"ccw":bool}
+    Uses I/K center offsets (LinuxCNC-friendly).
+    """
+    lines: List[str] = []
+    if not primitives:
+        return lines
+
+    x0, z0 = float(start[0]), float(start[1])
+    lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
+    lines.append(f"G1 Z{z0:.3f} F{feed:.3f}")
+
+    cur_x, cur_z = x0, z0
+    for pr in primitives:
+        typ = pr.get("type")
+        if typ == "line":
+            x, z = pr.get("end", (cur_x, cur_z))
+            x, z = float(x), float(z)
+            lines.append(f"G1 X{x:.3f} Z{z:.3f}")
+            cur_x, cur_z = x, z
+            continue
+
+        if typ == "arc":
+            x, z = pr.get("end", (cur_x, cur_z))
+            cx, cz = pr.get("center", (cur_x, cur_z))
+            x, z, cx, cz = float(x), float(z), float(cx), float(cz)
+
+            i = cx - cur_x
+            k = cz - cur_z
+            g = "G3" if pr.get("ccw") else "G2"
+            lines.append(f"{g} X{x:.3f} Z{z:.3f} I{i:.3f} K{k:.3f}")
+            cur_x, cur_z = x, z
+            continue
+
+        # unknown primitive → treat as line to "end" if present
+        end = pr.get("end")
+        if end and isinstance(end, (tuple, list)) and len(end) >= 2:
+            x, z = float(end[0]), float(end[1])
+            lines.append(f"G1 X{x:.3f} Z{z:.3f}")
+            cur_x, cur_z = x, z
+
     return lines
 
 

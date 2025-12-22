@@ -36,6 +36,9 @@ Die Kontur ist die **Quelle der Wahrheit** für:
 - Abspanlogik
 - spätere G2/G3-Ausgabe
 
+- `start_x`/`start_z` werden jetzt als erster Punkt übernommen, sodass die erste Segmentzeile tatsächlich eine Ecke erzeugt.
+- `validate_contour_segments_for_profile` überprüft jede Zeile auf Nullsegmente, Winkel und erreichbare Kantenlängen; bei Fehlern wird die Vorschau geleert und der Benutzer sieht die Details im Log (die Funktion ist der Eingang zu G71/G70).
+
 ---
 
 ## Radien (Wichtiger Punkt)
@@ -63,6 +66,7 @@ Geplante Erweiterung:
 - Dropdowns pro Kontursegment statt globaler Optionen
 - Deutsch als Primärsprache
 - qtpy als Abstraktionsschicht (Fallback möglich)
+- Vorschau zeichnet X weiterhin als Durchmesser (für die Beschriftung), nutzt intern aber immer halbierte X-Werte, damit Kreise wirklich rund und in Radiusmaßstab dargestellt werden.
 
 ---
 
@@ -80,4 +84,3 @@ Beiträge sind willkommen, insbesondere:
 - Geometrie / Arc-Berechnungen
 - zusätzliche Abspanstrategien
 - Tests mit realen Maschinen
-

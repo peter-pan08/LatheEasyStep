@@ -12,15 +12,15 @@ Der Fokus liegt auf:
 
 Ziel ist es, einen großen Teil typischer Drehteile (Schruppen, Konturen, Fasen, Radien) direkt im Panel zu erzeugen.
 
----
+- ### Funktionen
 
-### Funktionen
 - Abspanen **parallel Z** (Schruppen)
 - Konturdefinition mit:
   - Geraden
   - Fasen
   - Radien (Innen / Außen pro Radius)
-- Vorschau der Kontur
+- Vorschau der Kontur (jetzt echte Linien und Arc-Primitives, nur gültige Radien erscheinen)
+- Konturvalidierung: die Vorschau blockiert erkennbare Geometriefehler, damit G71/G70 keine falschen Daten erhält
 - Sichere Anfahr- und Rückzugsbewegungen (X/Z simultan)
 - Parametergesteuerte Zustellung und Schrittweiten
 - G-Code-Erzeugung direkt aus dem Panel
@@ -31,11 +31,8 @@ Ziel ist es, einen großen Teil typischer Drehteile (Schruppen, Konturen, Fasen,
 ### Voraussetzungen
 - LinuxCNC (getestet mit QTVCP / QtDragon)
 - Python 3
-- `qtpy`  
-  Installation:
-  ```bash
-  pip3 install --user qtpy
-Alternativ kann PyQt5 verwendet werden (Fallback).
+- `qtpy` (falls nicht vorhanden: `pip3 install --user qtpy`)
+  - Die Panel-Initialisierung fällt zurück auf PyQt5, wenn qtpy nicht importierbar ist.
 
 Installation / Einbindung
 Panel-Dateien in ein geeignetes Verzeichnis kopieren (z. B. in den Screen-Ordner)
@@ -48,15 +45,13 @@ Hinweis: Details zur Einbindung hängen vom verwendeten Screen ab (QtDragon, eig
 
 Grundbedienung (Kurzüberblick)
 Kontur
-Kontur wird punktweise aufgebaut
+Kontur wird punktweise aufgebaut – die Vorschau rechnet aus den Segmenten echte Linien oder Bögen.
 
 Pro Punkt können Kanten definiert werden:
 
-keine
-
-Fase
-
-Radius
+- keine
+- Fase
+- Radius (nur gültige Winkel + Länge lösen echte Bögen aus; bei zu großen Radien erscheint eine Warnung in der Konsole)
 
 Bei Radien kann Innen/Außen gewählt werden
 
@@ -111,7 +106,7 @@ chamfers
 
 radii (inner / outer per radius)
 
-Contour preview
+Contour preview (genuine lines/arcs, invalid radii blocked by validation)
 
 Safe approach and simultaneous X/Z retract
 
@@ -122,16 +117,9 @@ Direct G-code generation
 Save and load STEP/project files
 
 Requirements
-LinuxCNC (tested with QTVCP / QtDragon)
-
-Python 3
-
-qtpy
-
-bash
-Code kopieren
-pip3 install --user qtpy
-PyQt5 can be used as a fallback.
+- LinuxCNC (tested with QTVCP / QtDragon)
+- Python 3
+- `qtpy` (install via `pip3 install --user qtpy`; the panel automatically falls back to PyQt5 if qtpy is unavailable)
 
 Installation / Integration
 Copy the panel files into an appropriate screen directory
