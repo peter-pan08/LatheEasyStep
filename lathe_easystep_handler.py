@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+
 import math
 import os
 import re
@@ -10,17 +12,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from weakref import WeakSet
 
-try:
-    from qtpy import QtCore, QtGui, QtWidgets
-except ModuleNotFoundError:
-    try:
-        from PyQt5 import QtCore, QtGui, QtWidgets
-        print("\n[lathe_easystep] INFO: 'qtpy' not found, falling back to PyQt5.\n")
-    except ModuleNotFoundError:
-        print("\n[lathe_easystep] WARNING: Python module 'qtpy' not found.")
-        print("[lathe_easystep] Install it with:  pip3 install --user qtpy")
-        print("[lathe_easystep] Or use a distro package if available.\n")
-        raise
+from qtpy import QtCore, QtGui, QtWidgets
 from qtvcp.core import Action
 
 
@@ -44,7 +36,7 @@ class OpType:
 class Operation:
     op_type: str
     params: Dict[str, object]
-    path: List[Tuple[float, float]] = field(default_factory=list)
+    path: list = field(default_factory=list)  # list of points or primitives
 
 
 STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
@@ -184,7 +176,6 @@ TEXT_TRANSLATIONS = {
     "contour_delete_segment": {"de": "Segment -", "en": "Segment -"},
     "label_contour_edge_type": {"de": "Kante", "en": "Edge"},
     "label_contour_edge_size": {"de": "Kantenmaß", "en": "Edge Size"},
-    "label_contour_arc_side": {"de": "Bogenseite", "en": "Arc Side"},
 
     "label_parting_contour": {"de": "Kontur", "en": "Contour"},
     "label_parting_side": {"de": "Seite", "en": "Side"},
@@ -295,10 +286,6 @@ COMBO_OPTION_TRANSLATIONS = {
         "de": ["Keine", "Fase", "Radius"],
         "en": ["None", "Chamfer", "Radius"],
     },
-    "contour_arc_side": {
-        "de": ["Auto", "Außen", "Innen"],
-        "en": ["Auto", "Outer", "Inner"],
-    },
     "parting_side": {"de": ["Außenseite", "Innenseite"], "en": ["Outside", "Inside"]},
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
@@ -330,6 +317,14 @@ BUTTON_TRANSLATIONS = {
 }
 
 STEP_FILE_FILTER = "Lathe step files (*.step.json);;JSON (*.json)"
+
+def normalize_arc_side(value: object | None) -> str:
+    s = str(value or "auto").strip().lower()
+    if s in {"inner", "innen", "in"}:
+        return "inner"
+    if s in {"outer", "außen", "aussen", "au", "auss", "outside", "out"}:
+        return "outer"
+    return "auto"
 
 # Tooltips für Gewinde-Widgets (de / en)
 THREAD_TOOLTIP_TRANSLATIONS = {
@@ -618,35 +613,131 @@ class ProgramModel:
 class LathePreviewWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.x_is_diameter = True  # X values are treated as radius for drawing but labeled as diameter
         self.paths: List[List[Tuple[float, float]]] = []
         self.active_index: int | None = None
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
 
-    def set_paths(self, paths: List[List[Tuple[float, float]]],
-                  active_index: int | None = None):
-        self.paths = paths
+    def set_paths(self, paths, active_index: int | None = None):
+        # paths can be:
+        #   - list of list-of-(x,z) points (legacy)
+        #   - list of primitives [{type:line/arc,...}, ...] for a single path
+        #   - list of list-of-primitives for multiple paths
         self.active_index = active_index
-        try:
-            print(f"[LathePreview] set_paths count={len(paths)} active={active_index} first={paths[0] if paths else '[]'}")
-        except Exception:
-            pass
+
+        def sample_arc(p1, p2, c, ccw, steps=48):
+            x1, z1 = p1
+            x2, z2 = p2
+            xc, zc = c
+            r1 = math.hypot(x1 - xc, z1 - zc)
+            r2 = math.hypot(x2 - xc, z2 - zc)
+            if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
+                return [p1, p2]
+            a1 = math.atan2(z1 - zc, x1 - xc)
+            a2 = math.atan2(z2 - zc, x2 - xc)
+            # unwrap according to direction
+            if ccw:
+                if a2 <= a1:
+                    a2 += 2 * math.pi
+            else:
+                if a2 >= a1:
+                    a2 -= 2 * math.pi
+            pts = []
+            for k in range(steps + 1):
+                t = k / steps
+                a = a1 + (a2 - a1) * t
+                pts.append((xc + r1 * math.cos(a), zc + r1 * math.sin(a)))
+            return pts
+
+        def primitives_to_points(prims):
+            pts = []
+            last = None
+            for pr in prims:
+                if not isinstance(pr, dict):
+                    continue
+                typ = (pr.get("type") or "").lower()
+                if typ == "line":
+                    p1 = tuple(pr.get("p1", (0.0, 0.0)))
+                    p2 = tuple(pr.get("p2", (0.0, 0.0)))
+                    if last is None:
+                        pts.append(p1)
+                    elif math.hypot(p1[0] - last[0], p1[1] - last[1]) > 1e-6:
+                        pts.append(p1)
+                    pts.append(p2)
+                    last = p2
+                elif typ == "arc":
+                    p1 = tuple(pr.get("p1", (0.0, 0.0)))
+                    p2 = tuple(pr.get("p2", (0.0, 0.0)))
+                    c = tuple(pr.get("c", (0.0, 0.0)))
+                    ccw = bool(pr.get("ccw", True))
+                    arc_pts = sample_arc(p1, p2, c, ccw)
+                    if last is None:
+                        pts.extend(arc_pts)
+                    else:
+                        if math.hypot(arc_pts[0][0] - last[0], arc_pts[0][1] - last[1]) > 1e-6:
+                            pts.append(arc_pts[0])
+                        pts.extend(arc_pts[1:])
+                    last = arc_pts[-1]
+            return pts
+
+        norm_paths = []
+        if isinstance(paths, list) and paths and isinstance(paths[0], dict) and "type" in paths[0]:
+            norm_paths = [primitives_to_points(paths)]
+        elif isinstance(paths, list) and paths and isinstance(paths[0], list) and paths[0] and isinstance(paths[0][0], dict) and "type" in paths[0][0]:
+            norm_paths = [primitives_to_points(p) for p in paths]
+        else:
+            norm_paths = paths or []
+
+        self.paths = norm_paths
         self.update()
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QtGui.QPainter(self)
         try:
             painter.fillRect(self.rect(), QtCore.Qt.black)
+            # Collect bounds across all paths (supports point lists and primitive lists)
+            inf = float('inf')
+            min_x, max_x = inf, -inf
+            min_z, max_z = inf, -inf
 
-            all_points = [p for path in self.paths for p in path if len(path) > 0]
-            if not all_points:
-                all_points = [(0.0, 0.0)]
+            def _upd(xv: float, zv: float):
+                nonlocal min_x, max_x, min_z, max_z
+                x_draw = (xv * 0.5) if self.x_is_diameter else xv
+                min_x = min(min_x, x_draw)
+                max_x = max(max_x, x_draw)
+                min_z = min(min_z, zv)
+                max_z = max(max_z, zv)
 
-            xs = [p[0] for p in all_points]
-            zs = [p[1] for p in all_points]
-            min_x, max_x = min(xs), max(xs)
-            min_z, max_z = min(zs), max(zs)
+            any_data = False
+            for path in self.paths:
+                if not path:
+                    continue
+                any_data = True
+                first = path[0]
+                if isinstance(first, dict):
+                    for pr in path:
+                        t = pr.get("type")
+                        if t == "line":
+                            _upd(float(pr.get("x0", 0.0)), float(pr.get("z0", 0.0)))
+                            _upd(float(pr.get("x1", 0.0)), float(pr.get("z1", 0.0)))
+                        elif t == "arc":
+                            cx = float(pr.get("cx", 0.0))
+                            cz = float(pr.get("cz", 0.0))
+                            rx = abs(float(pr.get("rx", 0.0)))
+                            rz = abs(float(pr.get("rz", 0.0)))
+                            # bounds by full ellipse (safe, may be larger than actual arc sweep)
+                            _upd(cx - rx, cz - rz)
+                            _upd(cx + rx, cz + rz)
+                            _upd(float(pr.get("x0", 0.0)), float(pr.get("z0", 0.0)))
+                            _upd(float(pr.get("x1", 0.0)), float(pr.get("z1", 0.0)))
+                else:
+                    for (xv, zv) in path:
+                        _upd(float(xv), float(zv))
 
+            if not any_data or min_x == inf or min_z == inf:
+                min_x = max_x = 0.0
+                min_z = max_z = 0.0
             # Ursprung und Mindestgröße immer berücksichtigen
             half_span = self._base_span / 2.0
             min_x = min(min_x, -half_span, 0.0)
@@ -683,9 +774,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
             scale = min(scale_x, scale_z)
 
             def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
-                # Z horizontal, X vertikal
+                # Z horizontal, X vertikal (draw radius even if stored as diameter)
+                x_draw = (x_val * 0.5) if self.x_is_diameter else x_val
                 x_pix = rect.left() + (z_val - min_z) * scale
-                z_pix = rect.bottom() - (x_val - min_x) * scale
+                z_pix = rect.bottom() - (x_draw - min_x) * scale
                 return QtCore.QPointF(x_pix, z_pix)
 
             # Achsen und Skala (außen: links/unten)
@@ -733,15 +825,89 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{val:.0f}")
+                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{(val*2 if self.x_is_diameter else val):.0f}")
                 val += step_x
 
             # Achsbeschriftungen
             painter.setPen(font_pen)
             painter.drawText(QtCore.QPointF(rect.right() - 20, z_axis.y() - 6), "Z")
             painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X")
-
             for idx, path in enumerate(self.paths):
+                if not path:
+                    continue
+
+                color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
+                painter.setPen(QtGui.QPen(color, 2))
+
+                # Primitive mode
+                if isinstance(path[0], dict):
+                    qp = QtGui.QPainterPath()
+
+                    def _pt(xv: float, zv: float) -> QtCore.QPointF:
+                        return to_screen(float(xv), float(zv))
+
+                    # move to first primitive start
+                    first = path[0]
+                    sx, sz = first.get("x0", 0.0), first.get("z0", 0.0)
+                    qp.moveTo(_pt(sx, sz))
+
+                    for pr in path:
+                        t = pr.get("type")
+                        if t == "line":
+                            qp.lineTo(_pt(pr.get("x1", 0.0), pr.get("z1", 0.0)))
+                        elif t == "arc":
+                            # Elliptical arc in diameter space (rx,rz)
+                            x0 = float(pr.get("x0", 0.0)); z0 = float(pr.get("z0", 0.0))
+                            x1 = float(pr.get("x1", 0.0)); z1 = float(pr.get("z1", 0.0))
+                            cx = float(pr.get("cx", 0.0)); cz = float(pr.get("cz", 0.0))
+                            rx = abs(float(pr.get("rx", 0.0))); rz = abs(float(pr.get("rz", 0.0)))
+                            if rx <= 1e-9 or rz <= 1e-9:
+                                qp.lineTo(_pt(x1, z1))
+                                continue
+
+                            p0 = _pt(x0, z0)
+                            p1 = _pt(x1, z1)
+                            pc = _pt(cx, cz)
+
+                            # Ensure we are at the start point (can happen after lines)
+                            qp.lineTo(p0)
+
+                            rx_s = rx * scale
+                            rz_s = rz * scale
+                            rect = QtCore.QRectF(pc.x() - rx_s, pc.y() - rz_s, 2 * rx_s, 2 * rz_s)
+
+                            # Parameter angles in screen coordinate system
+                            t0 = math.atan2((p0.y() - pc.y()) / rz_s, (p0.x() - pc.x()) / rx_s)
+                            t1 = math.atan2((p1.y() - pc.y()) / rz_s, (p1.x() - pc.x()) / rx_s)
+
+                            ccw = bool(pr.get("ccw", True))
+
+                            # Unwrap for requested direction in machine space (z up),
+                            # mapped through our screen transform (z -> -y).
+                            if ccw:
+                                while t1 > t0:
+                                    t1 -= 2 * math.pi
+                            else:
+                                while t1 < t0:
+                                    t1 += 2 * math.pi
+
+                            delta = t1 - t0
+
+                            # Qt angles: 0 at 3 o'clock, positive CCW.
+                            # Our parameterization increases clockwise (because y is down),
+                            # therefore Qt angle is -t.
+                            start_deg = -math.degrees(t0)
+                            sweep_deg = -math.degrees(delta)
+
+                            qp.arcTo(rect, start_deg, sweep_deg)
+                        else:
+                            # Unknown primitive -> ignore
+                            pass
+
+                    painter.drawPath(qp)
+                    continue
+
+                # Point-list fallback (legacy)
                 if len(path) < 2:
                     # Einzelpunkt als kleines Kreuz darstellen
                     pt = to_screen(path[0][0], path[0][1])
@@ -749,8 +915,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
                     painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
                     continue
-                color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
-                painter.setPen(QtGui.QPen(color, 2))
+
                 points = [to_screen(x, z) for x, z in path]
                 painter.drawPolyline(QtGui.QPolygonF(points))
         finally:
@@ -903,244 +1068,267 @@ def build_abspanen_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
     return points
 
 
-def build_contour_path(params: Dict[str, object]) -> List[Tuple[float, float]]:
+def build_contour_path(params) -> list:
     """
-    Konturpfad aus der Segmenttabelle:
-    - Startpunkt (start_x, start_z)
-    - jede Tabellenzeile liefert einen Zielpunkt (X, Z)
-    - Kanten (Fase/Radius) werden erst berechnet, sobald ein Folgesegment existiert
+    Build a contour as **primitives** (lines/arcs) from contour table segments.
+
+    Accepts either:
+      - params = {"segments": [...]}  (preferred)
+      - params = [...]               (legacy: list of segment dicts)
+
+    Segment dict format (as produced by _collect_contour_segments):
+      {
+        "mode": "line"|"rapid"|...,
+        "x": float, "z": float,
+        "x_empty": bool, "z_empty": bool,
+        "edge": "none"|"radius"|"chamfer",
+        "edge_size": float,
+      }
+
+    Notes:
+    - X values are **diameter** coordinates (LinuxCNC lathe convention).
+    - Edges (radius/chamfer) are applied at the point of the segment row
+      (i.e. the corner between previous->this and this->next).
+    - Returns a list of primitives:
+        {"type":"line","p1":[x,z],"p2":[x,z]}
+        {"type":"arc","p1":[x,z],"p2":[x,z],"c":[xc,zc],"ccw":bool}
     """
-    start_x = float(params.get("start_x", 0.0))
-    start_z = float(params.get("start_z", 0.0))
-    coord_mode_idx = int(params.get("coord_mode", 0))
-    incremental = coord_mode_idx == 1  # 0=Absolut, 1=Inkremental
-    segments = params.get("segments") or []
+    # normalize input
+    if isinstance(params, dict):
+        segments = params.get("segments") or []
+    else:
+        segments = params or []
 
-    # Roh-Punkte (vor Kantenbearbeitung)
-    raw_points: List[Tuple[float, float]] = [(start_x, start_z)]
-    raw_meta: List[Dict[str, object]] = []
+    # build absolute point list (respect x_empty/z_empty)
+    start_x = 0.0
+    start_z = 0.0
+    if isinstance(params, dict):
+        start_x = float(params.get("start_x", 0.0) or 0.0)
+        start_z = float(params.get("start_z", 0.0) or 0.0)
 
-    cur_x, cur_z = start_x, start_z
-    for seg in segments:
-        sx = float(seg.get("x", cur_x))
-        sz = float(seg.get("z", cur_z))
-        x_empty = bool(seg.get("x_empty", False))
-        z_empty = bool(seg.get("z_empty", False))
-        # 'mode' dient nur als Hinweis; falls eine Koordinate fehlt, bleibt die vorherige
-        mode = str(seg.get("mode", "xz")).lower()
-        if mode == "x":
-            if incremental:
-                cur_x = cur_x + sx
-            else:
-                if not x_empty:
-                    cur_x = sx
-            # Z bleibt
-        elif mode == "z":
-            if incremental:
-                cur_z = cur_z + sz
-            else:
-                if not z_empty:
-                    cur_z = sz
-            # X bleibt
-        else:  # xz
-            if incremental:
-                cur_x = cur_x + sx
-                cur_z = cur_z + sz
-            else:
-                if not x_empty:
-                    cur_x = sx
-                if not z_empty:
-                    cur_z = sz
-        raw_points.append((cur_x, cur_z))
-        raw_meta.append(
-            {
-                "edge": str(seg.get("edge", "none")).lower(),
-                "edge_size": float(seg.get("edge_size", 0.0) or 0.0),
-                "arc_side": str(seg.get("arc_side", "auto")).lower(),
-            }
-        )
+    pts = [(start_x, start_z)]
+    last_x = start_x
+    last_z = start_z
+    for s in segments:
+        if not isinstance(s, dict):
+            continue
+        x = last_x if s.get("x_empty") else float(s.get("x", last_x) or last_x)
+        z = last_z if s.get("z_empty") else float(s.get("z", last_z) or last_z)
+        pts.append((x, z))
+        last_x, last_z = x, z
 
-    if len(raw_points) <= 1:
-        return raw_points
+    if len(pts) < 2:
+        return []
 
-    # Kanten/Übergänge anwenden, sobald ein Folgesegment vorhanden ist
-    path: List[Tuple[float, float]] = [raw_points[0]]
+    def _v(a, b):
+        return (b[0] - a[0], b[1] - a[1])
 
-    def _append_points(points: List[Tuple[float, float]]) -> None:
-        last = path[-1]
-        for pt in points:
-            if pt != last:
-                path.append(pt)
-                last = pt
+    def _norm(v):
+        l = math.hypot(v[0], v[1])
+        if l <= 1e-12:
+            return (0.0, 0.0), 0.0
+        return (v[0] / l, v[1] / l), l
 
-    def _line_intersection(
-        p1: Tuple[float, float],
-        d1: Tuple[float, float],
-        p2: Tuple[float, float],
-        d2: Tuple[float, float],
-    ) -> Optional[Tuple[float, float]]:
-        denom = d1[0] * d2[1] - d1[1] * d2[0]
-        if abs(denom) < 1e-12:
-            return None
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        t = (dx * d2[1] - dy * d2[0]) / denom
-        return (p1[0] + d1[0] * t, p1[1] + d1[1] * t)
+    def _perp_ccw(u):
+        return (-u[1], u[0])
 
-    def _build_radius_arc(
-        p_prev: Tuple[float, float],
-        p_curr: Tuple[float, float],
-        p_next: Tuple[float, float],
-        dir1: Tuple[float, float],
-        dir2: Tuple[float, float],
-        len1: float,
-        len2: float,
-        radius: float,
-        arc_side: str,
-    ) -> Optional[List[Tuple[float, float]]]:
-        neg_dir1 = (-dir1[0], -dir1[1])
-        cos_theta = max(-1.0, min(1.0, neg_dir1[0] * dir2[0] + neg_dir1[1] * dir2[1]))
-        theta = math.acos(cos_theta)
-        if theta <= 1e-6:
-            return None
-        tan_half = math.tan(theta * 0.5)
-        if tan_half <= 0.0:
-            return None
-        t = radius * tan_half
-        max_t = min(len1, len2) * 0.499
-        if t <= 0.0 or t > max_t:
-            return None
+    def _dot(a, b):
+        return a[0] * b[0] + a[1] * b[1]
 
-        start = (p_curr[0] - dir1[0] * t, p_curr[1] - dir1[1] * t)
-        end = (p_curr[0] + dir2[0] * t, p_curr[1] + dir2[1] * t)
+    def _cross(a, b):
+        return a[0] * b[1] - a[1] * b[0]
 
-        cross = dir1[0] * dir2[1] - dir1[1] * dir2[0]
-        if abs(cross) < 1e-9:
-            return None
-        turn_dir = 1 if cross > 0 else -1
+    prim = []
+    cur = pts[0]
 
-        side = arc_side if arc_side in ("inner", "outer") else "inner"
-        desired = -1 if side == "outer" else 1
-        normal_sign = desired * turn_dir
-        if normal_sign == 0:
-            normal_sign = 1
-        if normal_sign > 0:
-            n1 = (-dir1[1], dir1[0])
-            n2 = (-dir2[1], dir2[0])
-        else:
-            n1 = (dir1[1], -dir1[0])
-            n2 = (dir2[1], -dir2[0])
+    def _emit_line(p1, p2):
+        if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) <= 1e-9:
+            return
+        prim.append({"type": "line", "p1": [float(p1[0]), float(p1[1])], "p2": [float(p2[0]), float(p2[1])]})
 
-        center_start = (start[0] + n1[0] * radius, start[1] + n1[1] * radius)
-        center_end = (end[0] + n2[0] * radius, end[1] + n2[1] * radius)
-        center = _line_intersection(center_start, dir1, center_end, dir2)
-        if center is None:
-            return None
+    def _emit_arc(p1, p2, c, ccw):
+        # avoid degenerate arcs
+        if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) <= 1e-9:
+            return
+        prim.append({
+            "type": "arc",
+            "p1": [float(p1[0]), float(p1[1])],
+            "p2": [float(p2[0]), float(p2[1])],
+            "c":  [float(c[0]),  float(c[1])],
+            "ccw": bool(ccw),
+        })
 
-        vec_start = (start[0] - center[0], start[1] - center[1])
-        vec_end = (end[0] - center[0], end[1] - center[1])
-        radius_len = math.hypot(vec_start[0], vec_start[1])
-        if radius_len <= 1e-9:
-            return None
+    for i in range(1, len(pts)):
+        p_next = pts[i]
 
-        angle_start = math.atan2(vec_start[1], vec_start[0])
-        angle_end = math.atan2(vec_end[1], vec_end[0])
+        # edge at point i (corner), requires i in [1, len-2]
+        if 1 <= i < len(pts) - 1:
+            seg = segments[i - 1] if (i - 1) < len(segments) else {}
+            edge_kind = (seg.get("edge") or "none").strip().lower()
+            edge_size = float(seg.get("edge_size") or 0.0)
 
-        ccw_tangent_start = (-vec_start[1], vec_start[0])
-        cw_tangent_start = (vec_start[1], -vec_start[0])
-        ccw_tangent_end = (-vec_end[1], vec_end[0])
-        cw_tangent_end = (vec_end[1], -vec_end[0])
+            if edge_kind in ("radius", "fillet") and edge_size > 1e-9:
+                p0, p1, p2 = pts[i - 1], pts[i], pts[i + 1]
+                u1, l1 = _norm(_v(p0, p1))   # incoming dir
+                u2, l2 = _norm(_v(p1, p2))   # outgoing dir
+                if l1 > 1e-9 and l2 > 1e-9:
+                    # angle between -u1 and u2
+                    v_in = (-u1[0], -u1[1])
+                    v_out = (u2[0], u2[1])
+                    cosang = max(-1.0, min(1.0, _dot(v_in, v_out)))
+                    ang = math.acos(cosang)
+                    # if nearly straight, skip edge
+                    if ang > 1e-6 and abs(math.pi - ang) > 1e-6:
+                        t = edge_size * math.tan(ang / 2.0)
+                        # clamp t to segment lengths
+                        t = min(t, l1 * 0.999, l2 * 0.999)
 
-        dot1_ccw = ccw_tangent_start[0] * dir1[0] + ccw_tangent_start[1] * dir1[1]
-        dot1_cw = cw_tangent_start[0] * dir1[0] + cw_tangent_start[1] * dir1[1]
-        dot2_ccw = ccw_tangent_end[0] * dir2[0] + ccw_tangent_end[1] * dir2[1]
-        dot2_cw = cw_tangent_end[0] * dir2[0] + cw_tangent_end[1] * dir2[1]
+                        # tangent points
+                        pt1 = (p1[0] - u1[0] * t, p1[1] - u1[1] * t)
+                        pt2 = (p1[0] + u2[0] * t, p1[1] + u2[1] * t)
 
-        score_ccw = dot1_ccw + dot2_ccw
-        score_cw = dot1_cw + dot2_cw
-        rotation_dir = 1 if score_ccw >= score_cw else -1
+                        turn = _cross(u1, u2)
+                        ccw = turn > 0.0
+                        n1 = _perp_ccw(u1)
+                        sign = 1.0 if ccw else -1.0
+                        c = (pt1[0] + n1[0] * edge_size * sign,
+                             pt1[1] + n1[1] * edge_size * sign)
 
-        delta = angle_end - angle_start
-        if rotation_dir > 0:
-            while delta < 0.0:
-                delta += 2.0 * math.pi
-        else:
-            while delta > 0.0:
-                delta -= 2.0 * math.pi
-        if abs(delta) < 1e-6:
-            return None
+                        _emit_line(cur, pt1)
+                        _emit_arc(pt1, pt2, c, ccw)
+                        cur = pt2
+                        continue  # corner consumed
 
-        steps = max(4, min(64, int(math.ceil(abs(delta) / (math.pi / 8)))))
-        points: List[Tuple[float, float]] = [start]
-        for step_idx in range(1, steps):
-            fraction = step_idx / steps
-            angle = angle_start + delta * fraction
-            points.append(
-                (
-                    center[0] + radius * math.cos(angle),
-                    center[1] + radius * math.sin(angle),
-                )
-            )
-        points.append(end)
-        return points
-
-    for i in range(1, len(raw_points)):
-        p_prev = raw_points[i - 1]
-        p_curr = raw_points[i]
-
-        edge_info = raw_meta[i - 1] if i - 1 < len(raw_meta) else {}
-        edge_type = edge_info.get("edge", "none")
-        edge_size = max(float(edge_info.get("edge_size", 0.0) or 0.0), 0.0)
-        arc_side = str(edge_info.get("arc_side", "auto")).lower()
-        has_next = i < len(raw_points) - 1
-
-        if edge_type in ("chamfer", "fase", "radius") and edge_size > 0 and has_next:
-            p_next = raw_points[i + 1]
-            v1 = (p_curr[0] - p_prev[0], p_curr[1] - p_prev[1])
-            v2 = (p_next[0] - p_curr[0], p_next[1] - p_curr[1])
-            len1 = math.hypot(*v1)
-            len2 = math.hypot(*v2)
-
-            if len1 > 1e-6 and len2 > 1e-6:
-                offset = min(edge_size, len1 * 0.499, len2 * 0.499)
-                dir1 = (v1[0] / len1, v1[1] / len1)
-                dir2 = (v2[0] / len2, v2[1] / len2)
-
-                cut_start = (p_curr[0] - dir1[0] * offset, p_curr[1] - dir1[1] * offset)
-                cut_end = (p_curr[0] + dir2[0] * offset, p_curr[1] + dir2[1] * offset)
-
-                if edge_type.startswith(("chamfer", "fase")):
-                    _append_points([cut_start, cut_end])
+            elif edge_kind in ("chamfer", "fase") and edge_size > 1e-9:
+                p0, p1, p2 = pts[i - 1], pts[i], pts[i + 1]
+                u1, l1 = _norm(_v(p0, p1))
+                u2, l2 = _norm(_v(p1, p2))
+                if l1 > 1e-9 and l2 > 1e-9:
+                    d = min(edge_size, l1 * 0.999, l2 * 0.999)
+                    pc1 = (p1[0] - u1[0] * d, p1[1] - u1[1] * d)
+                    pc2 = (p1[0] + u2[0] * d, p1[1] + u2[1] * d)
+                    _emit_line(cur, pc1)
+                    _emit_line(pc1, pc2)
+                    cur = pc2
                     continue
 
-                arc_points = _build_radius_arc(
-                    p_prev,
-                    p_curr,
-                    p_next,
-                    dir1,
-                    dir2,
-                    len1,
-                    len2,
-                    edge_size,
-                    arc_side,
-                )
-                if arc_points:
-                    _append_points(arc_points)
-                    continue
+        # default straight segment
+        _emit_line(cur, p_next)
+        cur = p_next
 
-                _append_points([cut_start, cut_end])
+    return prim
+
+
+def validate_contour_segments_for_profile(params: dict) -> List[str]:
+    """
+    Harte Validierung der Kontur-Segmente für eine echte Profilkontur (G70/G71-tauglich).
+
+    Liefert eine Liste von Fehlermeldungen (leer => ok).
+    Erwartet params = {"segments":[...], "start_x":..., "start_z":..., "coord_mode":...}
+    (start_x/start_z/coord_mode sind optional; segments reicht.)
+    """
+    segments = (params or {}).get("segments") or []
+    errors: List[str] = []
+
+    if not isinstance(segments, list) or len(segments) < 2:
+        errors.append("Kontur: mindestens 2 Segmente/Punkte erforderlich.")
+        return errors
+
+    pts: List[Tuple[float, float]] = []
+    last_x = float((params or {}).get("start_x", 0.0) or 0.0)
+    last_z = float((params or {}).get("start_z", 0.0) or 0.0)
+
+    for i, s in enumerate(segments):
+        if not isinstance(s, dict):
+            errors.append(f"Zeile {i+1}: Segment ist kein Dict.")
+            continue
+
+        try:
+            x_empty = bool(s.get("x_empty", False))
+            z_empty = bool(s.get("z_empty", False))
+            x = last_x if x_empty else float(s.get("x", last_x))
+            z = last_z if z_empty else float(s.get("z", last_z))
+        except Exception:
+            errors.append(f"Zeile {i+1}: X/Z nicht numerisch lesbar.")
+            x, z = last_x, last_z
+
+        pts.append((x, z))
+        last_x, last_z = x, z
+
+    def dist(a, b) -> float:
+        return math.hypot(b[0] - a[0], b[1] - a[1])
+
+    def unit(a, b):
+        dx = b[0] - a[0]
+        dz = b[1] - a[1]
+        l = math.hypot(dx, dz)
+        if l <= 1e-12:
+            return (0.0, 0.0), 0.0
+        return (dx / l, dz / l), l
+
+    def dot(u, v):
+        return u[0] * v[0] + u[1] * v[1]
+
+    def cross(u, v):
+        return u[0] * v[1] - u[1] * v[0]
+
+    for i in range(1, len(pts)):
+        if dist(pts[i - 1], pts[i]) <= 1e-9:
+            errors.append(f"Zeile {i+1}: Punkt identisch mit vorherigem (Null-Länge).")
+
+    for i in range(len(segments)):
+        s = segments[i] if i < len(segments) else {}
+        edge = str((s or {}).get("edge", "none") or "none").strip().lower()
+        edge_size = float((s or {}).get("edge_size", 0.0) or 0.0)
+
+        if edge not in ("none", "radius", "chamfer", "fase", "fillet"):
+            errors.append(f"Zeile {i+1}: unbekannter Edge-Typ '{edge}'.")
+            continue
+
+        if edge in ("radius", "fillet", "chamfer", "fase"):
+            if edge_size <= 1e-9:
+                errors.append(f"Zeile {i+1}: {edge} gewählt, aber Kantenmaß = 0.")
                 continue
 
-        # Standard: direkte Linie übernehmen
-        if p_curr != path[-1]:
-            path.append(p_curr)
+            if i == 0 or i == len(segments) - 1:
+                errors.append(f"Zeile {i+1}: {edge} am Anfang/Ende ist geometrisch unmöglich (keine Ecke).")
+                continue
 
-    return path
+            p0, p1, p2 = pts[i - 1], pts[i], pts[i + 1]
+            u1, l1 = unit(p0, p1)
+            u2, l2 = unit(p1, p2)
+
+            if l1 <= 1e-9 or l2 <= 1e-9:
+                errors.append(f"Zeile {i+1}: {edge} an Ecke mit Null-Länge (benachbarte Punkte identisch).")
+                continue
+
+            v_in = (-u1[0], -u1[1])
+            v_out = (u2[0], u2[1])
+            cosang = max(-1.0, min(1.0, dot(v_in, v_out)))
+            ang = math.acos(cosang)
+
+            if ang <= 1e-6 or abs(math.pi - ang) <= 1e-6:
+                errors.append(f"Zeile {i+1}: {edge} an (nahezu) gerader Linie ist unmöglich.")
+                continue
+
+            if edge in ("radius", "fillet"):
+                t = edge_size * math.tan(ang / 2.0)
+                if t >= l1 or t >= l2:
+                    errors.append(
+                        f"Zeile {i+1}: Radius {edge_size:g} zu groß für die angrenzenden Segmente "
+                        f"(benötigt Tangentenlänge t={t:.3f}, aber L1={l1:.3f}, L2={l2:.3f})."
+                    )
+            else:
+                if edge_size >= l1 or edge_size >= l2:
+                    errors.append(
+                        f"Zeile {i+1}: Fase {edge_size:g} zu groß (L1={l1:.3f}, L2={l2:.3f})."
+                    )
+
+            _ = cross(u1, u2)
+
+    return errors
 
 
-# ----------------------------------------------------------------------
-# G-code helpers
-# ----------------------------------------------------------------------
 def gcode_from_path(path: List[Tuple[float, float]], feed: float, safe_z: float) -> List[str]:
     try:
         from slicer import gcode_from_path as _s
@@ -1960,8 +2148,6 @@ class HandlerClass:
         self.contour_edge_type = getattr(self.w, "contour_edge_type", None)
         self.label_contour_edge_size = getattr(self.w, "label_contour_edge_size", None)
         self.contour_edge_size = getattr(self.w, "contour_edge_size", None)
-        self.label_contour_arc_side = getattr(self.w, "label_contour_arc_side", None)
-        self.contour_arc_side = getattr(self.w, "contour_arc_side", None)
         self._contour_edge_template_text = "Keine"
         self._contour_edge_template_size = 0.0
         self._contour_arc_template_text = "Auto"
@@ -2624,8 +2810,6 @@ class HandlerClass:
         self.contour_edge_type = grab("contour_edge_type")
         self.contour_edge_size = grab("contour_edge_size")
         self.label_contour_edge_size = grab("label_contour_edge_size")
-        self.label_contour_arc_side = grab("label_contour_arc_side")
-        self.contour_arc_side = grab("contour_arc_side")
 
     def _ensure_thread_widgets(self):
         """Sichert sich die relevanten Widgets im Gewinde-Tab."""
@@ -3323,15 +3507,31 @@ class HandlerClass:
         ):
             btn = getattr(self, btn_attr, None)
             if btn and not getattr(self, flag, False):
+                connected = False
                 try:
-                    btn.clicked.connect(handler)
-                    setattr(self, flag, True)
+                    btn.clicked.connect(handler, QtCore.Qt.UniqueConnection)
+                    connected = True
+                except TypeError:
+                    pass
                 except Exception:
                     pass
+                if not connected:
+                    try:
+                        btn.clicked.disconnect(handler)
+                    except Exception:
+                        pass
+                    try:
+                        btn.clicked.connect(handler)
+                        connected = True
+                    except Exception:
+                        connected = False
+                if connected:
+                    setattr(self, flag, True)
 
         if getattr(self, "contour_segments", None) and not getattr(self, "_contour_table_connected", False):
             self.contour_segments.itemChanged.connect(self._handle_contour_table_change)
             self.contour_segments.currentCellChanged.connect(self._handle_contour_row_select)
+            self._contour_table_connected = True
 
     def _apply_parting_tooltips(self, lang: str):
         """Setzt Tooltips für bekannte Abspanen-Widgets gemäß Sprache."""
@@ -3368,9 +3568,6 @@ class HandlerClass:
         if getattr(self, "contour_edge_size", None) and not getattr(self, "_contour_edge_size_connected", False):
             self.contour_edge_size.valueChanged.connect(self._handle_contour_edge_change)
             self._contour_edge_size_connected = True
-        if getattr(self, "contour_arc_side", None) and not getattr(self, "_contour_arc_side_connected", False):
-            self.contour_arc_side.currentIndexChanged.connect(self._handle_contour_arc_side_change)
-            self._contour_arc_side_connected = True
 
     # ---- Abspan-Helfer ----------------------------------------------
     def _available_contour_names(self) -> List[str]:
@@ -3680,22 +3877,6 @@ class HandlerClass:
             self.program_zt = self._get_widget_by_name("program_zt")
         if self.program_sc is None:
             self.program_sc = self._get_widget_by_name("program_sc")
-        if self.program_xra is None:
-            self.program_xra = self._get_widget_by_name("program_xra")
-        if self.program_xri is None:
-            self.program_xri = self._get_widget_by_name("program_xri")
-        if self.program_zra is None:
-            self.program_zra = self._get_widget_by_name("program_zra")
-        if self.program_zri is None:
-            self.program_zri = self._get_widget_by_name("program_zri")
-        if self.program_xra_absolute is None:
-            self.program_xra_absolute = self._get_widget_by_name("program_xra_absolute")
-        if self.program_xri_absolute is None:
-            self.program_xri_absolute = self._get_widget_by_name("program_xri_absolute")
-        if self.program_zra_absolute is None:
-            self.program_zra_absolute = self._get_widget_by_name("program_zra_absolute")
-        if self.program_zri_absolute is None:
-            self.program_zri_absolute = self._get_widget_by_name("program_zri_absolute")
         if self.program_name is None:
             self.program_name = self._get_widget_by_name("program_name")
 
@@ -3758,14 +3939,6 @@ class HandlerClass:
         else:
             header["s3_max"] = 0.0
 
-        print(
-            "[LatheEasyStep] program retract read:",
-            "xra=", header.get("xra"), "zra=", header.get("zra"),
-            "xri=", header.get("xri"), "zri=", header.get("zri"),
-            "xra_abs=", header.get("xra_absolute"), "zra_abs=", header.get("zra_absolute"),
-            "xri_abs=", header.get("xri_absolute"), "zri_abs=", header.get("zri_absolute"),
-        )
-
         return header
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
@@ -3780,7 +3953,10 @@ class HandlerClass:
             z_item = table.item(row, 2)
             edge_item = table.item(row, 3)
             size_item = table.item(row, 4)
-            arc_item = table.item(row, 5)
+            # Edge type can be a QComboBox cell widget (preferred) or a text item
+            edge_widget = table.cellWidget(row, 3)
+            arc_side_item = table.item(row, 5)
+            arc_side_widget = table.cellWidget(row, 5)
 
             mode_raw = mode_item.text().strip().lower() if mode_item else "xz"
             if mode_raw.startswith("xz"):
@@ -3792,13 +3968,38 @@ class HandlerClass:
             else:
                 mode = "xz"
 
-            edge_txt = edge_item.text().strip().lower() if edge_item and edge_item.text() else "keine"
-            if edge_txt.startswith("f"):
+            # Edge type text (German/English): prefer combo widget if present
+            edge_txt = ""
+            try:
+                if edge_widget is not None and hasattr(edge_widget, "currentText"):
+                    edge_txt = str(edge_widget.currentText()).strip().lower()
+                elif edge_item is not None and edge_item.text():
+                    edge_txt = edge_item.text().strip().lower()
+            except Exception:
+                edge_txt = ""
+            if not edge_txt:
+                edge_txt = "keine"
+            
+            # Accept common German/English labels
+            if edge_txt.startswith(("f", "c")):  # Fase / Chamfer
                 edge = "chamfer"
-            elif edge_txt.startswith("r"):
+            elif edge_txt.startswith(("r", "ra")):  # Radius
                 edge = "radius"
             else:
                 edge = "none"
+            
+
+            # Bogen-Seite (Auto/Außen/Innen) – nur relevant bei Radius
+            arc_txt = ""
+            try:
+                if arc_side_widget is not None and hasattr(arc_side_widget, "currentText"):
+                    arc_txt = str(arc_side_widget.currentText()).strip().lower()
+                elif arc_side_item is not None and arc_side_item.text():
+                    arc_txt = arc_side_item.text().strip().lower()
+            except Exception:
+                arc_txt = ""
+
+            arc_side = normalize_arc_side(arc_txt)
 
             def _to_float(item):
                 try:
@@ -3810,14 +4011,6 @@ class HandlerClass:
             x_text = x_item.text().strip() if x_item and x_item.text() else ""
             z_text = z_item.text().strip() if z_item and z_item.text() else ""
 
-            arc_txt = arc_item.text().strip().lower() if arc_item and arc_item.text() else "auto"
-            if arc_txt.startswith("au"):
-                arc_side = "outer"
-            elif arc_txt.startswith("in"):
-                arc_side = "inner"
-            else:
-                arc_side = "auto"
-
             segments.append(
                 {
                     "mode": mode,
@@ -3828,29 +4021,44 @@ class HandlerClass:
                     "edge": edge,
                     "edge_size": _to_float(size_item) if size_item else 0.0,
                     "arc_side": arc_side,
+                    "arc_side_raw": arc_txt,
                 }
             )
 
         return segments
 
-    def _write_contour_row(
-        self,
-        row: int,
-        edge_text: str | None = None,
-        edge_size: float | None = None,
-        arc_side_text: str | None = None,
-    ):
+    def _write_contour_row(self, row: int, edge_text: str | None = None, edge_size: float | None = None, arc_text: str | None = None):
         """Schreibt Kante/Maß in die aktuelle Tabellenzeile und hält Typ/X/Z unberührt."""
         table = self.contour_segments
         if table is None or row < 0 or row >= table.rowCount():
             return
         item_cls = QtWidgets.QTableWidgetItem
         if edge_text is not None:
-            table.setItem(row, 3, item_cls(edge_text))
-        if edge_size is not None:
-            table.setItem(row, 4, item_cls(f"{edge_size:.3f}"))
-        if arc_side_text is not None:
-            table.setItem(row, 5, item_cls(arc_side_text))
+                    w_edge = table.cellWidget(row, 3)
+                    if w_edge is None or not hasattr(w_edge, 'findText'):
+                        # fallback: plain item text
+                        table.setItem(row, 3, QTableWidgetItem(str(edge_text)))
+                    else:
+                        idx = w_edge.findText(str(edge_text))
+                        if idx >= 0:
+                            w_edge.setCurrentIndex(idx)
+        
+                    # Radius size in Spalte 4
+                    if edge_size is not None:
+                        table.setItem(row, 4, QTableWidgetItem(f"{float(edge_size):.3f}"))
+        # Arc dropdown in Spalte 5 (wenn vorhanden)
+        try:
+            w = table.cellWidget(row, 5)
+            if w is not None and hasattr(w, "setEnabled"):
+                # nur aktiv bei Radius
+                edge_now = (edge_text if edge_text is not None else (table.item(row, 3).text() if table.item(row,3) else ""))
+                w.setEnabled(str(edge_now).lower().startswith("r"))
+                if arc_text is not None and hasattr(w, "findText"):
+                    idx = w.findText(arc_text, QtCore.Qt.MatchFixedString)
+                    if idx >= 0:
+                        w.setCurrentIndex(idx)
+        except Exception:
+            pass
 
     def _load_params_to_form(self, op: Operation):
         if op.op_type == OpType.PROGRAM_HEADER:
@@ -3925,16 +4133,6 @@ class HandlerClass:
                         return "Radius"
                     return "Keine"
 
-                def _arc_to_text(side: str | None) -> str:
-                    if not side:
-                        return "Auto"
-                    side = side.lower()
-                    if side.startswith("ou"):
-                        return "Außen"
-                    if side.startswith("in"):
-                        return "Innen"
-                    return "Auto"
-
                 for r, seg in enumerate(segs):
                     table.insertRow(r)
                     mode_txt = _mode_to_text(seg.get("mode"))
@@ -3944,7 +4142,6 @@ class HandlerClass:
                     z_val = "" if z_empty else f"{float(seg.get('z', 0.0)):.3f}"
                     edge_txt = _edge_to_text(seg.get("edge"))
                     size_val = f"{float(seg.get('edge_size', 0.0) or 0.0):.3f}"
-                    arc_txt = _arc_to_text(seg.get("arc_side"))
 
                     def _mk(text: str) -> QtWidgets.QTableWidgetItem:
                         it = QtWidgets.QTableWidgetItem(text)
@@ -3963,7 +4160,6 @@ class HandlerClass:
                     table.setItem(r, 2, _mk(z_val))
                     table.setItem(r, 3, _mk(edge_txt))
                     table.setItem(r, 4, _mk(size_val))
-                    table.setItem(r, 5, _mk(arc_txt))
 
                 table.blockSignals(False)
                 if table.rowCount() > 0:
@@ -4194,66 +4390,68 @@ class HandlerClass:
         # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
         self._ensure_core_widgets()
         self._force_attach_core_widgets()
+        # Schutz gegen doppelte Auslösung (UI kann Click-Events doppelt feuern)
+        if getattr(self, "_adding_operation", False):
+            return
+        now = time.monotonic()
+        last = getattr(self, "_last_add_operation_ts", 0.0)
+        if now - last < 0.8:
+            return
+        self._last_add_operation_ts = now
+        self._adding_operation = True
         try:
-            print("[LatheEasyStep] add operation triggered")
-        except Exception:
-            pass
-        op_type = self._current_op_type()
-        if op_type == OpType.PROGRAM_HEADER:
-            params = self._collect_program_header()
-            # nur einen Programmkopf zulassen -> ersetzen oder neu hinzufügen
-            for i, existing in enumerate(self.model.operations):
-                if existing.op_type == OpType.PROGRAM_HEADER:
-                    existing.params = params
-                    if self.list_ops:
-                        item = self.list_ops.item(i)
-                        if item:
-                            item.setText(self._describe_operation(existing, i + 1))
-                        self.list_ops.setCurrentRow(i)
-                    self._refresh_preview()
-                    return
-            # noch kein Programmkopf: vorne einfügen
-            op = Operation(op_type, params)
-            self.model.update_geometry(op)
-            self.model.operations.insert(0, op)
-            self._refresh_operation_list(select_index=0)
-            self._refresh_preview()
-        else:
-            params = self._collect_params(op_type)
-            if op_type == OpType.ABSPANEN:
-                contour_name = self._current_parting_contour_name()
-                contour_path = self._resolve_contour_path(contour_name)
-                if not contour_name or not contour_path:
-                    print("[LatheEasyStep] Abspanen benötigt eine vorhandene Kontur-Auswahl")
-                    self._update_parting_ready_state()
-                    return
-                params["contour_name"] = contour_name
-                params["source_path"] = contour_path
-            op = Operation(op_type, params)
-            self.model.update_geometry(op)
-            self.model.add_operation(op)
             try:
-                debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
-                print(f"[LatheEasyStep][debug] operations now: {debug_ops}")
+                print("[LatheEasyStep] add operation triggered")
             except Exception:
                 pass
-
-            self._refresh_operation_list(select_index=len(self.model.operations) - 1)
-            # Fallback: direkt Item hinzufügen, falls _refresh_operation_list nichts tut
-            if self.list_ops:
+            op_type = self._current_op_type()
+            if op_type == OpType.PROGRAM_HEADER:
+                params = self._collect_program_header()
+                # nur einen Programmkopf zulassen -> ersetzen oder neu hinzufügen
+                for i, existing in enumerate(self.model.operations):
+                    if existing.op_type == OpType.PROGRAM_HEADER:
+                        existing.params = params
+                        if self.list_ops:
+                            item = self.list_ops.item(i)
+                            if item:
+                                item.setText(self._describe_operation(existing, i + 1))
+                            self.list_ops.setCurrentRow(i)
+                        self._refresh_preview()
+                        return
+                # noch kein Programmkopf: vorne einfügen
+                op = Operation(op_type, params)
+                self.model.update_geometry(op)
+                self.model.operations.insert(0, op)
+                self._refresh_operation_list(select_index=0)
+                self._refresh_preview()
+            else:
+                params = self._collect_params(op_type)
+                if op_type == OpType.ABSPANEN:
+                    contour_name = self._current_parting_contour_name()
+                    contour_path = self._resolve_contour_path(contour_name)
+                    if not contour_name or not contour_path:
+                        print("[LatheEasyStep] Abspanen benötigt eine vorhandene Kontur-Auswahl")
+                        self._update_parting_ready_state()
+                        return
+                    params["contour_name"] = contour_name
+                    params["source_path"] = contour_path
+                op = Operation(op_type, params)
+                self.model.update_geometry(op)
+                self.model.add_operation(op)
                 try:
-                    idx = self.list_ops.count() - 1
-                    if idx < 0:
-                        idx = 0
-                    self.list_ops.addItem(self._describe_operation(op, len(self.model.operations)))
-                    self.list_ops.setCurrentRow(len(self.model.operations) - 1)
+                    debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
+                    print(f"[LatheEasyStep][debug] operations now: {debug_ops}")
                 except Exception:
                     pass
-            self._refresh_preview()
-            # Abspan-Auswahl sofort auffrischen, damit neue Konturen unmittelbar
-            # auswählbar sind.
-            self._update_parting_contour_choices()
-            self._update_parting_ready_state()
+
+                self._refresh_operation_list(select_index=len(self.model.operations) - 1)
+                self._refresh_preview()
+                # Abspan-Auswahl sofort auffrischen, damit neue Konturen unmittelbar
+                # auswählbar sind.
+                self._update_parting_contour_choices()
+                self._update_parting_ready_state()
+        finally:
+            self._adding_operation = False
 
     def _handle_delete_operation(self):
         if self.list_ops is None:
@@ -4275,11 +4473,16 @@ class HandlerClass:
         return -1
 
     def _operation_to_step_data(self, op: Operation) -> Dict[str, object]:
-        return {
+        data = {
             "op_type": op.op_type,
             "params": op.params,
-            "path": [[float(x), float(z)] for x, z in op.path],
         }
+        # Support both legacy point paths and new primitive paths
+        if op.path and isinstance(op.path[0], dict):
+            data["primitives"] = op.path
+        else:
+            data["path"] = [[float(x), float(z)] for x, z in (op.path or [])]
+        return data
 
     def _step_data_to_operation(self, data: Dict[str, object]) -> Operation | None:
         if not isinstance(data, dict):
@@ -4288,7 +4491,12 @@ class HandlerClass:
         params_raw = data.get("params") or {}
         if not isinstance(params_raw, dict):
             params_raw = {}
-        params = {str(key): value for key, value in params_raw.items()}
+        params = {str(key): value for key, value in params_raw.items()}        # New format: prefer primitives (arc/line) over sampled points
+        if isinstance(data.get("primitives"), list) and data.get("primitives"):
+            prim = data.get("primitives") or []
+            return Operation(op_type, params, list(prim))
+
+        # Legacy format: point list
         path_data = data.get("path") or []
         path: List[Tuple[float, float]] = []
         for entry in path_data:
@@ -4302,6 +4510,7 @@ class HandlerClass:
         return Operation(op_type, params, path)
 
     def _insert_loaded_operation(self, op: Operation):
+        self.model.update_geometry(op)
         self.model.add_operation(op)
         idx = len(self.model.operations) - 1
         self._refresh_operation_list(select_index=idx)
@@ -4336,6 +4545,8 @@ class HandlerClass:
 
         data = self._operation_to_step_data(self.model.operations[idx])
         try:
+            # Ensure current UI changes are captured into the selected operation before saving
+            self._update_selected_operation()
             with open(file_path, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, indent=2)
         except Exception as exc:
@@ -4396,9 +4607,9 @@ class HandlerClass:
         table = self.contour_segments
         if table is None:
             return
-        # immer sicherstellen, dass 6 Spalten und Header vorhanden sind
+        # immer sicherstellen, dass 5 Spalten und Header vorhanden sind
         table.setColumnCount(6)
-        table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß", "Arc"])
+        table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß", "Bogen"])
         try:
             table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
@@ -4479,7 +4690,18 @@ class HandlerClass:
         )
         table.setItem(row, 3, _mk_item(edge_text))
         table.setItem(row, 4, _mk_item(f"{edge_size:.3f}"))
-        table.setItem(row, 5, _mk_item(self._contour_arc_template_text))
+
+        # Bogen-Seite (nur relevant bei Radius) – Dropdown pro Zeile
+        arc_text = getattr(self, "_contour_arc_template_text", "Auto")
+        arc_combo = QtWidgets.QComboBox()
+        arc_combo.addItems(["Auto", "Außen", "Innen"])
+        idx = arc_combo.findText(arc_text, QtCore.Qt.MatchFixedString)
+        arc_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        # nur aktiv wenn Radius
+        arc_combo.setEnabled(edge_text.lower().startswith("r"))
+        arc_combo.currentIndexChanged.connect(self._handle_contour_table_change)
+        table.setCellWidget(row, 5, arc_combo)
+
 
         table.setCurrentCell(row, 0)
         try:
@@ -4529,6 +4751,13 @@ class HandlerClass:
         for col in range(table.columnCount()):
             item = table.takeItem(row + 1, col)
             table.setItem(row - 1, col, item)
+            try:
+                w = table.cellWidget(row + 1, col)
+                if w is not None:
+                    table.removeCellWidget(row + 1, col)
+                    table.setCellWidget(row - 1, col, w)
+            except Exception:
+                pass
         table.removeRow(row + 1)
         table.setCurrentCell(row - 1, 0)
         self._update_selected_operation()
@@ -4545,6 +4774,13 @@ class HandlerClass:
         for col in range(table.columnCount()):
             item = table.takeItem(row, col)
             table.setItem(row + 2, col, item)
+            try:
+                w = table.cellWidget(row, col)
+                if w is not None:
+                    table.removeCellWidget(row, col)
+                    table.setCellWidget(row + 2, col, w)
+            except Exception:
+                pass
         table.removeRow(row)
         table.setCurrentCell(row + 1, 0)
         self._update_selected_operation()
@@ -4558,15 +4794,14 @@ class HandlerClass:
         self._sync_contour_edge_controls()
 
     def _handle_contour_row_select(self, *args, **kwargs):
-        # merken, ob der Benutzer die Tabelle aktiv fokussiert hat
         table = self.contour_segments
-        self._contour_row_user_selected = bool(table and table.hasFocus())
+        self._contour_row_user_selected = bool(table and table.currentRow() >= 0)
         self._sync_contour_edge_controls()
 
     def _handle_contour_edge_change(self, *args, **kwargs):
         """
         Kante/Kantenmaß:
-        - wenn die Tabelle den Fokus hat und eine Zeile ausgewählt ist, wird diese Zeile geändert
+        - wenn eine Zeile ausgewählt ist, wird diese Zeile geändert
         - ansonsten wird nur die Vorlage für das nächste Segment aktualisiert
         """
         edge_text = self.contour_edge_type.currentText() if self.contour_edge_type else ""
@@ -4577,7 +4812,7 @@ class HandlerClass:
         self._contour_edge_template_size = edge_size
 
         table = self.contour_segments
-        if table is not None and table.currentRow() >= 0 and self._contour_row_user_selected:
+        if table is not None and table.currentRow() >= 0:
             # Benutzer bearbeitet aktiv eine Tabellenzeile
             self._write_contour_row(table.currentRow(), edge_text=edge_text, edge_size=edge_size)
             self._update_selected_operation()
@@ -4586,38 +4821,39 @@ class HandlerClass:
         # Anzeige/Eingaben nachziehen (zeigt entweder Zeile oder Vorlage)
         self._sync_contour_edge_controls()
 
-    def _handle_contour_arc_side_change(self, *args, **kwargs):
-        """Sichert Arc-Auswahl als Vorlage und trägt sie ggf. in die aktive Zeile ein."""
-        arc_text = self.contour_arc_side.currentText() if self.contour_arc_side else ""
-        self._contour_arc_template_text = arc_text
-
-        table = self.contour_segments
-        if table is not None and table.currentRow() >= 0 and self._contour_row_user_selected:
-            self._write_contour_row(table.currentRow(), arc_side_text=arc_text)
-            self._update_selected_operation()
-            self._update_contour_preview_temp()
-
-        self._sync_contour_edge_controls()
-
     def _update_contour_preview_temp(self):
-        """Zeigt eine Vorschau der Kontur auch ohne ausgewählte Operation."""
-        if self.preview is None:
-            return
-        # Nur auf dem Kontur-Tab sinnvoll
-        params: Dict[str, object] = {
-            "start_x": self.contour_start_x.value() if self.contour_start_x else 0.0,
-            "start_z": self.contour_start_z.value() if self.contour_start_z else 0.0,
-            "coord_mode": self.contour_coord_mode.currentIndex() if getattr(self, "contour_coord_mode", None) else 0,
-            "segments": self._collect_contour_segments(),
-        }
-        if self.contour_name:
-            params["name"] = self.contour_name.text().strip()
-        path = build_contour_path(params)
+
         try:
-            print(f"[LatheEasyStep] contour preview path points: {path}")
-        except Exception:
-            pass
-        self._set_preview_paths([path], None)
+            segs = self._collect_contour_segments()
+            if not segs:
+                self._set_preview_paths([])
+                return
+
+            params = {
+                "start_x": getattr(self, "contour_start_x", None).value()
+                if getattr(self, "contour_start_x", None)
+                else 0.0,
+                "start_z": getattr(self, "contour_start_z", None).value()
+                if getattr(self, "contour_start_z", None)
+                else 0.0,
+                "coord_mode": getattr(self, "contour_coord_mode", None).currentIndex()
+                if getattr(self, "contour_coord_mode", None)
+                else 0,
+                "segments": segs,
+            }
+            errs = validate_contour_segments_for_profile(params)
+            if errs:
+                print("[LatheEasyStep][contour][INVALID]")
+                for err in errs:
+                    print("  -", err)
+                self._set_preview_paths([])
+                return
+
+            primitives = build_contour_path(params)
+            self._set_preview_paths([primitives])
+        except Exception as e:
+            print("[LatheEasyStep] _update_contour_preview_temp ERROR:", e)
+            self._set_preview_paths([])
 
     def _sync_contour_edge_controls(self):
         """Synchronisiert Kante/Maß-Eingabe mit der aktuellen Tabellenzeile und blendet Felder."""
@@ -4627,12 +4863,15 @@ class HandlerClass:
         row = table.currentRow()
         edge_txt = self._contour_edge_template_text
         size_val = self._contour_edge_template_size
-        arc_txt = self._contour_arc_template_text
 
-        # Nur wenn der Benutzer aktiv eine Zeile ausgewählt/bearbeitet, zeigen wir deren Werte
-        if row >= 0 and self._contour_row_user_selected:
+        # Nur wenn der Benutzer aktiv eine Zeile ausgewählt hat, zeigen wir deren Werte
+        if row >= 0:
             edge_item = table.item(row, 3)
             size_item = table.item(row, 4)
+            # Edge type can be a QComboBox cell widget (preferred) or a text item
+            edge_widget = table.cellWidget(row, 3)
+            arc_side_item = table.item(row, 5)
+            arc_side_widget = table.cellWidget(row, 5)
             if edge_item and edge_item.text():
                 edge_txt = edge_item.text().strip()
             if size_item and size_item.text():
@@ -4640,9 +4879,6 @@ class HandlerClass:
                     size_val = float(size_item.text())
                 except Exception:
                     size_val = 0.0
-            arc_item = table.item(row, 5)
-            if arc_item and arc_item.text():
-                arc_txt = arc_item.text().strip()
 
         # Edge combo
         if self.contour_edge_type:
@@ -4665,19 +4901,6 @@ class HandlerClass:
             self.contour_edge_size.setEnabled(enable_size)
             self.contour_edge_size.setValue(size_val)
             self.contour_edge_size.blockSignals(False)
-        enable_arc = True
-        if self.label_contour_arc_side:
-            self.label_contour_arc_side.setVisible(True)
-            self.label_contour_arc_side.setEnabled(enable_arc)
-        if self.contour_arc_side:
-            idx = self.contour_arc_side.findText(arc_txt, QtCore.Qt.MatchFixedString)
-            if idx < 0:
-                idx = 0
-            self.contour_arc_side.blockSignals(True)
-            self.contour_arc_side.setVisible(True)
-            self.contour_arc_side.setEnabled(enable_arc)
-            self.contour_arc_side.setCurrentIndex(idx)
-            self.contour_arc_side.blockSignals(False)
 
     def _handle_new_program(self):
         self.model.operations.clear()
