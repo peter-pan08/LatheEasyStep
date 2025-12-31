@@ -660,6 +660,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
         pts = []
         last = None
         for pr in prims or []:
+            if isinstance(pr, (list, tuple)) and len(pr) >= 2:
+                try:
+                    p = (float(pr[0]), float(pr[1]))
+                except Exception:
+                    continue
+                pts.append(p)
+                last = p
+                continue
             if not isinstance(pr, dict):
                 continue
             typ = (pr.get("type") or "").lower()
@@ -694,68 +702,31 @@ class LathePreviewWidget(QtWidgets.QWidget):
         #   - list of list-of-primitives for multiple paths
         self.active_index = active_index
 
-        def sample_arc(p1, p2, c, ccw, steps=48):
-            x1, z1 = p1
-            x2, z2 = p2
-            xc, zc = c
-            r1 = math.hypot(x1 - xc, z1 - zc)
-            r2 = math.hypot(x2 - xc, z2 - zc)
-            if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
-                return [p1, p2]
-            a1 = math.atan2(z1 - zc, x1 - xc)
-            a2 = math.atan2(z2 - zc, x2 - xc)
-            # unwrap according to direction
-            if ccw:
-                if a2 <= a1:
-                    a2 += 2 * math.pi
-            else:
-                if a2 >= a1:
-                    a2 -= 2 * math.pi
-            pts = []
-            for k in range(steps + 1):
-                t = k / steps
-                a = a1 + (a2 - a1) * t
-                pts.append((xc + r1 * math.cos(a), zc + r1 * math.sin(a)))
-            return pts
-
-        def primitives_to_points(prims):
-            pts = []
-            last = None
-            for pr in prims:
-                if not isinstance(pr, dict):
-                    continue
-                typ = (pr.get("type") or "").lower()
-                if typ == "line":
-                    p1 = tuple(pr.get("p1", (0.0, 0.0)))
-                    p2 = tuple(pr.get("p2", (0.0, 0.0)))
-                    if last is None:
-                        pts.append(p1)
-                    elif math.hypot(p1[0] - last[0], p1[1] - last[1]) > 1e-6:
-                        pts.append(p1)
-                    pts.append(p2)
-                    last = p2
-                elif typ == "arc":
-                    p1 = tuple(pr.get("p1", (0.0, 0.0)))
-                    p2 = tuple(pr.get("p2", (0.0, 0.0)))
-                    c = tuple(pr.get("c", (0.0, 0.0)))
-                    ccw = bool(pr.get("ccw", True))
-                    arc_pts = sample_arc(p1, p2, c, ccw)
-                    if last is None:
-                        pts.extend(arc_pts)
-                    else:
-                        if math.hypot(arc_pts[0][0] - last[0], arc_pts[0][1] - last[1]) > 1e-6:
-                            pts.append(arc_pts[0])
-                        pts.extend(arc_pts[1:])
-                    last = arc_pts[-1]
-            return pts
-
+        # IMPORTANT:
+        # We keep "primitive" paths (list of dicts) as-is so the paintEvent
+        # can style them by role (e.g. stock / retract) and still draw them.
         norm_paths = []
-        if isinstance(paths, list) and paths and isinstance(paths[0], dict) and "type" in paths[0]:
-            norm_paths = [self.primitives_to_points(paths)]
-        elif isinstance(paths, list) and paths and isinstance(paths[0], list) and paths[0] and isinstance(paths[0][0], dict) and "type" in paths[0][0]:
-            norm_paths = [self.primitives_to_points(p) for p in paths]
-        else:
-            norm_paths = paths or []
+        for entry in paths or []:
+            if isinstance(entry, dict) and "type" in entry:
+                # single primitive dict
+                norm_paths.append([entry])
+                continue
+
+            if isinstance(entry, (list, tuple)):
+                # list of primitives (dict) or list of points
+                if entry and isinstance(entry[0], dict) and "type" in entry[0]:
+                    norm_paths.append(list(entry))
+                    continue
+
+                pts = []
+                for pt in entry:
+                    if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                        try:
+                            pts.append((float(pt[0]), float(pt[1])))
+                        except Exception:
+                            continue
+                if pts:
+                    norm_paths.append(pts)
 
         self.paths = norm_paths
         self.update()
@@ -797,21 +768,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 any_data = True
                 first = path[0]
                 if isinstance(first, dict):
-                    for pr in path:
-                        t = pr.get("type")
-                        if t == "line":
-                            _upd(float(pr.get("x0", 0.0)), float(pr.get("z0", 0.0)))
-                            _upd(float(pr.get("x1", 0.0)), float(pr.get("z1", 0.0)))
-                        elif t == "arc":
-                            cx = float(pr.get("cx", 0.0))
-                            cz = float(pr.get("cz", 0.0))
-                            rx = abs(float(pr.get("rx", 0.0)))
-                            rz = abs(float(pr.get("rz", 0.0)))
-                            # bounds by full ellipse (safe, may be larger than actual arc sweep)
-                            _upd(cx - rx, cz - rz)
-                            _upd(cx + rx, cz + rz)
-                            _upd(float(pr.get("x0", 0.0)), float(pr.get("z0", 0.0)))
-                            _upd(float(pr.get("x1", 0.0)), float(pr.get("z1", 0.0)))
+                    # primitives (line/arc with p1/p2/c) -> sample to points for bounds
+                    try:
+                        pts = self.primitives_to_points(path)
+                    except Exception:
+                        pts = []
+                    for (xv, zv) in pts:
+                        _upd(float(xv), float(zv))
                 else:
                     for (xv, zv) in path:
                         _upd(float(xv), float(zv))
@@ -920,10 +883,15 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 # role based styling (e.g. raw stock reference)
                 role = None
                 if isinstance(path, list) and path and isinstance(path[0], dict):
-                    role = path[0].get("role")
+                    role = (path[0].get("role") or next((d.get("role") for d in path if isinstance(d, dict) and d.get("role")), None))
 
                 if role == "stock":
                     color = QtGui.QColor("gray")
+                    width = 1
+                    style = QtCore.Qt.DashLine
+                elif role == "retract":
+                    # retract planes: visually distinct and clearly *not* a contour
+                    color = QtGui.QColor(0, 180, 180)
                     width = 1
                     style = QtCore.Qt.DashLine
                 else:
@@ -935,85 +903,94 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 pen.setStyle(style)
                 painter.setPen(pen)
 
-                # Primitive mode
+                # Primitive mode (dict primitives from build_*_outline helpers)
                 if isinstance(path[0], dict):
-                    qp = QtGui.QPainterPath()
-
-                    def _pt(xv: float, zv: float) -> QtCore.QPointF:
-                        return to_screen(float(xv), float(zv))
-
-                    # move to first primitive start
-                    first = path[0]
-                    sx, sz = first.get("x0", 0.0), first.get("z0", 0.0)
-                    qp.moveTo(_pt(sx, sz))
-
-                    for pr in path:
-                        t = pr.get("type")
-                        if t == "line":
-                            qp.lineTo(_pt(pr.get("x1", 0.0), pr.get("z1", 0.0)))
-                        elif t == "arc":
-                            # Elliptical arc in diameter space (rx,rz)
-                            x0 = float(pr.get("x0", 0.0)); z0 = float(pr.get("z0", 0.0))
-                            x1 = float(pr.get("x1", 0.0)); z1 = float(pr.get("z1", 0.0))
-                            cx = float(pr.get("cx", 0.0)); cz = float(pr.get("cz", 0.0))
-                            rx = abs(float(pr.get("rx", 0.0))); rz = abs(float(pr.get("rz", 0.0)))
-                            if rx <= 1e-9 or rz <= 1e-9:
-                                qp.lineTo(_pt(x1, z1))
+                    # NOTE: do NOT connect independent primitives with a single polyline.
+                    # For retract planes this would create confusing diagonal "links" between separate helper lines.
+                    if role in ("retract", "stock"):
+                        for prim in path:
+                            if not isinstance(prim, dict):
                                 continue
-
-                            p0 = _pt(x0, z0)
-                            p1 = _pt(x1, z1)
-                            pc = _pt(cx, cz)
-
-                            # Ensure we are at the start point (can happen after lines)
-                            qp.lineTo(p0)
-
-                            rx_s = rx * scale
-                            rz_s = rz * scale
-                            rect = QtCore.QRectF(pc.x() - rx_s, pc.y() - rz_s, 2 * rx_s, 2 * rz_s)
-
-                            # Parameter angles in screen coordinate system
-                            t0 = math.atan2((p0.y() - pc.y()) / rz_s, (p0.x() - pc.x()) / rx_s)
-                            t1 = math.atan2((p1.y() - pc.y()) / rz_s, (p1.x() - pc.x()) / rx_s)
-
-                            ccw = bool(pr.get("ccw", True))
-
-                            # Unwrap for requested direction in machine space (z up),
-                            # mapped through our screen transform (z -> -y).
-                            if ccw:
-                                while t1 > t0:
-                                    t1 -= 2 * math.pi
-                            else:
-                                while t1 < t0:
-                                    t1 += 2 * math.pi
-
-                            delta = t1 - t0
-
-                            # Qt angles: 0 at 3 o'clock, positive CCW.
-                            # Our parameterization increases clockwise (because y is down),
-                            # therefore Qt angle is -t.
-                            start_deg = -math.degrees(t0)
-                            sweep_deg = -math.degrees(delta)
-
-                            qp.arcTo(rect, start_deg, sweep_deg)
-                        else:
-                            # Unknown primitive -> ignore
-                            pass
-
-                    painter.drawPath(qp)
-                    continue
-
-                # Point-list fallback (legacy)
-                if len(path) < 2:
-                    # Einzelpunkt als kleines Kreuz darstellen
-                    pt = to_screen(path[0][0], path[0][1])
-                    painter.setPen(QtGui.QPen(QtGui.QColor("yellow"), 2))
-                    painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
-                    painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
-                    continue
-
+                            ptype = prim.get("type")
+                            if ptype == "line":
+                                p1 = prim.get("p1")
+                                p2 = prim.get("p2")
+                                if not p1 or not p2:
+                                    continue
+                                s1 = to_screen(float(p1[0]), float(p1[1]))
+                                s2 = to_screen(float(p2[0]), float(p2[1]))
+                                painter.drawLine(QtCore.QLineF(s1, s2))
+                            elif ptype == "arc":
+                                p1 = prim.get("p1")
+                                p2 = prim.get("p2")
+                                c = prim.get("c")
+                                if not p1 or not p2 or not c:
+                                    continue
+                                ccw = bool(prim.get("ccw", True))
+                                try:
+                                    arc_pts = self._sample_arc((float(p1[0]), float(p1[1])), (float(p2[0]), float(p2[1])), (float(c[0]), float(c[1])), ccw)
+                                except Exception:
+                                    arc_pts = []
+                                if len(arc_pts) >= 2:
+                                    points = [to_screen(x, z) for x, z in arc_pts]
+                                    painter.drawPolyline(QtGui.QPolygonF(points))
+                        continue
+                    else:
+                        try:
+                            pts = self.primitives_to_points(path)
+                        except Exception:
+                            pts = []
+                        if len(pts) >= 2:
+                            points = [to_screen(x, z) for x, z in pts]
+                            painter.drawPolyline(QtGui.QPolygonF(points))
+                        elif len(pts) == 1:
+                            pt = to_screen(pts[0][0], pts[0][1])
+                            painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
+                            painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
+                        continue
                 points = [to_screen(x, z) for x, z in path]
                 painter.drawPolyline(QtGui.QPolygonF(points))
+
+            # --- Legend (top-left inside margin) ---
+            try:
+                painter.save()
+                legend_items = [
+                    ("Kontur", QtGui.QPen(QtGui.QColor("lime"), 2, QtCore.Qt.SolidLine)),
+                    ("Aktiv", QtGui.QPen(QtGui.QColor("yellow"), 2, QtCore.Qt.SolidLine)),
+                    ("Rohteil", QtGui.QPen(QtGui.QColor(120, 120, 120), 1, QtCore.Qt.DashLine)),
+                    ("Rückzug", QtGui.QPen(QtGui.QColor(0, 180, 180), 1, QtCore.Qt.DashLine)),
+                ]
+
+                pad = 6
+                line_len = 26
+                row_h = 16
+                x0 = margin
+                y0 = margin - 2
+
+                # background box
+                box_w = 120
+                box_h = pad * 2 + row_h * len(legend_items)
+                bg = QtGui.QColor(0, 0, 0, 160)
+                painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
+                painter.setBrush(QtGui.QBrush(bg))
+                painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
+
+                painter.setFont(QtGui.QFont("Sans", 8))
+                for i, (label, pen) in enumerate(legend_items):
+                    y = y0 + pad + i * row_h + 10
+                    # sample line
+                    painter.setPen(pen)
+                    painter.drawLine(QtCore.QLineF(x0 + pad, y - 3, x0 + pad + line_len, y - 3))
+                    # text
+                    painter.setPen(QtGui.QPen(QtGui.QColor(200, 200, 200), 1))
+                    painter.drawText(QtCore.QPointF(x0 + pad + line_len + 8, y), label)
+            except Exception:
+                pass
+            finally:
+                try:
+                    painter.restore()
+                except Exception:
+                    pass
         finally:
             painter.end()
 
@@ -1101,9 +1078,20 @@ def build_stock_outline(program: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     shape = str(program.get("shape", "")).lower().strip()
     # common fields from program header
-    xa = float(program.get("xa", 0.0) or 0.0)  # outer diameter
-    xi = float(program.get("xi", 0.0) or 0.0)  # inner diameter (for tube)
-    za = float(program.get("za", 0.0) or 0.0)  # front face Z
+    def _sf(v: Any, default: float = 0.0) -> float:
+        try:
+            if v is None:
+                return float(default)
+            if isinstance(v, str):
+                vv = v.strip().replace(",", ".")
+                return float(vv) if vv else float(default)
+            return float(v)
+        except Exception:
+            return float(default)
+
+    xa = _sf(program.get("xa", 0.0), 0.0)  # outer diameter
+    xi = _sf(program.get("xi", 0.0), 0.0)  # inner diameter (for tube)
+    za = _sf(program.get("za", 0.0), 0.0)  # front face Z
     zi = float(program.get("zi", 0.0) or 0.0)  # back face Z (often negative length)
 
     if xa <= 0.0:
@@ -1130,6 +1118,108 @@ def build_stock_outline(program: Dict[str, Any]) -> List[Dict[str, Any]]:
         # (front/back inner face lines are usually not needed for reference)
 
     return primitives
+
+
+def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return retract plane lines (XRA/XRI/ZRA/ZRI) as preview primitives.
+
+    Supports absolute/incremental flags:
+      - xra_absolute / xri_absolute / zra_absolute / zri_absolute
+
+    Interpretation (matching program header semantics):
+      - XRA (outer retract): if incremental -> XA + XRA, else -> XRA
+      - XRI (inner retract): if incremental -> XI - XRI, else -> XRI
+      - ZRA (front retract): if incremental -> ZA + ZRA, else -> ZRA
+      - ZRI (back retract):  if incremental -> ZI - ZRI, else -> ZRI
+
+    Output format:
+      {"role":"retract","type":"line","p1":(x,z),"p2":(x,z)}
+    """
+    def _sf(v: Any, default: float = 0.0) -> float:
+        try:
+            if v is None:
+                return float(default)
+            if isinstance(v, str):
+                vv = v.strip().replace(",", ".")
+                return float(vv) if vv else float(default)
+            return float(v)
+        except Exception:
+            return float(default)
+
+    xa = _sf(program.get("xa", 0.0), 0.0)
+    xi = _sf(program.get("xi", 0.0), 0.0)
+    za = _sf(program.get("za", 0.0), 0.0)
+    zi = _sf(program.get("zi", 0.0), 0.0)
+
+    # drawing span for the helper lines
+    z_front = max(za, zi)
+    z_back = min(za, zi)
+
+    prim: List[Dict[str, Any]] = []
+
+    def add_line(p1: tuple[float, float], p2: tuple[float, float]) -> None:
+        prim.append({"role": "retract", "type": "line", "p1": p1, "p2": p2})
+
+    def vline(x: float) -> None:
+        add_line((x, z_front), (x, z_back))
+
+    def hline(z: float) -> None:
+        # use XA as max extents (fallback: 0..10mm)
+        x_max = xa if xa > 0.0 else 10.0
+        add_line((0.0, z), (x_max, z))
+
+    def _is_true(key: str) -> bool:
+        try:
+            return bool(program.get(key, False))
+        except Exception:
+            return False
+
+    # XRA (outer)
+    xra = program.get("xra", None)
+    if xra is not None:
+        try:
+            xra_f = _sf(xra)
+            if abs(xra_f) > 1e-12:
+                x = xra_f if _is_true("xra_absolute") else (xa + xra_f)
+                vline(x)
+        except Exception:
+            pass
+
+    # XRI (inner) - only meaningful if XI > 0
+    xri = program.get("xri", None)
+    if xri is not None and xi > 0.0:
+        try:
+            xri_f = _sf(xri)
+            if abs(xri_f) > 1e-12:
+                x = xri_f if _is_true("xri_absolute") else (xi - xri_f)
+                vline(x)
+        except Exception:
+            pass
+
+    # ZRA (front)
+    zra = program.get("zra", None)
+    if zra is not None:
+        try:
+            zra_f = _sf(zra)
+            if abs(zra_f) > 1e-12:
+                z = zra_f if _is_true("zra_absolute") else (za + zra_f)
+                hline(z)
+        except Exception:
+            pass
+
+    # ZRI (back)
+    zri = program.get("zri", None)
+    if zri is not None:
+        try:
+            zri_f = _sf(zri)
+            if abs(zri_f) > 1e-12:
+                # If absolute flag is set, interpret value as absolute Z; otherwise incremental from ZI.
+                z = zri_f if _is_true("zri_absolute") else (zi - zri_f)
+                hline(z)
+        except Exception:
+            pass
+
+    return prim
 
 
 def build_turn_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
@@ -1289,17 +1379,77 @@ def build_contour_path(params) -> list:
     pts = [(start_x, start_z)]
     last_x = start_x
     last_z = start_z
+
+    coord_mode = 0
+    if isinstance(params, dict):
+        try:
+            coord_mode = int(params.get("coord_mode", 0) or 0)
+        except Exception:
+            coord_mode = 0
+
+    incremental = coord_mode == 1  # 0=absolut, 1=inkremental
+
     for s in segments:
         if not isinstance(s, dict):
             continue
-        x = last_x if s.get("x_empty") else float(s.get("x", last_x) or last_x)
-        z = last_z if s.get("z_empty") else float(s.get("z", last_z) or last_z)
+
+        # Coordinate mode handling:
+        # - global mode from header (coord_mode) still works
+        # - but individual rows may override ABS/INK per axis (as ShopTurn allows mixing)
+        #
+        # Supported keys in the segment dict (any of them):
+        #   x_abs / z_abs (bool)         -> True=ABS, False=INK
+        #   x_incremental / z_incremental (bool) -> True=INK, False=ABS
+        #   x_mode / z_mode: "abs"|"ink"
+        def _axis_is_abs(axis: str) -> Optional[bool]:
+            # explicit boolean flags first
+            k_abs = f"{axis}_abs"
+            if k_abs in s:
+                try:
+                    return bool(s.get(k_abs))
+                except Exception:
+                    pass
+            k_inc = f"{axis}_incremental"
+            if k_inc in s:
+                try:
+                    return not bool(s.get(k_inc))
+                except Exception:
+                    pass
+            k_mode = f"{axis}_mode"
+            if k_mode in s:
+                v = str(s.get(k_mode) or "").strip().lower()
+                if v in ("abs", "absolute"):
+                    return True
+                if v in ("ink", "inc", "incremental"):
+                    return False
+            return None
+
+        x_is_abs = _axis_is_abs("x")
+        z_is_abs = _axis_is_abs("z")
+
+        # fall back to global mode if axis override not present
+        if x_is_abs is None:
+            x_is_abs = not incremental
+        if z_is_abs is None:
+            z_is_abs = not incremental
+
+        if s.get("x_empty"):
+            x = last_x
+        else:
+            xv = float(s.get("x", 0.0) or 0.0) if not x_is_abs else float(s.get("x", last_x) or last_x)
+            x = xv if x_is_abs else (last_x + xv)
+
+        if s.get("z_empty"):
+            z = last_z
+        else:
+            zv = float(s.get("z", 0.0) or 0.0) if not z_is_abs else float(s.get("z", last_z) or last_z)
+            z = zv if z_is_abs else (last_z + zv)
+
         pts.append((x, z))
         last_x, last_z = x, z
 
     if len(pts) < 2:
         return []
-
     def _v(a, b):
         return (b[0] - a[0], b[1] - a[1])
 
@@ -2702,6 +2852,20 @@ class HandlerClass:
         widget = getattr(self.w, name, None)
         if widget is not None:
             return widget
+
+
+        # 1b) Prefer widgets inside our panel's root (works even if hidden)
+        try:
+            root = getattr(self, "root_widget", None) or getattr(self, "_find_root_widget", lambda: None)()
+        except Exception:
+            root = None
+        if root is not None:
+            try:
+                w_in_root = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
+            except Exception:
+                w_in_root = None
+            if w_in_root is not None:
+                return w_in_root
 
         app = QtWidgets.QApplication.instance()
 
@@ -4537,7 +4701,7 @@ class HandlerClass:
                     w_edge = table.cellWidget(row, 3)
                     if w_edge is None or not hasattr(w_edge, 'findText'):
                         # fallback: plain item text
-                        table.setItem(row, 3, QTableWidgetItem(str(edge_text)))
+                        table.setItem(row, 3, item_cls(str(edge_text)))
                     else:
                         idx = w_edge.findText(str(edge_text))
                         if idx >= 0:
@@ -4545,7 +4709,7 @@ class HandlerClass:
         
                     # Radius size in Spalte 4
                     if edge_size is not None:
-                        table.setItem(row, 4, QTableWidgetItem(f"{float(edge_size):.3f}"))
+                        table.setItem(row, 4, item_cls(f"{float(edge_size):.3f}"))
         # Arc dropdown in Spalte 5 (wenn vorhanden)
         try:
             w = table.cellWidget(row, 5)
@@ -4724,6 +4888,29 @@ class HandlerClass:
         _set_value(self.program_za, params.get("za"))
         _set_value(self.program_zi, params.get("zi"))
         _set_value(self.program_zb, params.get("zb"))
+        _set_value(self.program_xra, params.get("xra"))
+        _set_value(self.program_xri, params.get("xri"))
+        _set_value(self.program_zra, params.get("zra"))
+        _set_value(self.program_zri, params.get("zri"))
+
+        # Retract absolute/incremental flags
+        if self.program_xra_absolute is not None:
+            self.program_xra_absolute.blockSignals(True)
+            self.program_xra_absolute.setChecked(bool(params.get("xra_absolute")))
+            self.program_xra_absolute.blockSignals(False)
+        if self.program_xri_absolute is not None:
+            self.program_xri_absolute.blockSignals(True)
+            self.program_xri_absolute.setChecked(bool(params.get("xri_absolute")))
+            self.program_xri_absolute.blockSignals(False)
+        if self.program_zra_absolute is not None:
+            self.program_zra_absolute.blockSignals(True)
+            self.program_zra_absolute.setChecked(bool(params.get("zra_absolute")))
+            self.program_zra_absolute.blockSignals(False)
+        if self.program_zri_absolute is not None:
+            self.program_zri_absolute.blockSignals(True)
+            self.program_zri_absolute.setChecked(bool(params.get("zri_absolute")))
+            self.program_zri_absolute.blockSignals(False)
+
         _set_value(self.program_w, params.get("w"))
         _set_value(self.program_xt, params.get("xt"))
         _set_value(self.program_zt, params.get("zt"))
@@ -4784,18 +4971,25 @@ class HandlerClass:
         else:
             active = -1
 
-        # Raw stock outline as thin reference (only if program header contains stock data).
+        # Raw stock outline + retract planes as thin references (program header only).
         prog = self._collect_program_header() or {}
-        stock_primitives = build_stock_outline(prog)
         try:
-            if stock_primitives and self.preview is not None and hasattr(self.preview, "primitives_to_points"):
-                stock_path = self.preview.primitives_to_points(stock_primitives)
-                if stock_path:
-                    paths.insert(0, stock_path)
-                    if active is not None and active >= 0:
-                        active += 1
+            inserts = 0
+            stock_primitives = build_stock_outline(prog)
+            if stock_primitives:
+                paths.insert(0, stock_primitives)
+                inserts += 1
+
+            retract_primitives = build_retract_primitives(prog)
+            if retract_primitives:
+                # keep retract just above stock in drawing order
+                paths.insert(inserts, retract_primitives)
+                inserts += 1
+
+            if active is not None and active >= 0 and inserts:
+                active += inserts
         except Exception as exc:
-            print("[LatheEasyStep] stock preview convert ERROR:", exc)
+            print("[LatheEasyStep] stock/retract preview ERROR:", exc)
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
         self._set_preview_paths(paths, active, include_contour_preview=False)
