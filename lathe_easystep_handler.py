@@ -118,8 +118,21 @@ TAB_ORDER = [
     "tabDrill",
     "tabKeyway",
 ]
-PANEL_WIDGET_NAMES = ("LatheConversationalPanel", "lathe_easystep", "lathe_easystep_panel")
-
+# Root objectName variants depending on how the panel is launched:
+# - embedded in LinuxCNC: often the .ui root is a QMainWindow named 'MainWindow'
+# - standalone qtvcp panel: often 'lathe_easystep_panel'
+# - other possible names depending on template/setup
+PANEL_WIDGET_NAMES = (
+    'LatheConversationalPanel',
+    'lathe_easystep',
+    'lathe_easystep_panel',
+    'MainWindow',
+    'VCPWindow',
+    'easystep',
+    'lathe-easystep',
+    'lathe-easystep_panel',
+    'lathe-easystep-panel',
+)
 TEXT_TRANSLATIONS = {
     "label_prog_npv": {"de": "Nullpunktverschiebung", "en": "Work Offset"},
     "label_prog_unit": {"de": "Maßeinheit", "en": "Units"},
@@ -615,9 +628,64 @@ class LathePreviewWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.x_is_diameter = True  # X values are treated as radius for drawing but labeled as diameter
         self.paths: List[List[Tuple[float, float]]] = []
+        self.primitives: List[List[dict]] = []
         self.active_index: int | None = None
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
+
+    def _sample_arc(self, p1, p2, c, ccw, steps=48):
+        x1, z1 = p1
+        x2, z2 = p2
+        xc, zc = c
+        r1 = math.hypot(x1 - xc, z1 - zc)
+        r2 = math.hypot(x2 - xc, z2 - zc)
+        if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
+            return [p1, p2]
+        a1 = math.atan2(z1 - zc, x1 - xc)
+        a2 = math.atan2(z2 - zc, x2 - xc)
+        if ccw:
+            if a2 <= a1:
+                a2 += 2 * math.pi
+        else:
+            if a2 >= a1:
+                a2 -= 2 * math.pi
+        pts = []
+        for k in range(steps + 1):
+            t = k / steps
+            a = a1 + (a2 - a1) * t
+            pts.append((xc + r1 * math.cos(a), zc + r1 * math.sin(a)))
+        return pts
+
+    def primitives_to_points(self, prims):
+        pts = []
+        last = None
+        for pr in prims or []:
+            if not isinstance(pr, dict):
+                continue
+            typ = (pr.get("type") or "").lower()
+            if typ == "line":
+                p1 = tuple(pr.get("p1", (0.0, 0.0)))
+                p2 = tuple(pr.get("p2", (0.0, 0.0)))
+                if last is None:
+                    pts.append(p1)
+                elif math.hypot(p1[0] - last[0], p1[1] - last[1]) > 1e-6:
+                    pts.append(p1)
+                pts.append(p2)
+                last = p2
+            elif typ == "arc":
+                p1 = tuple(pr.get("p1", (0.0, 0.0)))
+                p2 = tuple(pr.get("p2", (0.0, 0.0)))
+                c = tuple(pr.get("c", (0.0, 0.0)))
+                ccw = bool(pr.get("ccw", True))
+                arc_pts = self._sample_arc(p1, p2, c, ccw)
+                if last is None:
+                    pts.extend(arc_pts)
+                else:
+                    if math.hypot(arc_pts[0][0] - last[0], arc_pts[0][1] - last[1]) > 1e-6:
+                        pts.append(arc_pts[0])
+                    pts.extend(arc_pts[1:])
+                last = arc_pts[-1]
+        return pts
 
     def set_paths(self, paths, active_index: int | None = None):
         # paths can be:
@@ -683,14 +751,27 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
         norm_paths = []
         if isinstance(paths, list) and paths and isinstance(paths[0], dict) and "type" in paths[0]:
-            norm_paths = [primitives_to_points(paths)]
+            norm_paths = [self.primitives_to_points(paths)]
         elif isinstance(paths, list) and paths and isinstance(paths[0], list) and paths[0] and isinstance(paths[0][0], dict) and "type" in paths[0][0]:
-            norm_paths = [primitives_to_points(p) for p in paths]
+            norm_paths = [self.primitives_to_points(p) for p in paths]
         else:
             norm_paths = paths or []
 
         self.paths = norm_paths
         self.update()
+
+    def set_primitives(self, primitives):
+        """
+        Kompatibilität: Einige Teile des Codes arbeiten mit 'primitives'
+        (Linien/Arcs/Polylines). Dieses Widget zeichnet aber über 'paths'.
+        Daher: primitives -> points -> set_paths().
+        """
+        self.primitives = primitives or []
+        try:
+            paths = self.primitives_to_points(self.primitives)
+        except Exception:
+            paths = []
+        self.set_paths(paths)
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QtGui.QPainter(self)
@@ -703,7 +784,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             def _upd(xv: float, zv: float):
                 nonlocal min_x, max_x, min_z, max_z
-                x_draw = (xv * 0.5) if self.x_is_diameter else xv
+                x_draw = xv
                 min_x = min(min_x, x_draw)
                 max_x = max(max_x, x_draw)
                 min_z = min(min_z, zv)
@@ -774,8 +855,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
             scale = min(scale_x, scale_z)
 
             def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
-                # Z horizontal, X vertikal (draw radius even if stored as diameter)
-                x_draw = (x_val * 0.5) if self.x_is_diameter else x_val
+                # Z horizontal, X vertikal
+                x_draw = x_val
                 x_pix = rect.left() + (z_val - min_z) * scale
                 z_pix = rect.bottom() - (x_draw - min_x) * scale
                 return QtCore.QPointF(x_pix, z_pix)
@@ -825,7 +906,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{(val*2 if self.x_is_diameter else val):.0f}")
+                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{val:.0f}")
                 val += step_x
 
             # Achsbeschriftungen
@@ -836,8 +917,23 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 if not path:
                     continue
 
-                color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
-                painter.setPen(QtGui.QPen(color, 2))
+                # role based styling (e.g. raw stock reference)
+                role = None
+                if isinstance(path, list) and path and isinstance(path[0], dict):
+                    role = path[0].get("role")
+
+                if role == "stock":
+                    color = QtGui.QColor("gray")
+                    width = 1
+                    style = QtCore.Qt.DashLine
+                else:
+                    color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
+                    width = 2
+                    style = QtCore.Qt.SolidLine
+
+                pen = QtGui.QPen(color, width)
+                pen.setStyle(style)
+                painter.setPen(pen)
 
                 # Primitive mode
                 if isinstance(path[0], dict):
@@ -926,30 +1022,114 @@ class LathePreviewWidget(QtWidgets.QWidget):
 # Simple path builders
 # ----------------------------------------------------------------------
 def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
-    """
-    Einfache Kontur für die Vorschau:
-    Start-X/Z -> End-X/Z, mit optionaler Fase (Radius wird wie 'keine' behandelt).
-    """
-    x0 = params.get("start_x", 0.0)
-    z0 = params.get("start_z", 0.0)
-    x1 = params.get("end_x", x0)
-    z1 = params.get("end_z", 0.0)
-    edge_type = int(params.get("edge_type", 0))
-    edge_size = params.get("edge_size", 0.0)
+    """Build a 2D preview path for facing (Planen).
 
+    LatheEasyStep stores different key names depending on version / UI:
+      - newer: start_x/end_x + start_z/end_z (+ edge_type/edge_size)
+      - older: outer_diameter/inner_diameter + start_z/end_z
+
+    This function accepts both. X values are treated as *diameter* coordinates, just like
+    the rest of LatheEasyStep's internal logic.
+
+    Convention:
+      - Z decreases "into the material" at the workpiece front face.
+      - The face end plane is end_z (often 0.0).
+      - Edge/chamfer/radius are applied at the outer corner (x_outer, end_z) and extend
+        into *negative Z* (towards the material).
+    """
+    # --- X extents (diameter) ---
+    x_outer = params.get("outer_diameter", None)
+    x_inner = params.get("inner_diameter", None)
+
+    # Compatibility with op-params used by the gcode generators
+    sx = params.get("start_x", None)
+    ex = params.get("end_x", None)
+
+    # Some older helpers use start_diameter/end_diameter
+    sd = params.get("start_diameter", None)
+    ed = params.get("end_diameter", None)
+
+    candidates = [v for v in (sx, ex, sd, ed) if isinstance(v, (int, float))]
+    if x_outer is None:
+        x_outer = max(candidates) if candidates else 0.0
+    if x_inner is None:
+        x_inner = min(candidates) if candidates else 0.0
+
+    x_outer = float(x_outer or 0.0)
+    x_inner = float(x_inner or 0.0)
+
+    # --- Z extents ---
+    z_start = float(params.get("start_z", params.get("z_start", 0.0)) or 0.0)
+    z_end = float(params.get("end_z", params.get("z_end", z_start)) or z_start)
+
+    edge_type = int(params.get("edge_type", 0))  # 0=none, 1=chamfer, 2=radius
+    edge_size = float(params.get("edge_size", 0.0) or 0.0)
+
+    # Basic preview polyline
     path: List[Tuple[float, float]] = []
-    path.append((x0, z0))
+    path.append((x_outer, z_start))
+    path.append((x_outer, z_end))
 
+    # Apply edge at outer corner (x_outer, z_end)
     if edge_type == 1 and edge_size > 0.0:
-        z_fase_start = z1 + edge_size
-        path.append((x0, z_fase_start))
-        path.append((x0 - edge_size, z1))
-        path.append((x1, z1))
+        # 45° chamfer
+        path.append((x_outer, z_end - edge_size))
+        path.append((max(x_inner, x_outer - edge_size), z_end))
+        path.append((x_inner, z_end))
+    elif edge_type == 2 and edge_size > 0.0:
+        # Quarter-circle approximation for preview
+        cx = x_outer - edge_size
+        cz = z_end - edge_size
+        segments = 6
+        import math
+        for i in range(segments + 1):
+            a = (math.pi / 2.0) * (i / segments)  # 0..90°
+            x = cx + edge_size * math.cos(a)
+            z = cz + edge_size * math.sin(a)
+            path.append((x, z))
+        path.append((x_inner, z_end))
     else:
-        path.append((x0, z1))
-        path.append((x1, z1))
+        path.append((x_inner, z_end))
 
     return path
+
+def build_stock_outline(program: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return a thin reference outline of the raw stock in XZ (diameter X).
+
+    Output format matches the preview widget's 'primitives' list of dicts.
+    Uses role='stock' so the widget can draw it in a neutral thin dashed style.
+    """
+    shape = str(program.get("shape", "")).lower().strip()
+    # common fields from program header
+    xa = float(program.get("xa", 0.0) or 0.0)  # outer diameter
+    xi = float(program.get("xi", 0.0) or 0.0)  # inner diameter (for tube)
+    za = float(program.get("za", 0.0) or 0.0)  # front face Z
+    zi = float(program.get("zi", 0.0) or 0.0)  # back face Z (often negative length)
+
+    if xa <= 0.0:
+        return []
+
+    # Normalize Z: ensure za is the front (greater) and zi is the back (smaller) for drawing
+    z_front = max(za, zi)
+    z_back = min(za, zi)
+
+    primitives: List[Dict[str, Any]] = []
+
+    def add_line(z1: float, x1: float, z2: float, x2: float) -> None:
+        primitives.append({"role": "stock", "type": "line", "p1": (x1, z1), "p2": (x2, z2)})
+
+    # Outer contour (L-shape: face + OD + back face + centerline return)
+    add_line(z_front, 0.0, z_front, xa)     # front face
+    add_line(z_front, xa, z_back, xa)       # OD along Z
+    add_line(z_back, xa, z_back, 0.0)       # back face
+    # centerline is optional; keep it minimal (no line back to front)
+
+    if shape in ("rohr", "tube") and xi > 0.0 and xi < xa:
+        # Inner bore contour as reference (also L-shape)
+        add_line(z_front, xi, z_back, xi)
+        # (front/back inner face lines are usually not needed for reference)
+
+    return primitives
 
 
 def build_turn_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
@@ -1219,114 +1399,112 @@ def build_contour_path(params) -> list:
     return prim
 
 
-def validate_contour_segments_for_profile(params: dict) -> List[str]:
-    """
-    Harte Validierung der Kontur-Segmente für eine echte Profilkontur (G70/G71-tauglich).
+def validate_contour_segments_for_profile(params: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Validate contour definition.
 
-    Liefert eine Liste von Fehlermeldungen (leer => ok).
-    Erwartet params = {"segments":[...], "start_x":..., "start_z":..., "coord_mode":...}
-    (start_x/start_z/coord_mode sind optional; segments reicht.)
+    Important: In the UI, each *row* describes a move to the next point (a segment end point),
+    starting from (start_x,start_z). Any edge (chamfer/radius) belongs to the *corner at the end
+    of that move* (i.e. between this move and the next one). Therefore edge data is valid for
+    all rows except the LAST row (there is no following segment to form a corner).
     """
-    segments = (params or {}).get("segments") or []
     errors: List[str] = []
+    segs = params.get("contour_segments", []) or []
 
-    if not isinstance(segments, list) or len(segments) < 2:
-        errors.append("Kontur: mindestens 2 Segmente/Punkte erforderlich.")
-        return errors
+    if not isinstance(segs, list) or len(segs) < 2:
+        errors.append("Kontur: mindestens 2 Segmente/Zeilen erforderlich.")
+        return False, errors
 
-    pts: List[Tuple[float, float]] = []
-    last_x = float((params or {}).get("start_x", 0.0) or 0.0)
-    last_z = float((params or {}).get("start_z", 0.0) or 0.0)
+    # Start point (implicit first point)
+    try:
+        start_x = float(params.get("start_x", 0.0))
+        start_z = float(params.get("start_z", 0.0))
+    except Exception:
+        errors.append("Kontur: ungültiger Startpunkt (start_x/start_z).")
+        return False, errors
 
-    for i, s in enumerate(segments):
-        if not isinstance(s, dict):
-            errors.append(f"Zeile {i+1}: Segment ist kein Dict.")
+    # Build full point list: p0 = start point, then each row adds a new point.
+    pts: List[Tuple[float, float]] = [(start_x, start_z)]
+    x, z = start_x, start_z
+    for i, seg in enumerate(segs):
+        try:
+            x = float(seg.get("x", x))
+            z = float(seg.get("z", z))
+        except Exception:
+            errors.append(f"Zeile {i+1}: X/Z ungültig.")
+            continue
+        pts.append((x, z))
+
+    if len(pts) != len(segs) + 1:
+        errors.append("Kontur: interne Punktliste inkonsistent.")
+        return False, errors
+
+    # Validate edges (chamfer/radius) at corners:
+    # Edge settings live in segs[i] and apply to corner at pts[i+1] with prev=pts[i], next=pts[i+2].
+    for i, seg in enumerate(segs):
+        etype = (seg.get("edge_type") or "none").strip().lower()
+        if etype in ("none", "", "keine"):
+            continue
+
+        # last row cannot have an edge (no next segment)
+        if i == len(segs) - 1:
+            errors.append(f"Zeile {i+1}: {etype} am Ende ist geometrisch unmöglich (keine Folge-Kante).")
             continue
 
         try:
-            x_empty = bool(s.get("x_empty", False))
-            z_empty = bool(s.get("z_empty", False))
-            x = last_x if x_empty else float(s.get("x", last_x))
-            z = last_z if z_empty else float(s.get("z", last_z))
+            ev = float(seg.get("edge_value", 0.0))
         except Exception:
-            errors.append(f"Zeile {i+1}: X/Z nicht numerisch lesbar.")
-            x, z = last_x, last_z
-
-        pts.append((x, z))
-        last_x, last_z = x, z
-
-    def dist(a, b) -> float:
-        return math.hypot(b[0] - a[0], b[1] - a[1])
-
-    def unit(a, b):
-        dx = b[0] - a[0]
-        dz = b[1] - a[1]
-        l = math.hypot(dx, dz)
-        if l <= 1e-12:
-            return (0.0, 0.0), 0.0
-        return (dx / l, dz / l), l
-
-    def dot(u, v):
-        return u[0] * v[0] + u[1] * v[1]
-
-    def cross(u, v):
-        return u[0] * v[1] - u[1] * v[0]
-
-    for i in range(1, len(pts)):
-        if dist(pts[i - 1], pts[i]) <= 1e-9:
-            errors.append(f"Zeile {i+1}: Punkt identisch mit vorherigem (Null-Länge).")
-
-    for i in range(len(segments)):
-        s = segments[i] if i < len(segments) else {}
-        edge = str((s or {}).get("edge", "none") or "none").strip().lower()
-        edge_size = float((s or {}).get("edge_size", 0.0) or 0.0)
-
-        if edge not in ("none", "radius", "chamfer", "fase", "fillet"):
-            errors.append(f"Zeile {i+1}: unbekannter Edge-Typ '{edge}'.")
+            errors.append(f"Zeile {i+1}: Kantenmaß ungültig.")
             continue
 
-        if edge in ("radius", "fillet", "chamfer", "fase"):
-            if edge_size <= 1e-9:
-                errors.append(f"Zeile {i+1}: {edge} gewählt, aber Kantenmaß = 0.")
-                continue
+        if ev <= 0.0:
+            errors.append(f"Zeile {i+1}: Kantenmaß muss > 0 sein.")
+            continue
 
-            if i == 0 or i == len(segments) - 1:
-                errors.append(f"Zeile {i+1}: {edge} am Anfang/Ende ist geometrisch unmöglich (keine Ecke).")
-                continue
+        p0 = pts[i]
+        p1 = pts[i+1]
+        p2 = pts[i+2]
 
-            p0, p1, p2 = pts[i - 1], pts[i], pts[i + 1]
-            u1, l1 = unit(p0, p1)
-            u2, l2 = unit(p1, p2)
+        # Vectors along the adjacent segments
+        v1 = (p0[0] - p1[0], p0[1] - p1[1])
+        v2 = (p2[0] - p1[0], p2[1] - p1[1])
 
-            if l1 <= 1e-9 or l2 <= 1e-9:
-                errors.append(f"Zeile {i+1}: {edge} an Ecke mit Null-Länge (benachbarte Punkte identisch).")
-                continue
+        def vlen(v):
+            return (v[0] * v[0] + v[1] * v[1]) ** 0.5
 
-            v_in = (-u1[0], -u1[1])
-            v_out = (u2[0], u2[1])
-            cosang = max(-1.0, min(1.0, dot(v_in, v_out)))
+        l1 = vlen(v1)
+        l2 = vlen(v2)
+
+        # Degenerate segments
+        if l1 < 1e-9 or l2 < 1e-9:
+            errors.append(f"Zeile {i+1}: Segmentlänge zu klein für {etype}.")
+            continue
+
+        # Colinear? (no corner)
+        cross = v1[0] * v2[1] - v1[1] * v2[0]
+        if abs(cross) < 1e-9:
+            errors.append(f"Zeile {i+1}: {etype} ist nur an einer Ecke möglich (Segmente sind colinear).")
+            continue
+
+        if etype in ("chamfer", "fase"):
+            # Simple feasibility: chamfer distance must be smaller than both adjacent segment lengths
+            if ev >= min(l1, l2):
+                errors.append(f"Zeile {i+1}: Fase ist zu groß für die angrenzenden Segmente.")
+        elif etype in ("radius", "r"):
+            # Radius needs enough space on both segments.
+            # Use same geometry as in build_contour_path: compute offset distance along each segment.
+            import math
+            cosang = (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2)
+            cosang = max(-1.0, min(1.0, cosang))
             ang = math.acos(cosang)
+            # For a fillet of radius r, the tangent points are at distance t = r / tan(ang/2)
+            t = ev / math.tan(ang / 2.0)
+            if t >= l1 or t >= l2:
+                errors.append(f"Zeile {i+1}: Radius ist zu groß für die angrenzenden Segmente.")
+        else:
+            errors.append(f"Zeile {i+1}: unbekannter Kantentyp '{etype}'.")
+            continue
 
-            if ang <= 1e-6 or abs(math.pi - ang) <= 1e-6:
-                errors.append(f"Zeile {i+1}: {edge} an (nahezu) gerader Linie ist unmöglich.")
-                continue
-
-            if edge in ("radius", "fillet"):
-                t = edge_size * math.tan(ang / 2.0)
-                if t >= l1 or t >= l2:
-                    errors.append(
-                        f"Zeile {i+1}: Radius {edge_size:g} zu groß für die angrenzenden Segmente "
-                        f"(benötigt Tangentenlänge t={t:.3f}, aber L1={l1:.3f}, L2={l2:.3f})."
-                    )
-            else:
-                if edge_size >= l1 or edge_size >= l2:
-                    errors.append(
-                        f"Zeile {i+1}: Fase {edge_size:g} zu groß (L1={l1:.3f}, L2={l2:.3f})."
-                    )
-
-            _ = cross(u1, u2)
-
-    return errors
+    return (len(errors) == 0), errors
 
 
 def gcode_from_path(path: List[Tuple[float, float]], feed: float, safe_z: float) -> List[str]:
@@ -2299,6 +2477,15 @@ class HandlerClass:
                 widget = widget.parentWidget()
             return None
 
+        def _looks_like_panel(widget: QtWidgets.QWidget) -> bool:
+            """Heuristik: verhindert, dass qtdragon_lathe fälschlich als Panel root erkannt wird."""
+            try:
+                has_ops = widget.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
+                has_tabs = widget.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
+                return bool(has_ops and has_tabs)
+            except Exception:
+                return False
+
         # direkter Zugriff über widgets-Container
         for panel_name in PANEL_WIDGET_NAMES:
             cand = getattr(self.w, panel_name, None)
@@ -2311,6 +2498,8 @@ class HandlerClass:
             for widget in app.allWidgets():
                 try:
                     if widget.objectName() in PANEL_WIDGET_NAMES:
+                        if widget.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel(widget):
+                            continue
                         return widget
                 except Exception:
                     continue
@@ -2338,6 +2527,8 @@ class HandlerClass:
             for widget in app.allWidgets():
                 try:
                     if widget.objectName() in PANEL_WIDGET_NAMES:
+                        if widget.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel(widget):
+                            continue
                         return widget
                 except Exception:
                     continue
@@ -2471,20 +2662,40 @@ class HandlerClass:
             texts = [combo.itemText(i).strip().lower() for i in range(combo.count())]
             print(f"[LatheEasyStep] shape combo candidate {combo.objectName()}: {texts}")
             if any(t in texts for t in ("zylinder", "rohr", "rechteck", "n-eck")):
+                # In embedded-macro mode, widgets may not exist yet when we do the first
+                # round of signal wiring (during import / early init). This means
+                # `program_shape` can be discovered later and would then change its value
+                # without triggering _handle_global_change(). So: bind + connect here.
                 print(f"[LatheEasyStep] using '{combo.objectName()}' as program_shape combo")
+
+                self.program_shape = combo
+
+                if combo not in self._connected_global_widgets:
+                    self._connected_global_widgets.add(combo)
+                    try:
+                        combo.currentIndexChanged.connect(self._handle_global_change)
+                    except Exception:
+                        pass
+                    try:
+                        combo.activated.connect(self._handle_global_change)
+                    except Exception:
+                        pass
+                    try:
+                        combo.currentTextChanged.connect(self._handle_global_change)
+                    except Exception:
+                        pass
+
                 return combo
 
         print("[LatheEasyStep] no shape combo found in tree")
         return None
 
     def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
-        """Besorgt Widgets robuster: erst direct Attribute, dann im Panel-priorisierten UI-Baum.
+        """Robuste Widget-Auflösung.
 
-        Suche-Prio:
-         1) attribute in self.w
-         2) Widget innerhalb eines bekannten Panel-Elternteils (PANEL_WIDGET_NAMES)
-         3) Suche im aktuellen Root (self.root_widget)
-         4) globale Suche (app.allWidgets)
+        Wichtig: Für Parametereinsammeln muss das *richtige* Widget gefunden werden.
+        Daher: erst exakte Matches, dann tolerante Matches (z.B. 'foo_2'), dabei
+        bevorzugt Eingabewidgets (Spin/DoubleSpin/Combo/LineEdit/Check/Radio).
         """
 
         # 1) direct attribute (fast path)
@@ -2494,39 +2705,92 @@ class HandlerClass:
 
         app = QtWidgets.QApplication.instance()
 
-        # Helper: check if a widget is inside our panel
-        def _in_our_panel(w: QtWidgets.QWidget) -> bool:
-            while w is not None:
-                try:
-                    if w.objectName() in PANEL_WIDGET_NAMES:
-                        return True
-                except Exception:
-                    pass
-                w = w.parentWidget()
-            return False
+        preferred_types = (
+            QtWidgets.QDoubleSpinBox,
+            QtWidgets.QSpinBox,
+            QtWidgets.QComboBox,
+            QtWidgets.QLineEdit,
+            QtWidgets.QCheckBox,
+            QtWidgets.QRadioButton,
+            QtWidgets.QAbstractButton,
+            QtWidgets.QTableWidget,
+            QtWidgets.QListWidget,
+        )
 
-        # 2) Prefer any widget with matching objectName that lives under a known panel
+        def _score(w: QtWidgets.QWidget) -> int:
+            # lower is better
+            try:
+                on = w.objectName() or ""
+            except Exception:
+                on = ""
+            exact = 0 if on == name else 50
+            suffix_ok = 0 if re.match(rf"^{re.escape(name)}(_\d+)?$", on) else 20
+            type_score = 100
+            for i, t in enumerate(preferred_types):
+                if isinstance(w, t):
+                    type_score = i
+                    break
+            # prefer widgets inside our panel if possible
+            panel_score = 0
+            try:
+                panel_score = 0 if self._is_widget_in_our_panel(w) else 10
+            except Exception:
+                panel_score = 10
+            return exact + suffix_ok + type_score + panel_score
+
+        # Helper: check if a widget is inside our panel
+        # (kept as separate method to avoid nested closure issues)
+        if not hasattr(self, "_is_widget_in_our_panel"):
+            def _is_widget_in_our_panel(w: QtWidgets.QWidget) -> bool:
+                while w is not None:
+                    try:
+                        if w.objectName() in PANEL_WIDGET_NAMES:
+                            return True
+                    except Exception:
+                        pass
+                    try:
+                        w = w.parentWidget()
+                    except Exception:
+                        w = None
+                return False
+            self._is_widget_in_our_panel = _is_widget_in_our_panel  # type: ignore
+
+        # 2) Exact match inside known panel
         if app:
             for w in app.allWidgets():
                 try:
-                    if w.objectName() == name and _in_our_panel(w):
+                    if w.objectName() == name and self._is_widget_in_our_panel(w):
                         return w
                 except Exception:
                     continue
 
-        # 3) Search within current root widget (may be MainWindow or panel)
+        # 3) Exact match inside current root widget
         root = self.root_widget or self._find_root_widget()
         if root is not None:
             try:
-                widget = root.findChild(
-                    QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively
-                )
+                widget = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
                 if widget is not None:
                     return widget
             except Exception:
                 pass
 
-        # 4) Fallback: any widget with that name
+            # 3b) Tolerant match inside root: name or name_2 etc.
+            try:
+                candidates = []
+                for w in root.findChildren(QtWidgets.QWidget):
+                    try:
+                        on = w.objectName()
+                    except Exception:
+                        continue
+                    if on == name or re.match(rf"^{re.escape(name)}(_\d+)?$", on):
+                        candidates.append(w)
+                if candidates:
+                    candidates.sort(key=_score)
+                    return candidates[0]
+            except Exception:
+                pass
+
+        # 4) Fallback: exact match anywhere
         if app:
             for w in app.allWidgets():
                 try:
@@ -2534,11 +2798,37 @@ class HandlerClass:
                         return w
                 except Exception:
                     continue
-        return None
 
-    # ---- QtVCP lifecycle ---------------------------------------------
+            # 4b) Tolerant match anywhere
+            try:
+                candidates = []
+                for w in app.allWidgets():
+                    try:
+                        on = w.objectName()
+                    except Exception:
+                        continue
+                    if on == name or re.match(rf"^{re.escape(name)}(_\d+)?$", on):
+                        candidates.append(w)
+                if candidates:
+                    candidates.sort(key=_score)
+                    return candidates[0]
+            except Exception:
+                pass
+
+        return None
     def initialized__(self):
         """Wird aufgerufen, wenn QtVCP die UI komplett aufgebaut hat."""
+        # Eindeutige "idx" Dynamic-Properties vergeben (unabhängig von Label-Texten).
+        # Hinweis: NICHT in der .ui als Property "idx" hinterlegen, sonst versucht uic setIdx() aufzurufen.
+        try:
+            from PyQt5.QtWidgets import QWidget
+            for _w in self.w.findChildren(QWidget):
+                _name = _w.objectName()
+                if _name and _w.property("idx") is None:
+                    _w.setProperty("idx", _name)
+        except Exception:
+            pass
+
         # Jetzt ist das Widget-Hierarchie sicher fertig -> Combos suchen
 
         # Einheiten-Combo sicherstellen
@@ -2689,10 +2979,24 @@ class HandlerClass:
         self._connect_signals()
         self._setup_thread_helpers()
         self._debug_widget_names()
+        # The embedded panel is started in a host environment (QTvcp embed).
+        # Depending on timing, the first initialized__ can run before *all* widgets
+        # are fully realized / named, so we do a few delayed passes.
         QtCore.QTimer.singleShot(0, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(200, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(700, self._finalize_ui_ready)
 
     def _finalize_ui_ready(self):
         """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
+        # IMPORTANT: This handler is imported twice in an embedded context:
+        #  1) once before the LatheEasyStep .ui is actually loaded (widget tree is incomplete)
+        #  2) once after the embedded UI is constructed.
+        # If we run our widget lookup / signal connections too early, we bind to the wrong widgets
+        # and later UI updates (visibility, previews) won't work.
+        if not getattr(self, 'w', None) or getattr(self.w, 'program_unit', None) is None:
+            print('[LatheEasyStep] initialized__(): widgets not ready (no program_unit) - deferring')
+            return
+
         self._ensure_core_widgets()
         # Nach vollständigem UI-Aufbau explizit auf „Planen“ schalten,
         # damit der erste Klick auf „Schritt hinzufügen“ eine Bearbeitung anlegt.
@@ -2739,6 +3043,15 @@ class HandlerClass:
         self._update_parting_contour_choices()
         self._update_parting_ready_state()
         self._apply_tab_titles(self._current_language_code())
+
+        # Ensure language/label texts and all visibility toggles are applied
+        # after the widgets are fully available (important for embedded use).
+        try:
+            self._find_combo_boxes()
+            self._apply_language_texts()
+            self._handle_global_change()
+        except Exception:
+            pass
 
     def _ensure_contour_widgets(self):
         """Sucht fehlende Kontur-Widgets (Start X/Z, Tabelle, Name) robust über objectName."""
@@ -3315,66 +3628,149 @@ class HandlerClass:
         }
 
     # ---- Signalanschlüsse ---------------------------------------------
+    
+    
+    def _find_by_idx(self, cls, idx: str, fallback_name: str = None):
+        """Find widget by custom Qt property 'idx' (preferred) or objectName as fallback."""
+        try:
+            w = None
+            # First pass: idx property
+            for cand in self.w.findChildren(cls):
+                try:
+                    if cand.property("idx") == idx:
+                        return cand
+                except Exception:
+                    continue
+            # Fallback: objectName
+            if fallback_name:
+                return self.w.findChild(cls, fallback_name)
+        except Exception:
+            pass
+        return None
+
+    def _connect_live_update(self, widget):
+            """Connect changes of a widget to live-update the currently selected operation."""
+            if widget is None:
+                return
+            from PyQt5 import QtWidgets
+
+            def _safe_connect(signal):
+                try:
+                    signal.connect(self._on_param_changed)
+                except Exception:
+                    pass
+
+            if isinstance(widget, QtWidgets.QComboBox):
+                _safe_connect(widget.currentIndexChanged)
+            elif isinstance(widget, QtWidgets.QAbstractSpinBox):
+                _safe_connect(widget.valueChanged)
+            elif isinstance(widget, QtWidgets.QCheckBox):
+                _safe_connect(widget.toggled)
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                _safe_connect(widget.textChanged)
+
+    def _on_param_changed(self, *args):
+        """Called whenever a parameter field changes; updates op + preview."""
+        if getattr(self, "_ui_loading", False):
+            return
+        row = -1
+        try:
+            if self.listOperations:
+                row = self.listOperations.currentRow()
+        except Exception:
+            row = -1
+        if row < 0:
+            return
+        try:
+            self._update_selected_operation(row)
+        except Exception as e:
+            print(f"[LatheEasyStep] _on_param_changed: update failed: {e}")
+
     def _connect_signals(self):
-        # Stelle sicher, dass die Kern-Widgets vorhanden sind, bevor wir Signale verbinden
-        self._ensure_core_widgets()
-        if self.tab_params is None:
-            self.tab_params = self._get_widget_by_name("tabParams")
+            # Stelle sicher, dass die Kern-Widgets vorhanden sind, bevor wir Signale verbinden
+            self._ensure_core_widgets()
+            if self.tab_params is None:
+                self.tab_params = self._get_widget_by_name("tabParams")
 
-        self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
-        self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
-        self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
-        self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
-        self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
-        self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
-        if self.list_ops and not getattr(self, "_list_ops_connected", False):
-            self.list_ops.currentRowChanged.connect(self._handle_selection_change)
-            self._list_ops_connected = True
-        if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
-            self.list_ops.clicked.connect(self._mark_operation_user_selected)
-            self._list_ops_click_connected = True
-        if self.tab_params and not getattr(self, "_tab_params_connected", False):
-            self.tab_params.currentChanged.connect(self._handle_tab_changed)
-            self._tab_params_connected = True
-        if self.parting_mode and not getattr(self, "_parting_mode_connected", False):
-            self.parting_mode.currentIndexChanged.connect(
-                self._update_parting_mode_visibility
-            )
-            self._parting_mode_connected = True
+            self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
+            self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
+            self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
+            self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
+            self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
+            self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+            if self.list_ops and not getattr(self, "_list_ops_connected", False):
+                self.list_ops.currentRowChanged.connect(self._handle_selection_change)
+                self._list_ops_connected = True
+            if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
+                self.list_ops.clicked.connect(self._mark_operation_user_selected)
+                self._list_ops_click_connected = True
+            if self.tab_params and not getattr(self, "_tab_params_connected", False):
+                self.tab_params.currentChanged.connect(self._handle_tab_changed)
+                self._tab_params_connected = True
+            if self.parting_mode and not getattr(self, "_parting_mode_connected", False):
+                self.parting_mode.currentIndexChanged.connect(
+                    self._update_parting_mode_visibility
+                )
+                self._parting_mode_connected = True
 
-        # Parameterfelder
-        for widgets in self.param_widgets.values():
-            for widget in widgets.values():
-                if widget is None:
-                    continue
-                if widget in self._connected_param_widgets:
-                    continue
-                if isinstance(widget, QtWidgets.QComboBox):
-                    widget.currentIndexChanged.connect(self._handle_param_change)
-                elif isinstance(widget, QtWidgets.QAbstractButton):
-                    widget.toggled.connect(self._handle_param_change)
-                else:
-                    widget.valueChanged.connect(self._handle_param_change)
-                self._connected_param_widgets.add(widget)
+            # Parameterfelder
+            for widgets in self.param_widgets.values():
+                for widget in widgets.values():
+                    if widget is None:
+                        continue
+                    if widget in self._connected_param_widgets:
+                        continue
+                    if isinstance(widget, QtWidgets.QComboBox):
+                        widget.currentIndexChanged.connect(self._handle_param_change)
+                    elif isinstance(widget, QtWidgets.QAbstractButton):
+                        widget.toggled.connect(self._handle_param_change)
+                    else:
+                        widget.valueChanged.connect(self._handle_param_change)
+                    self._connected_param_widgets.add(widget)
 
-        # Form-Logik (Einheiten / Rohteilform / Rückzug)
-        if self.program_unit and self.program_unit not in self._connected_global_widgets:
-            self.program_unit.currentIndexChanged.connect(self._handle_global_change)
-            self._connected_global_widgets.add(self.program_unit)
-        if self.program_shape and self.program_shape not in self._connected_global_widgets:
-            self.program_shape.currentIndexChanged.connect(self._handle_global_change)
-            self._connected_global_widgets.add(self.program_shape)
-        if self.program_retract_mode and self.program_retract_mode not in self._connected_global_widgets:
-            self.program_retract_mode.currentIndexChanged.connect(self._handle_global_change)
-            self._connected_global_widgets.add(self.program_retract_mode)
-        if self.program_has_subspindle and self.program_has_subspindle not in self._connected_global_widgets:
-            self.program_has_subspindle.toggled.connect(self._update_subspindle_visibility)
-            self._connected_global_widgets.add(self.program_has_subspindle)
-        self._apply_language_texts()
-        lang_combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
-        if lang_combo and not getattr(self, "_language_connected", False):
-            lang_combo.currentIndexChanged.connect(self._handle_language_change)
-            self._language_connected = True
+            # Form-Logik (Einheiten / Rohteilform / Rückzug)
+            if self.program_unit and self.program_unit not in self._connected_global_widgets:
+                self.program_unit.currentIndexChanged.connect(self._handle_global_change)
+                self._connected_global_widgets.add(self.program_unit)
+            if self.program_shape and self.program_shape not in self._connected_global_widgets:
+                self.program_shape.currentIndexChanged.connect(self._handle_global_change)
+                self._connected_global_widgets.add(self.program_shape)
+            if self.program_retract_mode and self.program_retract_mode not in self._connected_global_widgets:
+                self.program_retract_mode.currentIndexChanged.connect(self._handle_global_change)
+                self._connected_global_widgets.add(self.program_retract_mode)
+            if self.program_has_subspindle and self.program_has_subspindle not in self._connected_global_widgets:
+                self.program_has_subspindle.toggled.connect(self._update_subspindle_visibility)
+                self._connected_global_widgets.add(self.program_has_subspindle)
+            self._apply_language_texts()
+            lang_combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
+            if lang_combo and not getattr(self, "_language_connected", False):
+                lang_combo.currentIndexChanged.connect(self._handle_language_change)
+                self._language_connected = True
+            # --- Live update + visibility for Planen (Face) ---
+            try:
+                if getattr(self, "face_mode", None):
+                    self.face_mode.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
+                if getattr(self, "face_edge_type", None):
+                    self.face_edge_type.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
+            except Exception:
+                pass
+
+            # Live-update operation model + preview when parameters change
+            for w in [
+                # Face (Planen)
+                getattr(self, "face_start_z", None), getattr(self, "face_end_z", None),
+                getattr(self, "face_stepover", None), getattr(self, "face_doc", None),
+                getattr(self, "face_allowance_x", None), getattr(self, "face_allowance_z", None),
+                getattr(self, "face_finish_allow_x", None), getattr(self, "face_finish_allow_z", None),
+                getattr(self, "face_rpm", None), getattr(self, "face_feed", None),
+                getattr(self, "face_plunge", None), getattr(self, "face_retract", None),
+                getattr(self, "face_mode", None), getattr(self, "face_finish_direction", None),
+                getattr(self, "face_edge_type", None), getattr(self, "face_edge_size", None),
+                getattr(self, "face_tool", None), getattr(self, "face_coolant", None),
+            ]:
+                self._connect_live_update(w)
+
+
 
     def _current_language_code(self) -> str:
         combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
@@ -3807,33 +4203,89 @@ class HandlerClass:
         }
         return mapping.get(idx, OpType.FACE)
 
+
+    def _widget_get_value(self, widget):
+        """Best-effort value extraction for common Qt widgets used in LatheEasyStep."""
+        if widget is None:
+            return None
+        try:
+            # Spin boxes
+            if hasattr(widget, "value"):
+                return widget.value()
+            # Line edits
+            if hasattr(widget, "text"):
+                t = (widget.text() or "").strip()
+                if t == "":
+                    return None
+                try:
+                    return float(t.replace(",", "."))
+                except Exception:
+                    return None
+        except Exception:
+            return None
+        return None
+
+    def _widget_set_value(self, widget, value):
+        """Best-effort value setter for common Qt widgets used in LatheEasyStep."""
+        if widget is None or value is None:
+            return
+        try:
+            if hasattr(widget, "setValue"):
+                widget.setValue(value)
+                return
+            if hasattr(widget, "setText"):
+                widget.setText(str(value))
+                return
+        except Exception:
+            return
+
     def _collect_params(self, op_type: str) -> Dict[str, object]:
         widgets = self.param_widgets.get(op_type, {})
         params: Dict[str, object] = {}
         for key, widget in widgets.items():
             if widget is None:
                 continue
-            if isinstance(widget, QtWidgets.QSpinBox):
-                params[key] = float(widget.value())
-            elif isinstance(widget, QtWidgets.QComboBox):
-                if key == "slice_strategy":
-                    idx = widget.currentIndex()
-                    data = widget.itemData(idx, QtCore.Qt.UserRole)
-                    if isinstance(data, (int, float)):
-                        params[key] = int(float(data))
+            try:
+                if isinstance(widget, QtWidgets.QSpinBox):
+                    params[key] = float(widget.value())
+                elif isinstance(widget, QtWidgets.QDoubleSpinBox):
+                    params[key] = float(widget.value())
+                elif isinstance(widget, QtWidgets.QComboBox):
+                    if key == "slice_strategy":
+                        idx = widget.currentIndex()
+                        data = widget.itemData(idx, QtCore.Qt.UserRole)
+                        if isinstance(data, (int, float)):
+                            params[key] = int(float(data))
+                        else:
+                            params[key] = idx + 1
                     else:
-                        params[key] = idx + 1
+                        data = widget.currentData()
+                        if data is not None:
+                            params[key] = data
+                        else:
+                            params[key] = float(widget.currentIndex())
+                elif isinstance(widget, QtWidgets.QLineEdit):
+                    text = widget.text().strip()
+                    if text == "":
+                        continue
+                    # try float, else keep as string
+                    try:
+                        params[key] = float(text.replace(",", "."))
+                    except Exception:
+                        params[key] = text
+                elif isinstance(widget, QtWidgets.QAbstractButton):
+                    params[key] = float(widget.isChecked())
                 else:
-                    data = widget.currentData()
-                    if data is not None:
-                        params[key] = data
-                    else:
-                        params[key] = float(widget.currentIndex())
-            elif isinstance(widget, QtWidgets.QAbstractButton):
-                params[key] = float(widget.isChecked())
-            else:  # QDoubleSpinBox
-                params[key] = float(widget.value())
-
+                    # Fallback: only record if we can safely read something
+                    if hasattr(widget, "value"):
+                        params[key] = float(widget.value())
+                    elif hasattr(widget, "text"):
+                        text = str(widget.text()).strip()
+                        if text != "":
+                            params[key] = text
+            except Exception:
+                # Never let a broken widget mapping wipe the whole params dict
+                continue
         # Kontur-Segmente separat aus Tabelle einsammeln
         if op_type == OpType.CONTOUR:
             params["segments"] = self._collect_contour_segments()
@@ -3852,7 +4304,6 @@ class HandlerClass:
             params["contour_name"] = contour_name
             params["source_path"] = self._resolve_contour_path(contour_name)
         return params
-
     def _collect_program_header(self) -> Dict[str, object]:
         """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
         # Fehlende Widgets nachladen, falls sie zum Zeitpunkt der Initialisierung
@@ -3879,6 +4330,40 @@ class HandlerClass:
             self.program_sc = self._get_widget_by_name("program_sc")
         if self.program_name is None:
             self.program_name = self._get_widget_by_name("program_name")
+        if self.program_xa is None:
+            self.program_xa = self._get_widget_by_name("program_xa")
+        if self.program_xi is None:
+            self.program_xi = self._get_widget_by_name("program_xi")
+        if self.program_za is None:
+            self.program_za = self._get_widget_by_name("program_za")
+        if self.program_zi is None:
+            self.program_zi = self._get_widget_by_name("program_zi")
+        if self.program_zb is None:
+            self.program_zb = self._get_widget_by_name("program_zb")
+        if self.program_w is None:
+            self.program_w = self._get_widget_by_name("program_w")
+        if self.program_l is None:
+            self.program_l = self._get_widget_by_name("program_l")
+        if self.program_n is None:
+            self.program_n = self._get_widget_by_name("program_n")
+        if self.program_sw is None:
+            self.program_sw = self._get_widget_by_name("program_sw")
+        if self.program_xra is None:
+            self.program_xra = self._get_widget_by_name("program_xra")
+        if self.program_xri is None:
+            self.program_xri = self._get_widget_by_name("program_xri")
+        if self.program_zra is None:
+            self.program_zra = self._get_widget_by_name("program_zra")
+        if self.program_zri is None:
+            self.program_zri = self._get_widget_by_name("program_zri")
+        if self.program_xra_absolute is None:
+            self.program_xra_absolute = self._get_widget_by_name("program_xra_absolute")
+        if self.program_xri_absolute is None:
+            self.program_xri_absolute = self._get_widget_by_name("program_xri_absolute")
+        if self.program_zra_absolute is None:
+            self.program_zra_absolute = self._get_widget_by_name("program_zra_absolute")
+        if self.program_zri_absolute is None:
+            self.program_zri_absolute = self._get_widget_by_name("program_zri_absolute")
 
         header: Dict[str, object] = {}
         if self.program_npv:
@@ -3889,7 +4374,22 @@ class HandlerClass:
             header["shape"] = self.program_shape.currentText().strip()
 
         def _val(widget):
-            return float(widget.value()) if widget else None
+            if widget is None:
+                return None
+            if hasattr(widget, "value") and callable(getattr(widget, "value")):
+                try:
+                    return float(widget.value())
+                except Exception:
+                    return None
+            if hasattr(widget, "text") and callable(getattr(widget, "text")):
+                t = widget.text().strip()
+                if not t:
+                    return None
+                try:
+                    return float(t.replace(",", "."))
+                except Exception:
+                    return None
+            return None
 
         # Rohteilabmessungen / Spannmaße
         header["xa"] = _val(self.program_xa)
@@ -4284,6 +4784,19 @@ class HandlerClass:
         else:
             active = -1
 
+        # Raw stock outline as thin reference (only if program header contains stock data).
+        prog = self._collect_program_header() or {}
+        stock_primitives = build_stock_outline(prog)
+        try:
+            if stock_primitives and self.preview is not None and hasattr(self.preview, "primitives_to_points"):
+                stock_path = self.preview.primitives_to_points(stock_primitives)
+                if stock_path:
+                    paths.insert(0, stock_path)
+                    if active is not None and active >= 0:
+                        active += 1
+        except Exception as exc:
+            print("[LatheEasyStep] stock preview convert ERROR:", exc)
+
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
         self._set_preview_paths(paths, active, include_contour_preview=False)
 
@@ -4375,7 +4888,10 @@ class HandlerClass:
         if idx < 0 or idx >= len(self.model.operations):
             return
         op = self.model.operations[idx]
-        op.params = self._collect_params(op.op_type)
+        if op.op_type == OpType.PROGRAM_HEADER:
+            op.params = self._collect_program_header()
+        else:
+            op.params = self._collect_params(op.op_type)
         self.model.update_geometry(op)
         if self.list_ops:
             item = self.list_ops.item(idx)
@@ -4542,11 +5058,10 @@ class HandlerClass:
             return
         if not file_path.lower().endswith(".step.json"):
             file_path += ".step.json"
-
-        data = self._operation_to_step_data(self.model.operations[idx])
         try:
-            # Ensure current UI changes are captured into the selected operation before saving
-            self._update_selected_operation()
+            self._update_selected_operation(force=True)
+            op = self.model.operations[idx]
+            data = self._operation_to_step_data(op)
             with open(file_path, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, indent=2)
         except Exception as exc:
@@ -4938,8 +5453,7 @@ class HandlerClass:
                 "LatheEasyStep",
                 f"Fehler beim Erzeugen des Programms:\n{e}",
             )
-            raise
-
+        return
     def _build_program_filepath(self, name_raw: str | None) -> str:
         base = (name_raw or "").strip()
         if not base:
@@ -4955,14 +5469,68 @@ class HandlerClass:
         return os.path.expanduser(os.path.join("~/linuxcnc/nc_files", filename))
 
     def _handle_param_change(self):
-        self._update_parting_ready_state()
-        if self._op_row_user_selected:
-            self._update_selected_operation()
-        elif self._current_op_type() == OpType.CONTOUR:
-            # Trotzdem Live-Vorschau anbieten, ohne bestehende Operationen zu überschreiben
-            self._update_contour_preview_temp()
+        """Generic handler for parameter widgets (spinboxes, combos, checkboxes, lineedits)."""
+        try:
+            w = self.sender()
+        except Exception:
+            return
+        if w is None:
+            return
+
+        # Determine current operation
+        idx = -1
+        try:
+            if self.list_ops is not None:
+                idx = int(self.list_ops.currentRow())
+        except Exception:
+            idx = -1
+
+        if idx < 0 or idx >= len(self.model.operations):
+            return
+
+        op = self.model.operations[idx]
+        if op.params is None:
+            op.params = {}
+
+        name = getattr(w, "objectName", lambda: "")()
+        if not name:
+            return
+
+        # Read widget value
+        val = None
+        try:
+            # QComboBox
+            if hasattr(w, "currentText") and hasattr(w, "currentIndex"):
+                # Prefer itemData if present (but fall back to text)
+                try:
+                    data = w.itemData(w.currentIndex())
+                    val = data if data is not None else w.currentText()
+                except Exception:
+                    val = w.currentText()
+            # QCheckBox
+            elif hasattr(w, "isChecked"):
+                val = bool(w.isChecked())
+            # Spin boxes
+            elif hasattr(w, "value"):
+                val = float(w.value())
+            # Line edit
+            elif hasattr(w, "text"):
+                val = str(w.text())
+        except Exception:
+            return
+
+        # Do NOT write widget.objectName() directly into op.params.
+        # The authoritative mapping is built by _collect_params(op_type),
+        # so we rebuild the selected operation from the UI and refresh geometry/preview.
+        try:
+            self._update_selected_operation(force=True)
+        except Exception:
+            pass
+        return
+
 
     def _handle_selection_change(self, row: int):
+        self._ui_loading = True
         self._op_row_user_selected = bool(
             self.list_ops
             and (self.list_ops.hasFocus() or self._op_row_user_selected)
@@ -4983,7 +5551,19 @@ class HandlerClass:
             }
             self.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
         self._load_params_to_form(op)
+        # keep dynamic UI bits in sync
+        try:
+            if op.op_type == OpType.FACE:
+                self._update_face_visibility()
+        except Exception:
+            pass
+        try:
+            self._update_retract_visibility()
+        except Exception:
+            pass
         self._refresh_preview()
+        self._ui_loading = False
+
 
     def _handle_global_change(self, *args, **kwargs):
         print("[LatheEasyStep] _handle_global_change() called")
@@ -5052,17 +5632,35 @@ class HandlerClass:
     def _update_program_visibility(self, shape=None):
         """Zeigt/verbirgt Programmpfelder abhängig von der Rohteilform."""
 
-        # aktuelle Form ermitteln
-        if shape is None and hasattr(self, "program_shape") and self.program_shape is not None:
-            shape = self.program_shape.currentText()
+        # aktuelle Form ermitteln (Index-basiert für sprachunabhängige Labels)
+        shape_idx = None
+        if hasattr(self, "program_shape") and self.program_shape is not None:
+            try:
+                shape_idx = int(self.program_shape.currentIndex())
+            except Exception:
+                shape_idx = None
 
-        if not shape:
+        if shape is None:
+            if shape_idx is not None and shape_idx >= 0:
+                shape = shape_idx
+            elif hasattr(self, "program_shape") and self.program_shape is not None:
+                shape = self.program_shape.currentText()
+
+        if shape is None or shape == "":
             print("[LatheEasyStep] _update_program_visibility: keine Form")
             return
 
-        # wir vergleichen in Kleinbuchstaben
-        shape_l = shape.lower()
-        print(f"[LatheEasyStep] _update_program_visibility(): shape='{shape}'")
+        # Normalisieren: Index (sprachneutral) oder Text (Fallback)
+        shape_key = None
+        if isinstance(shape, int):
+            shape_map = {0: "zylinder", 1: "rohr", 2: "rechteck", 3: "n-eck"}
+            shape_key = shape_map.get(shape)
+            shape_text = shape_key or str(shape)
+        else:
+            shape_text = str(shape)
+            shape_key = shape_text.strip().lower()
+
+        print(f"[LatheEasyStep] _update_program_visibility(): shape='{shape_text}'")
 
         # Root-Widget wie in _apply_unit_suffix benutzen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
@@ -5070,43 +5668,55 @@ class HandlerClass:
             print("[LatheEasyStep] _update_program_visibility: kein root_widget")
             return
 
-        def show(name, visible):
-            w = root.findChild(QtWidgets.QWidget, name)
-            if w is None:
-                print(f"[LatheEasyStep] _update_program_visibility: widget '{name}' nicht gefunden")
-                return
-            w.setVisible(visible)
+        def _w(objname: str):
+            if not getattr(self, "widgets", None):
+                self.widgets = {}
+            w = self.widgets.get(objname)
+            if w is None and hasattr(self, "_get_widget_by_name"):
+                try:
+                    w = self._get_widget_by_name(objname)
+                except Exception:
+                    w = None
+                if w is not None:
+                    self.widgets[objname] = w
+            return w
 
-        # Alle "Sonder"-Widgets erst mal ausblenden
-        special_widgets = [
-            "label_prog_xi", "program_xi",
-            "label_prog_w", "program_w",
-            "label_prog_l", "program_l",
-            "label_prog_n", "program_n",
-            "label_prog_sw", "program_sw",
-        ]
-        for name in special_widgets:
-            show(name, False)
+        widgets = {
+            "label_xa": _w("label_prog_xa"),
+            "xa": _w("program_xa"),
+            "label_xi": _w("label_prog_xi"),
+            "xi": _w("program_xi"),
+            "label_w": _w("label_prog_w"),
+            "w": _w("program_w"),
+            "label_l": _w("label_prog_l"),
+            "l": _w("program_l"),
+            "label_n": _w("label_prog_n"),
+            "n": _w("program_n"),
+            "label_sw": _w("label_prog_sw"),
+            "sw": _w("program_sw"),
+        }
 
-        # Jetzt je nach Form einschalten
-        if shape_l == "rohr":
-            # Rohr: Innen-Ø zusätzlich
-            show("label_prog_xi", True)
-            show("program_xi", True)
+        # shape_key wurde oben bereits validiert / normalisiert
+        shape_norm = (shape_key or "").strip().lower()
 
-        elif shape_l == "rechteck":
-            # Rechteck: Breite und Länge
-            show("label_prog_w", True)
-            show("program_w", True)
-            show("label_prog_l", True)
-            show("program_l", True)
+        show_xa = shape_norm in ("zylinder", "rohr")
+        show_xi = shape_norm == "rohr"
+        show_w = shape_norm == "rechteck"
+        show_l = shape_norm == "rechteck"
+        show_n = shape_norm in ("n-eck", "ne-eck", "n-eck ")
+        show_sw = show_n
 
-        elif shape_l in ("n-eck", "n-eck"):
-            # N-Eck: Kantenanzahl und Schlüsselweite
-            show("label_prog_n", True)
-            show("program_n", True)
-            show("label_prog_sw", True)
-            show("program_sw", True)
+        def set_vis(key, visible):
+            w = widgets.get(key)
+            if w is not None:
+                w.setVisible(bool(visible))
+
+        set_vis("label_xa", show_xa); set_vis("xa", show_xa)
+        set_vis("label_xi", show_xi); set_vis("xi", show_xi)
+        set_vis("label_w", show_w); set_vis("w", show_w)
+        set_vis("label_l", show_l); set_vis("l", show_l)
+        set_vis("label_n", show_n); set_vis("n", show_n)
+        set_vis("label_sw", show_sw); set_vis("sw", show_sw)
 
     def _update_retract_visibility(self, widget=None, mode_in=None):
         """Zeigt/verbirgt Rückzugsebenen abhängig vom Rückzug-Modus."""
@@ -5132,7 +5742,17 @@ class HandlerClass:
             return
 
         def show(name: str, visible: bool):
-            w = root.findChild(QtWidgets.QWidget, name)
+            w = None
+            if hasattr(self, "_get_widget_by_name"):
+                try:
+                    w = self._get_widget_by_name(name)
+                except Exception:
+                    w = None
+            if w is None and root is not None:
+                try:
+                    w = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
+                except Exception:
+                    w = None
             if w is None:
                 print(f"[LatheEasyStep] _update_retract_visibility: widget '{name}' nicht gefunden")
                 return
@@ -5178,6 +5798,22 @@ class HandlerClass:
 
     def _update_subspindle_visibility(self, *args, **kwargs):
         """Blendet S3-Felder aus/ein, wenn eine Gegenspindel vorhanden ist."""
+        if getattr(self, "program_has_subspindle", None) is None and hasattr(self, "_get_widget_by_name"):
+            try:
+                self.program_has_subspindle = self._get_widget_by_name("program_has_subspindle")
+            except Exception:
+                self.program_has_subspindle = None
+        if getattr(self, "label_prog_s3", None) is None and hasattr(self, "_get_widget_by_name"):
+            try:
+                self.label_prog_s3 = self._get_widget_by_name("label_prog_s3")
+            except Exception:
+                self.label_prog_s3 = None
+        if getattr(self, "program_s3", None) is None and hasattr(self, "_get_widget_by_name"):
+            try:
+                self.program_s3 = self._get_widget_by_name("program_s3")
+            except Exception:
+                self.program_s3 = None
+
         has_sub = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
         print(f"[LatheEasyStep] _update_subspindle_visibility(): has_sub={has_sub}")
 
@@ -5198,140 +5834,180 @@ class HandlerClass:
         else:
             print("[LatheEasyStep] _update_subspindle_visibility: program_s3 not found")
 
-    def _update_face_visibility(self, *args, **kwargs):
-        """Blendet Felder im Reiter 'Planen' abhängig von Modus und Fase/Radius ein/aus."""
-        root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
-        if root:
-            if self.face_mode is None:
+    def _update_face_visibility(self):
+        """Show/hide face (Planen) UI elements depending on mode and edge type.
+
+        The UI differs between installations: some .ui versions have a single
+        'face_edge_size' field, others separate 'face_chamfer'/'face_radius'.
+        This function supports both.
+        """
+        try:
+            root = self.w.get('MainWindow', None)
+        except Exception:
+            root = None
+
+        # locate widgets lazily (embedded panels sometimes are not ready at init)
+        if root is not None:
+            if getattr(self, 'label_face_mode', None) is None:
+                self.label_face_mode = root.findChild(QtWidgets.QLabel, "label_face_mode")
+            if getattr(self, 'face_mode', None) is None:
                 self.face_mode = root.findChild(QtWidgets.QComboBox, "face_mode")
-            if self.face_edge_type is None:
+            if getattr(self, 'label_face_finish_direction', None) is None:
+                self.label_face_finish_direction = root.findChild(QtWidgets.QLabel, "label_face_finish_direction")
+            if getattr(self, 'face_finish_direction', None) is None:
+                self.face_finish_direction = root.findChild(QtWidgets.QComboBox, "face_finish_direction")
+            if getattr(self, 'label_face_edge_type', None) is None:
+                self.label_face_edge_type = root.findChild(QtWidgets.QLabel, "label_face_edge_type")
+            if getattr(self, 'face_edge_type', None) is None:
                 self.face_edge_type = root.findChild(QtWidgets.QComboBox, "face_edge_type")
-            if self.label_face_finish_allow_x is None:
-                self.label_face_finish_allow_x = root.findChild(QtWidgets.QLabel, "label_face_finish_allow_x")
-            if self.face_finish_allow_x is None:
-                self.face_finish_allow_x = root.findChild(QtWidgets.QDoubleSpinBox, "face_finish_allow_x")
-            if self.label_face_finish_allow_z is None:
-                self.label_face_finish_allow_z = root.findChild(QtWidgets.QLabel, "label_face_finish_allow_z")
-            if self.face_finish_allow_z is None:
-                self.face_finish_allow_z = root.findChild(QtWidgets.QDoubleSpinBox, "face_finish_allow_z")
-            if self.label_face_depth_max is None:
-                self.label_face_depth_max = root.findChild(QtWidgets.QLabel, "label_face_depth_max")
-            if self.face_depth_max is None:
-                self.face_depth_max = root.findChild(QtWidgets.QDoubleSpinBox, "face_depth_max")
-            if self.label_face_pause is None:
-                self.label_face_pause = root.findChild(QtWidgets.QLabel, "label_face_pause")
-            if self.face_pause_enabled is None:
-                self.face_pause_enabled = root.findChild(QtWidgets.QCheckBox, "face_pause_enabled")
-            if self.label_face_pause_distance is None:
-                self.label_face_pause_distance = root.findChild(QtWidgets.QLabel, "label_face_pause_distance")
-            if self.face_pause_distance is None:
-                self.face_pause_distance = root.findChild(QtWidgets.QDoubleSpinBox, "face_pause_distance")
-            if self.label_face_edge_size is None:
+
+            # generic edge size field (some UIs)
+            if getattr(self, 'label_face_edge_size', None) is None:
                 self.label_face_edge_size = root.findChild(QtWidgets.QLabel, "label_face_edge_size")
-            if self.face_edge_size is None:
+            if getattr(self, 'face_edge_size', None) is None:
                 self.face_edge_size = root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_size")
 
-        mode_text = self.face_mode.currentText().lower() if self.face_mode else ""
-        edge_text = self.face_edge_type.currentText().lower() if self.face_edge_type else ""
+            # separate chamfer / radius fields (other UIs)
+            if getattr(self, 'label_face_chamfer', None) is None:
+                self.label_face_chamfer = (
+                    root.findChild(QtWidgets.QLabel, "label_face_chamfer")
+                    or root.findChild(QtWidgets.QLabel, "label_face_fase")
+                    or root.findChild(QtWidgets.QLabel, "label_face_edge_chamfer")
+                )
+            if getattr(self, 'face_chamfer', None) is None:
+                self.face_chamfer = (
+                    root.findChild(QtWidgets.QDoubleSpinBox, "face_chamfer")
+                    or root.findChild(QtWidgets.QDoubleSpinBox, "face_fase")
+                    or root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_chamfer")
+                )
 
-        is_rough = "schrupp" in mode_text
-        edge_visible = edge_text in ("fase", "radius")
+            if getattr(self, 'label_face_radius', None) is None:
+                self.label_face_radius = (
+                    root.findChild(QtWidgets.QLabel, "label_face_radius")
+                    or root.findChild(QtWidgets.QLabel, "label_face_edge_radius")
+                )
+            if getattr(self, 'face_radius', None) is None:
+                self.face_radius = (
+                    root.findChild(QtWidgets.QDoubleSpinBox, "face_radius")
+                    or root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_radius")
+                )
 
-        # Schrupp-Optionen
-        if self.label_face_finish_allow_x:
-            self.label_face_finish_allow_x.setVisible(is_rough)
-        if self.face_finish_allow_x:
-            self.face_finish_allow_x.setVisible(is_rough)
+        # nothing to do if essential widgets are missing
+        if getattr(self, 'face_mode', None) is None or getattr(self, 'face_edge_type', None) is None:
+            return
 
-        if self.label_face_finish_allow_z:
-            self.label_face_finish_allow_z.setVisible(is_rough)
-        if self.face_finish_allow_z:
-            self.face_finish_allow_z.setVisible(is_rough)
+        mode_text = (self.face_mode.currentText() or "").strip().lower()
+        finish_visible = ("schlichten" in mode_text) or ("finish" in mode_text)
+        if getattr(self, 'label_face_finish_direction', None) is not None:
+            self.label_face_finish_direction.setVisible(finish_visible)
+        if getattr(self, 'face_finish_direction', None) is not None:
+            self.face_finish_direction.setVisible(finish_visible)
 
-        if self.label_face_depth_max:
-            self.label_face_depth_max.setVisible(is_rough)
-        if self.face_depth_max:
-            self.face_depth_max.setVisible(is_rough)
+        # edge type: 0=none, 1=chamfer/fase, 2=radius (as in UI lists)
+        edge_text = (self.face_edge_type.currentText() or "").strip().lower()
+        is_chamfer = ("fase" in edge_text) or ("chamfer" in edge_text)
+        is_radius = ("radius" in edge_text)
+        edge_visible = is_chamfer or is_radius
 
-        if self.label_face_pause:
-            self.label_face_pause.setVisible(is_rough)
-        if self.face_pause_enabled:
-            self.face_pause_enabled.setVisible(is_rough)
-        if self.label_face_pause_distance:
-            self.label_face_pause_distance.setVisible(is_rough)
-        if self.face_pause_distance:
-            self.face_pause_distance.setVisible(is_rough)
+        # hide everything first
+        for w in (
+            getattr(self, 'label_face_edge_size', None),
+            getattr(self, 'face_edge_size', None),
+            getattr(self, 'label_face_chamfer', None),
+            getattr(self, 'face_chamfer', None),
+            getattr(self, 'label_face_radius', None),
+            getattr(self, 'face_radius', None),
+        ):
+            if w is not None:
+                w.setVisible(False)
 
-        # Kantenform
-        if self.label_face_edge_size:
-            self.label_face_edge_size.setVisible(edge_visible)
-        if self.face_edge_size:
-            self.face_edge_size.setVisible(edge_visible)
+        if not edge_visible:
+            return
 
-        if self.label_face_edge_size:
-            if edge_text == "fase":
-                self.label_face_edge_size.setText("Fasenlänge")
-            elif edge_text == "radius":
-                self.label_face_edge_size.setText("Radius")
-            else:
-                self.label_face_edge_size.setText("Kantengröße")
+        # prefer dedicated widgets if present
+        if is_chamfer and getattr(self, 'face_chamfer', None) is not None:
+            if getattr(self, 'label_face_chamfer', None) is not None:
+                self.label_face_chamfer.setVisible(True)
+            self.face_chamfer.setVisible(True)
+            return
 
-    # ---- Hilfsfunktionen ----------------------------------------------
-    def _describe_operation(self, op: Operation, number: int) -> str:
-        tool = int(op.params.get("tool", 0)) if isinstance(op.params, dict) else 0
-        suffix = f" (T{tool:02d})" if tool > 0 else ""
-        if op.op_type == OpType.PROGRAM_HEADER:
-            npv = op.params.get("npv", "G54") if isinstance(op.params, dict) else "G54"
-            return f"{number}: Programmkopf ({npv})"
-        if op.op_type == OpType.CONTOUR:
-            name = op.params.get("name", "") if isinstance(op.params, dict) else ""
-            if not name:
-                seq_idx = self._contour_sequence_index(op)
-                if seq_idx is not None:
-                    name = self._fallback_contour_name(seq_idx)
-            name_suffix = f" [{name}]" if name else ""
-            return f"{number}: Kontur{name_suffix}{suffix}"
-        if op.op_type == OpType.FACE:
-            mode_idx = int(op.params.get("mode", 0)) if isinstance(op.params, dict) else 0
-            mode_label = {
-                0: "Schruppen",
-                1: "Schlichten",
-                2: "Schruppen+Schlichten",
-            }.get(mode_idx, "Planen")
-            start_z = op.params.get("start_z", 0.0) if isinstance(op.params, dict) else 0.0
-            end_z = op.params.get("end_z", 0.0) if isinstance(op.params, dict) else 0.0
-            coolant_hint = " mit Kühlung" if bool(op.params.get("coolant", False)) else ""
-            return f"{number}: Planen {mode_label} (Z {start_z}→{end_z}){coolant_hint}{suffix}"
-        if op.op_type == OpType.ABSPANEN:
-            name = op.params.get("contour_name", "") if isinstance(op.params, dict) else ""
-            if not name:
-                # Falls die Referenz ohne Namen angelegt wurde, bestmöglichen Fallback anzeigen
-                seq_idx = self._contour_sequence_index(op)
-                if seq_idx is not None:
-                    name = self._fallback_contour_name(seq_idx)
-            side_idx = int(op.params.get("side", 0)) if isinstance(op.params, dict) else 0
-            side_label = "außen" if side_idx == 0 else "innen"
-            name_suffix = f" [{name}]" if name else ""
-            return f"{number}: Abspanen{name_suffix} ({side_label}){suffix}"
-        if op.op_type == OpType.THREAD:
-            orientation_raw = op.params.get("orientation", 0)
-            orientation_idx = 0
-            if isinstance(orientation_raw, (int, float)):
-                orientation_idx = int(max(0, min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1)))
-            orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
-            standard_data = op.params.get("standard")
-            detail = ""
-            if isinstance(standard_data, dict):
-                label = standard_data.get("label")
-                if label:
-                    detail = label
-            if not detail:
-                major = float(op.params.get("major_diameter", 0.0))
-                pitch = float(op.params.get("pitch", 0.0))
-                detail = f"Ø{major:.2f} P{pitch:.2f}"
-            return f"{number}: Gewinde ({orientation_label}) {detail}{suffix}"
-        return f"{number}: {op.op_type.title()}{suffix}"
+        if is_radius and getattr(self, 'face_radius', None) is not None:
+            if getattr(self, 'label_face_radius', None) is not None:
+                self.label_face_radius.setVisible(True)
+            self.face_radius.setVisible(True)
+            return
 
+        # fallback to generic edge_size widget
+        if getattr(self, 'label_face_edge_size', None) is not None:
+            self.label_face_edge_size.setVisible(True)
+            try:
+                self.label_face_edge_size.setText("Fase:" if is_chamfer else "Radius:")
+            except Exception:
+                pass
+        if getattr(self, 'face_edge_size', None) is not None:
+            self.face_edge_size.setVisible(True)
+
+    def _describe_operation(self, op, number=None):
+        def wrap(s):
+            return f"{int(number)}. {s}" if number is not None else s
+        """Return a short human readable description for the operations list."""
+        try:
+            t = op.op_type
+            p = op.params or {}
+        except Exception:
+            return str(op)
+
+        def fnum(v, nd=1):
+            try:
+                return f"{float(v):.{nd}f}"
+            except Exception:
+                return str(v)
+
+        if t == OpType.PROGRAM_HEADER:
+            wcs = str(p.get("wcs", "G54")).upper()
+            return wrap(f"Programmkopf ({wcs})")
+        if t == OpType.FACE:
+            mode = p.get("mode", "schruppen")
+            # robust: older saved STEP files may store mode as numeric (e.g. 0.0/1.0)
+            if isinstance(mode, (int, float)):
+                mode = {0: "schruppen", 1: "schlichten", 2: "schruppen + schlichten"}.get(int(mode), "schruppen")
+            if mode is None:
+                mode = "schruppen"
+            mode = str(mode)
+            z_start = p.get("z_start", 0.0)
+            z_end = p.get("z_end", 0.0)
+            coolant = " mit Kühlung" if p.get("coolant") else ""
+            tool = p.get("tool", "T01")
+            return wrap(f"Planen {mode.title()} (Z {fnum(z_start)}→{fnum(z_end)}){coolant} ({tool})")
+        if t == OpType.CONTOUR:
+            side = p.get("side", "außen")
+            mode = p.get("mode", "schruppen")
+            tool = p.get("tool", "T01")
+            return wrap(f"Kontur {mode} ({side}) ({tool})")
+        if t == OpType.DRILL:
+            depth = p.get("depth", 0.0)
+            z0 = p.get("z0", 0.0)
+            mode = p.get("mode", "normal")
+            tool = p.get("tool", "T01")
+            return wrap(f"Bohren {mode} (Z {fnum(z0)}→{fnum(depth)}) ({tool})")
+        if t == OpType.GROOVE:
+            z = p.get("z", 0.0)
+            width = p.get("width", 0.0)
+            tool = p.get("tool", "T01")
+            return wrap(f"Einstechen (Z {fnum(z)}; B {fnum(width)}) ({tool})")
+        if t == OpType.THREAD:
+            pitch = p.get("pitch", 0.0)
+            z0 = p.get("z0", 0.0)
+            z1 = p.get("z1", 0.0)
+            orient = p.get("orientation", "aussengewinde")
+            tool = p.get("tool", "T01")
+            return wrap(f"Gewinde {orient} (P {fnum(pitch,2)}; Z {fnum(z0)}→{fnum(z1)}) ({tool})")
+        if t == OpType.ABSPANEN:
+            z = p.get("z", 0.0)
+            tool = p.get("tool", "T01")
+            return wrap(f"Abstechen (Z {fnum(z)}) ({tool})")
+        # fallback
+        return wrap(f"{t}: {p}")
     def _renumber_operations(self):
         if self.list_ops is None:
             return
@@ -5348,3 +6024,29 @@ class HandlerClass:
 
 def get_handlers(halcomp, widgets, paths):
     return [HandlerClass(halcomp, widgets, paths)]
+
+
+
+# === Safety patch: ensure optional callbacks exist (generated by ChatGPT) ===
+# This keeps the panel from crashing if a UI file lacks certain buttons/signals.
+try:
+    HandlerClass  # noqa: F821
+except Exception:
+    HandlerClass = None
+
+def _les_noop(self, *args, **kwargs):
+    return None
+
+if HandlerClass is not None:
+    _missing_ok = [
+        # button callbacks (may be absent in some UI variants)
+        '_handle_add_operation',
+        '_handle_delete_operation',
+        '_handle_move_up',
+        '_handle_move_down',
+        '_handle_global_change',
+        '_apply_unit_suffix',  # internal helper in some versions
+    ]
+    for _n in _missing_ok:
+        if not hasattr(HandlerClass, _n):
+            setattr(HandlerClass, _n, _les_noop)
