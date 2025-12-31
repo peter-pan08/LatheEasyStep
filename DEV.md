@@ -54,6 +54,13 @@ Geplante Erweiterung:
 
 ---
 
+## Planen / FACE
+- `build_face_primitives()` repräsentiert die OD-Ecke als echte Primitive (Linien + Arc), sodass the preview die Kante am Außendurchmesser direkt zeigt.
+- Die Parameter `edge_type`, `edge_size` und das neue `edge_in_roughing` bestimmen, ob die Kante als Linie, Fase oder Radius modelliert wird und ob sie schon im letzten Roughing-Pass vorgearbeitet wird.
+- In `gcode_for_face()` wird bei aktivierter Vorform im Schruppen konkret eine diagonal abgesprungene Fase (G1) bzw. ein Viertelkreis (G2/G3) erzeugt; ohne Platz oder Edge-Inhalte bleibt es beim bewährten geraden Abziehen.
+
+---
+
 ## Abspanlogik
 - Aktuell: Schruppen parallel Z
 - Kontur wird entlang X-Linien ausgewertet

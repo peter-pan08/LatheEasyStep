@@ -12,15 +12,16 @@ Der Fokus liegt auf:
 
 Ziel ist es, einen großen Teil typischer Drehteile (Schruppen, Konturen, Fasen, Radien) direkt im Panel zu erzeugen.
 
-- ### Funktionen
-
+### Funktionen
 - Abspanen **parallel Z** (Schruppen)
 - Konturdefinition mit:
   - Geraden
   - Fasen
   - Radien (Innen / Außen pro Radius)
-- Vorschau der Kontur (jetzt echte Linien und Arc-Primitives, nur gültige Radien erscheinen)
-- Konturvalidierung: die Vorschau blockiert erkennbare Geometriefehler, damit G71/G70 keine falschen Daten erhält
+- Vorschau der Kontur (echte Linien/Arc-Primitives, nur gültige Radien erscheinen)
+- Validierung vor Vorschau und G71/G70 – Ungültiges wird im Terminal geloggt und die Vorschau bleibt leer
+- Planen: Ecken am Außendurchmesser erscheinen als Linie/Fase/Radius (inkl. Arc-Primitives)
+- Optionales „Edge in Roughing“ modelliert die Kante schon im letzten Schrupphub
 - Sichere Anfahr- und Rückzugsbewegungen (X/Z simultan)
 - Parametergesteuerte Zustellung und Schrittweiten
 - G-Code-Erzeugung direkt aus dem Panel
