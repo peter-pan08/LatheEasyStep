@@ -137,3 +137,60 @@ Radii are geometrically correct but currently output as linearized segments
 Native G2/G3 output planned
 
 Project is under active development
+
+
+## 🔍 Vorschau & Geometrie-Darstellung
+
+### Interaktive Legende
+- Die Vorschau enthält eine **interaktive Legende**.
+- **Das Wort „Legende“ ist immer sichtbar** und dient als Klickfläche.
+- Durch Anklicken kann die Legende **ein- und ausgeklappt** werden.
+- Im eingeklappten Zustand wird nur der Titel angezeigt.
+- Die Legende beeinflusst ausschließlich die Anzeige, **nicht** die Berechnung.
+
+### Linienarten in der Vorschau
+| Darstellung | Bedeutung |
+|------------|----------|
+| Grün (durchgezogen) | Kontur / Soll-Geometrie |
+| Gelb (durchgezogen) | Aktiver Bearbeitungspfad |
+| Grau (gestrichelt) | Rohteil |
+| Türkis (gestrichelt) | Rückzugsebenen |
+| Rot (gestrichelt) | Bearbeitungs- / Sicherheitsgrenze |
+
+## 🛡 Sicherheitsbereiche
+- Rohteil, Rückzugsebenen und Bearbeitungsgrenzen werden geometrisch korrekt dargestellt.
+- Überschreitungen der Bearbeitungsgrenze werden visuell hervorgehoben.
+
+## 🔧 Reiter „Planen“ – Fase oder Radius
+- Am Ende der Planfläche kann optional eine **Fase oder ein Radius** definiert werden.
+- Unterstützt: Keine / Fase / Radius.
+- Wirkt sich auf Vorschau und generierten Bearbeitungspfad aus.
+
+
+
+## 🔍 Preview & Geometry Display
+
+### Interactive Legend
+- The preview includes an **interactive legend**.
+- The word **“Legend” is always visible** and acts as a click target.
+- Clicking toggles the legend **collapsed / expanded**.
+- In collapsed state only the title is shown.
+- The legend affects visualization only, **not calculations**.
+
+### Line Types in Preview
+| Style | Meaning |
+|------|--------|
+| Green (solid) | Target contour |
+| Yellow (solid) | Active toolpath |
+| Grey (dashed) | Stock |
+| Cyan (dashed) | Retract planes |
+| Red (dashed) | Machining / safety limit |
+
+## 🛡 Safety Areas
+- Stock, retract planes and safety limits are shown geometrically correct.
+- Violations of the machining limit are highlighted visually.
+
+## 🔧 Facing Tab – Chamfer or Radius
+- A **chamfer or radius** can be defined at the end of a facing operation.
+- Supported: None / Chamfer / Radius.
+- Affects preview geometry and generated toolpath.

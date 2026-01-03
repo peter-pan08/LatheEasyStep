@@ -407,8 +407,21 @@ class ProgramModel:
             OpType.KEYWAY: build_keyway_path,
             OpType.ABSPANEN: build_abspanen_path,
         }.get(op.op_type)
-        if builder:
+        if not builder:
+            op.path = []
+            return
+
+        # builder signatures are usually builder(params). Some builders also need program settings.
+        try:
+            argc = builder.__code__.co_argcount
+        except Exception:
+            argc = 1
+
+        if argc >= 2:
+            op.path = builder(op.params, self.program_settings)
+        else:
             op.path = builder(op.params)
+
 
     def generate_gcode(self) -> List[str]:
         settings = self.program_settings or {}
@@ -630,8 +643,54 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.paths: List[List[Tuple[float, float]]] = []
         self.primitives: List[List[dict]] = []
         self.active_index: int | None = None
+        # Legend visibility & collision indication
+        self.show_legend = True
+        self._legend_collapsed = False
+        self._legend_click_rect = None
+
+        self._collision_active = False
+        self._blink_state = False
+        self._blink_timer = QtCore.QTimer(self)
+        self._blink_timer.setInterval(350)
+        self._blink_timer.timeout.connect(self._on_blink_timer)
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
+
+
+    def _on_blink_timer(self):
+        # Blink when collision is active
+        if not self._collision_active:
+            if self._blink_state:
+                self._blink_state = False
+                self.update()
+            return
+        self._blink_state = not self._blink_state
+        self.update()
+
+    def set_collision(self, active: bool):
+        self._collision_active = bool(active)
+        if self._collision_active:
+            if not self._blink_timer.isActive():
+                self._blink_timer.start()
+        else:
+            if self._blink_timer.isActive():
+                self._blink_timer.stop()
+            self._blink_state = False
+            self.update()
+
+    def toggle_legend(self):
+        # keep a small header visible, toggle between collapsed/expanded
+        self._legend_collapsed = not getattr(self, "_legend_collapsed", False)
+        self.update()
+
+    def mousePressEvent(self, event):  # type: ignore[override]
+        # Click on legend to toggle
+        rect = getattr(self, "_legend_click_rect", None)
+        if rect and rect.contains(event.pos()):
+            self.toggle_legend()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def _sample_arc(self, p1, p2, c, ccw, steps=48):
         x1, z1 = p1
@@ -746,6 +805,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QtGui.QPainter(self)
+        self._legend_click_rect = None
         try:
             painter.fillRect(self.rect(), QtCore.Qt.black)
             # Collect bounds across all paths (supports point lists and primitive lists)
@@ -882,8 +942,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
                 # role based styling (e.g. raw stock reference)
                 role = None
-                if isinstance(path, list) and path and isinstance(path[0], dict):
-                    role = (path[0].get("role") or next((d.get("role") for d in path if isinstance(d, dict) and d.get("role")), None))
+                if isinstance(path, list) and path:
+                    # path can be a list of primitive dicts; pick first non-empty role
+                    for d in path:
+                        if isinstance(d, dict):
+                            r = d.get("role")
+                            if r:
+                                role = r
+                                break
 
                 if role == "stock":
                     color = QtGui.QColor("gray")
@@ -893,6 +959,11 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     # retract planes: visually distinct and clearly *not* a contour
                     color = QtGui.QColor(0, 180, 180)
                     width = 1
+                    style = QtCore.Qt.DashLine
+                elif role == "worklimit":
+                    # workpiece stick-out / chuck collision limit (Bearbeitungsmaß)
+                    color = QtGui.QColor(220, 0, 0)
+                    width = 2
                     style = QtCore.Qt.DashLine
                 else:
                     color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
@@ -907,7 +978,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 if isinstance(path[0], dict):
                     # NOTE: do NOT connect independent primitives with a single polyline.
                     # For retract planes this would create confusing diagonal "links" between separate helper lines.
-                    if role in ("retract", "stock"):
+                    if role in ("retract", "stock", "worklimit"):
                         for prim in path:
                             if not isinstance(prim, dict):
                                 continue
@@ -951,46 +1022,67 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 points = [to_screen(x, z) for x, z in path]
                 painter.drawPolyline(QtGui.QPolygonF(points))
 
-            # --- Legend (top-left inside margin) ---
-            try:
-                painter.save()
-                legend_items = [
-                    ("Kontur", QtGui.QPen(QtGui.QColor("lime"), 2, QtCore.Qt.SolidLine)),
-                    ("Aktiv", QtGui.QPen(QtGui.QColor("yellow"), 2, QtCore.Qt.SolidLine)),
-                    ("Rohteil", QtGui.QPen(QtGui.QColor(120, 120, 120), 1, QtCore.Qt.DashLine)),
-                    ("Rückzug", QtGui.QPen(QtGui.QColor(0, 180, 180), 1, QtCore.Qt.DashLine)),
-                ]
+            legend_enabled = getattr(self, "show_legend", True)
+            collapsed = getattr(self, "_legend_collapsed", False)
 
-                pad = 6
-                line_len = 26
-                row_h = 16
-                x0 = margin
-                y0 = margin - 2
-
-                # background box
-                box_w = 120
-                box_h = pad * 2 + row_h * len(legend_items)
-                bg = QtGui.QColor(0, 0, 0, 160)
-                painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-                painter.setBrush(QtGui.QBrush(bg))
-                painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
-
-                painter.setFont(QtGui.QFont("Sans", 8))
-                for i, (label, pen) in enumerate(legend_items):
-                    y = y0 + pad + i * row_h + 10
-                    # sample line
-                    painter.setPen(pen)
-                    painter.drawLine(QtCore.QLineF(x0 + pad, y - 3, x0 + pad + line_len, y - 3))
-                    # text
-                    painter.setPen(QtGui.QPen(QtGui.QColor(200, 200, 200), 1))
-                    painter.drawText(QtCore.QPointF(x0 + pad + line_len + 8, y), label)
-            except Exception:
-                pass
-            finally:
+            if legend_enabled:
+                # --- Legend: "Legende" header is always visible, click toggles details ---
                 try:
-                    painter.restore()
+                    margin = 6
+                    header_h = 18
+                    row_h = 16
+                    line_len = 26
+                    box_w = 155
+
+                    legend_items = [
+                        ("Kontur", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Aktiv", QtGui.QPen(QtGui.QColor(255, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Rohteil", QtGui.QPen(QtGui.QColor(180, 180, 180), 1, QtCore.Qt.SolidLine)),
+                        ("Rückzug", QtGui.QPen(QtGui.QColor(0, 255, 255), 1, QtCore.Qt.DashLine)),
+                        ("Bearbeitungslinie", QtGui.QPen(QtGui.QColor(255, 0, 0), 1, QtCore.Qt.DashLine)),
+                    ]
+
+                    x0 = margin
+                    y0 = margin - 2
+
+                    # Box height: always header, details only if not collapsed
+                    if collapsed:
+                        box_h = margin * 2 + header_h
+                    else:
+                        box_h = margin * 2 + header_h + row_h * len(legend_items)
+
+                    bg = QtGui.QColor(0, 0, 0, 160)
+                    painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
+                    painter.setBrush(QtGui.QBrush(bg))
+                    painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
+
+                    # Click target = header area (always present)
+                    self._legend_click_rect = QtCore.QRectF(x0, y0, box_w, header_h + margin)
+
+                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 1))
+                    painter.setFont(QtGui.QFont("Sans", 8))
+                    painter.drawText(
+                        QtCore.QRectF(x0 + margin, y0 + 2, box_w - 2 * margin, header_h),
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                        "Legende"
+                    )
+
+                    if not collapsed:
+                        for i, (label, pen) in enumerate(legend_items):
+                            y = y0 + margin + header_h + i * row_h + 10
+                            painter.setPen(pen)
+                            painter.drawLine(
+                                QtCore.QPointF(x0 + margin, y),
+                                QtCore.QPointF(x0 + margin + line_len, y)
+                            )
+                            painter.setPen(QtGui.QPen(QtGui.QColor(230, 230, 230), 1))
+                            painter.drawText(QtCore.QPointF(x0 + margin + line_len + 6, y + 4), label)
+
                 except Exception:
-                    pass
+                    self._legend_click_rect = None
+
+        except Exception:
+            self._legend_click_rect = None
         finally:
             painter.end()
 
@@ -1001,18 +1093,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
 def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     """Build a 2D preview path for facing (Planen).
 
-    LatheEasyStep stores different key names depending on version / UI:
-      - newer: start_x/end_x + start_z/end_z (+ edge_type/edge_size)
-      - older: outer_diameter/inner_diameter + start_z/end_z
+    IMPORTANT: This returns the *cutting contour* only (no closing back to Z0),
+    because otherwise the preview draws an extra diagonal/return line.
 
-    This function accepts both. X values are treated as *diameter* coordinates, just like
-    the rest of LatheEasyStep's internal logic.
-
-    Convention:
-      - Z decreases "into the material" at the workpiece front face.
-      - The face end plane is end_z (often 0.0).
-      - Edge/chamfer/radius are applied at the outer corner (x_outer, end_z) and extend
-        into *negative Z* (towards the material).
+    Conventions / expectations in this project:
+      - X is a diameter coordinate (as used everywhere else in LatheEasyStep).
+      - Facing is shown from the center (x_inner) outward to the OD (x_outer).
+      - The face plane is z_end (often 0.0). z_start is a safe/approach Z.
+      - Chamfer/radius is applied at the outer corner (x_outer, z_end) going into -Z.
     """
     # --- X extents (diameter) ---
     x_outer = params.get("outer_diameter", None)
@@ -1042,31 +1130,44 @@ def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     edge_type = int(params.get("edge_type", 0))  # 0=none, 1=chamfer, 2=radius
     edge_size = float(params.get("edge_size", 0.0) or 0.0)
 
-    # Basic preview polyline
+    # Normalize: ensure x_inner <= x_outer
+    if x_inner > x_outer:
+        x_inner, x_outer = x_outer, x_inner
+
     path: List[Tuple[float, float]] = []
-    path.append((x_outer, z_start))
-    path.append((x_outer, z_end))
+
+    # Start at center/inner diameter at safe Z, then to face plane
+    path.append((x_inner, z_start))
+    path.append((x_inner, z_end))
 
     # Apply edge at outer corner (x_outer, z_end)
     if edge_type == 1 and edge_size > 0.0:
-        # 45° chamfer
-        path.append((x_outer, z_end - edge_size))
+        # 45° chamfer: go to the chamfer start on the face plane, then down in Z.
+        # Expected polyline: (x_inner,z_start)->(x_inner,z_end)->(x_outer-edge,z_end)->(x_outer,z_end-edge)
         path.append((max(x_inner, x_outer - edge_size), z_end))
-        path.append((x_inner, z_end))
+        path.append((x_outer, z_end - edge_size))
+        # NOTE: do NOT append (x_outer, z_end) or close back -> that caused the unwanted return line.
+
     elif edge_type == 2 and edge_size > 0.0:
-        # Quarter-circle approximation for preview
+        # Outer radius (quarter-circle) from (x_outer-edge, z_end) to (x_outer, z_end-edge)
+        x0 = max(x_inner, x_outer - edge_size)
+        z0 = z_end
+        path.append((x0, z0))
         cx = x_outer - edge_size
         cz = z_end - edge_size
-        segments = 6
+        segments = 10
         import math
-        for i in range(segments + 1):
-            a = (math.pi / 2.0) * (i / segments)  # 0..90°
+        # a: 90°..0° (start at face plane, end at OD line)
+        for i in range(1, segments + 1):
+            a = (math.pi / 2.0) * (1.0 - (i / segments))
             x = cx + edge_size * math.cos(a)
             z = cz + edge_size * math.sin(a)
             path.append((x, z))
-        path.append((x_inner, z_end))
+        # ends close to (x_outer, z_end-edge_size)
+
     else:
-        path.append((x_inner, z_end))
+        # No edge: just face to OD at z_end
+        path.append((x_outer, z_end))
 
     return path
 
@@ -1220,6 +1321,56 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
             pass
 
     return prim
+
+
+
+def build_worklimit_primitives(program: Dict[str, Any], stock_prims: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Bearbeitungsmaß / Werkstück-Überstand (Chuck-Kollisionsgrenze) als Linie.
+
+    program['zb'] = Z-Position der Grenze (wo das Material aus dem Futter herausragt).
+
+    Die Linienlänge wird **aus der Rohteilkontur** abgeleitet, damit sie nicht mit
+    Fantasie-Werten (±1000) gezeichnet wird.
+    """
+    try:
+        z = float(program.get("zb", 0.0) or 0.0)
+    except Exception:
+        z = 0.0
+
+    if abs(z) < 1e-9:
+        return []
+
+    # X-Ausdehnung aus Rohteil-Kontur (points sind (x, z))
+    x_vals: List[float] = []
+    for prim in stock_prims or []:
+        if isinstance(prim, dict) and prim.get("type") == "polyline":
+            pts = prim.get("points") or []
+            for pt in pts:
+                if isinstance(pt, (tuple, list)) and len(pt) >= 2:
+                    try:
+                        x_vals.append(float(pt[0]))
+                    except Exception:
+                        pass
+
+    if x_vals:
+        min_x = min(x_vals)
+        max_x = max(x_vals)
+        # kleine Sicherheitsmargen (typisch: min bei 0 -> Linie bis ca. -5mm)
+        margin_neg = 5.0
+        margin_pos = max(2.0, 0.02 * max(abs(max_x), 1.0))
+        x_min = min(min_x - margin_neg, -margin_neg)
+        x_max = max_x + margin_pos
+    else:
+        # Fallback, falls keine Rohteil-Kontur verfügbar ist
+        x_min = -5.0
+        x_max = 50.0
+
+    return [{
+        "type": "line",
+        "p1": (x_min, z),
+        "p2": (x_max, z),
+        "role": "worklimit",
+    }]
 
 
 def build_turn_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
@@ -2355,6 +2506,60 @@ def gcode_for_operation(
 # ----------------------------------------------------------------------
 # Handler
 # ----------------------------------------------------------------------
+
+    def toggle_legend(self):
+        # keep a small header visible, toggle between collapsed/expanded
+        self._legend_collapsed = not getattr(self, "_legend_collapsed", False)
+        self.update()
+
+    def set_collision(self, active: bool):
+        active = bool(active)
+        if active == self._collision_active:
+            return
+        self._collision_active = active
+        self._blink_state = False
+        if active:
+            if not self._blink_timer.isActive():
+                self._blink_timer.start()
+        else:
+            self._blink_timer.stop()
+        self.update()
+
+    def _on_blink_timer(self):
+        if not self._collision_active:
+            self._blink_timer.stop()
+            return
+        self._blink_state = not self._blink_state
+        self.update()
+
+    def mousePressEvent(self, event):
+        # Click on the legend box to toggle it
+        try:
+            if self._legend_click_rect is not None and self._legend_click_rect.contains(event.pos()):
+                self.toggle_legend()
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        # Double click anywhere toggles legend
+        self.toggle_legend()
+        event.accept()
+
+    def keyPressEvent(self, event):
+        # 'L' toggles legend
+        try:
+            if event.key() in (QtCore.Qt.Key_L,):
+                self.toggle_legend()
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().keyPressEvent(event)
+
+
 class HandlerClass:
     def __init__(self, halcomp, widgets, paths):
         self.hal = halcomp
@@ -3100,6 +3305,15 @@ class HandlerClass:
             root = self.root_widget or self._find_root_widget()
             if root is not None:
                 self.face_edge_type = root.findChild(QtWidgets.QComboBox, "face_edge_type")
+
+        # PATCH: If the UI does not provide dedicated face_* widgets, reuse contour_* widgets.
+        # This fixes "keine/fase/radius" switching and enables the edge size input for facing.
+        if self.face_edge_type is None and getattr(self, "contour_edge_type", None) is not None:
+            self.face_edge_type = self.contour_edge_type
+        if getattr(self, "face_edge_size", None) is None and getattr(self, "contour_edge_size", None) is not None:
+            self.face_edge_size = self.contour_edge_size
+        if getattr(self, "face_edge_size_lbl", None) is None and getattr(self, "contour_edge_size_lbl", None) is not None:
+            self.face_edge_size_lbl = self.contour_edge_size_lbl
 
         if self.face_mode:
             self.face_mode.currentIndexChanged.connect(self._update_face_visibility)
@@ -4939,18 +5153,69 @@ class HandlerClass:
         active_index: int | None = None,
         include_contour_preview: bool = True,
     ) -> None:
-        """Aktualisiert Haupt- und optional den Kontur-Tab-Preview."""
+        """Aktualisiert Haupt- und optional den Kontur-Tab-Preview.
+
+        Achtung: Je nach LinuxCNC/QTvcp-Version gibt es unterschiedliche
+        Signaturen von LathePreviewWidget.set_paths().
+        """
 
         self._ensure_preview_widgets()
+
+        # main preview
         if self.preview:
-            self.preview.set_paths(paths, active_index)
+            try:
+                # Newer signature: set_paths(paths, active_index=None)
+                # Collision check against worklimit (Bearbeitungsmaß in Z)
+                collision = False
+                try:
+                    zb = None
+                    for prim_list in paths:
+                        for pr in prim_list:
+                            if pr.get("role") == "worklimit" and pr.get("type") == "line":
+                                # vertical line: p1=(x,z) p2=(x,z)
+                                zb = float(pr.get("p1", (0.0, 0.0))[1])
+                                break
+                        if zb is not None:
+                            break
+                    if zb is not None:
+                        min_z = None
+                        for prim_list in paths:
+                            for pr in prim_list:
+                                role = pr.get("role")
+                                if role in ("stock", "retract", "worklimit"):
+                                    continue
+                                t = pr.get("type")
+                                if t == "polyline":
+                                    for x, z in pr.get("points", []):
+                                        if min_z is None or z < min_z:
+                                            min_z = z
+                                elif t == "line":
+                                    for x, z in (pr.get("p1"), pr.get("p2")):
+                                        if min_z is None or z < min_z:
+                                            min_z = z
+                        if min_z is not None and min_z < zb - 1e-6:
+                            collision = True
+                except Exception:
+                    collision = False
+                if hasattr(self.preview, "set_collision"):
+                    self.preview.set_collision(collision)
+                self.preview.set_paths(paths, active_index)
+            except TypeError:
+                # Older signature: set_paths(paths)
+                self.preview.set_paths(paths)
+
+        # contour preview tab (if present)
         if include_contour_preview and self.contour_preview:
-            self.contour_preview.set_paths(paths, None)
+            try:
+                self.contour_preview.set_paths(paths, active_index)
+            except TypeError:
+                self.contour_preview.set_paths(paths)
 
     def _refresh_preview(self):
-        if self.preview is None:
+        # PATCH: allow preview to work even if only contourPreview exists.
+        if self.preview is None or self.contour_preview is None:
             self._ensure_preview_widgets()
-        if self.preview is None:
+        if self.preview is None and self.contour_preview is None:
             return
         paths: List[List[Tuple[float, float]]] = []
 
@@ -4986,13 +5251,20 @@ class HandlerClass:
                 paths.insert(inserts, retract_primitives)
                 inserts += 1
 
+
+            # workpiece stick-out / chuck collision limit (Bearbeitungsmaß)
+            worklimit_primitives = build_worklimit_primitives(prog, stock_primitives or [])
+            if worklimit_primitives:
+                paths.insert(inserts, worklimit_primitives)
+                inserts += 1
+
             if active is not None and active >= 0 and inserts:
                 active += inserts
         except Exception as exc:
             print("[LatheEasyStep] stock/retract preview ERROR:", exc)
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
-        self._set_preview_paths(paths, active, include_contour_preview=False)
+        self._set_preview_paths(paths, active, include_contour_preview=True)
 
     def _refresh_operation_list(self, select_index: int | None = None):
         """Synchronisiert die linke Operationsliste mit dem internen Modell."""
@@ -5062,14 +5334,41 @@ class HandlerClass:
         self._update_parting_contour_choices()
 
     def _ensure_preview_widgets(self):
-        """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen."""
-        root = self.root_widget or self._find_root_widget()
-        if root:
-            if self.preview is None:
-                self.preview = root.findChild(LathePreviewWidget, "previewWidget")
-            if self.contour_preview is None:
-                self.contour_preview = root.findChild(LathePreviewWidget, "contourPreview")
+        """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen.
 
+        Wichtig: In QTvcp/QtDesigner kann ein Widget zwar als "previewWidget" existieren,
+        aber (durch Promotion/Loader) nicht als exakt dieselbe Python-Klasse erkannt werden.
+        Deshalb suchen wir zuerst typbasiert und fallen dann auf Objektname+Methoden ab.
+        """
+        root = self.root_widget or self._find_root_widget()
+        if not root:
+            return
+
+        def _accept_as_preview(w):
+            return w is not None and (hasattr(w, "set_primitives") or hasattr(w, "set_paths"))
+
+        # 1) Primär: typbasiert (wenn die Klasse wirklich identisch ist)
+        if self.preview is None:
+            w = root.findChild(LathePreviewWidget, "previewWidget")
+            if _accept_as_preview(w):
+                self.preview = w
+        if self.contour_preview is None:
+            w = root.findChild(LathePreviewWidget, "contourPreview")
+            if _accept_as_preview(w):
+                self.contour_preview = w
+
+        # 2) Fallback: nur nach Objektname (wenn Klassentyp nicht matcht)
+        if self.preview is None:
+            w = root.findChild(QtWidgets.QWidget, "previewWidget")
+            if _accept_as_preview(w):
+                self.preview = w
+        if self.contour_preview is None:
+            w = root.findChild(QtWidgets.QWidget, "contourPreview")
+            if _accept_as_preview(w):
+                self.contour_preview = w
+
+        # Keine automatische "reuse contourPreview"-Logik mehr:
+        # Das hat in manchen UIs die Planen-Vorschau unsichtbar gemacht (anderer Tab).
     def _mark_operation_user_selected(self, *args, **kwargs):
         self._op_row_user_selected = True
 
