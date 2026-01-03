@@ -126,12 +126,12 @@ PANEL_WIDGET_NAMES = (
     'LatheConversationalPanel',
     'lathe_easystep',
     'lathe_easystep_panel',
-    'MainWindow',
-    'VCPWindow',
     'easystep',
     'lathe-easystep',
     'lathe-easystep_panel',
     'lathe-easystep-panel',
+    'MainWindow',
+    'VCPWindow',
 )
 TEXT_TRANSLATIONS = {
     "label_prog_npv": {"de": "Nullpunktverschiebung", "en": "Work Offset"},
@@ -407,8 +407,21 @@ class ProgramModel:
             OpType.KEYWAY: build_keyway_path,
             OpType.ABSPANEN: build_abspanen_path,
         }.get(op.op_type)
-        if builder:
+        if not builder:
+            op.path = []
+            return
+
+        # builder signatures are usually builder(params). Some builders also need program settings.
+        try:
+            argc = builder.__code__.co_argcount
+        except Exception:
+            argc = 1
+
+        if argc >= 2:
+            op.path = builder(op.params, self.program_settings)
+        else:
             op.path = builder(op.params)
+
 
     def generate_gcode(self) -> List[str]:
         settings = self.program_settings or {}
@@ -624,14 +637,178 @@ class ProgramModel:
 # Preview widget
 # ----------------------------------------------------------------------
 class LathePreviewWidget(QtWidgets.QWidget):
+    sliceChanged = QtCore.Signal(float)
     def __init__(self, parent=None):
         super().__init__(parent)
         self.x_is_diameter = True  # X values are treated as radius for drawing but labeled as diameter
         self.paths: List[List[Tuple[float, float]]] = []
         self.primitives: List[List[dict]] = []
         self.active_index: int | None = None
+        # Legend visibility & collision indication
+        self.show_legend = True
+        self._legend_collapsed = False
+        self._legend_click_rect = None
+
+        self._collision_active = False
+        self._blink_state = False
+        self._blink_timer = QtCore.QTimer(self)
+        self._blink_timer.setInterval(350)
+        # Slice view support (side view + draggable Z-slice)
+        self.view_mode = "side"  # "side" or "slice"
+        self.slice_enabled = False
+        self.slice_z = 0.0
+        self._slice_drag = False
+        self._view_rect = None
+        self._view_min_z = None
+        self._view_max_z = None
+        self._view_scale = None
+        self._blink_timer.timeout.connect(self._on_blink_timer)
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
+
+
+    def _on_blink_timer(self):
+        # Blink when collision is active
+        if not self._collision_active:
+            if self._blink_state:
+                self._blink_state = False
+                self.update()
+            return
+        self._blink_state = not self._blink_state
+        self.update()
+
+    def set_collision(self, active: bool):
+        self._collision_active = bool(active)
+        if self._collision_active:
+            if not self._blink_timer.isActive():
+                self._blink_timer.start()
+        else:
+            if self._blink_timer.isActive():
+                self._blink_timer.stop()
+            self._blink_state = False
+            self.update()
+
+    def toggle_legend(self):
+        # keep a small header visible, toggle between collapsed/expanded
+        self._legend_collapsed = not getattr(self, "_legend_collapsed", False)
+        self.update()
+
+    def set_view_mode(self, mode: str):
+        self.view_mode = mode
+        self.update()
+
+    def set_slice_enabled(self, enabled: bool):
+        self.slice_enabled = bool(enabled)
+        self._slice_drag = False
+        self.update()
+
+    def set_slice_z(self, z_val: float, emit: bool = False):
+        try:
+            z_val = float(z_val)
+        except Exception:
+            return
+        self.slice_z = z_val
+        if emit:
+            try:
+                self.sliceChanged.emit(self.slice_z)
+            except Exception:
+                pass
+        self.update()
+
+    def _pixel_to_z(self, px: float):
+        rect = getattr(self, "_view_rect", None)
+        min_z = getattr(self, "_view_min_z", None)
+        scale = getattr(self, "_view_scale", None)
+        if rect is None or min_z is None or scale in (None, 0):
+            return None
+        z = float(min_z) + (px - rect.left()) / float(scale)
+        max_z = getattr(self, "_view_max_z", None)
+        if max_z is not None:
+            z = max(float(min_z), min(float(max_z), z))
+        return z
+
+    def _set_slice_from_pos(self, pos: QtCore.QPoint):
+        z = self._pixel_to_z(pos.x())
+        if z is None:
+            return
+        self.set_slice_z(z, emit=True)
+
+    def _interp_x_at_z(self, path, z: float):
+        if not path or len(path) < 2:
+            return None
+        hits = []
+        for (x1, z1), (x2, z2) in zip(path[:-1], path[1:]):
+            if abs(z2 - z1) < 1e-9:
+                if abs(z - z1) < 1e-6:
+                    hits.append(x1); hits.append(x2)
+                continue
+            if (z1 <= z <= z2) or (z2 <= z <= z1):
+                t = (z - z1) / (z2 - z1)
+                hits.append(x1 + t * (x2 - x1))
+        if not hits:
+            return None
+        return min(hits)
+
+    def _paint_slice_view(self, painter: QtGui.QPainter):
+        painter.fillRect(self.rect(), QtCore.Qt.black)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        diam = None
+        if self.paths:
+            idx = self.active_index if self.active_index is not None else 0
+            idx = max(0, min(idx, len(self.paths) - 1))
+            path = self.paths[idx]
+            if path and isinstance(path[0], tuple):
+                diam = self._interp_x_at_z(path, self.slice_z)
+
+        if diam is None:
+            diam = 10.0
+
+        r = self.rect().adjusted(20, 20, -20, -40)
+        cx, cy = r.center().x(), r.center().y()
+        radius = abs(float(diam)) / 2.0
+        scale = min(r.width(), r.height()) / max(radius * 2.2, 1e-3)
+        pix_rad = radius * scale
+
+        painter.setPen(QtGui.QPen(QtCore.Qt.white, 2))
+        painter.drawEllipse(QtCore.QPointF(cx, cy), pix_rad, pix_rad)
+
+        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.drawText(10, self.height() - 10, f"Schnitt bei Z = {self.slice_z:.3f} mm")
+
+    def mousePressEvent(self, event):  # type: ignore[override]
+        # Click on legend to toggle
+        rect = getattr(self, "_legend_click_rect", None)
+        if rect and rect.contains(event.pos()):
+            self.toggle_legend()
+            event.accept()
+            return
+
+        # Drag slice line in side view
+        if getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
+            vrect = getattr(self, "_view_rect", None)
+            if vrect is not None and vrect.contains(event.pos()) and event.button() == QtCore.Qt.LeftButton:
+                self._slice_drag = True
+                self._set_slice_from_pos(event.pos())
+                event.accept()
+                return
+
+        super().mousePressEvent(event)
+
+
+    def mouseMoveEvent(self, event):  # type: ignore[override]
+        if getattr(self, "_slice_drag", False) and getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
+            self._set_slice_from_pos(event.pos())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # type: ignore[override]
+        if getattr(self, "_slice_drag", False):
+            self._slice_drag = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def _sample_arc(self, p1, p2, c, ccw, steps=48):
         x1, z1 = p1
@@ -746,6 +923,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QtGui.QPainter(self)
+        if getattr(self, "view_mode", "side") == "slice":
+            try:
+                self._paint_slice_view(painter)
+            finally:
+                painter.end()
+            return
+        self._legend_click_rect = None
         try:
             painter.fillRect(self.rect(), QtCore.Qt.black)
             # Collect bounds across all paths (supports point lists and primitive lists)
@@ -817,12 +1001,31 @@ class LathePreviewWidget(QtWidgets.QWidget):
             scale_x = rect.height() / max(max_x - min_x, 1e-6)
             scale = min(scale_x, scale_z)
 
+
+            # store mapping for interactive slice
+            self._view_rect = rect
+            self._view_min_z = min_z
+            self._view_max_z = max_z
+            self._view_scale = scale
+
             def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
                 # Z horizontal, X vertikal
                 x_draw = x_val
                 x_pix = rect.left() + (z_val - min_z) * scale
                 z_pix = rect.bottom() - (x_draw - min_x) * scale
                 return QtCore.QPointF(x_pix, z_pix)
+
+            # optional slice indicator (selected Z)
+            if getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
+                try:
+                    zline = float(getattr(self, "slice_z", 0.0))
+                    p1 = to_screen(min_x, zline)
+                    p2 = to_screen(max_x, zline)
+                    pen = QtGui.QPen(QtCore.Qt.white, 1, QtCore.Qt.DashLine)
+                    painter.setPen(pen)
+                    painter.drawLine(p1, p2)
+                except Exception:
+                    pass
 
             # Achsen und Skala (außen: links/unten)
             painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
@@ -882,8 +1085,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
                 # role based styling (e.g. raw stock reference)
                 role = None
-                if isinstance(path, list) and path and isinstance(path[0], dict):
-                    role = (path[0].get("role") or next((d.get("role") for d in path if isinstance(d, dict) and d.get("role")), None))
+                if isinstance(path, list) and path:
+                    # path can be a list of primitive dicts; pick first non-empty role
+                    for d in path:
+                        if isinstance(d, dict):
+                            r = d.get("role")
+                            if r:
+                                role = r
+                                break
 
                 if role == "stock":
                     color = QtGui.QColor("gray")
@@ -893,6 +1102,11 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     # retract planes: visually distinct and clearly *not* a contour
                     color = QtGui.QColor(0, 180, 180)
                     width = 1
+                    style = QtCore.Qt.DashLine
+                elif role == "worklimit":
+                    # workpiece stick-out / chuck collision limit (Bearbeitungsmaß)
+                    color = QtGui.QColor(220, 0, 0)
+                    width = 2
                     style = QtCore.Qt.DashLine
                 else:
                     color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
@@ -907,7 +1121,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 if isinstance(path[0], dict):
                     # NOTE: do NOT connect independent primitives with a single polyline.
                     # For retract planes this would create confusing diagonal "links" between separate helper lines.
-                    if role in ("retract", "stock"):
+                    if role in ("retract", "stock", "worklimit"):
                         for prim in path:
                             if not isinstance(prim, dict):
                                 continue
@@ -951,46 +1165,67 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 points = [to_screen(x, z) for x, z in path]
                 painter.drawPolyline(QtGui.QPolygonF(points))
 
-            # --- Legend (top-left inside margin) ---
-            try:
-                painter.save()
-                legend_items = [
-                    ("Kontur", QtGui.QPen(QtGui.QColor("lime"), 2, QtCore.Qt.SolidLine)),
-                    ("Aktiv", QtGui.QPen(QtGui.QColor("yellow"), 2, QtCore.Qt.SolidLine)),
-                    ("Rohteil", QtGui.QPen(QtGui.QColor(120, 120, 120), 1, QtCore.Qt.DashLine)),
-                    ("Rückzug", QtGui.QPen(QtGui.QColor(0, 180, 180), 1, QtCore.Qt.DashLine)),
-                ]
+            legend_enabled = getattr(self, "show_legend", True)
+            collapsed = getattr(self, "_legend_collapsed", False)
 
-                pad = 6
-                line_len = 26
-                row_h = 16
-                x0 = margin
-                y0 = margin - 2
-
-                # background box
-                box_w = 120
-                box_h = pad * 2 + row_h * len(legend_items)
-                bg = QtGui.QColor(0, 0, 0, 160)
-                painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-                painter.setBrush(QtGui.QBrush(bg))
-                painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
-
-                painter.setFont(QtGui.QFont("Sans", 8))
-                for i, (label, pen) in enumerate(legend_items):
-                    y = y0 + pad + i * row_h + 10
-                    # sample line
-                    painter.setPen(pen)
-                    painter.drawLine(QtCore.QLineF(x0 + pad, y - 3, x0 + pad + line_len, y - 3))
-                    # text
-                    painter.setPen(QtGui.QPen(QtGui.QColor(200, 200, 200), 1))
-                    painter.drawText(QtCore.QPointF(x0 + pad + line_len + 8, y), label)
-            except Exception:
-                pass
-            finally:
+            if legend_enabled:
+                # --- Legend: "Legende" header is always visible, click toggles details ---
                 try:
-                    painter.restore()
+                    margin = 6
+                    header_h = 18
+                    row_h = 16
+                    line_len = 26
+                    box_w = 155
+
+                    legend_items = [
+                        ("Kontur", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Aktiv", QtGui.QPen(QtGui.QColor(255, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Rohteil", QtGui.QPen(QtGui.QColor(180, 180, 180), 1, QtCore.Qt.SolidLine)),
+                        ("Rückzug", QtGui.QPen(QtGui.QColor(0, 255, 255), 1, QtCore.Qt.DashLine)),
+                        ("Bearbeitungslinie", QtGui.QPen(QtGui.QColor(255, 0, 0), 1, QtCore.Qt.DashLine)),
+                    ]
+
+                    x0 = margin
+                    y0 = margin - 2
+
+                    # Box height: always header, details only if not collapsed
+                    if collapsed:
+                        box_h = margin * 2 + header_h
+                    else:
+                        box_h = margin * 2 + header_h + row_h * len(legend_items)
+
+                    bg = QtGui.QColor(0, 0, 0, 160)
+                    painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
+                    painter.setBrush(QtGui.QBrush(bg))
+                    painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
+
+                    # Click target = header area (always present)
+                    self._legend_click_rect = QtCore.QRectF(x0, y0, box_w, header_h + margin)
+
+                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 1))
+                    painter.setFont(QtGui.QFont("Sans", 8))
+                    painter.drawText(
+                        QtCore.QRectF(x0 + margin, y0 + 2, box_w - 2 * margin, header_h),
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                        "Legende"
+                    )
+
+                    if not collapsed:
+                        for i, (label, pen) in enumerate(legend_items):
+                            y = y0 + margin + header_h + i * row_h + 10
+                            painter.setPen(pen)
+                            painter.drawLine(
+                                QtCore.QPointF(x0 + margin, y),
+                                QtCore.QPointF(x0 + margin + line_len, y)
+                            )
+                            painter.setPen(QtGui.QPen(QtGui.QColor(230, 230, 230), 1))
+                            painter.drawText(QtCore.QPointF(x0 + margin + line_len + 6, y + 4), label)
+
                 except Exception:
-                    pass
+                    self._legend_click_rect = None
+
+        except Exception:
+            self._legend_click_rect = None
         finally:
             painter.end()
 
@@ -1001,18 +1236,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
 def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     """Build a 2D preview path for facing (Planen).
 
-    LatheEasyStep stores different key names depending on version / UI:
-      - newer: start_x/end_x + start_z/end_z (+ edge_type/edge_size)
-      - older: outer_diameter/inner_diameter + start_z/end_z
+    IMPORTANT: This returns the *cutting contour* only (no closing back to Z0),
+    because otherwise the preview draws an extra diagonal/return line.
 
-    This function accepts both. X values are treated as *diameter* coordinates, just like
-    the rest of LatheEasyStep's internal logic.
-
-    Convention:
-      - Z decreases "into the material" at the workpiece front face.
-      - The face end plane is end_z (often 0.0).
-      - Edge/chamfer/radius are applied at the outer corner (x_outer, end_z) and extend
-        into *negative Z* (towards the material).
+    Conventions / expectations in this project:
+      - X is a diameter coordinate (as used everywhere else in LatheEasyStep).
+      - Facing is shown from the center (x_inner) outward to the OD (x_outer).
+      - The face plane is z_end (often 0.0). z_start is a safe/approach Z.
+      - Chamfer/radius is applied at the outer corner (x_outer, z_end) going into -Z.
     """
     # --- X extents (diameter) ---
     x_outer = params.get("outer_diameter", None)
@@ -1042,31 +1273,44 @@ def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     edge_type = int(params.get("edge_type", 0))  # 0=none, 1=chamfer, 2=radius
     edge_size = float(params.get("edge_size", 0.0) or 0.0)
 
-    # Basic preview polyline
+    # Normalize: ensure x_inner <= x_outer
+    if x_inner > x_outer:
+        x_inner, x_outer = x_outer, x_inner
+
     path: List[Tuple[float, float]] = []
-    path.append((x_outer, z_start))
-    path.append((x_outer, z_end))
+
+    # Start at center/inner diameter at safe Z, then to face plane
+    path.append((x_inner, z_start))
+    path.append((x_inner, z_end))
 
     # Apply edge at outer corner (x_outer, z_end)
     if edge_type == 1 and edge_size > 0.0:
-        # 45° chamfer
-        path.append((x_outer, z_end - edge_size))
+        # 45° chamfer: go to the chamfer start on the face plane, then down in Z.
+        # Expected polyline: (x_inner,z_start)->(x_inner,z_end)->(x_outer-edge,z_end)->(x_outer,z_end-edge)
         path.append((max(x_inner, x_outer - edge_size), z_end))
-        path.append((x_inner, z_end))
+        path.append((x_outer, z_end - edge_size))
+        # NOTE: do NOT append (x_outer, z_end) or close back -> that caused the unwanted return line.
+
     elif edge_type == 2 and edge_size > 0.0:
-        # Quarter-circle approximation for preview
+        # Outer radius (quarter-circle) from (x_outer-edge, z_end) to (x_outer, z_end-edge)
+        x0 = max(x_inner, x_outer - edge_size)
+        z0 = z_end
+        path.append((x0, z0))
         cx = x_outer - edge_size
         cz = z_end - edge_size
-        segments = 6
+        segments = 10
         import math
-        for i in range(segments + 1):
-            a = (math.pi / 2.0) * (i / segments)  # 0..90°
+        # a: 90°..0° (start at face plane, end at OD line)
+        for i in range(1, segments + 1):
+            a = (math.pi / 2.0) * (1.0 - (i / segments))
             x = cx + edge_size * math.cos(a)
             z = cz + edge_size * math.sin(a)
             path.append((x, z))
-        path.append((x_inner, z_end))
+        # ends close to (x_outer, z_end-edge_size)
+
     else:
-        path.append((x_inner, z_end))
+        # No edge: just face to OD at z_end
+        path.append((x_outer, z_end))
 
     return path
 
@@ -1222,6 +1466,56 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
     return prim
 
 
+
+def build_worklimit_primitives(program: Dict[str, Any], stock_prims: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Bearbeitungsmaß / Werkstück-Überstand (Chuck-Kollisionsgrenze) als Linie.
+
+    program['zb'] = Z-Position der Grenze (wo das Material aus dem Futter herausragt).
+
+    Die Linienlänge wird **aus der Rohteilkontur** abgeleitet, damit sie nicht mit
+    Fantasie-Werten (±1000) gezeichnet wird.
+    """
+    try:
+        z = float(program.get("zb", 0.0) or 0.0)
+    except Exception:
+        z = 0.0
+
+    if abs(z) < 1e-9:
+        return []
+
+    # X-Ausdehnung aus Rohteil-Kontur (points sind (x, z))
+    x_vals: List[float] = []
+    for prim in stock_prims or []:
+        if isinstance(prim, dict) and prim.get("type") == "polyline":
+            pts = prim.get("points") or []
+            for pt in pts:
+                if isinstance(pt, (tuple, list)) and len(pt) >= 2:
+                    try:
+                        x_vals.append(float(pt[0]))
+                    except Exception:
+                        pass
+
+    if x_vals:
+        min_x = min(x_vals)
+        max_x = max(x_vals)
+        # kleine Sicherheitsmargen (typisch: min bei 0 -> Linie bis ca. -5mm)
+        margin_neg = 5.0
+        margin_pos = max(2.0, 0.02 * max(abs(max_x), 1.0))
+        x_min = min(min_x - margin_neg, -margin_neg)
+        x_max = max_x + margin_pos
+    else:
+        # Fallback, falls keine Rohteil-Kontur verfügbar ist
+        x_min = -5.0
+        x_max = 50.0
+
+    return [{
+        "type": "line",
+        "p1": (x_min, z),
+        "p2": (x_max, z),
+        "role": "worklimit",
+    }]
+
+
 def build_turn_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     x_start = params.get("start_diameter", 0.0)
     x_end = params.get("end_diameter", x_start)
@@ -1264,30 +1558,110 @@ def build_thread_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 
 
 def build_groove_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
-    diameter = params.get("diameter", 0.0)
-    width = params.get("width", 0.0)
-    cutting_width = max(
-        params.get("cutting_width", params.get("width", 0.0)) or 0.0, 0.0
-    )
-    depth = abs(params.get("depth", 0.0))
-    z_pos = params.get("z", 0.0)
-    safe_z = params.get("safe_z", 2.0)
+    # Geometrie für die Vorschau (Einstich/Abstich) – grob nach ShopTurn 5.3.2:
+    # WICHTIG (User-Anforderung):
+    #   In der Vorschau darf nur die Einstich-/Abstich-KONTUR erscheinen –
+    #   keine zusätzliche Linie/Anfahrbewegung zu Z0 oder eine Rückzuglinie.
+    #
+    # Kontur besteht aus:
+    #   Startpunkt (Anfangshöhe) -> Tiefe -> Breite -> zurück auf Anfangshöhe.
+    diameter = float(params.get("diameter", 0.0) or 0.0)
+    width = abs(float(params.get("width", 0.0) or 0.0))
+    depth = abs(float(params.get("depth", 0.0) or 0.0))
+    z0 = float(params.get("z", 0.0) or 0.0)
+
+    # Bezugspunkt / Einstichlage in Z:
+    # 0=Mitte, 1=Linke Flanke, 2=Rechte Flanke
+    ref = int(params.get("ref", 0) or 0)
+    if ref == 1:  # Linke Flanke
+        z_left = z0
+        z_right = z0 + width
+    elif ref == 2:  # Rechte Flanke
+        z_right = z0
+        z_left = z0 - width
+    else:  # Mitte
+        z_left = z0 - (width / 2.0)
+        z_right = z0 + (width / 2.0)
+    lage = int(params.get("lage", 0) or 0)
+
+    # X ist im Preview als Durchmesser ausgelegt.
+    # OD (Mantel außen): Tiefe reduziert Durchmesser.
+    # ID (Mantel innen): Tiefe vergrößert Durchmesser.
+    if lage == 1:  # Mantel – Innen (ID)
+        x_bottom = diameter + depth
+    else:
+        x_bottom = diameter - depth
+    # NUR Kontur (keine Anfahr-/Rückzug-Linie):
     return [
-        (diameter, safe_z),
-        (diameter, z_pos),
-        (diameter - depth, z_pos),
-        (diameter - depth, z_pos - cutting_width),
-        (diameter, z_pos - cutting_width),
+        (diameter, z_left),   # Anfangspunkt (Start-Höhe)
+        (x_bottom, z_left),   # Tiefe
+        (x_bottom, z_right),  # Breite am Grund
+        (diameter, z_right),  # zurück auf Anfangshöhe
     ]
-
-
 def build_drill_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
-    depth = params.get("depth", 0.0)
-    safe_z = params.get("safe_z", 2.0)
+    """Drill preview path (Bohren).
+
+    Goals (per user request / ShopTurn-like behavior):
+      - Z0 is the front face (surface) -> shown at z = 0 in the preview.
+      - Drilling goes into the material: negative Z.
+        *If the user enters a positive depth, it is interpreted as "into material" and converted to negative.*
+      - Show the drilled diameter and a 118° drill point (59° half-angle).
+
+    Conventions in this project:
+      - X is a *diameter* coordinate (0 = centerline).
+      - Z is horizontal in the preview (see preview widget mapping).
+    """
+    # --- read inputs
+    try:
+        diameter = float(params.get("diameter", 0.0) or 0.0)
+    except Exception:
+        diameter = 0.0
+
+    try:
+        depth = float(params.get("depth", 0.0) or 0.0)
+    except Exception:
+        depth = 0.0
+
+    try:
+        safe_z = float(params.get("safe_z", 2.0) or 2.0)
+    except Exception:
+        safe_z = 2.0
+
+    diameter = max(0.0, diameter)
+
+    # into material => negative Z
+    if depth > 0:
+        depth = -abs(depth)
+
+    # If no diameter, show only centerline move.
+    if diameter <= 1e-9:
+        return [
+            (0.0, safe_z),
+            (0.0, 0.0),
+            (0.0, depth),
+        ]
+
+    # --- geometry for 118° point (59° half-angle)
+    # Our X axis is DIAMETER, so the "radius" at the wall is diameter/2.
+    half_angle = math.radians(59.0)
+    tanv = math.tan(half_angle)
+    tip_len = 0.0
+    if abs(tanv) > 1e-12:
+        tip_len = (diameter * 0.5) / tanv  # axial length of the point
+
+    # Point apex is at Z = depth. The cylindrical wall ends at cone_start_z.
+    cone_start_z = depth + tip_len  # closer to surface (less negative)
+    if cone_start_z > 0.0:
+        cone_start_z = 0.0  # very shallow: point intersects the surface
+
     return [
-        (0.0, safe_z),
-        (0.0, depth),
+        (0.0, safe_z),            # approach on center
+        (0.0, 0.0),               # on surface (Z0)
+        (diameter, 0.0),          # diameter at surface
+        (diameter, cone_start_z), # cylindrical wall
+        (0.0, depth),             # 118° point to center
     ]
+
 
 
 def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
@@ -2355,10 +2729,88 @@ def gcode_for_operation(
 # ----------------------------------------------------------------------
 # Handler
 # ----------------------------------------------------------------------
+
+    def toggle_legend(self):
+        # keep a small header visible, toggle between collapsed/expanded
+        self._legend_collapsed = not getattr(self, "_legend_collapsed", False)
+        self.update()
+
+    def set_collision(self, active: bool):
+        active = bool(active)
+        if active == self._collision_active:
+            return
+        self._collision_active = active
+        self._blink_state = False
+        if active:
+            if not self._blink_timer.isActive():
+                self._blink_timer.start()
+        else:
+            self._blink_timer.stop()
+        self.update()
+
+    def _on_blink_timer(self):
+        if not self._collision_active:
+            self._blink_timer.stop()
+            return
+        self._blink_state = not self._blink_state
+        self.update()
+
+    def mousePressEvent(self, event):
+        # Click on the legend box to toggle it
+        try:
+            if self._legend_click_rect is not None and self._legend_click_rect.contains(event.pos()):
+                self.toggle_legend()
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        # Double click anywhere toggles legend
+        self.toggle_legend()
+        event.accept()
+
+    def keyPressEvent(self, event):
+        # 'L' toggles legend
+        try:
+            if event.key() in (QtCore.Qt.Key_L,):
+                self.toggle_legend()
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().keyPressEvent(event)
+
+
 class HandlerClass:
     def __init__(self, halcomp, widgets, paths):
         self.hal = halcomp
         self.w = widgets
+        # IMPORTANT: Bind widget lookups strictly to the embedded panel root 'easystep' (not MainWindow)
+        self._main_window = widgets
+        panel_root = None
+
+        # QTVCP sometimes passes the panel root widget directly as `widgets` (not the main window).
+        try:
+            if hasattr(self._main_window, 'objectName') and self._main_window.objectName() == 'easystep':
+                panel_root = self._main_window
+            else:
+                panel_root = self._main_window.findChild(QtWidgets.QWidget, 'easystep')
+                if panel_root is None:
+                    panel_root = getattr(self._main_window, 'easystep', None)
+        except Exception:
+            panel_root = None
+
+        if panel_root is None:
+            # Fallback to the more robust panel discovery helper (handles embedded contexts).
+            panel_root = self._find_root_widget()
+
+        if panel_root is None:
+            print('[LatheEasyStep][CRITICAL] Panel root "easystep" not found - aborting to avoid wrong widget bindings')
+            raise RuntimeError('Panel root "easystep" not found')
+
+        self.w = panel_root
         self.paths = paths
         self.model = ProgramModel()
         self.root_widget = None  # wird nach Panel-Suche gesetzt
@@ -2371,6 +2823,36 @@ class HandlerClass:
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
+
+        # Slice view widgets live inside the embedded panel (objectName: easystep).
+        # Depending on how QTVCP instantiates the panel, they may not be direct attributes on self.w.
+        panel_root = getattr(self.w, "easystep", None) or self.w
+
+        def _find(name, cls=None):
+            w = getattr(self.w, name, None)
+            if w is not None:
+                return w
+            try:
+                if cls is None:
+                    return panel_root.findChild(QtCore.QObject, name)
+                return panel_root.findChild(cls, name)
+            except Exception:
+                return None
+
+        self.preview_slice = _find("previewSliceWidget", QtWidgets.QWidget)
+        self.btn_slice_view = _find("btn_slice_view", QtWidgets.QAbstractButton)
+
+        # Fallback: if the button was renamed in the .ui, pick the first checkable toolbutton
+        # that contains 'Schnitt' or 'Seite' in its label.
+        if self.btn_slice_view is None:
+            try:
+                for b in panel_root.findChildren(QtWidgets.QAbstractButton):
+                    t = (b.text() or "").lower()
+                    if getattr(b, "isCheckable", lambda: False)() and ("schnitt" in t or "seiten" in t):
+                        self.btn_slice_view = b
+                        break
+            except Exception:
+                pass
         self.contour_preview = getattr(self.w, "contourPreview", None)
         self.list_ops = getattr(self.w, "listOperations", None)
         self.tab_params = getattr(self.w, "tabParams", None)
@@ -2383,19 +2865,28 @@ class HandlerClass:
             except Exception:
                 pass
 
-        self.btn_add = getattr(self.w, "btnAdd", None)
-        self.btn_delete = getattr(self.w, "btnDelete", None)
-        self.btn_move_up = getattr(self.w, "btnMoveUp", None)
-        self.btn_move_down = getattr(self.w, "btnMoveDown", None)
-        self.btn_new_program = getattr(self.w, "btnNewProgram", None)
-        self.btn_generate = getattr(self.w, "btnGenerate", None)
+        def _resolve_widget(name: str):
+            w = getattr(self.w, name, None)
+            if w is not None:
+                return w
+            w = self._find_any_widget(name)
+            if w is not None:
+                print(f"[LatheEasyStep] resolved '{name}' via global search")
+            return w
+
+        self.btn_add = _resolve_widget("btnAdd")
+        self.btn_delete = _resolve_widget("btnDelete")
+        self.btn_move_up = _resolve_widget("btnMoveUp")
+        self.btn_move_down = _resolve_widget("btnMoveDown")
+        self.btn_new_program = _resolve_widget("btnNewProgram")
+        self.btn_generate = _resolve_widget("btnGenerate")
 
         # Programm-Tab
-        self.tab_program = getattr(self.w, "tabProgram", None)
-        self.program_unit = getattr(self.w, "program_unit", None)
-        self.program_shape = getattr(self.w, "program_shape", None)
-        self.program_retract_mode = getattr(self.w, "program_retract_mode", None)
-        self.program_has_subspindle = getattr(self.w, "program_has_subspindle", None)
+        self.tab_program = _resolve_widget("tabProgram")
+        self.program_unit = _resolve_widget("program_unit")
+        self.program_shape = _resolve_widget("program_shape")
+        self.program_retract_mode = _resolve_widget("program_retract_mode")
+        self.program_has_subspindle = _resolve_widget("program_has_subspindle")
 
         # falls das Objekt in der .ui anders heißt: automatisch finden
         if self.program_shape is None:
@@ -2798,6 +3289,21 @@ class HandlerClass:
                 return obj
 
         print("[LatheEasyStep] no unit combo found via widgets")
+
+        root = self.root_widget or self._find_root_widget()
+        if root is not None:
+            for combo in root.findChildren(QtWidgets.QComboBox):
+                texts = [combo.itemText(i).strip().lower() for i in range(combo.count())]
+                txt = " ".join(texts)
+                if ("mm" in texts and ("inch" in texts or "in" in txt)) or (
+                    "metric" in txt and "imperial" in txt
+                ):
+                    combo_name = combo.objectName() or "anonymous"
+                    print(
+                        f"[LatheEasyStep] using tree-scan combo '{combo_name}' as program_unit"
+                    )
+                    return combo
+
         return None
 
     def _find_shape_combo(self):
@@ -2980,8 +3486,92 @@ class HandlerClass:
                 pass
 
         return None
+    
+    def _setup_slice_view(self):
+        # Optional: side view + slice view (draggable Z slice)
+        if getattr(self, "_slice_view_setup_done", False):
+            return
+        self._slice_view_setup_done = True
+
+        if self.preview is not None:
+            try:
+                self.preview.set_view_mode("side")
+            except Exception:
+                pass
+
+        if self.preview_slice is not None:
+            try:
+                self.preview_slice.set_view_mode("slice")
+                self.preview_slice.setVisible(False)
+            except Exception:
+                pass
+
+        if self.btn_slice_view is not None:
+            try:
+                self.btn_slice_view.setChecked(False)
+                self.btn_slice_view.toggled.connect(self._on_toggle_slice_view)
+            except Exception:
+                pass
+
+        if self.preview is not None:
+            try:
+                self.preview.sliceChanged.connect(self._on_slice_changed)
+            except Exception:
+                pass
+
+    def _on_toggle_slice_view(self, checked: bool):
+        if self.preview is None:
+            return
+        checked = bool(checked)
+        # enable/disable slice mode in main preview
+        try:
+            self.preview.set_slice_enabled(checked)
+        except Exception:
+            pass
+        # show/hide slice preview widget
+        if self.preview_slice is not None:
+            try:
+                self.preview_slice.setVisible(checked)
+            except Exception:
+                pass
+        # update toggle button text
+        if self.btn_slice_view is not None:
+            try:
+                self.btn_slice_view.setText("Seitenansicht" if checked else "Schnittansicht")
+            except Exception:
+                pass
+        # default slice at Z0 when enabling
+        if checked:
+            try:
+                self.preview.set_slice_z(0.0, emit=True)
+            except Exception:
+                pass
+        self._sync_slice_widget()
+
+    def _on_slice_changed(self, z_val: float):
+        self._current_slice_z = float(z_val)
+        self._sync_slice_widget()
+
+    def _sync_slice_widget(self):
+        if self.preview is None or self.preview_slice is None:
+            return
+        try:
+            if not self.preview_slice.isVisible():
+                return
+        except Exception:
+            return
+        try:
+            self.preview_slice.set_slice_z(getattr(self.preview, "slice_z", 0.0))
+        except Exception:
+            pass
+        try:
+            self.preview_slice.set_paths(getattr(self.preview, "paths", []), getattr(self.preview, "active_index", None))
+        except Exception:
+            pass
+
     def initialized__(self):
         """Wird aufgerufen, wenn QtVCP die UI komplett aufgebaut hat."""
+        self._setup_slice_view()
         # Eindeutige "idx" Dynamic-Properties vergeben (unabhängig von Label-Texten).
         # Hinweis: NICHT in der .ui als Property "idx" hinterlegen, sonst versucht uic setIdx() aufzurufen.
         try:
@@ -3100,6 +3690,15 @@ class HandlerClass:
             root = self.root_widget or self._find_root_widget()
             if root is not None:
                 self.face_edge_type = root.findChild(QtWidgets.QComboBox, "face_edge_type")
+
+        # PATCH: If the UI does not provide dedicated face_* widgets, reuse contour_* widgets.
+        # This fixes "keine/fase/radius" switching and enables the edge size input for facing.
+        if self.face_edge_type is None and getattr(self, "contour_edge_type", None) is not None:
+            self.face_edge_type = self.contour_edge_type
+        if getattr(self, "face_edge_size", None) is None and getattr(self, "contour_edge_size", None) is not None:
+            self.face_edge_size = self.contour_edge_size
+        if getattr(self, "face_edge_size_lbl", None) is None and getattr(self, "contour_edge_size_lbl", None) is not None:
+            self.face_edge_size_lbl = self.contour_edge_size_lbl
 
         if self.face_mode:
             self.face_mode.currentIndexChanged.connect(self._update_face_visibility)
@@ -3738,6 +4337,9 @@ class HandlerClass:
                 "coolant": self._get_widget_by_name("groove_coolant"),
                 "diameter": self._get_widget_by_name("groove_diameter"),
                 "width": self._get_widget_by_name("groove_width"),
+                "ref": self._get_widget_by_name("groove_ref"),
+                "lage": self._get_widget_by_name("groove_lage"),
+                "use_tool_width": self._get_widget_by_name("groove_use_tool_width"),
                 "cutting_width": self._get_widget_by_name("groove_cutting_width"),
                 "depth": self._get_widget_by_name("groove_depth"),
                 "z": self._get_widget_by_name("groove_z"),
@@ -4939,18 +5541,86 @@ class HandlerClass:
         active_index: int | None = None,
         include_contour_preview: bool = True,
     ) -> None:
-        """Aktualisiert Haupt- und optional den Kontur-Tab-Preview."""
+        """Aktualisiert Haupt- und optional den Kontur-Tab-Preview.
+
+        Achtung: Je nach LinuxCNC/QTvcp-Version gibt es unterschiedliche
+        Signaturen von LathePreviewWidget.set_paths().
+        """
 
         self._ensure_preview_widgets()
+
+        # main preview
         if self.preview:
-            self.preview.set_paths(paths, active_index)
+            try:
+                # Newer signature: set_paths(paths, active_index=None)
+                # Collision check against worklimit (Bearbeitungsmaß in Z)
+                collision = False
+                try:
+                    zb = None
+                    for prim_list in paths:
+                        for pr in prim_list:
+                            if pr.get("role") == "worklimit" and pr.get("type") == "line":
+                                # vertical line: p1=(x,z) p2=(x,z)
+                                zb = float(pr.get("p1", (0.0, 0.0))[1])
+                                break
+                        if zb is not None:
+                            break
+                    if zb is not None:
+                        min_z = None
+                        for prim_list in paths:
+                            for pr in prim_list:
+                                role = pr.get("role")
+                                if role in ("stock", "retract", "worklimit"):
+                                    continue
+                                t = pr.get("type")
+                                if t == "polyline":
+                                    for x, z in pr.get("points", []):
+                                        if min_z is None or z < min_z:
+                                            min_z = z
+                                elif t == "line":
+                                    for x, z in (pr.get("p1"), pr.get("p2")):
+                                        if min_z is None or z < min_z:
+                                            min_z = z
+                        if min_z is not None and min_z < zb - 1e-6:
+                            collision = True
+                except Exception:
+                    collision = False
+                if hasattr(self.preview, "set_collision"):
+                    self.preview.set_collision(collision)
+                self.preview.set_paths(paths, active_index)
+            except TypeError:
+                # Older signature: set_paths(paths)
+                self.preview.set_paths(paths)
+
+        # slice preview (if enabled)
+        if self.preview_slice and getattr(self.preview_slice, "isVisible", lambda: False)():
+            try:
+                self.preview_slice.set_view_mode("slice")
+            except Exception:
+                pass
+            try:
+                if self.preview:
+                    self.preview_slice.set_slice_z(getattr(self.preview, "slice_z", 0.0))
+                else:
+                    self.preview_slice.set_slice_z(0.0)
+            except Exception:
+                pass
+            try:
+                self.preview_slice.set_paths(paths, active_index)
+            except TypeError:
+                self.preview_slice.set_paths(paths)
+        # contour preview tab (if present)
         if include_contour_preview and self.contour_preview:
-            self.contour_preview.set_paths(paths, None)
+            try:
+                self.contour_preview.set_paths(paths, active_index)
+            except TypeError:
+                self.contour_preview.set_paths(paths)
 
     def _refresh_preview(self):
-        if self.preview is None:
+        # PATCH: allow preview to work even if only contourPreview exists.
+        if self.preview is None or self.contour_preview is None:
             self._ensure_preview_widgets()
-        if self.preview is None:
+        if self.preview is None and self.contour_preview is None:
             return
         paths: List[List[Tuple[float, float]]] = []
 
@@ -4986,13 +5656,20 @@ class HandlerClass:
                 paths.insert(inserts, retract_primitives)
                 inserts += 1
 
+
+            # workpiece stick-out / chuck collision limit (Bearbeitungsmaß)
+            worklimit_primitives = build_worklimit_primitives(prog, stock_primitives or [])
+            if worklimit_primitives:
+                paths.insert(inserts, worklimit_primitives)
+                inserts += 1
+
             if active is not None and active >= 0 and inserts:
                 active += inserts
         except Exception as exc:
             print("[LatheEasyStep] stock/retract preview ERROR:", exc)
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
-        self._set_preview_paths(paths, active, include_contour_preview=False)
+        self._set_preview_paths(paths, active, include_contour_preview=True)
 
     def _refresh_operation_list(self, select_index: int | None = None):
         """Synchronisiert die linke Operationsliste mit dem internen Modell."""
@@ -5062,14 +5739,41 @@ class HandlerClass:
         self._update_parting_contour_choices()
 
     def _ensure_preview_widgets(self):
-        """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen."""
-        root = self.root_widget or self._find_root_widget()
-        if root:
-            if self.preview is None:
-                self.preview = root.findChild(LathePreviewWidget, "previewWidget")
-            if self.contour_preview is None:
-                self.contour_preview = root.findChild(LathePreviewWidget, "contourPreview")
+        """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen.
 
+        Wichtig: In QTvcp/QtDesigner kann ein Widget zwar als "previewWidget" existieren,
+        aber (durch Promotion/Loader) nicht als exakt dieselbe Python-Klasse erkannt werden.
+        Deshalb suchen wir zuerst typbasiert und fallen dann auf Objektname+Methoden ab.
+        """
+        root = self.root_widget or self._find_root_widget()
+        if not root:
+            return
+
+        def _accept_as_preview(w):
+            return w is not None and (hasattr(w, "set_primitives") or hasattr(w, "set_paths"))
+
+        # 1) Primär: typbasiert (wenn die Klasse wirklich identisch ist)
+        if self.preview is None:
+            w = root.findChild(LathePreviewWidget, "previewWidget")
+            if _accept_as_preview(w):
+                self.preview = w
+        if self.contour_preview is None:
+            w = root.findChild(LathePreviewWidget, "contourPreview")
+            if _accept_as_preview(w):
+                self.contour_preview = w
+
+        # 2) Fallback: nur nach Objektname (wenn Klassentyp nicht matcht)
+        if self.preview is None:
+            w = root.findChild(QtWidgets.QWidget, "previewWidget")
+            if _accept_as_preview(w):
+                self.preview = w
+        if self.contour_preview is None:
+            w = root.findChild(QtWidgets.QWidget, "contourPreview")
+            if _accept_as_preview(w):
+                self.contour_preview = w
+
+        # Keine automatische "reuse contourPreview"-Logik mehr:
+        # Das hat in manchen UIs die Planen-Vorschau unsichtbar gemacht (anderer Tab).
     def _mark_operation_user_selected(self, *args, **kwargs):
         self._op_row_user_selected = True
 
@@ -5291,6 +5995,9 @@ class HandlerClass:
         self._step_last_dir = os.path.dirname(file_path)
         self._update_parting_ready_state()
 
+    
+        # Einstich/Abstich-Tab: Lage/Bezugspunkt-Grafiken + Ein-/Ausblenden
+        self._setup_groove_tab_ui()
     def _handle_move_up(self):
         if self.list_ops is None:
             return
@@ -6214,6 +6921,180 @@ class HandlerClass:
     def call_user_command_(self, command_file: str | None):
         # Wird von QtVCP erwartet, hier aber bewusst leer gehalten.
         return
+
+
+
+    def _setup_groove_tab_ui(self):
+        # Widgets aus dem Panel (Root heißt 'easystep' – daher immer über self.w / _get_widget_by_name suchen)
+        try:
+            self.groove_lage = self._get_widget_by_name("groove_lage")
+            self.groove_ref = self._get_widget_by_name("groove_ref")
+            self.groove_use_tool_width = self._get_widget_by_name("groove_use_tool_width")
+            self.groove_cutting_width = self._get_widget_by_name("groove_cutting_width")
+            self.groove_lage_img = self._get_widget_by_name("groove_lage_img")
+            self.groove_ref_img = self._get_widget_by_name("groove_ref_img")
+            self.groove_width = self._get_widget_by_name("groove_width")
+        except Exception:
+            return
+
+        # Falls Tab in alter UI ohne diese Elemente läuft: einfach raus
+        if not all([self.groove_ref, self.groove_ref_img, self.groove_use_tool_width, self.groove_cutting_width]):
+            return
+
+        # Signale
+        try:
+            self.groove_ref.currentIndexChanged.connect(self._update_groove_tab_ui)
+        except Exception:
+            pass
+        try:
+            self.groove_use_tool_width.toggled.connect(self._update_groove_tab_ui)
+        except Exception:
+            pass
+        try:
+            self.groove_width.valueChanged.connect(self._update_groove_tab_ui)
+        except Exception:
+            pass
+        try:
+            # Lage: Plan-Einstich ist in diesem Panel noch nicht als eigener Zyklus umgesetzt -> Auswahl ausblenden/auf Längs fixieren
+            if self.groove_lage is not None:
+                self.groove_lage.currentIndexChanged.connect(self._update_groove_tab_ui)
+        except Exception:
+            pass
+
+        self._update_groove_tab_ui()
+
+    def _update_groove_tab_ui(self):
+        """Nur einblenden, was wirklich benötigt wird (ähnlich ShopTurn 5.3.2)."""
+        try:
+            # Werkzeugbreite separat?
+            use_tw = bool(self.groove_use_tool_width.isChecked()) if self.groove_use_tool_width else False
+            if self.groove_cutting_width:
+                self.groove_cutting_width.setVisible(use_tw)
+            lbl = self._get_widget_by_name("label_groove_cutting_width")
+            if lbl:
+                lbl.setVisible(use_tw)
+
+            # Lage bestimmt nur Anzeige/Erklärung (G-Code bleibt unverändert)
+            idx = int(self.groove_lage.currentIndex()) if self.groove_lage is not None else 0
+
+            # Z0-Label je nach Lage etwas eindeutiger benennen (nur UI)
+            lbl_z = self._get_widget_by_name("label_23")  # Label zu groove_z
+            if lbl_z:
+                if idx in (0, 1):
+                    lbl_z.setText("Z0 Bezugspunkt (abs)")
+                else:
+                    # Stirn: Richtung wird über Lage gewählt (Z−/Z+)
+                    lbl_z.setText("Z0 Bezugspunkt (abs)")
+
+            # Grafiken aktualisieren
+            self._render_groove_diagrams()
+
+            # Preview aktualisieren
+            self._refresh_preview()
+        except Exception:
+            pass
+
+    def _render_groove_diagrams(self):
+
+        """Sehr einfache Grafiken (ohne externe Dateien) für Lage/Bezugspunkt."""
+        try:
+            from PyQt5 import QtGui, QtCore
+
+            def _mk_pix(w: int, h: int) -> QtGui.QPixmap:
+                pm = QtGui.QPixmap(w, h)
+                pm.fill(QtCore.Qt.transparent)
+                return pm
+            # Lage – 4 Varianten: Mantel außen/innen, Stirn vorne/hinten
+            if self.groove_lage_img is not None:
+                pm = _mk_pix(180, 70)
+                p = QtGui.QPainter(pm)
+                p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+                pen = QtGui.QPen(QtCore.Qt.white)
+                pen.setWidth(2)
+                p.setPen(pen)
+
+                # Achsen (Z rechts, X nach oben)
+                p.drawLine(30, 55, 165, 55)  # Z
+                p.drawLine(30, 55, 30, 10)   # X
+                p.drawText(168, 58, "Z")
+                p.drawText(22, 12, "X")
+
+                idx = int(self.groove_lage.currentIndex()) if self.groove_lage is not None else 0
+
+                # Werkstück-Skizze + Nut
+                if idx in (0, 1):
+                    if idx == 1:
+                        # Mantel innen (ID): nur die ID-Kante zeigen (keine zusätzliche Ø-Linie)
+                        p.drawLine(40, 40, 160, 40)  # ID
+                        p.drawText(42, 43, "ID")
+                        # Nut innen: beginnt an der ID und geht in das Material (Richtung größerer Ø)
+                        p.drawRect(95, 40, 18, -12)
+                    else:
+                        # Mantel außen (OD)
+                        p.drawLine(40, 25, 160, 25)     # OD
+                        p.drawText(42, 22, "OD")
+                        # Nut außen
+                        p.drawRect(95, 25, 18, 18)
+                else:
+                    # Stirn: senkrechte Linie als Stirnfläche, Pfeilrichtung für Z−/Z+
+                    p.drawLine(80, 15, 80, 55)  # Stirn
+                    p.drawText(84, 22, "Stirn")
+                    # Nut als kleines Rechteck in die Stirn
+                    p.drawRect(80, 30, 20, 12)
+                    # Richtung
+                    if idx == 2:
+                        # Hauptspindel: Z− (symbolisch nach links)
+                        p.drawLine(130, 20, 95, 20)
+                        p.drawLine(95, 20, 103, 16)
+                        p.drawLine(95, 20, 103, 24)
+                        p.drawText(118, 16, "Z−")
+                    else:
+                        # Gegenspindel: Z+ (symbolisch nach rechts)
+                        p.drawLine(95, 20, 130, 20)
+                        p.drawLine(130, 20, 122, 16)
+                        p.drawLine(130, 20, 122, 24)
+                        p.drawText(118, 16, "Z+")
+
+                p.end()
+                self.groove_lage_img.setPixmap(pm)
+
+            # Bezugspunkt-Grafik (Z0: Mitte/Linke/Rechte Flanke)
+            if self.groove_ref_img is not None:
+                pm = _mk_pix(180, 70)
+                p = QtGui.QPainter(pm)
+                p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+                # Grundlinie (Z)
+                p.drawLine(20, 55, 170, 55)
+                p.drawText(172, 58, "Z")
+
+                # Nutbreite als Balken
+                left = 60
+                right = 140
+                top = 28
+                p.drawRect(left, top, right - left, 18)
+
+                ref = 0
+                try:
+                    ref = int(self.groove_ref.currentIndex()) if self.groove_ref is not None else 0
+                except Exception:
+                    ref = 0
+
+                if ref == 1:  # linke Flanke
+                    z0x = left
+                elif ref == 2:  # rechte Flanke
+                    z0x = right
+                else:  # mitte
+                    z0x = (left + right) // 2
+
+                # Z0 Marker
+                p.drawLine(z0x, 15, z0x, 65)
+                p.drawText(z0x + 2, 14, "Z0")
+                p.end()
+                self.groove_ref_img.setPixmap(pm)
+        except Exception:
+            pass
 
 
 def get_handlers(halcomp, widgets, paths):
