@@ -1,0 +1,25 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test)
+(Maßeinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+
+(Step 1: drill | T10: ER25 Aufnahme)
+(Werkzeug T10)
+(Toolchange move)
+G53 G0 X150.000 Z300.000
+T10 M6
+S500 M3
+G0 X0.000 Z2.000
+G81 X0.000 Z-20.000 R2.000 F0.120
+G80
+
+G53 G0 X150.000 Z300.000
+M5
+M9
+M30
+%

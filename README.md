@@ -13,19 +13,31 @@ Der Fokus liegt auf:
 Ziel ist es, einen großen Teil typischer Drehteile (Schruppen, Konturen, Fasen, Radien) direkt im Panel zu erzeugen.
 
 ### Funktionen
-- Abspanen **parallel Z** (Schruppen)
-- Konturdefinition mit:
-  - Geraden
-  - Fasen
-  - Radien (Innen / Außen pro Radius)
-- Vorschau der Kontur (echte Linien/Arc-Primitives, nur gültige Radien erscheinen)
-- Validierung vor Vorschau und G71/G70 – Ungültiges wird im Terminal geloggt und die Vorschau bleibt leer
-- Planen: Ecken am Außendurchmesser erscheinen als Linie/Fase/Radius (inkl. Arc-Primitives)
-- Optionales „Edge in Roughing“ modelliert die Kante schon im letzten Schrupphub
-- Sichere Anfahr- und Rückzugsbewegungen (X/Z simultan)
-- Parametergesteuerte Zustellung und Schrittweiten
-- G-Code-Erzeugung direkt aus dem Panel
-- Speicherung und Laden von STEP/Projektdateien
+- **Programmkopf**: Definition von Rohteilgeometrie, Einheiten (mm/inch), Rückzugsebenen und Sicherheitsabständen
+- **Operationen**:
+  - **Planen (FACE)**: Ebenes Bearbeiten mit optionalen Fasen oder Radien an den Ecken
+  - **Kontur (CONTOUR)**: Punktweise Definition von Profilen mit Geraden, Fasen und Radien (innen/außen) – nur Geometrie, kein G-Code
+  - **Gewinde (THREAD)**: Erzeugung von metrischen oder Trapezgewinden mit G76-Zyklus
+  - **Nut (GROOVE)**: Axial oder radial gerichtete Nuten mit variabler Breite
+  - **Bohren (DRILL)**: Bohroperationen mit LinuxCNC-Zyklen (G81 einfaches Bohren, G82 mit Verweilzeit, G83/G73 Peck-Bohrung, G84 Gewindebohren) – dynamische UI für zyklusspezifische Parameter
+  - **Abspanen (ABSPANEN)**: Schruppbearbeitung mit parallelen oder Querschnitt-Strategien, G71/G72-Zyklen für monotone Konturen, sonst Moves-Modus
+  - **Keilnut (KEYWAY)**: Makro-basierte Keilnutbearbeitung
+- **Live-Vorschau**: XZ-Seitenansicht mit Kollisionserkennung, Rohteildarstellung und Bearbeitungspfaden
+- **Validierung**: Automatische Prüfung geometrischer Machbarkeit vor G-Code-Generierung, harte Validierung ohne Defaults für Pflichtparameter
+- **Zweisprachige Benutzeroberfläche**: Deutsch (Standard) und Englisch
+- **Dynamische UI**: Parameterfelder erscheinen/verschwinden basierend auf gewählten Modi (z.B. Verweilzeit nur bei G82)
+- **G-Code-Generierung**: Optimierte Ausgabe mit LinuxCNC-Zyklen, Fanuc-kompatibel, mit Save-Dialog für Dateien
+- **Speicherung und Laden**: Programme als JSON-Dateien speichern/laden
+- **Sicherheitsfeatures**: Simultane X/Z-Rückzüge, parametergesteuerte Zustellungen, Kollisionsvermeidung
+- **Werkzeugintegration**: Automatisches Laden von Tools aus LinuxCNC, Dropdown-Auswahl mit Lagegrafik, Warnungen bei Innen/Außen-Mismatch
+- **G-Code-Generator (aktuelle Logik)**:
+  - **Toolwechsel**: Vor jedem `T.. M6` immer `G53 G0 X<TC_X> Z<TC_Z>` (TC aus Panel), danach `G0 X<X_safe> Z<Z_safe>`
+  - **Safe-Bereich**: `X_safe = Rohteil_OD + XRA`, `Z_safe = ZRA` (absolute Zahlen)
+  - **Rückzug nach jedem Cutting-Step**: immer getrennt `G0 X<X_safe>` dann `G0 Z<Z_safe>`
+  - **Anfahrt aus SAFE**: diagonal erlaubt `G0 X<X_start> Z<Z_start>`
+  - **Kühlung**: pro Step explizit `M7` (Mist), `M8` (Flood), `M9` (Off)
+  - **Bohren (LinuxCNC)**: Canned Cycles mit `G17` vor dem Zyklus, danach `G80` und zurück zu `G18`
+  - **Kommentare**: Inhalte werden von Klammern bereinigt (keine verschachtelten Kommentare)
 
 ---
 
@@ -71,13 +83,11 @@ SC: Sicherheitsabstand vor dem Material
 XRA / ZRA: Rückzugsbewegungen (absolut oder inkremental)
 
 Aktueller Stand / Einschränkungen
-Fokus liegt aktuell auf Schruppstrategien
-
-Radien werden geometrisch korrekt behandelt, Ausgabe aktuell noch linearisiert
-
-G2/G3-Ausgabe ist geplant, aber noch nicht umgesetzt
-
-Projekt ist aktiv in Entwicklung – Änderungen möglich
+- Vollständige Integration von LinuxCNC-Zyklen (G71/G72 für Abspanen, G81-G84 für Bohren)
+- Fokus auf Schrupp- und Schlichtstrategien mit geometrisch korrekter Behandlung von Radien
+- Radien werden als echte Bögen in der Vorschau dargestellt; G-Code nutzt Zyklen für optimale Ausgabe
+- **LinuxCNC-spezifisch**: Bohrzyklen schalten intern auf `G17` und zurück zu `G18`
+- Projekt ist aktiv in Entwicklung – neue Operationen und Verbesserungen werden regelmäßig hinzugefügt
 
 Lizenz
 Siehe Lizenzdatei im Repository.
@@ -97,25 +107,31 @@ fast shop-floor usability
 The goal is to cover a large portion of typical turning jobs directly inside the panel.
 
 Features
-Roughing parallel Z
-
-Contour definition with:
-
-lines
-
-chamfers
-
-radii (inner / outer per radius)
-
-Contour preview (genuine lines/arcs, invalid radii blocked by validation)
-
-Safe approach and simultaneous X/Z retract
-
-Parameter-driven roughing
-
-Direct G-code generation
-
-Save and load STEP/project files
+- **Program Header**: Definition of stock geometry, units (mm/inch), retract planes and safety clearances
+- **Operations**:
+  - **Facing (FACE)**: Flat machining with optional chamfers or radii at corners
+  - **Contour (CONTOUR)**: Point-wise profile definition with lines, chamfers and radii (inner/outer) – geometry only, no G-code
+  - **Threading (THREAD)**: Generation of metric or trapezoidal threads using G76 cycle
+  - **Grooving (GROOVE)**: Axial or radial grooves with variable width
+  - **Drilling (DRILL)**: Drilling operations with LinuxCNC cycles (G81 simple drilling, G82 with dwell, G83/G73 peck drilling, G84 tapping) – dynamic UI for cycle-specific parameters
+  - **Parting (ABSPANEN)**: Roughing with parallel or cross-section strategies, G71/G72 cycles for monotonic contours, otherwise moves mode
+  - **Keyway (KEYWAY)**: Macro-based keyway machining
+- **Live Preview**: XZ side view with collision detection, stock display and toolpaths
+- **Validation**: Automatic check of geometric feasibility before G-code generation, strict validation without defaults for required parameters
+- **Bilingual UI**: German (default) and English
+- **Dynamic UI**: Parameter fields appear/disappear based on selected modes (e.g., dwell only for G82)
+- **G-Code Generation**: Optimized output with LinuxCNC cycles, Fanuc-compatible, with save dialog for files
+- **Save/Load**: Programs saved/loaded as JSON files
+- **Safety Features**: Simultaneous X/Z retracts, parameter-driven feeds, collision avoidance
+- **Tool Integration**: Automatic loading of tools from LinuxCNC, dropdown selection with location graphic, warnings for inner/outer mismatch
+- **G-code generator (current behavior)**:
+  - **Tool change**: Always `G53 G0 X<TC_X> Z<TC_Z>` before any `T.. M6` (TC from panel), then `G0 X<X_safe> Z<Z_safe>`
+  - **Safe zone**: `X_safe = stock_OD + XRA`, `Z_safe = ZRA` (absolute values)
+  - **Retract after each cutting step**: always separate `G0 X<X_safe>` then `G0 Z<Z_safe>`
+  - **Approach from SAFE**: diagonal allowed `G0 X<X_start> Z<Z_start>`
+  - **Coolant**: explicit per step `M7` (mist), `M8` (flood), `M9` (off)
+  - **Drilling (LinuxCNC)**: canned cycles switch to `G17`, then `G80`, then back to `G18`
+  - **Comments**: content is sanitized (no nested parentheses)
 
 Requirements
 - LinuxCNC (tested with QTVCP / QtDragon)
@@ -130,13 +146,11 @@ Integrate the panel into your QTVCP screen
 Restart LinuxCNC
 
 Current limitations
-Focus on roughing operations
-
-Radii are geometrically correct but currently output as linearized segments
-
-Native G2/G3 output planned
-
-Project is under active development
+- Full integration of LinuxCNC cycles (G71/G72 for parting, G81-G84 for drilling)
+- Focus on roughing and finishing strategies with geometrically correct radius handling
+- Radii displayed as true arcs in preview; G-code uses cycles for optimal output
+- **LinuxCNC-specific**: drilling cycles temporarily switch to `G17` and back to `G18`
+- Project under active development – new operations and improvements added regularly
 
 
 ## 🔍 Vorschau & Geometrie-Darstellung

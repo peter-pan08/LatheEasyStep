@@ -1,0 +1,25 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test)
+(Maßeinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+
+(Step 1: thread | T8: Außengewinde MMT11er AG60)
+(Werkzeug T08)
+(Toolchange move)
+G53 G0 X150.000 Z300.000
+T08 M6
+S800 M3
+(Gewindetyp: Aussen)
+G0 X25.000 Z2.000
+G76 P3.0000 Z-23.000 I-0.9201 J0.1840 R1.5000 K1.8402 Q29.5000 H1 E0.0000 L0
+
+G53 G0 X150.000 Z300.000
+M5
+M9
+M30
+%

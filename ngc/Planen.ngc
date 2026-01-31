@@ -1,0 +1,34 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test)
+(Maßeinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+
+(=== Subroutine Definitions ===)
+o100 sub
+G1 X40.000 Z-3.000
+G1 X34.000 Z0.000
+G1 X0.000 Z0.000
+o100 endsub
+(=== End Subroutines ===)
+
+
+(Step 1: face | T1: DCMT Außendrehen)
+(Werkzeug T01)
+(Toolchange move)
+G53 G0 X150.000 Z300.000
+T01 M6
+S1300 M3
+M8
+F0.200
+G72 Q100 X40.000 Z1.000 D0.050 I0.400 R0.500
+
+G53 G0 X150.000 Z300.000
+M5
+M9
+M30
+%

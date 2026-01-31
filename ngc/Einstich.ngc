@@ -1,0 +1,26 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test)
+(Maßeinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+
+(Step 1: groove | T4: Einstechen MGMN200)
+(Werkzeug T04)
+(Toolchange move)
+G53 G0 X150.000 Z300.000
+T04 M6
+S900 M3
+G0 X25.000 Z2.000
+G1 X23.000 Z-13.000 F0.150
+G1 X23.000 Z-10.000
+G1 X25.000 Z-10.000
+
+G53 G0 X150.000 Z300.000
+M5
+M9
+M30
+%
