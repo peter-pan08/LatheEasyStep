@@ -1,9 +1,177 @@
-"""Helpers for parting roughing (parallel X / parallel Z)"""
-from dataclasses import dataclass
+"""Helpers for parting roughing (parallel X / parallel Z) and G-code generation."""
+from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
 import math
+import re
 
 Point = Tuple[float, float]  # (x, z)
+
+
+def require(params: Dict[str, object], keys: List[str], op_label: str) -> None:
+    """Validate that required parameters are present and valid."""
+    for key in keys:
+        if key not in params:
+            raise ValueError(f"Fehler in Operation {op_label}: Pflicht-Parameter fehlt: '{key}'. Bitte im Handler/UI bei dieser Operation nachtragen.")
+        v = params[key]
+        if v is None or v == "":
+            raise ValueError(f"Fehler in Operation {op_label}: Pflicht-Parameter ist leer: '{key}'. Bitte im Handler/UI bei dieser Operation nachtragen.")
+
+
+def require_positive(params: Dict[str, object], keys: List[str], op_label: str) -> None:
+    """Validate that parameters are positive numbers."""
+    for key in keys:
+        try:
+            val = float(params.get(key, 0))
+            if val <= 0:
+                raise ValueError(f"Fehler in Operation {op_label}: Parameter '{key}' muss > 0 sein (aktuell: {val}). Bitte im Handler/UI bei dieser Operation nachtragen.")
+        except (ValueError, TypeError):
+            raise ValueError(f"Fehler in Operation {op_label}: Parameter '{key}' ist keine gültige positive Zahl. Bitte im Handler/UI bei dieser Operation nachtragen.")
+
+
+def _get_tool_number(params: Dict[str, object]) -> int:
+    """Extract tool number from params, supporting legacy keys."""
+    for key in ("tool", "toolno", "tool_number"):
+        if key in params and params.get(key) not in (None, ""):
+            try:
+                return int(float(params.get(key, 0)))
+            except Exception:
+                return 0
+    return 0
+
+
+def require_tool(params: Dict[str, object], op_label: str) -> int:
+    """Validate that a tool number is present and > 0."""
+    tool_num = _get_tool_number(params)
+    if tool_num <= 0:
+        raise ValueError(f"Fehler in Operation {op_label}: Werkzeug fehlt/ungueltig (tool). Bitte im Handler/UI nachtragen.")
+    return tool_num
+
+
+def is_monotonic_z_decreasing(path: List[Point]) -> bool:
+    """Check if Z coordinates are monotonically decreasing (for G71)."""
+    if len(path) < 2:
+        return True
+    return all(z1 >= z2 for (_, z1), (_, z2) in zip(path, path[1:]))
+
+
+def is_monotonic_x_decreasing(path: List[Point]) -> bool:
+    """Check if X coordinates are monotonically decreasing (for G72)."""
+    if len(path) < 2:
+        return True
+    return all(x1 >= x2 for (x1, _), (x2, _) in zip(path, path[1:]))
+
+
+def primitives_to_points(primitives: List[Dict[str, object]]) -> List[Point]:
+    """Convert contour primitives to a list of points."""
+    points = []
+    for pr in primitives:
+        if pr.get("type") == "line":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            if p1 and p2:
+                points.append(tuple(p1))
+                points.append(tuple(p2))
+        elif pr.get("type") == "arc":
+            # For arcs, add start and end points
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            if p1 and p2:
+                points.append(tuple(p1))
+                points.append(tuple(p2))
+    return points
+
+
+# ----------------------------------------------------------------------
+# Operation types and data structures
+# ----------------------------------------------------------------------
+class OpType:
+    PROGRAM_HEADER = "program_header"
+    FACE = "face"
+    CONTOUR = "contour"
+    TURN = "turn"
+    BORE = "bore"
+    THREAD = "thread"
+    GROOVE = "groove"
+    DRILL = "drill"
+    KEYWAY = "keyway"
+    ABSPANEN = "abspanen"
+
+
+REQUIRED_KEYS = {
+    OpType.FACE: ["depth_max", "feed", "spindle", "tool"],
+    OpType.CONTOUR: [],  # Nur Geometrie, keine Bearbeitung
+    OpType.TURN: ["feed", "safe_z", "tool"],
+    OpType.BORE: ["feed", "safe_z", "tool"],
+    OpType.THREAD: ["pitch", "length", "major_diameter", "spindle", "tool"],
+    OpType.GROOVE: ["feed", "safe_z", "tool"],
+    OpType.DRILL: ["feed", "safe_z", "mode", "tool"],
+    OpType.KEYWAY: ["depth_per_pass", "feed", "safe_z", "tool"],
+    OpType.ABSPANEN: ["depth_per_pass", "tool"],
+}
+
+
+@dataclass
+class Operation:
+    op_type: str
+    params: Dict[str, object]
+    path: list = field(default_factory=list)  # list of points or primitives
+
+
+STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
+    ("M2", 2.0, 0.4),
+    ("M2.5", 2.5, 0.45),
+    ("M3", 3.0, 0.5),
+    ("M3.5", 3.5, 0.6),
+    ("M4", 4.0, 0.7),
+    ("M5", 5.0, 0.8),
+    ("M6", 6.0, 1.0),
+    ("M7", 7.0, 1.0),
+    ("M8", 8.0, 1.25),
+    ("M9", 9.0, 1.25),
+    ("M10", 10.0, 1.5),
+    ("M11", 11.0, 1.5),
+    ("M12", 12.0, 1.75),
+    ("M13", 13.0, 1.75),
+    ("M14", 14.0, 2.0),
+    ("M15", 15.0, 2.0),
+    ("M16", 16.0, 2.0),
+    ("M17", 17.0, 2.0),
+    ("M18", 18.0, 2.5),
+    ("M19", 19.0, 2.5),
+    ("M20", 20.0, 2.5),
+    ("M21", 21.0, 2.5),
+    ("M22", 22.0, 2.5),
+    ("M23", 23.0, 3.0),
+    ("M24", 24.0, 3.0),
+    ("M25", 25.0, 3.0),
+]
+STANDARD_TR_THREAD_SPECS: List[Tuple[str, float, float]] = [
+    ("Tr 10", 10.0, 2.0),
+    ("Tr 12", 12.0, 3.0),
+    ("Tr 14", 14.0, 3.0),
+    ("Tr 16", 16.0, 4.0),
+    ("Tr 18", 18.0, 4.0),
+    ("Tr 20", 20.0, 4.0),
+    ("Tr 22", 22.0, 5.0),
+    ("Tr 24", 24.0, 5.0),
+    ("Tr 26", 26.0, 5.0),
+    ("Tr 28", 28.0, 5.0),
+    ("Tr 30", 30.0, 6.0),
+    ("Tr 32", 32.0, 6.0),
+    ("Tr 36", 36.0, 6.0),
+    ("Tr 40", 40.0, 7.0),
+    # Zusätzliche TR-Größen (erweiterte Auswahl)
+    ("Tr 45", 45.0, 7.0),
+    ("Tr 50", 50.0, 8.0),
+    ("Tr 55", 55.0, 8.0),
+    ("Tr 60", 60.0, 10.0),
+]
+THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
+DRILL_MODE_LABELS: Tuple[str, str, str] = (
+    "Normal",
+    "Spanbruch",
+    "Spanbruch + Rückzug",
+)
 
 
 @dataclass(frozen=True)
@@ -414,6 +582,7 @@ def rough_turn_parallel_x(
     pause_duration: float = 0.5,
     retract_cfg: Optional[RetractCfg] = None,
     leadout_length: float = LEADOUT_LENGTH_DEFAULT,
+    pause_state: Dict[str, object] | None = None,
 ) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
@@ -558,6 +727,7 @@ def rough_turn_parallel_z(
     pause_duration: float = 0.5,
     leadout_length: float = LEADOUT_LENGTH_DEFAULT,
     retract_cfg: Optional[RetractCfg] = None,
+    pause_state: Dict[str, object] | None = None,
 ) -> List[str]:
     """Parallel to X (horizontal bands)."""
     segs = segments_from_polyline(path)
@@ -643,6 +813,7 @@ def rough_turn_parallel_z(
                 pause_enabled=pause_enabled,
                 pause_distance=pause_distance,
                 pause_duration=pause_duration,
+                state=pause_state,
             )
             current_x = cut_target
 
@@ -741,6 +912,40 @@ def gcode_from_path(path: List[Point], feed: float, safe_z: float) -> List[str]:
     return lines
 
 
+def gcode_for_turn(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    settings = settings or {}
+    p = op.params
+    require_tool(p, "TURN")
+    path = op.path or []
+    if not path:
+        return []
+    feed = float(p.get("feed", 0.2))
+    safe_z = float(p.get("safe_z", 2.0))
+    lines: List[str] = []
+    _append_tool_and_spindle(lines, _get_tool_number(p), p.get("spindle"), settings)
+    if bool(p.get("coolant", False)):
+        lines.append("M8")
+    lines.extend(gcode_from_path(path, feed, safe_z))
+    return lines
+
+
+def gcode_for_bore(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    settings = settings or {}
+    p = op.params
+    require_tool(p, "BORE")
+    path = op.path or []
+    if not path:
+        return []
+    feed = float(p.get("feed", 0.15))
+    safe_z = float(p.get("safe_z", 2.0))
+    lines: List[str] = []
+    _append_tool_and_spindle(lines, _get_tool_number(p), p.get("spindle"), settings)
+    if bool(p.get("coolant", False)):
+        lines.append("M8")
+    lines.extend(gcode_from_path(path, feed, safe_z))
+    return lines
+
+
 
 def gcode_from_primitives(
     primitives: List[Dict[str, object]],
@@ -795,6 +1000,70 @@ def gcode_from_primitives(
     return lines
 
 
+def contour_sub_from_points(points: List[Point], sub_num: int) -> List[str]:
+    """Create a contour subroutine using G0-only line segments."""
+    lines: List[str] = [f"o{sub_num} sub"]
+    if not points:
+        lines.append(f"o{sub_num} endsub")
+        return lines
+    prev: Optional[Point] = None
+    for x, z in points:
+        if prev is None or (abs(prev[0] - x) > 1e-9 or abs(prev[1] - z) > 1e-9):
+            lines.append(f"G0 X{x:.3f} Z{z:.3f}")
+            prev = (x, z)
+    lines.append(f"o{sub_num} endsub")
+    return lines
+
+
+def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: int) -> List[str]:
+    """Create a contour subroutine using G0/G2/G3 only (XZ plane, I/K arcs)."""
+    lines: List[str] = [f"o{sub_num} sub"]
+    if not primitives:
+        lines.append(f"o{sub_num} endsub")
+        return lines
+    cur_x: Optional[float] = None
+    cur_z: Optional[float] = None
+
+    def _ensure_at(x: float, z: float) -> None:
+        nonlocal cur_x, cur_z
+        if cur_x is None or cur_z is None or abs(cur_x - x) > 1e-9 or abs(cur_z - z) > 1e-9:
+            lines.append(f"G0 X{x:.3f} Z{z:.3f}")
+            cur_x, cur_z = x, z
+
+    for pr in primitives:
+        typ = pr.get("type")
+        if typ == "line":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            if p1 is None or p2 is None:
+                continue
+            x1, z1 = float(p1[0]), float(p1[1])
+            x2, z2 = float(p2[0]), float(p2[1])
+            _ensure_at(x1, z1)
+            _ensure_at(x2, z2)
+            continue
+
+        if typ == "arc":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            c = pr.get("c") or pr.get("center")
+            if p1 is None or p2 is None or c is None:
+                continue
+            x1, z1 = float(p1[0]), float(p1[1])
+            x2, z2 = float(p2[0]), float(p2[1])
+            cx, cz = float(c[0]), float(c[1])
+            _ensure_at(x1, z1)
+            i = cx - (cur_x if cur_x is not None else x1)
+            k = cz - (cur_z if cur_z is not None else z1)
+            g = "G3" if pr.get("ccw") else "G2"
+            lines.append(f"{g} X{x2:.3f} Z{z2:.3f} I{i:.3f} K{k:.3f}")
+            cur_x, cur_z = x2, z2
+            continue
+
+    lines.append(f"o{sub_num} endsub")
+    return lines
+
+
 def _contour_retract_positions(
     settings: Dict[str, object],
     side_idx: int,
@@ -836,6 +1105,130 @@ def get_retract_cfg(settings: Dict[str, object], side_idx: int) -> RetractCfg:
     return RetractCfg(x_value=x, z_value=z, x_absolute=x_abs, z_absolute=z_abs)
 
 
+def _mark_step_line_pause(state: Dict[str, object] | None) -> None:
+    if state is not None:
+        state["needs_step_line_pause_sub"] = True
+
+
+def _step_line_pause_sub_definition() -> List[str]:
+    return [
+        "o<step_line_pause> sub",
+        "(Step line pause helper)",
+        "G4 P[#7]",
+        "o<step_line_pause> endsub",
+    ]
+
+
+# --- PHASE A: G0-Sicherheit für Außen/Innendrehen ---
+# Tracker für aktuellen Zustand des Werkzeugs relativ zum Werkstück
+class SafetyContext:
+    """Verfolgt, ob das Werkzeug sicher vom Material entfernt ist."""
+    def __init__(self, side_idx: int = 0, safe_z: float = 2.0):
+        """side_idx: 0=Außendrehen, 1=Innendrehen; safe_z: Sicherheitspositin in Z"""
+        self.side_idx = side_idx
+        self.safe_z = safe_z
+        self.is_safe = False  # Initial: nicht sicher (bis erste Anfahrt)
+        
+    def mark_safe_z(self):
+        """Markiere: Werkzeug ist bei safe_z (Z sicherheitsposition)"""
+        self.is_safe = True
+        
+    def mark_unsafe(self):
+        """Markiere: Werkzeug ist beim Werkstück (nicht sicher)"""
+        self.is_safe = False
+        
+    def is_x_move_safe(self, current_x: float, target_x: float) -> bool:
+        """Prüfe, ob G0 von current_x zu target_x sicher ist.
+        
+        Außendrehen (side_idx=0):
+            Material bei großem X
+            Sicher wenn: target_x >= current_x (weg vom Material)
+            
+        Innendrehen (side_idx=1):
+            Material bei kleinem X
+            Sicher wenn: target_x <= current_x (weg vom Material)
+        """
+        if not self.is_safe:
+            # Wenn nicht bei safe_z, muss zuerst Z sicher sein
+            return False
+            
+        if self.side_idx == 0:  # Außendrehen
+            # Material bei großem X, sicher wenn target >= current (weg)
+            return target_x >= current_x
+        else:  # Innendrehen
+            # Material bei kleinem X, sicher wenn target <= current (weg)
+            return target_x <= current_x
+
+
+def emit_g0_safe(
+    x: Optional[float] = None,
+    z: Optional[float] = None,
+    safety: SafetyContext = None,
+    current_x: float = 0.0,
+    label: str = "(G0)"
+) -> List[str]:
+    """Emittiert sichere G0-Bewegungen mit Validierung für Außen/Innendrehen.
+    
+    Wenn nur Z bewegt wird → immer safe
+    Wenn X bewegt wird → prüfe material-safety mit SafetyContext
+    Falls unsicher → Fehler + Kommentar
+    """
+    lines: List[str] = []
+    
+    if safety is None:
+        # Kein Safety-Context → einfach emit (Legacy-Mode)
+        if z is not None:
+            lines.append(f"G0 Z{z:.3f}  {label}")
+            return lines
+        if x is not None:
+            lines.append(f"G0 X{x:.3f}  {label}")
+            return lines
+        return lines
+    
+    # Mit SafetyContext: prüfe X-Bewegungen
+    if x is not None and z is None:
+        # Nur X-Bewegung
+        if not safety.is_x_move_safe(current_x, x):
+            lines.append(f"(ERROR: G0 X{x:.3f} nicht sicher bei side={safety.side_idx})")
+            lines.append(f"(       Aktuell X={current_x:.3f}, sicher zum Material weg)")
+            return lines
+        lines.append(f"G0 X{x:.3f}  {label}")
+        safety.mark_unsafe()  # X-Bewegung → evtl. näher am Material
+        return lines
+    
+    if z is not None and x is None:
+        # Nur Z-Bewegung
+        lines.append(f"G0 Z{z:.3f}  {label}")
+        if abs(z - safety.safe_z) < 0.01:
+            safety.mark_safe_z()  # Bei safe_z → markiere sicher
+        else:
+            safety.mark_unsafe()  # Nicht bei safe_z → unsicher
+        return lines
+    
+    if x is not None and z is not None:
+        # X und Z zusammen → Z hat Vorrang
+        # Z zuerst emittieren, dann X
+        lines.append(f"G0 Z{z:.3f}  {label}")
+        safety.mark_safe_z()
+        lines.append(f"G0 X{x:.3f}")
+        if not safety.is_x_move_safe(current_x, x):
+            lines[-1] = f"(ERROR: G0 X{x:.3f} nicht sicher) {lines[-1]}"
+        else:
+            safety.mark_unsafe()
+        return lines
+    
+    return lines
+
+
+def _step_x_pause_sub_definition() -> List[str]:
+    return [
+        "o<step_x_pause> sub",
+        "(Step X pause helper)",
+        "G4 P0.1",
+        "o<step_x_pause> endsub",
+    ]
+
+
 def _emit_segment_with_pauses(
     lines: List[str],
     start: Point,
@@ -844,6 +1237,7 @@ def _emit_segment_with_pauses(
     pause_enabled: bool,
     pause_distance: float,
     pause_duration: float,
+    state: Dict[str, object] | None = None,
 ):
     x0, z0 = start
     x1, z1 = end
@@ -856,6 +1250,7 @@ def _emit_segment_with_pauses(
             f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
             f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
         )
+        _mark_step_line_pause(state)
         return
 
     lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
@@ -868,6 +1263,7 @@ def _gcode_for_abspanen_pass(
     pause_enabled: bool,
     pause_distance: float,
     pause_duration: float,
+    state: Dict[str, object] | None = None,
 ) -> List[str]:
     if not path:
         return []
@@ -881,7 +1277,14 @@ def _gcode_for_abspanen_pass(
     prev = path[0]
     for point in path[1:]:
         _emit_segment_with_pauses(
-            lines, prev, point, feed, pause_enabled, pause_distance, pause_duration
+            lines,
+            prev,
+            point,
+            feed,
+            pause_enabled,
+            pause_distance,
+            pause_duration,
+            state=state,
         )
         prev = point
 
@@ -900,20 +1303,34 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if not path:
         return lines
 
+    # Strenge Validierung: depth_per_pass ist Pflicht
+    require(p, ["depth_per_pass"], "ABSPANEN")
+    require_positive(p, ["depth_per_pass"], "ABSPANEN")
+
     side_idx = int(p.get("side", 0))
     feed = float(p.get("feed", 0.15))
-    depth_per_pass = max(float(p.get("depth_per_pass", 0.0)), 0.0)
+    depth_per_pass = float(p["depth_per_pass"])  # Jetzt garantiert vorhanden und positiv
     pause_enabled = bool(p.get("pause_enabled", False))
     pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
     pause_duration = 0.5
     mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten
+    if pause_enabled and pause_distance > 0.0 and mode_idx in (0, 2):
+        settings["needs_step_line_pause_sub"] = True
 
     # harte Sicherung: Unterbrechung nur beim Schruppen
     if mode_idx != 0:
         pause_enabled = False
 
-    tool_num = int(p.get("tool", 0))
+    tool_num = require_tool(p, "ABSPANEN")
     spindle = float(p.get("spindle", 0.0))
+    coolant_enabled = bool(p.get("coolant", False))
+
+    # --- Tool/Spindle/Coolant/Feed Rahmen am Anfang ---
+    _append_tool_and_spindle(lines, tool_num, spindle, settings)
+    coolant_mode = p.get("coolant_mode", p.get("coolant", False))
+    _emit_coolant(lines, coolant_mode)
+    # Set feedrate (required for contour in sub)
+    lines.append(f"F{feed:.3f}")
 
     stock_hint = settings.get("xa") if side_idx == 0 else settings.get("xi")
     stock_from_settings = stock_hint is not None
@@ -936,9 +1353,16 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     offsets = _abspanen_offsets(stock_x, path, depth_per_pass)
 
     slice_strategy = p.get("slice_strategy")
-    slice_step = depth_per_pass if depth_per_pass > 0.0 else 1.0
+    slice_step = depth_per_pass  # Kein Fallback mehr, depth_per_pass ist garantiert > 0
     allow_undercut = bool(p.get("allow_undercut", False))
     external = side_idx == 0
+    tool_info = (settings.get("tools", {}) or {}).get(tool_num)
+    compensation_command = _nose_compensation_command(tool_info, external)
+    nose_disabled = bool(p.get("nose_comp_disabled", False))
+    nose_reason = str(p.get("nose_comp_reason", "") or "").strip()
+    if nose_disabled:
+        reason = nose_reason if nose_reason else "Benutzerentscheidung"
+        lines.append(f"(Nose compensation deaktiviert: {_sanitize_comment_text(reason)})")
     leadout_length = max(float(p.get("leadout_length", LEADOUT_LENGTH_DEFAULT)), 0.0)
 
     # Accept either index or code
@@ -957,7 +1381,24 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     except Exception:
         strategy_code = None
 
+    contour_name = p.get("contour_name")
+    contour_subs = settings.get("contour_subs", {}) if settings else {}
+    contour_sub_num = contour_subs.get(contour_name) if contour_name else None
+
     if strategy_code == "parallel_x":
+        if is_monotonic_x_decreasing(path):
+            allocator = settings.get("sub_allocator")
+            sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
+            lines.append("(ABSPANEN Rough - parallel X)")
+            if contour_sub_num is None:
+                lines.extend(contour_sub_from_points(path, sub_num))
+            lines.append("(Anfahren vor Zyklus)")
+            _emit_approach(lines, stock_x, safe_z, settings)
+            lines.append(f"G72 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            if mode_idx in (1, 2):
+                lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
+            # global safe retract after step
+            return lines
         z_vals = [pp[1] for pp in path] if path else [0.0]
         z_stock = max(z_vals) if external else min(z_vals)
         z_target = min(z_vals) if external else max(z_vals)
@@ -976,26 +1417,41 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             pause_duration=pause_duration,
             retract_cfg=cfg,
             leadout_length=leadout_length,
+            pause_state=settings,
         )
-        # sicherstellen, dass der Header den gewählten Richtungsmodus widerspiegelt
         if rough_lines:
-            rough_lines[0] = "(ABSPANEN Rough - parallel X)"
+            rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
         lines.extend(rough_lines)
-        # document effective slice step in output for traceability
-        lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
-        lines.insert(2, f"#<_slice_step> = {slice_step:.3f}")
-
-        # Finish optional (Kontur 1x)
         if mode_idx in (1, 2):
             lines.append("(Schlichtschnitt Kontur)")
             lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            if compensation_command and not nose_disabled:
+                lines.append(compensation_command)
+            prev_point = None
             for (x, z) in path:
-                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+                current_point = (x, z)
+                if current_point != prev_point:
+                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+                    prev_point = current_point
             lines.append(f"G0 Z{safe_z:.3f}")
-
+            if compensation_command and not nose_disabled:
+                lines.append("G40")  # Cancel compensation
         return lines
 
     if strategy_code == "parallel_z":
+        if is_monotonic_z_decreasing(path):
+            allocator = settings.get("sub_allocator")
+            sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
+            lines.append("(ABSPANEN Rough - parallel Z)")
+            if contour_sub_num is None:
+                lines.extend(contour_sub_from_points(path, sub_num))
+            _emit_approach(lines, stock_x, safe_z, settings)
+            lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            if mode_idx in (1, 2):
+                lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
+            # global safe retract after step
+            return lines
+
         xs = [pp[0] for pp in path] if path else [stock_x]
         x_target = min(xs) if external else max(xs)
         rough_lines = rough_turn_parallel_x(
@@ -1012,22 +1468,21 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             pause_duration=pause_duration,
             retract_cfg=cfg,
             leadout_length=leadout_length,
+            pause_state=settings,
         )
         if rough_lines:
-            rough_lines[0] = "(ABSPANEN Rough - parallel Z)"
+            rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
         lines.extend(rough_lines)
-        # document effective slice step in output for traceability
-        lines.insert(1, f"#<_depth_per_pass> = {depth_per_pass:.3f}")
-        lines.insert(2, f"#<_slice_step> = {slice_step:.3f}")
-
-        # Finish optional (Kontur 1x)
         if mode_idx in (1, 2):
             lines.append("(Schlichtschnitt Kontur)")
             lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            if compensation_command and not nose_disabled:
+                lines.append(compensation_command)
             for (x, z) in path:
                 lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
             lines.append(f"G0 Z{safe_z:.3f}")
-
+            if compensation_command and not nose_disabled:
+                lines.append("G40")  # Cancel compensation
         return lines
 
     # No direction selected
@@ -1037,25 +1492,1053 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         return lines
 
     # Finish-only (mode_idx == 1) without slicing: single contour pass
-    # append tool and spindle
-    try:
-        tool_num = int(float(tool_num))
-    except Exception:
-        tool_num = 0
-    if tool_num > 0:
-        lines.append(f"(Werkzeug T{tool_num:02d})")
-        lines.append(f"T{tool_num:02d} M6")
-    try:
-        rpm = float(spindle)
-    except Exception:
-        rpm = 0.0
-    if rpm and rpm > 0:
-        rpm_value = int(round(rpm))
-        lines.append(f"S{rpm_value} M3")
+    _append_tool_and_spindle(lines, tool_num, spindle, settings)
 
     lines.append("(Schlichtschnitt Kontur)")
     lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+    if compensation_command and not nose_disabled:
+        lines.append(compensation_command)
     for (x, z) in path:
         lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
     lines.append(f"G0 Z{safe_z:.3f}")
+    if compensation_command and not nose_disabled:
+        lines.append("G40")
+    return lines
+
+
+# ----------------------------------------------------------------------
+# G-code generation functions
+# ----------------------------------------------------------------------
+
+def _sanitize_gcode_text(text: str) -> str:
+    """Ersetzt Umlaute/Akzente durch ASCII, um falsche Zeichensätze zu vermeiden."""
+    translit = {
+        "ä": "ae",
+        "Ä": "Ae",
+        "ö": "oe",
+        "Ö": "Oe",
+        "ü": "ue",
+        "Ü": "Ue",
+        "ß": "ss",
+    }
+
+    for src, repl in translit.items():
+        text = text.replace(src, repl)
+
+    try:
+        text.encode("ascii")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("ascii", "replace").decode("ascii")
+
+
+def _sanitize_comment_text(text: object) -> str:
+    """Strip parentheses from comment content and normalize to ASCII."""
+    raw = str(text or "")
+    # Remove nested comment markers
+    raw = raw.replace("(", " ").replace(")", " ")
+    raw = " ".join(raw.split())
+    return _sanitize_gcode_text(raw)
+
+
+def _emit_coolant(lines: List[str], mode: object) -> None:
+    """Emit explicit coolant state (M7/M8/M9)."""
+    if isinstance(mode, str):
+        m = mode.strip().lower()
+        if m in ("mist", "m7"):
+            lines.append("M7")
+            return
+        if m in ("flood", "m8", "on", "ein"):
+            lines.append("M8")
+            return
+        if m in ("off", "aus", "m9", "0"):
+            lines.append("M9")
+            return
+    if isinstance(mode, bool):
+        lines.append("M8" if mode else "M9")
+        return
+    # Fallback: be explicit and safe
+    lines.append("M9")
+
+
+def _get_safe_position(settings: Dict[str, object] | None) -> Optional[Tuple[float, float]]:
+    if not settings:
+        return None
+    xa = _float_or_none(settings.get("xa"))
+    xra = _float_or_none(settings.get("xra"))
+    zra = _float_or_none(settings.get("zra"))
+    if xa is None or xra is None or zra is None:
+        return None
+    return (xa + xra, zra)
+
+
+def _emit_safe_retract(lines: List[str], settings: Dict[str, object] | None) -> None:
+    safe = _get_safe_position(settings)
+    if not safe:
+        return
+    x_safe, z_safe = safe
+    lines.append(f"G0 X{x_safe:.3f}")
+    lines.append(f"G0 Z{z_safe:.3f}")
+    if settings is not None:
+        settings["_is_at_safe"] = True
+
+
+def _emit_approach(lines: List[str], start_x: float, start_z: float, settings: Dict[str, object] | None) -> None:
+    safe = _get_safe_position(settings)
+    if safe and settings is not None:
+        x_safe, z_safe = safe
+        if settings.get("_is_at_safe"):
+            lines.append(f"G0 X{start_x:.3f} Z{start_z:.3f}")
+        else:
+            lines.append(f"G0 Z{z_safe:.3f}")
+            lines.append(f"G0 X{x_safe:.3f}")
+            lines.append(f"G0 X{start_x:.3f} Z{start_z:.3f}")
+        settings["_is_at_safe"] = False
+        return
+    lines.append(f"G0 Z{start_z:.3f}")
+    lines.append(f"G0 X{start_x:.3f}")
+
+
+def _float_or_none(value: object | None) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle_value: object | None, settings: Dict[str, object] | None = None):
+    """Append tool and spindle commands, tracking tool state to avoid redundant changes."""
+    if tool_value is None and settings is not None:
+        tool_num = _get_tool_number(settings)
+    else:
+        try:
+            tool_num = int(float(tool_value))
+        except Exception:
+            tool_num = 0
+
+    if tool_num > 0:
+        last_tool = int(float(settings.get("_current_tool", 0))) if settings else 0
+        if tool_num != last_tool:
+            lines.append(f"(Werkzeug T{tool_num:02d})")
+            if settings is not None:
+                safe = _get_safe_position(settings)
+                if safe and not settings.get("_is_at_safe"):
+                    x_safe, z_safe = safe
+                    lines.append(f"G0 X{x_safe:.3f}")
+                    lines.append(f"G0 Z{z_safe:.3f}")
+                    settings["_is_at_safe"] = True
+                # Coolant off before toolchange
+                lines.append("M9")
+                toolchange_lines = move_to_toolchange_pos(settings)
+                lines.extend(toolchange_lines)
+            lines.append(f"T{tool_num:02d} M6")
+            if settings is not None:
+                settings["_current_tool"] = tool_num
+                safe = _get_safe_position(settings)
+                if safe:
+                    x_safe, z_safe = safe
+                    lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
+                    settings["_is_at_safe"] = True
+
+    rpm = _float_or_none(spindle_value)
+    if rpm and rpm > 0:
+        rpm_value = int(round(rpm))
+        if rpm_value > 0:
+            lines.append(f"S{rpm_value} M3")
+
+
+def _nose_compensation_command(tool_info: Dict[str, object] | None, external: bool) -> Optional[str]:
+    if not tool_info:
+        return None
+    radius = _float_or_none(tool_info.get("radius_mm"))
+    if radius is None or radius <= 0:
+        return None
+    orientation_raw = tool_info.get("q")
+    if orientation_raw is None:
+        return None
+    try:
+        orientation_idx = int(float(orientation_raw))
+    except Exception:
+        return None
+    comp_code = "G42.1" if external else "G41.1"
+    return f"{comp_code} D{(radius * 2):.4f} L{orientation_idx}"
+
+
+def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None) -> List[str]:
+    xt = _float_or_none(settings.get("xt"))
+    zt = _float_or_none(settings.get("zt"))
+    if label:
+        prefix = f"({label})"
+    else:
+        prefix = "(Toolchange move)"
+    lines: List[str] = [prefix]
+    if xt is None or zt is None:
+        lines.append("(WARN: Toolchange position XT/ ZT nicht gesetzt)")
+        return lines
+    coords = f"X{xt:.3f} Z{zt:.3f}"
+    lines.append(f"G53 G0 {coords}")
+    return lines
+
+
+def gcode_for_drill(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    settings = settings or {}
+    path = op.path or []
+    if not path:
+        return []
+    p = op.params
+    require_tool(p, "DRILL")
+    mode_raw = p.get("mode", "G81")
+    # Validate mode-specific required parameters
+    if mode_raw == "G82":
+        require(p, ["dwell"], "DRILL G82")
+    elif mode_raw in ["G83", "G73"]:
+        require(p, ["peck_depth"], "DRILL " + mode_raw)
+    lines: List[str] = []
+    _append_tool_and_spindle(
+        lines,
+        _get_tool_number(op.params),
+        op.params.get("spindle"),
+        settings,
+    )
+    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
+    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
+    safe_z = float(op.params.get("safe_z", 2.0))
+    feed = float(op.params.get("feed", 0.12))
+    depth_z = path[-1][1]
+    x_start = path[0][0]
+    # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
+    lines.append(f"(Anfahren vor Zyklus)")
+    _emit_approach(lines, x_start, safe_z, settings)
+    # LinuxCNC: canned cycles use plane for plunge axis; switch to G17 for drilling
+    lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
+    lines.append("G17")
+    lines.append(f"F{feed:.3f}")
+    if mode_raw == "G81":
+        # G81: Drilling
+        retract = float(op.params.get("retract", safe_z))
+        lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
+    elif mode_raw == "G82":
+        # G82: Drilling with dwell
+        retract = float(op.params.get("retract", safe_z))
+        dwell = float(p.get("dwell", 0.0))
+        lines.append(f"G82 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} P{dwell:.3f} F{feed:.3f}")
+    elif mode_raw == "G83":
+        # G83: Peck drilling
+        retract = float(op.params.get("retract", safe_z))
+        peck_depth = float(p.get("peck_depth", 1.0))
+        lines.append(f"G83 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
+    elif mode_raw == "G73":
+        # G73: Chip breaking drilling
+        retract = float(op.params.get("retract", safe_z))
+        peck_depth = float(p.get("peck_depth", 1.0))
+        lines.append(f"G73 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
+    elif mode_raw == "G84":
+        # G84: Tapping
+        retract = float(op.params.get("retract", safe_z))
+        lines.append(f"G84 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
+    else:
+        # Fallback to G81
+        retract = float(op.params.get("retract", safe_z))
+        lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
+    lines.append("G80")  # Cancel canned cycle
+    lines.append("G18")
+    return lines
+def _should_activate_abstech(
+    start_x: float, threshold: float, current_x: float
+) -> bool:
+    if start_x >= threshold:
+        return current_x <= threshold
+    return current_x >= threshold
+
+
+def gcode_for_groove(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    settings = settings or {}
+    path = op.path or []
+    if not path:
+        return []
+    require_tool(op.params, "GROOVE")
+    safe_z = float(op.params.get("safe_z", 2.0))
+    feed = float(op.params.get("feed", 0.15))
+    reduced_feed = _float_or_none(op.params.get("reduced_feed"))
+    if reduced_feed is not None and reduced_feed <= 0.0:
+        reduced_feed = None
+    reduced_rpm = _float_or_none(op.params.get("reduced_rpm"))
+    if reduced_rpm is not None and reduced_rpm <= 0.0:
+        reduced_rpm = None
+    reduced_start_x = _float_or_none(op.params.get("reduced_feed_start_x"))
+    lines: List[str] = []
+    _append_tool_and_spindle(
+        lines,
+        _get_tool_number(op.params),
+        op.params.get("spindle"),
+        settings,
+    )
+    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
+    start_x = path[0][0]
+    # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
+    lines.append(f"(Anfahren vor Bearbeitung)")
+    lines.append(f"G0 Z{safe_z:.3f}")
+    lines.append(f"G0 X{start_x:.3f}")
+    feed_current = feed
+    need_feed = True
+    abstech_active = False
+    for x, z in path[1:]:
+        if (
+            not abstech_active
+            and (reduced_feed is not None or reduced_rpm is not None)
+            and reduced_start_x is not None
+            and _should_activate_abstech(start_x, reduced_start_x, x)
+        ):
+            abstech_active = True
+            lines.append(f"(Abstechbereich ab X{reduced_start_x:.3f})")
+            if reduced_rpm is not None:
+                rpm_value = int(round(reduced_rpm))
+                if rpm_value > 0:
+                    lines.append(f"(Reduzierte Drehzahl S{rpm_value})")
+                    lines.append(f"S{rpm_value} M3")
+            if reduced_feed is not None:
+                feed_current = reduced_feed
+                need_feed = True
+        coords = ["G1", f"X{x:.3f}", f"Z{z:.3f}"]
+        if need_feed:
+            coords.append(f"F{feed_current:.3f}")
+            need_feed = False
+        lines.append(" ".join(coords))
+    return lines
+
+
+def gcode_for_keyway(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    settings = settings or {}
+    p = op.params
+    # Strenge Validierung: depth_per_pass ist Pflicht
+    require(p, ["depth_per_pass"], "KEYWAY")
+    require_positive(p, ["depth_per_pass"], "KEYWAY")
+
+    raise ValueError(
+        "KEYWAY verwendet Makro-Variablen (#...), die im erzeugten G-Code verboten sind."
+    )
+
+    lines = ["(KEYWAY)"]
+    lines.append(f"#<_mode> = {int(p.get('mode', 0))}")
+    lines.append(f"#<_radial_side> = {int(p.get('radial_side', 0))}")
+    lines.append(f"#<_slot_count> = {int(p.get('slot_count', 1))}")
+    lines.append(f"#<_slot_start_angle> = {p.get('slot_start_angle', 0.0):.3f}")
+    lines.append(f"#<_start_x_dia_input> = {p.get('start_x_dia', 0.0):.3f}")
+    lines.append(f"#<_start_z_input> = {p.get('start_z', 0.0):.3f}")
+    lines.append(f"#<_nut_length> = {p.get('nut_length', 0.0):.3f}")
+    lines.append(f"#<_nut_depth> = {p.get('nut_depth', 0.0):.3f}")
+    cutting_width = float(p.get("cutting_width", 0.0))
+    lines.append(f"#<_cutting_width> = {cutting_width:.3f}")
+    lines.append(f"#<_key_cutting_width> = {cutting_width:.3f}")
+    lines.append(f"#<_depth_per_pass> = {float(p['depth_per_pass']):.3f}")  # Jetzt garantiert vorhanden
+    lines.append(f"#<_top_clearance> = {p.get('top_clearance', 0.0):.3f}")
+    lines.append(f"#<_plunge_feed> = {p.get('plunge_feed', 200.0):.3f}")
+    lines.append(f"#<_use_c_axis> = {1 if p.get('use_c_axis', True) else 0}")
+    lines.append(f"#<_use_c_axis_switch> = {1 if p.get('use_c_axis_switch', True) else 0}")
+    lines.append(f"#<_c_axis_switch_p> = {int(p.get('c_axis_switch_p', 0))}")
+    lines.append("o<keyway_c> call")
+    return lines
+
+
+def gcode_for_contour(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    """Erzeugt einen G71/G70-Workflow für LinuxCNC 2.10 (Fanuc-Style)."""
+
+    p = op.params
+    name = _sanitize_comment_text(p.get("name") or "").strip()
+    side_idx = int(p.get("side", 0))
+
+    path = op.path or []
+    if len(path) < 2:
+        # Fallback: nur Kommentare ausgeben, wenn keine Kontur vorhanden ist
+        lines: List[str] = ["(KONTUR)"]
+        if name:
+            lines.append(f"(Name: {name})")
+        lines.append("(Keine Konturpunkte definiert)")
+        return lines
+
+    # Standardwerte gemäß LinuxCNC-Handbuch (G71/G70), solange kein eigenes UI-Feld existiert
+    rough_depth = max(float(p.get("rough_depth", 0.5)), 0.05)
+    retract = max(float(p.get("retract", 1.0)), 0.1)
+    finish_allow_x = max(float(p.get("finish_allow_x", 0.2)), 0.0)
+    finish_allow_z = max(float(p.get("finish_allow_z", 0.1)), 0.0)
+    rough_feed = max(float(p.get("rough_feed", 0.25)), 0.01)
+    finish_feed = max(float(p.get("finish_feed", rough_feed)), 0.01)
+    safe_z = float(p.get("safe_z", 2.0))
+    settings = settings or {}
+
+    lines: List[str] = ["(KONTUR)"]
+    if name:
+        lines.append(f"(Name: {name})")
+    lines.append("(Seite: Außen)" if side_idx == 0 else "(Seite: Innen)")
+    lines.append("(Rauhen: G71, Schlichten: G70)")
+    lines.append(f"(Zustellung: {rough_depth:.3f} mm, Rückzug: {retract:.3f} mm)")
+    lines.append(
+        f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm,"
+        f" Vorschub Schruppen/Schlichten: {rough_feed:.3f}/{finish_feed:.3f})"
+    )
+
+    # Konturblöcke nummerieren, damit P/Q klar referenzierbar sind
+    block_start = 500
+    block_step = 10
+    block_numbers = [block_start + i * block_step for i in range(len(path))]
+    block_end = block_numbers[-1]
+
+    # Anfahrbewegung und Zyklen
+    xs = [p[0] for p in path]
+    start_x, start_z = path[0]
+    entry_x = max(xs) if side_idx == 0 else min(xs)
+    retract_x, retract_z = _contour_retract_positions(
+        settings, side_idx, entry_x, safe_z
+    )
+    safe_z = retract_z
+    # Aus Sicherheits‑/Dokumentationsgründen nur kommentierte Konturinformationen ausgeben.
+    # Die Kontur wird nicht als ausführbare Bewegungsfolge in den Header geschrieben.
+    lines.append(f"(Sicherheitsposition aus Programm: X{retract_x:.3f} Z{retract_z:.3f})")
+    lines.append(f"(Kontur-Punkte: {len(path)})")
+    lines.append(f"(Startpunkt: X{start_x:.3f} Z{start_z:.3f})")
+    # Listen der ersten Punkte als Kommentar (kurz und lesbar)
+    sample_points = path[:5]
+    for (x, z) in sample_points:
+        lines.append(f"( Konturpunkt: X{x:.3f} Z{z:.3f} )")
+    if len(path) > len(sample_points):
+        lines.append(f"( ... +{len(path)-len(sample_points)} weitere Punkte )")
+
+    return lines
+
+
+def _contour_retract_positions(
+    settings: Dict[str, object],
+    side_idx: int,
+    fallback_x: Optional[float],
+    fallback_z: Optional[float],
+) -> Tuple[Optional[float], Optional[float]]:
+    def _pick(candidate: object, default: Optional[float]) -> Optional[float]:
+        try:
+            if candidate is not None and float(candidate) != 0.0:
+                return float(candidate)
+        except Exception:
+            pass
+        return default
+
+    if side_idx == 0:
+        retract_x = _pick(settings.get("xra"), fallback_x)
+        retract_z = _pick(settings.get("zra"), fallback_z)
+    else:
+        retract_x = _pick(settings.get("xri"), fallback_x)
+        retract_z = _pick(settings.get("zri"), fallback_z)
+
+    return retract_x, retract_z
+
+
+
+def clean_path(path: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Remove consecutive duplicates and simplify the path."""
+    if not path:
+        return path
+    cleaned = [path[0]]
+    for p in path[1:]:
+        if p != cleaned[-1]:
+            cleaned.append(p)
+    return cleaned
+
+
+def gcode_for_face(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    """G-Code für Planen (Face) via LinuxCNC G72/G70 - ohne harte Defaults."""
+    settings = settings or {}
+    p = op.params
+    lines: List[str] = []
+
+    def req_float(key: str) -> float:
+        if key not in p:
+            raise ValueError(f"Missing parameter: '{key}'")
+        v = p.get(key)
+        if v is None or v == "":
+            raise ValueError(f"Empty parameter: '{key}'")
+        try:
+            return float(v)
+        except Exception:
+            raise ValueError(f"Invalid float for '{key}': {v!r}")
+
+    def req_int(key: str) -> int:
+        return int(req_float(key))
+
+    def opt_bool(key: str) -> bool:
+        # bool ist nicht numerisch, aber auch hier: keine Defaults "im Sinne von"
+        # Wenn der Key fehlt -> False ist kein "Abspanparameter", sondern Feature-Flag.
+        return bool(p.get(key, False))
+
+    # --- zwingend benötigte Parameter (kommen aus UI/Settings) ---
+    mode            = req_int("mode")                 # 0/1/2
+    start_x         = req_float("start_x")
+    start_z         = req_float("start_z")
+    end_x           = req_float("end_x")
+    end_z           = req_float("end_z")
+
+    finish_allow_z  = req_float("finish_allow_z")
+    depth_per_pass  = req_float("depth_max")
+    retract         = req_float("retract")
+    feed            = req_float("feed")
+    spindle         = req_float("spindle")
+    tool_num        = require_tool(p, "FACE")
+
+    edge_type       = req_int("edge_type")
+    edge_size       = req_float("edge_size")
+
+    coolant_enabled = opt_bool("coolant")
+    pause_enabled   = opt_bool("pause_enabled")
+    pause_distance  = max(float(p.get("pause_distance", 0.0)), 0.0)
+
+    # --- Plausibilitätschecks (ohne Defaults) ---
+    if depth_per_pass <= 0.0:
+        raise ValueError("depth_max must be > 0")
+    if retract < 0.0:
+        raise ValueError("retract must be >= 0")
+    if finish_allow_z < 0.0:
+        raise ValueError("finish_allow_z must be >= 0")
+    if feed <= 0.0:
+        raise ValueError("feed must be > 0")
+    if spindle < 0.0:
+        raise ValueError("spindle must be >= 0")
+
+    # --- Tool/Spindle/Coolant ---
+    _append_tool_and_spindle(lines, tool_num, spindle, settings)
+    coolant_mode = p.get("coolant_mode", coolant_enabled)
+    _emit_coolant(lines, coolant_mode)
+    lines.append(f"F{feed:.3f}")
+
+    # --- Kontur (nur Schnittkontur, keine Anfahrt) ---
+    # G7 (Durchmesser) => Fase: ΔX = 2*edge_size
+    contour: List[Tuple[float, float]] = []
+    if edge_type == 1:
+        if edge_size <= 0.0:
+            raise ValueError("edge_size must be > 0 when edge_type==1")
+        contour.append((start_x, end_z - edge_size))
+        contour.append((start_x - 2.0 * edge_size, end_z))
+    else:
+        contour.append((start_x, end_z))
+
+    contour.append((end_x, end_z))
+    cleaned_path = clean_path(contour)
+
+    # --- WICHTIG: Subroutine VOR Zyklusaufruf definieren ---
+    allocator = settings.get("sub_allocator")
+    if allocator:
+        sub_num = allocator.allocate()
+    else:
+        sub_num = 100
+    lines.append(f"o{sub_num} sub")
+    for x, z in cleaned_path:
+        lines.append(f"G0 X{x:.3f} Z{z:.3f}")
+    lines.append(f"o{sub_num} endsub")
+
+    # --- Zyklen ---
+    # PHASE A (Regel 4): Explizite Anfahrt vor Zyklus: Z zuerst, dann X
+    lines.append(f"(Anfahren vor Zyklus)")
+    _emit_approach(lines, start_x, start_z, settings)
+    if mode in (0, 2):  # Schruppen
+        lines.append(
+            f"G72 Q{sub_num} X{start_x:.3f} Z{start_z:.3f} D{finish_allow_z:.3f} "
+            f"I{depth_per_pass:.3f} R{retract:.3f}"
+        )
+    if mode in (1, 2):  # Schlichten
+        lines.append(f"G70 Q{sub_num} X{start_x:.3f} Z{start_z:.3f}")
+
+    if mode in (0, 2) and pause_enabled and pause_distance > 0.0:
+        settings["needs_step_x_pause_sub"] = True
+    # global safe retract after step
+    return lines
+
+def gcode_for_thread(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
+    settings = settings or {}
+    require_tool(op.params, "THREAD")
+    safe_z = float(op.params.get("safe_z", 2.0))
+    major_diameter = float(op.params.get("major_diameter", 0.0))
+    pitch = float(op.params.get("pitch", 1.5))
+    pitch_warning: str | None = None
+    if pitch <= 0.0:
+        pitch_warning = "(WARN: Ungültige Steigung; P=1.0 fallback)"
+        pitch = 1.0
+    length = float(op.params.get("length", 0.0))
+
+    raw_thread_depth = op.params.get("thread_depth")
+    if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
+        thread_depth = float(raw_thread_depth)
+    else:
+        thread_depth = pitch * 0.6134
+
+    raw_first_depth = op.params.get("first_depth")
+    if isinstance(raw_first_depth, (int, float)) and raw_first_depth > 0:
+        first_depth = float(raw_first_depth)
+    else:
+        first_depth = max(thread_depth * 0.1, pitch * 0.05)
+
+    raw_peak_offset = op.params.get("peak_offset")
+    if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
+        peak_offset = float(raw_peak_offset)
+    else:
+        peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
+
+    retract_r = float(op.params.get("retract_r", 1.5))
+    infeed_q = float(op.params.get("infeed_q", 29.5))
+    spring_passes_raw = op.params.get("spring_passes")
+    if isinstance(spring_passes_raw, (int, float)) and spring_passes_raw > 0:
+        spring_passes = max(0, int(spring_passes_raw))
+    else:
+        spring_passes = max(0, int(op.params.get("passes", 1)))
+    e_val = float(op.params.get("e", 0.0))
+    l_val = int(float(op.params.get("l", 0)))
+
+    orientation_raw = op.params.get("orientation", 0)
+    orientation_idx = 0
+    if isinstance(orientation_raw, (int, float)):
+        orientation_idx = max(
+            0,
+            min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1),
+        )
+    orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
+    standard_data = op.params.get("standard")
+    standard_label = ""
+    if isinstance(standard_data, dict):
+        std_label_tmp = standard_data.get("label")
+        if isinstance(std_label_tmp, str):
+            standard_label = std_label_tmp
+
+    comments: List[str] = []
+    if standard_label and standard_label != "Benutzerdefiniert":
+        comments.append(f"(Normgewinde: {_sanitize_comment_text(standard_label)})")
+    comments.append(f"(Gewindetyp: {orientation_label})")
+    if pitch_warning:
+        comments.append(pitch_warning)
+
+    lines: List[str] = []
+    _append_tool_and_spindle(
+        lines,
+        _get_tool_number(op.params),
+        op.params.get("spindle"),
+        settings,
+    )
+    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
+    lines.extend(comments)
+
+    # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
+    lines.append(f"(Anfahren vor Gewinde)")
+    _emit_approach(lines, major_diameter, safe_z, settings)
+    lines.append(
+        (
+            "G76 "
+            f"P{pitch:.4f} "
+            f"Z{-abs(length):.3f} "
+            f"I{peak_offset:.4f} "
+            f"J{first_depth:.4f} "
+            f"R{retract_r:.4f} "
+            f"K{thread_depth:.4f} "
+            f"Q{infeed_q:.4f} "
+            f"H{spring_passes:d} "
+            f"E{e_val:.4f} "
+            f"L{l_val:d}"
+        )
+    )
+    return lines
+
+
+def gcode_for_operation(
+    op: Operation, settings: Dict[str, object] | None = None
+) -> List[str]:
+    settings = settings or {}
+    if op.op_type == OpType.PROGRAM_HEADER:
+        result: List[str] = []
+    elif op.op_type == OpType.FACE:
+        result = gcode_for_face(op, settings)
+    elif op.op_type == OpType.CONTOUR:
+        result = []
+    elif op.op_type == OpType.TURN:
+        result = gcode_for_turn(op, settings)
+    elif op.op_type == OpType.BORE:
+        result = gcode_for_bore(op, settings)
+    elif op.op_type == OpType.DRILL:
+        result = gcode_for_drill(op, settings)
+    elif op.op_type == OpType.GROOVE:
+        result = gcode_for_groove(op, settings)
+    elif op.op_type == OpType.ABSPANEN:
+        result = generate_abspanen_gcode(op.params, op.path, settings)
+    elif op.op_type == OpType.THREAD:
+        result = gcode_for_thread(op, settings)
+    elif op.op_type == OpType.KEYWAY:
+        result = gcode_for_keyway(op, settings)
+    else:
+        result = []
+
+    comment = _sanitize_comment_text(op.params.get("comment") or "").strip()
+    if comment:
+        result.insert(0, f"(STEP: {comment})")
+    return result
+
+
+def generate_program_gcode(operations: List[Operation], program_settings: Dict[str, object]) -> List[str]:
+    """Builds a complete LinuxCNC .ngc program from ordered operations.
+
+    Design rules for this project:
+    - Handler collects/validates user parameters.
+    - ALL G-code generation is here in slicer.py.
+    - The panel's step list defines the operation order; we do not reorder operations.
+
+    LinuxCNC rule that matters here:
+    - `o#### sub` definitions MUST appear BEFORE M30 (program end).
+    - Subroutines are extracted from operations and placed in a definition block before main steps.
+    """
+
+    # --- Pre-generate validation: Check all operations for required parameters ---
+    settings = dict(program_settings or {})
+    for i, op in enumerate(operations):
+        if op.op_type in REQUIRED_KEYS:
+            require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
+            if op.op_type in [OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL]:
+                require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
+        try:
+            gcode_for_operation(op, settings)  # This will raise ValueError if params missing
+        except ValueError as e:
+            # Re-raise with operation index for better error message
+            raise ValueError(f"Operation {i+1} ({op.op_type}): {str(e)}") from e
+
+    handler_header_lines: List[str] = []
+
+    # --- Subroutine ID allocator ---
+    class SubAllocator:
+        def __init__(self, start: int = 100):
+            self.next_id = start
+        def allocate(self) -> int:
+            result = self.next_id
+            self.next_id += 1
+            return result
+    
+    sub_alloc = SubAllocator()
+    settings["sub_allocator"] = sub_alloc  # Pass to operation generators
+
+    # --- header ---
+    program_name = _sanitize_comment_text(settings.get("program_name", "Program"))
+    unit = _sanitize_comment_text(settings.get("unit", "mm"))
+
+    header_lines: List[str] = []
+    header_lines.append("%")
+    def _cmt(text: object) -> str:
+        return f"({_sanitize_comment_text(text)})"
+
+    header_lines.append(_cmt("Programm automatisch erzeugt"))
+    header_lines.append(_cmt(f"Programmname: {program_name}"))
+    header_lines.append(_cmt(f"Maßeinheit: {unit}"))
+    handler_header_lines = [str(x) for x in settings.get("header_lines", []) or []]
+    footer_lines_from_settings = [str(x) for x in settings.get("footer_lines", []) or []]
+    if handler_header_lines:
+        settings["_skip_tool_move"] = True
+
+    # Modes / safety
+    # G18 XZ-plane, G7 diameter mode, G90 absolute, G40 cancel comp, G80 cancel canned, G21 mm, G95 feed/rev
+    header_lines.append("G18 G7 G90 G40 G80")
+    header_lines.append("G21")
+    header_lines.append("G95")
+    header_lines.append("G54")
+    header_lines.append("")
+
+    # --- PHASE 1: Security header comments (lesbar, keine Logik) ---
+    header_lines.append(_cmt("=== SICHERHEITSPARAMETER ==="))
+    
+    # Werkzeugwechselpunkt
+    xt = settings.get("xt")
+    zt = settings.get("zt")
+    xt_abs = settings.get("xt_absolute", True)
+    zt_abs = settings.get("zt_absolute", True)
+    if xt is not None and zt is not None:
+        try:
+            xt_val = float(xt)
+            zt_val = float(zt)
+            coord_note = " Maschinenkoordinaten G53" if (not xt_abs or not zt_abs) else ""
+            header_lines.append(_cmt(f"Werkzeugwechselpunkt: X{xt_val:.3f} Z{zt_val:.3f}{coord_note}"))
+        except (TypeError, ValueError):
+            pass
+    
+    # Rückzugsebenen
+    xra = settings.get("xra")
+    xri = settings.get("xri")
+    zra = settings.get("zra")
+    zri = settings.get("zri")
+    xra_str = f"{float(xra):.3f}" if xra is not None else "n.def."
+    xri_str = f"{float(xri):.3f}" if xri is not None else "n.def."
+    zra_str = f"{float(zra):.3f}" if zra is not None else "n.def."
+    zri_str = f"{float(zri):.3f}" if zri is not None else "n.def."
+    header_lines.append(_cmt(f"Rueckzugsebenen: XRA={xra_str} XRI={xri_str}"))
+    header_lines.append(_cmt(f"               ZRA={zra_str} ZRI={zri_str}"))
+    
+    # Stock info (Rohteil)
+    xa = settings.get("xa")
+    xi = settings.get("xi")
+    za = settings.get("za")
+    zi = settings.get("zi")
+    if xa is not None:
+        try:
+            xa_val = float(xa)
+            header_lines.append(_cmt(f"Rohteil Aussendurchmesser: {xa_val:.3f} mm"))
+        except (TypeError, ValueError):
+            pass
+    if za is not None and zi is not None:
+        try:
+            za_val = float(za)
+            zi_val = float(zi)
+            header_lines.append(_cmt(f"Rohteil Z-Bereich: {za_val:.3f} bis {zi_val:.3f} mm"))
+        except (TypeError, ValueError):
+            pass
+    
+    header_lines.append(_cmt("=== END SICHERHEITSPARAMETER ==="))
+    header_lines.append("")
+
+    # --- Collect ALL subroutines BEFORE main program ---
+    # LinuxCNC REQUIRES subroutine definitions to appear BEFORE M30 (program end)
+    all_subs: List[List[str]] = []
+
+    def _extract_sub_blocks(block_lines: List[str]) -> List[str]:
+        """Extract sub definitions from block_lines, add to all_subs, return main lines."""
+        out: List[str] = []
+        i = 0
+        while i < len(block_lines):
+            line = block_lines[i].strip()
+            m = re.match(r"^o\s*<?\s*(\d+)\s*>?\s+sub\b", line, flags=re.IGNORECASE)
+            if m:
+                sub_block = [block_lines[i]]
+                i += 1
+                # collect until matching endsub
+                while i < len(block_lines):
+                    sub_block.append(block_lines[i])
+                    if re.match(rf"^o\s*<?\s*{re.escape(m.group(1))}\s*>?\s+endsub\b", block_lines[i].strip(), flags=re.IGNORECASE):
+                        i += 1
+                        break
+                    i += 1
+                all_subs.append(sub_block)  # <-- ADD to all_subs, not footer_subs
+                continue
+            out.append(block_lines[i])
+            i += 1
+        return out
+
+    # contour subs from contour operations (reused across steps)
+    contour_subs: Dict[str, int] = {}
+    contour_geom_map: Dict[tuple, int] = {}
+
+    def _round6(val: object) -> float:
+        try:
+            return round(float(val), 6)
+        except Exception:
+            return 0.0
+
+    def _contour_key_from_primitives(prims: List[Dict[str, object]]) -> tuple:
+        key_items: List[tuple] = []
+        for pr in prims:
+            typ = pr.get("type")
+            if typ == "line":
+                p1 = pr.get("p1") or (0.0, 0.0)
+                p2 = pr.get("p2") or (0.0, 0.0)
+                key_items.append(
+                    ("l", _round6(p1[0]), _round6(p1[1]), _round6(p2[0]), _round6(p2[1]))
+                )
+            elif typ == "arc":
+                p1 = pr.get("p1") or (0.0, 0.0)
+                p2 = pr.get("p2") or (0.0, 0.0)
+                c = pr.get("c") or pr.get("center") or (0.0, 0.0)
+                ccw = bool(pr.get("ccw"))
+                key_items.append(
+                    (
+                        "a",
+                        _round6(p1[0]),
+                        _round6(p1[1]),
+                        _round6(p2[0]),
+                        _round6(p2[1]),
+                        _round6(c[0]),
+                        _round6(c[1]),
+                        ccw,
+                    )
+                )
+        return tuple(key_items)
+
+    def _contour_key_from_points(points: List[Point]) -> tuple:
+        return tuple((_round6(x), _round6(z)) for x, z in points)
+
+    for op in operations:
+        if op.op_type != OpType.CONTOUR:
+            continue
+        name = str(op.params.get("name") or "").strip()
+        if not name:
+            continue
+        path = op.path or []
+        if not path:
+            continue
+        if isinstance(path[0], dict):
+            key = ("prims", _contour_key_from_primitives(path))
+            if key in contour_geom_map:
+                sub_num = contour_geom_map[key]
+            else:
+                sub_num = sub_alloc.allocate()
+                contour_geom_map[key] = sub_num
+                all_subs.append(contour_sub_from_primitives(path, sub_num))
+        else:
+            key = ("pts", _contour_key_from_points(path))
+            if key in contour_geom_map:
+                sub_num = contour_geom_map[key]
+            else:
+                sub_num = sub_alloc.allocate()
+                contour_geom_map[key] = sub_num
+                all_subs.append(contour_sub_from_points(path, sub_num))
+        contour_subs[name] = sub_num
+
+    settings["contour_subs"] = contour_subs
+
+    # helper subs defined by settings (optional)
+    helper_subs = settings.get("helper_subs", None)
+    if helper_subs:
+        # handler may pass already-built sub blocks (list[list[str]])
+        for sb in helper_subs:
+            all_subs.append([str(x) for x in sb])
+
+    if settings.get("needs_step_line_pause_sub"):
+        all_subs.append(_step_line_pause_sub_definition())
+    if settings.get("needs_step_x_pause_sub"):
+        all_subs.append(_step_x_pause_sub_definition())
+
+    main_flow_lines: List[str] = []
+
+    # --- PHASE A (Regel 1): Werkzeugwechselpunkt am Programmanfang ---
+    # Header lines (if any) are inserted once; toolchange will handle TC move.
+    # Insert handler header lines only when no tool is used (avoid redundant TC move)
+    if handler_header_lines:
+        has_tool = False
+        for op in operations:
+            if op.op_type in (OpType.PROGRAM_HEADER, OpType.CONTOUR):
+                continue
+            if _get_tool_number(op.params) > 0:
+                has_tool = True
+                break
+        if not has_tool:
+            main_flow_lines.extend(handler_header_lines)
+    
+    # Ensure tool is loaded before first cutting step (even if a step forgets it).
+    first_tool: int = 0
+    for op in operations:
+        if op.op_type in (OpType.PROGRAM_HEADER, OpType.CONTOUR):
+            continue
+        tval = _get_tool_number(op.params)
+        if tval > 0:
+            first_tool = tval
+            break
+    if first_tool > 0 and int(float(settings.get("_current_tool", 0))) == 0:
+        pre_tool_lines: List[str] = []
+        _append_tool_and_spindle(pre_tool_lines, first_tool, None, settings)
+        if pre_tool_lines:
+            main_flow_lines.extend(pre_tool_lines)
+
+    main_flow_lines.append("")
+
+    # --- operations in UI order ---
+    step_num: int = 0
+    for op in operations:
+        # Skip program header operation
+        if op.op_type == OpType.PROGRAM_HEADER:
+            continue
+        
+        step_num += 1
+        
+        # Load tool before this step if needed
+        op_tool = _get_tool_number(op.params)
+        if op_tool > 0:
+            # For the first cutting step, skip toolchange move since it's already done at program start
+            if step_num == 1:
+                settings["_skip_tool_move"] = True
+                main_flow_lines.append(f"(Werkzeug T{op_tool:02d})")
+                main_flow_lines.append(f"T{op_tool:02d} M6")
+                settings["_current_tool"] = op_tool
+            else:
+                tool_lines: List[str] = []
+                _append_tool_and_spindle(tool_lines, op_tool, None, settings)
+                if tool_lines:
+                    main_flow_lines.extend(tool_lines)
+        
+        # For ABSPANEN, resolve contour path
+        if op.op_type == OpType.ABSPANEN:
+            contour_name = op.params.get("contour_name")
+            if contour_name:
+                # Find contour operation
+                contour_op = next((o for o in operations if o.op_type == OpType.CONTOUR and o.params.get("name") == contour_name), None)
+                if contour_op and contour_op.path:
+                    # Convert primitives to points if needed
+                    if contour_op.path and isinstance(contour_op.path[0], dict):
+                        op.path = primitives_to_points(contour_op.path)
+                    else:
+                        op.path = contour_op.path
+                else:
+                    op.path = []
+        
+        main_flow_lines.append("")
+        
+        # Add step comment with tool info
+        op_title = _sanitize_comment_text(op.params.get("title", op.op_type))
+        tool_val = _get_tool_number(op.params)
+        
+        # Build step comment
+        tools = settings.get("tools", {})
+        tool_desc = ""
+        if tool_val > 0 and tool_val in tools:
+            tool_comment = _sanitize_comment_text(tools[tool_val].get("comment", ""))
+            tool_desc = f" | T{tool_val}: {tool_comment}"
+        
+        # Generate operation G-code
+        op_lines = gcode_for_operation(op, settings)
+        op_lines = _extract_sub_blocks(op_lines)
+        
+        # Only output step if there is actual G-code generated (not empty/comments-only)
+        if op_lines and any(not line.startswith("(") for line in op_lines):
+            main_flow_lines.append(f"(Step {step_num}: {op_title}{tool_desc})")
+            main_flow_lines.extend(op_lines)
+        elif op_lines and op.op_type != OpType.CONTOUR:
+            # Keep non-CONTOUR operations even if only comments, but skip empty CONTOUR
+            main_flow_lines.append(f"(Step {step_num}: {op_title}{tool_desc})")
+            main_flow_lines.extend(op_lines)
+        
+        # global safe retract after each cutting step
+        if op_lines and any(not line.startswith("(") for line in op_lines):
+            if op.op_type not in (OpType.CONTOUR, OpType.PROGRAM_HEADER):
+                _emit_safe_retract(main_flow_lines, settings)
+
+    lines: List[str] = []
+    lines.extend(header_lines)
+    if all_subs:
+        lines.append("")
+        lines.append("(=== Subroutine Definitions ===)")
+        for sb in all_subs:
+            lines.extend(sb)
+        lines.append("(=== End Subroutines ===)")
+        lines.append("")
+
+    lines.extend(main_flow_lines)
+
+    # --- PHASE A (Regel 1): Werkzeugwechselpunkt am Programmende ---
+    if not footer_lines_from_settings:
+        lines.append("")
+        xt_end = _float_or_none(settings.get("xt"))
+        zt_end = _float_or_none(settings.get("zt"))
+        if xt_end is not None and zt_end is not None:
+            lines.append("(Werkzeugwechselpunkt am Ende)")
+            xt_abs_end = bool(settings.get("xt_absolute", True))
+            zt_abs_end = bool(settings.get("zt_absolute", True))
+            if not xt_abs_end or not zt_abs_end:
+                lines.append(f"G53 G0 X{xt_end:.3f} Z{zt_end:.3f}")
+            else:
+                lines.append(f"G0 X{xt_end:.3f} Z{zt_end:.3f}")
+
+    # --- program end in main flow ---
+    lines.append("")
+    # Add footer lines (toolchange position + other cleanup)
+    # NOTE: Only output once! Do not duplicate!
+    for footer_line in footer_lines_from_settings:
+        lines.append(footer_line)
+    # Put any global stops here
+    lines.append("M5")
+    lines.append("M9")
+    lines.append("M30")
+
+    lines.append("%")
     return lines

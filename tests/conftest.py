@@ -43,6 +43,7 @@ def _install_qt_stubs():
         QPointF=_Dummy,
         QLineF=_Dummy,
         QDir=_DummyDir,
+        Signal=_Dummy,  # Add Signal mock
     )
 
     class _DummyPainter(_Dummy):

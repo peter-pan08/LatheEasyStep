@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import builtins
 
 import math
 import os
@@ -32,11 +33,65 @@ class OpType:
     ABSPANEN = "abspanen"
 
 
+_TOOL_KIND_BY_ORIENTATION: Dict[int, str] = {
+    0: "turning",
+    1: "drilling",
+    2: "drilling",
+    3: "drilling",
+    4: "grooving",
+    5: "grooving",
+    6: "grooving",
+    7: "grooving",
+    8: "threading",
+    9: "threading",
+}
+_ISO_PATTERN = re.compile(r"\b([A-Z]{2,}[A-Z0-9]*?)(\d{2})\b")
+
+
 @dataclass
 class Operation:
     op_type: str
     params: Dict[str, object]
     path: list = field(default_factory=list)  # list of points or primitives
+
+
+@dataclass(frozen=True)
+class Tool:
+    """Structured view of a LinuxCNC tool entry (for UI + compensation logic)."""
+
+    t: int
+    p: int
+    d: float
+    q: int | None
+    comment: str
+    iso_code: str | None
+    iso_size: str | None
+    radius_mm: float
+    kind: str
+    wear: bool = False
+    radius_source: str | None = None
+
+    @property
+    def toolno(self) -> int:
+        return self.t
+
+    @property
+    def orientation(self) -> int | None:
+        return self.q
+
+    def __getitem__(self, key):
+        if key == "toolno":
+            return self.toolno
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(f"{key!r} is not part of Tool")
+
+    def get(self, key, default=None):
+        if key == "toolno":
+            return self.toolno
+        if hasattr(self, key):
+            return getattr(self, key)
+        return default
 
 
 STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
@@ -420,217 +475,25 @@ class ProgramModel:
         if argc >= 2:
             op.path = builder(op.params, self.program_settings)
         else:
+            # If operation has a custom path, ensure it's in params for the builder
+            if hasattr(op, 'path') and op.path and 'path' not in op.params:
+                # Only convert if path is list of (x, z) tuples, not primitives
+                if op.path and isinstance(op.path[0], (list, tuple)) and len(op.path[0]) == 2:
+                    op.params['path'] = [{'x': x, 'z': z} for x, z in op.path]
             op.path = builder(op.params)
 
 
     def generate_gcode(self) -> List[str]:
-        settings = self.program_settings or {}
-        program_name = str(settings.get("program_name") or "").strip()
-        npv_code = str(settings.get("npv") or "G54").upper()
-        unit = (settings.get("unit") or "").strip().lower()
-        unit_code = "G21" if unit.startswith("mm") else ("G20" if unit else "")
-        shape = settings.get("shape", "")
+        try:
+            from slicer import generate_program_gcode
+        except Exception:
+            generate_program_gcode = None
 
-        lines: List[str] = ["%", "(Programm automatisch erzeugt)"]
-        if program_name:
-            lines.append(f"(Programmname: {_sanitize_gcode_text(program_name)})")
-        if unit:
-            lines.append(f"(Maßeinheit: {unit})")
-        if shape:
-            lines.append(f"(Rohteilform: {shape})")
+        if generate_program_gcode:
+            return generate_program_gcode(self.operations, self.program_settings or {})
 
-        def _fmt(name: str, key: str, suffix: str = ""):
-            val = settings.get(key, None)
-            if val is None:
-                return None
-            try:
-                if float(val) == 0.0 and key not in ("xi", "zi", "zb", "w", "l", "n_edges", "sw"):
-                    return None
-            except Exception:
-                pass
-            return f"({name}: {val}{suffix})"
-
-        for comment in filter(
-            None,
-            [
-                _fmt("XA", "xa", " mm"),
-                _fmt("XI", "xi", " mm"),
-                _fmt("ZA", "za", " mm"),
-                _fmt("ZI", "zi", " mm"),
-                _fmt("ZB", "zb", " mm"),
-                _fmt("W", "w", " mm"),
-                _fmt("L", "l", " mm"),
-                _fmt("Kantenanzahl N", "n_edges", ""),
-                _fmt("Schlüsselweite SW", "sw", " mm"),
-                _fmt("XT", "xt", " mm"),
-                _fmt("ZT", "zt", " mm"),
-                _fmt("SC", "sc", " mm"),
-                _fmt("Rückzug", "retract_mode", ""),
-                _fmt("XRA", "xra", " mm"),
-                _fmt("XRI", "xri", " mm"),
-                _fmt("ZRA", "zra", " mm"),
-                _fmt("ZRI", "zri", " mm"),
-            ],
-        ):
-            lines.append(comment)
-
-        # Basiszustand
-        lines.append("G18 G7 G90 G40 G80")
-        if unit_code:
-            lines.append(unit_code)
-        # mm/U bzw. in/U entsprechend LinuxCNC-Postprozessor
-        lines.append("G95")
-        if npv_code:
-            lines.append(npv_code)
-
-        # Erzeuge O-Word-Subs nur, wenn ein Schritt sie wirklich benötigt.
-        # Face (X-Schritte) benötigt o<step_x_pause> nur bei (Schrupp bzw. Schrupp+Schlicht) + Pause aktiviert + Abstand>0
-        need_step_x = any(
-            op.op_type == OpType.FACE
-            and int(op.params.get("mode", 0)) in (0, 2)
-            and bool(op.params.get("pause_enabled", False))
-            and float(op.params.get("pause_distance", 0.0)) > 0.0
-            for op in self.operations
-        )
-        # Abspanen benötigt o<step_line_pause> nur bei Modus Schruppen + Pause aktiviert + Abstand>0
-        need_step_line = any(
-            op.op_type == OpType.ABSPANEN
-            and int(op.params.get("mode", 0)) == 0
-            and bool(op.params.get("pause_enabled", False))
-            and float(op.params.get("pause_distance", 0.0)) > 0.0
-            for op in self.operations
-        )
-
-        if need_step_x:
-            lines.extend(
-                [
-                    "o<step_x_pause> sub",
-                    "  #<x0>   = #1",
-                    "  #<x1>   = #2",
-                    "  #<step> = ABS[#3]",
-                    "  #<f>    = #4",
-                    "  #<p>    = #5",
-                    "",
-                    "  o10 if [#<step> LE 0]",
-                    "    G1 X[#<x1>] F[#<f>]",
-                    "    o<step_x_pause> return",
-                    "  o10 endif",
-                    "",
-                    "  #<dir> = 1",
-                    "  o11 if [#<x1> LT #<x0>]",
-                    "    #<dir> = -1",
-                    "  o11 endif",
-                    "",
-                    "  #<x> = #<x0>",
-                    "  o20 while [[#<dir> * (#<x1> - #<x>)] GT 0.000001]",
-                    "    #<xnext> = #<x> + #<dir>*#<step>",
-                    "    o21 if [[#<dir> * (#<x1> - #<xnext>)] LT 0]",
-                    "      #<xnext> = #<x1>",
-                    "    o21 endif",
-                    "",
-                    "    G1 X[#<xnext>] F[#<f>]",
-                    "    o22 if [#<xnext> NE #<x1>]",
-                    "      G4 P[#<p>]",
-                    "    o22 endif",
-                    "",
-                    "    #<x> = #<xnext>",
-                    "  o20 endwhile",
-                    "o<step_x_pause> endsub",
-                ]
-            )
-
-        if need_step_line:
-            lines.extend(
-                [
-                    "o<step_line_pause> sub",
-                    "  #<x0>   = #1",
-                    "  #<z0>   = #2",
-                    "  #<x1>   = #3",
-                    "  #<z1>   = #4",
-                    "  #<step> = ABS[#5]",
-                    "  #<f>    = #6",
-                    "  #<p>    = #7",
-                    "",
-                    "  #<dx> = #<x1> - #<x0>",
-                    "  #<dz> = #<z1> - #<z0>",
-                    "  #<len> = SQRT[[#<dx>*#<dx>] + [#<dz>*#<dz>]]",
-                    "",
-                    "  o10 if [[#<step> LE 0] OR [#<len> LE #<step>]]",
-                    "    G1 X[#<x1>] Z[#<z1>] F[#<f>]",
-                    "    o<step_line_pause> return",
-                    "  o10 endif",
-                    "",
-                    "  #<n> = FIX[#<len> / #<step>]",
-                    "",
-                    "  #<i> = 1",
-                    "  o20 while [#<i> LE #<n>]",
-                    "    #<t> = [#<i> * #<step>] / #<len>",
-                    "    o21 if [#<t> GT 1]",
-                    "      #<t> = 1",
-                    "    o21 endif",
-                    "",
-                    "    #<x> = #<x0> + #<dx>*#<t>",
-                    "    #<z> = #<z0> + #<dz>*#<t>",
-                    "",
-                    "    G1 X[#<x>] Z[#<z>] F[#<f>]",
-                    "    o22 if [#<t> LT 1]",
-                    "      G4 P[#<p>]",
-                    "    o22 endif",
-                    "",
-                    "    #<i> = #<i> + 1",
-                    "  o20 endwhile",
-                    "",
-                    "  G1 X[#<x1>] Z[#<z1>] F[#<f>]",
-                    "o<step_line_pause> endsub",
-                ]
-            )
-
-        # Drehzahlbegrenzung aus Programmkopf (nur als Kommentar)
-        s1_max = settings.get("s1_max", 0)
-        s3_max = settings.get("s3_max", 0)
-        has_sub = bool(settings.get("has_subspindle", False))
-        if s1_max:
-            lines.append(f"(S1 max = {int(s1_max)} U/min)")
-        if has_sub and s3_max:
-            lines.append(f"(S3 max = {int(s3_max)} U/min)")
-        for idx, op in enumerate(self.operations, start=1):
-            lines.append(f"( Operation {idx} )")
-            lines.append(f"( {op.op_type.upper()} )")
-            lines.extend(gcode_for_operation(op, settings))
-        lines.extend(["M9", "M30", "%"])
-
-        # Zeilennummerierung: optional (konfigurierbar über settings['emit_line_numbers']).
-        # Standardverhalten ist jetzt, keine Nummern zu emittieren (projektweit default = False).
-        emit_numbers = bool(settings.get("emit_line_numbers", False))
-
-        if emit_numbers:
-            numbered: List[str] = []
-            n = 10
-            for line in lines:
-                stripped = line.strip()
-                if not stripped or stripped == "%":
-                    numbered.append(line)
-                    continue
-                if stripped.startswith("("):
-                    numbered.append(line)
-                    continue
-                if re.match(r"^[oO]\s*<", stripped):
-                    numbered.append(line)
-                    continue
-                if re.match(r"^N\d+\s", stripped, flags=re.IGNORECASE):
-                    # Nutzerdefinierte Blocknummer beibehalten (z. B. für G71 P/Q)
-                    numbered.append(line)
-                    continue
-                numbered.append(f"N{n} {line}")
-                n += 1
-
-            sanitized = [_sanitize_gcode_text(line) for line in numbered]
-            return sanitized
-
-        # Nummerierung deaktiviert: entferne evtl. vorhandene Nutzer-Blocknummern
-        stripped_lines: List[str] = [re.sub(r"^[Nn]\d+\s+", "", line) for line in lines]
-        sanitized = [_sanitize_gcode_text(line) for line in stripped_lines]
-        return sanitized
+        # Fallback if slicer not available
+        return ["%", "(G-Code generation failed - slicer module not found)", "M30", "%"]
 
 
 # ----------------------------------------------------------------------
@@ -1245,6 +1108,33 @@ def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
       - The face plane is z_end (often 0.0). z_start is a safe/approach Z.
       - Chamfer/radius is applied at the outer corner (x_outer, z_end) going into -Z.
     """
+    # Check if a custom path is provided
+    if "path" in params and params["path"]:
+        print(f"DEBUG: Using custom path from params: {params['path']}")
+        path_data = params["path"]
+        if isinstance(path_data, list) and path_data:
+            # Assume path is list of dicts with 'x' and 'z', or tuples
+            path = []
+            for point in path_data:
+                if isinstance(point, dict):
+                    x = point.get("x", 0.0)
+                    z = point.get("z", 0.0)
+                elif isinstance(point, (list, tuple)) and len(point) >= 2:
+                    x, z = point[0], point[1]
+                else:
+                    continue
+                path.append((float(x), float(z)))
+            # Add start line for facing preview
+            sx = params.get("start_x", None)
+            sz = params.get("start_z", None)
+            ez = params.get("end_z", sz)
+            ex = params.get("end_x", None)
+            if sx is not None and sz is not None and ez is not None:
+                path = [(float(sx), float(sz)), (float(sx), float(ez))] + path
+            if ex is not None and ez is not None:
+                path.append((float(ex), float(ez)))
+            return path
+
     # --- X extents (diameter) ---
     x_outer = params.get("outer_diameter", None)
     x_inner = params.get("inner_diameter", None)
@@ -1268,7 +1158,7 @@ def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 
     # --- Z extents ---
     z_start = float(params.get("start_z", params.get("z_start", 0.0)) or 0.0)
-    z_end = float(params.get("end_z", params.get("z_end", z_start)) or z_start)
+    z_end = float(params.get("end_z", z_start))
 
     edge_type = int(params.get("edge_type", 0))  # 0=none, 1=chamfer, 2=radius
     edge_size = float(params.get("edge_size", 0.0) or 0.0)
@@ -1873,35 +1763,77 @@ def build_contour_path(params) -> list:
 
             if edge_kind in ("radius", "fillet") and edge_size > 1e-9:
                 p0, p1, p2 = pts[i - 1], pts[i], pts[i + 1]
-                u1, l1 = _norm(_v(p0, p1))   # incoming dir
+                # Directions from corner to previous/next point
+                u1, l1 = _norm(_v(p1, p0))   # incoming dir (from corner back)
                 u2, l2 = _norm(_v(p1, p2))   # outgoing dir
                 if l1 > 1e-9 and l2 > 1e-9:
-                    # angle between -u1 and u2
-                    v_in = (-u1[0], -u1[1])
-                    v_out = (u2[0], u2[1])
-                    cosang = max(-1.0, min(1.0, _dot(v_in, v_out)))
+                    cosang = max(-1.0, min(1.0, _dot(u1, u2)))
                     ang = math.acos(cosang)
                     # if nearly straight, skip edge
                     if ang > 1e-6 and abs(math.pi - ang) > 1e-6:
-                        t = edge_size * math.tan(ang / 2.0)
-                        # clamp t to segment lengths
-                        t = min(t, l1 * 0.999, l2 * 0.999)
+                        # desired radius, with clamp if geometry is too short
+                        r = edge_size
+                        tan_half = math.tan(ang / 2.0)
+                        if tan_half <= 1e-9:
+                            r = 0.0
+                        t = r * tan_half if r > 0.0 else 0.0
+                        max_t = min(l1, l2) * 0.999
+                        if t > max_t and tan_half > 1e-9:
+                            r = max_t / tan_half
+                            t = max_t
 
-                        # tangent points
-                        pt1 = (p1[0] - u1[0] * t, p1[1] - u1[1] * t)
-                        pt2 = (p1[0] + u2[0] * t, p1[1] + u2[1] * t)
+                        if r > 1e-9 and t > 1e-9:
+                            # tangent points on each segment
+                            pt1 = (p1[0] + u1[0] * t, p1[1] + u1[1] * t)
+                            pt2 = (p1[0] + u2[0] * t, p1[1] + u2[1] * t)
 
-                        turn = _cross(u1, u2)
-                        ccw = turn > 0.0
-                        n1 = _perp_ccw(u1)
-                        sign = 1.0 if ccw else -1.0
-                        c = (pt1[0] + n1[0] * edge_size * sign,
-                             pt1[1] + n1[1] * edge_size * sign)
+                            n1 = _perp_ccw(u1)
+                            n2 = _perp_ccw(u2)
 
-                        _emit_line(cur, pt1)
-                        _emit_arc(pt1, pt2, c, ccw)
-                        cur = pt2
-                        continue  # corner consumed
+                            # compute possible centers by intersecting offset normals
+                            tol = max(0.01, r * 0.01)
+                            candidates = []
+                            for s1 in (1.0, -1.0):
+                                c1 = (pt1[0] + n1[0] * r * s1, pt1[1] + n1[1] * r * s1)
+                                for s2 in (1.0, -1.0):
+                                    c2 = (pt2[0] + n2[0] * r * s2, pt2[1] + n2[1] * r * s2)
+                                    if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) <= tol:
+                                        c = ((c1[0] + c2[0]) * 0.5, (c1[1] + c2[1]) * 0.5)
+                                        candidates.append(c)
+
+                            if candidates:
+                                arc_side = normalize_arc_side(seg.get("arc_side"))
+                                # pick candidate based on bisector direction
+                                bx = u1[0] + u2[0]
+                                bz = u1[1] + u2[1]
+                                bl = math.hypot(bx, bz)
+                                if bl > 1e-9:
+                                    bx /= bl
+                                    bz /= bl
+                                best = None
+                                best_score = -1e9
+                                for c in candidates:
+                                    dx = c[0] - p1[0]
+                                    dz = c[1] - p1[1]
+                                    score = dx * bx + dz * bz  # projection on bisector
+                                    if arc_side == "inner" and score < 0:
+                                        continue
+                                    if arc_side == "outer" and score > 0:
+                                        continue
+                                    if abs(score) > best_score:
+                                        best_score = abs(score)
+                                        best = c
+                                if best is None:
+                                    best = candidates[0]
+
+                                _emit_line(cur, pt1)
+                                # determine CW/CCW using center
+                                v1 = (pt1[0] - best[0], pt1[1] - best[1])
+                                v2 = (pt2[0] - best[0], pt2[1] - best[1])
+                                ccw = _cross(v1, v2) > 0.0
+                                _emit_arc(pt1, pt2, best, ccw)
+                                cur = pt2
+                                continue  # corner consumed
 
             elif edge_kind in ("chamfer", "fase") and edge_size > 1e-9:
                 p0, p1, p2 = pts[i - 1], pts[i], pts[i + 1]
@@ -2052,735 +1984,19 @@ def gcode_from_path(path: List[Tuple[float, float]], feed: float, safe_z: float)
     return lines
 
 
-def _append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle_value: object | None):
-    tool_num = 0
-    try:
-        if tool_value is not None:
-            tool_num = int(float(tool_value))
-    except Exception:
-        tool_num = 0
-    if tool_num > 0:
-        lines.append(f"(Werkzeug T{tool_num:02d})")
-        lines.append(f"T{tool_num:02d} M6")
-
-    rpm = _float_or_none(spindle_value)
-    if rpm and rpm > 0:
-        rpm_value = int(round(rpm))
-        if rpm_value > 0:
-            lines.append(f"S{rpm_value} M3")
-
-
-def gcode_for_drill(op: Operation) -> List[str]:
-    path = op.path or []
-    if not path:
-        return []
-    lines: List[str] = []
-    _append_tool_and_spindle(
-        lines,
-        op.params.get("tool"),
-        op.params.get("spindle"),
-    )
-    safe_z = float(op.params.get("safe_z", 2.0))
-    feed = float(op.params.get("feed", 0.12))
-    depth_z = path[-1][1]
-    mode_raw = op.params.get("mode", 0)
-    mode_idx = 0
-    try:
-        mode_idx = int(float(mode_raw))
-    except Exception:
-        mode_idx = 0
-    mode_idx = max(0, min(mode_idx, len(DRILL_MODE_LABELS) - 1))
-    lines.append(f"({DRILL_MODE_LABELS[mode_idx]})")
-    x_start = path[0][0]
-    lines.append(f"G0 X{x_start:.3f} Z{safe_z:.3f}")
-    if mode_idx == 0:
-        lines.append(
-            f"G81 X{x_start:.3f} Z{depth_z:.3f} R{safe_z:.3f} F{feed:.3f}"
-        )
-    else:
-        depth_range = abs(depth_z - safe_z)
-        peck_depth = max(depth_range / 4.0, 0.5)
-        peck_depth = min(peck_depth, depth_range or 0.5)
-        if peck_depth <= 0.0:
-            peck_depth = abs(depth_z) or 0.5
-        lines.append(
-            f"G83 X{x_start:.3f} Z{depth_z:.3f} R{safe_z:.3f} Q{peck_depth:.3f} F{feed:.3f}"
-        )
-    lines.append(f"G0 Z{safe_z:.3f}")
-    lines.append("G80")
-    return lines
-
-
-def _float_or_none(value: object | None) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _should_activate_abstech(
-    start_x: float, threshold: float, current_x: float
-) -> bool:
-    if start_x >= threshold:
-        return current_x <= threshold
-    return current_x >= threshold
-
-
-def gcode_for_groove(op: Operation) -> List[str]:
-    path = op.path or []
-    if not path:
-        return []
-    safe_z = float(op.params.get("safe_z", 2.0))
-    feed = float(op.params.get("feed", 0.15))
-    reduced_feed = _float_or_none(op.params.get("reduced_feed"))
-    if reduced_feed is not None and reduced_feed <= 0.0:
-        reduced_feed = None
-    reduced_rpm = _float_or_none(op.params.get("reduced_rpm"))
-    if reduced_rpm is not None and reduced_rpm <= 0.0:
-        reduced_rpm = None
-    reduced_start_x = _float_or_none(op.params.get("reduced_feed_start_x"))
-    lines: List[str] = []
-    _append_tool_and_spindle(
-        lines,
-        op.params.get("tool"),
-        op.params.get("spindle"),
-    )
-    start_x = path[0][0]
-    lines.append(f"G0 X{start_x:.3f} Z{safe_z:.3f}")
-    feed_current = feed
-    need_feed = True
-    abstech_active = False
-    for x, z in path[1:]:
-        if (
-            not abstech_active
-            and (reduced_feed is not None or reduced_rpm is not None)
-            and reduced_start_x is not None
-            and _should_activate_abstech(start_x, reduced_start_x, x)
-        ):
-            abstech_active = True
-            lines.append(f"(Abstechbereich ab X{reduced_start_x:.3f})")
-            if reduced_rpm is not None:
-                rpm_value = int(round(reduced_rpm))
-                if rpm_value > 0:
-                    lines.append(f"(Reduzierte Drehzahl S{rpm_value})")
-                    lines.append(f"S{rpm_value} M3")
-            if reduced_feed is not None:
-                feed_current = reduced_feed
-                need_feed = True
-        coords = ["G1", f"X{x:.3f}", f"Z{z:.3f}"]
-        if need_feed:
-            coords.append(f"F{feed_current:.3f}")
-            need_feed = False
-        lines.append(" ".join(coords))
-    return lines
-
-
-# _abspanen_safe_z moved to `slicer.py` (see generate_abspanen_gcode)
-# Retained for backwards compatibility: import from slicer at runtime if needed.
-def _abspanen_safe_z(settings: Dict[str, object], side_idx: int, path: List[Tuple[float, float]]) -> float:
-    try:
-        from slicer import _abspanen_safe_z as _s
-    except Exception:
-        # fallback minimal implementation
-        if path:
-            return path[0][1] + 2.0
-        return 2.0
-    return _s(settings, side_idx, [(x, z) for x, z in path])
-
-
-# _offset_abspanen_path moved to `slicer.py` (see generate_abspanen_gcode)
-# Backwards-compatible runtime import
-def _offset_abspanen_path(path: List[Tuple[float, float]], stock_x: float, offset: float) -> List[Tuple[float, float]]:
-    try:
-        from slicer import _offset_abspanen_path as _s
-        return _s([(x, z) for x, z in path], float(stock_x), float(offset))
-    except Exception:
-        if offset <= 1e-6:
-            return list(path)
-        adjusted = []
-        xs = [p[0] for p in path]
-        min_x, max_x = min(xs), max(xs)
-        if stock_x >= max_x:
-            for x, z in path:
-                adjusted.append((min(x + offset, stock_x), z))
-        elif stock_x <= min_x:
-            for x, z in path:
-                adjusted.append((max(x - offset, stock_x), z))
-        else:
-            for x, z in path:
-                adjusted.append((x + offset, z))
-        return adjusted
-
-
-# _abspanen_offsets moved to `slicer.py` (see generate_abspanen_gcode)
-# Backwards-compatible runtime import
-def _abspanen_offsets(stock_x: float, path: List[Tuple[float, float]], depth_per_pass: float) -> List[float]:
-    try:
-        from slicer import _abspanen_offsets as _s
-        return _s(float(stock_x), [(x, z) for x, z in path], float(depth_per_pass))
-    except Exception:
-        if not path:
-            return [0.0]
-        xs = [p[0] for p in path]
-        min_x, max_x = min(xs), max(xs)
-        if stock_x >= max_x:
-            start_offset = stock_x - min_x
-        elif stock_x <= min_x:
-            start_offset = max_x - stock_x
-        else:
-            start_offset = 0.0
-        if start_offset <= 1e-6:
-            return [0.0]
-        if depth_per_pass <= 0:
-            return [start_offset, 0.0]
-        passes = math.ceil(start_offset / depth_per_pass)
-        offsets: List[float] = []
-        for i in range(0, passes + 1):
-            current = max(round(start_offset - i * depth_per_pass, 6), 0.0)
-            if offsets and abs(offsets[-1] - current) < 1e-6:
-                continue
-            offsets.append(current)
-        if offsets[-1] != 0.0:
-            offsets.append(0.0)
-        return offsets
-
-
-# _emit_segment_with_pauses moved to `slicer.py` (see generate_abspanen_gcode)
-# Backwards-compatible runtime import
-def _emit_segment_with_pauses(
-    lines: List[str],
-    start: Tuple[float, float],
-    end: Tuple[float, float],
-    feed: float,
-    pause_enabled: bool,
-    pause_distance: float,
-    pause_duration: float,
-):
-    try:
-        from slicer import _emit_segment_with_pauses as _s
-        return _s(lines, start, end, feed, pause_enabled, pause_distance, pause_duration)
-    except Exception:
-        x0, z0 = start
-        x1, z1 = end
-        dx, dz = x1 - x0, z1 - z0
-        length = math.hypot(dx, dz)
-        if pause_enabled and pause_distance > 0.0 and length > pause_distance:
-            lines.append(
-                "o<step_line_pause> call "
-                f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
-                f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
-            )
-            return
-        lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
-
-
-# _gcode_for_abspanen_pass moved to `slicer.py` (see generate_abspanen_gcode)
-# Backwards-compatible runtime import
-def _gcode_for_abspanen_pass(
-    path: List[Tuple[float, float]],
-    feed: float,
-    safe_z: float,
-    pause_enabled: bool,
-    pause_distance: float,
-    pause_duration: float,
-) -> List[str]:
-    try:
-        from slicer import _gcode_for_abspanen_pass as _s
-        return _s([(x, z) for x, z in path], feed, safe_z, pause_enabled, pause_distance, pause_duration)
-    except Exception:
-        if not path:
-            return []
-        lines: List[str] = []
-        x0, z0 = path[0]
-        lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
-        lines.append(f"G0 Z{z0:.3f}")
-        lines.append(f"G1 X{x0:.3f} Z{z0:.3f} F{feed:.3f}")
-        prev = path[0]
-        for point in path[1:]:
-            _emit_segment_with_pauses(lines, prev, point, feed, pause_enabled, pause_distance, pause_duration)
-            prev = point
-        lines.append(f"G0 Z{safe_z:.3f}")
-        return lines
-
-
-def gcode_for_abspanen(op: Operation, settings: Dict[str, object]) -> List[str]:
-    """Thin wrapper: delegate Abspanen G-code generation to `slicer.generate_abspanen_gcode`.
-
-    The full implementation lives in `slicer.py`; keeping a wrapper here keeps the public
-    API stable and simplifies importing in tests.
-    """
-    try:
-        from slicer import generate_abspanen_gcode
-    except Exception:
-        generate_abspanen_gcode = None
-
-    lines: List[str] = []
-    _append_tool_and_spindle(
-        lines,
-        op.params.get("tool"),
-        op.params.get("spindle"),
-    )
-    coolant_enabled = bool(op.params.get("coolant", False))
-    if coolant_enabled:
-        lines.append("(Coolant On)")
-        lines.append("M8")
-
-    if generate_abspanen_gcode:
-        lines.extend(generate_abspanen_gcode(op.params, list(op.path or []), settings))
-        return lines
-
-    lines.append("(ABSPANEN)")
-    return lines
-
-
-def gcode_for_keyway(op: Operation) -> List[str]:
-    p = op.params
-    lines = ["(KEYWAY)"]
-    lines.append(f"#<_mode> = {int(p.get('mode', 0))}")
-    lines.append(f"#<_radial_side> = {int(p.get('radial_side', 0))}")
-    lines.append(f"#<_slot_count> = {int(p.get('slot_count', 1))}")
-    lines.append(f"#<_slot_start_angle> = {p.get('slot_start_angle', 0.0):.3f}")
-    lines.append(f"#<_start_x_dia_input> = {p.get('start_x_dia', 0.0):.3f}")
-    lines.append(f"#<_start_z_input> = {p.get('start_z', 0.0):.3f}")
-    lines.append(f"#<_nut_length> = {p.get('nut_length', 0.0):.3f}")
-    lines.append(f"#<_nut_depth> = {p.get('nut_depth', 0.0):.3f}")
-    cutting_width = float(p.get("cutting_width", 0.0))
-    lines.append(f"#<_cutting_width> = {cutting_width:.3f}")
-    lines.append(f"#<_key_cutting_width> = {cutting_width:.3f}")
-    lines.append(f"#<_depth_per_pass> = {p.get('depth_per_pass', 0.1):.3f}")
-    lines.append(f"#<_top_clearance> = {p.get('top_clearance', 0.0):.3f}")
-    lines.append(f"#<_plunge_feed> = {p.get('plunge_feed', 200.0):.3f}")
-    lines.append(f"#<_use_c_axis> = {1 if p.get('use_c_axis', True) else 0}")
-    lines.append(f"#<_use_c_axis_switch> = {1 if p.get('use_c_axis_switch', True) else 0}")
-    lines.append(f"#<_c_axis_switch_p> = {int(p.get('c_axis_switch_p', 0))}")
-    lines.append("o<keyway_c> call")
-    return lines
-
-
-def _sanitize_gcode_text(text: str) -> str:
-    """Ersetzt Umlaute/Akzente durch ASCII, um falsche Zeichensätze zu vermeiden."""
-    translit = {
-        "ä": "ae",
-        "Ä": "Ae",
-        "ö": "oe",
-        "Ö": "Oe",
-        "ü": "ue",
-        "Ü": "Ue",
-        "ß": "ss",
-    }
-
-    for src, repl in translit.items():
-        text = text.replace(src, repl)
-
-    try:
-        text.encode("ascii")
-        return text
-    except UnicodeEncodeError:
-        return text.encode("ascii", "replace").decode("ascii")
-
-
-def _contour_retract_positions(
-    settings: Dict[str, object],
-    side_idx: int,
-    fallback_x: Optional[float],
-    fallback_z: Optional[float],
-) -> Tuple[Optional[float], Optional[float]]:
-    try:
-        from slicer import _contour_retract_positions as _s
-    except Exception:
-        _s = None
-
-    if _s:
-        return _s(settings, side_idx, fallback_x, fallback_z)
-
-    def _pick(candidate: object, default: Optional[float]) -> Optional[float]:
-        try:
-            if candidate is not None and float(candidate) != 0.0:
-                return float(candidate)
-        except Exception:
-            pass
-        return default
-
-    if side_idx == 0:
-        retract_x = _pick(settings.get("xra"), fallback_x)
-        retract_z = _pick(settings.get("zra"), fallback_z)
-    else:
-        retract_x = _pick(settings.get("xri"), fallback_x)
-        retract_z = _pick(settings.get("zri"), fallback_z)
-
-    return retract_x, retract_z
-
-
-def gcode_for_contour(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
-    """Erzeugt einen G71/G70-Workflow für LinuxCNC 2.10 (Fanuc-Style)."""
-
-    p = op.params
-    name = str(p.get("name") or "").strip()
-    side_idx = int(p.get("side", 0))
-
-    path = op.path or []
-    if len(path) < 2:
-        # Fallback: nur Kommentare ausgeben, wenn keine Kontur vorhanden ist
-        lines: List[str] = ["(KONTUR)"]
-        if name:
-            lines.append(f"(Name: {name})")
-        lines.append("(Keine Konturpunkte definiert)")
-        return lines
-
-    # Standardwerte gemäß LinuxCNC-Handbuch (G71/G70), solange kein eigenes UI-Feld existiert
-    rough_depth = max(float(p.get("rough_depth", 0.5)), 0.05)
-    retract = max(float(p.get("retract", 1.0)), 0.1)
-    finish_allow_x = max(float(p.get("finish_allow_x", 0.2)), 0.0)
-    finish_allow_z = max(float(p.get("finish_allow_z", 0.1)), 0.0)
-    rough_feed = max(float(p.get("rough_feed", 0.25)), 0.01)
-    finish_feed = max(float(p.get("finish_feed", rough_feed)), 0.01)
-    safe_z = float(p.get("safe_z", 2.0))
-    settings = settings or {}
-
-    lines: List[str] = ["(KONTUR)"]
-    if name:
-        lines.append(f"(Name: {name})")
-    lines.append("(Seite: Außen)" if side_idx == 0 else "(Seite: Innen)")
-    lines.append("(Rauhen: G71, Schlichten: G70)")
-    lines.append(f"(Zustellung: {rough_depth:.3f} mm, Rückzug: {retract:.3f} mm)")
-    lines.append(
-        f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm,"
-        f" Vorschub Schruppen/Schlichten: {rough_feed:.3f}/{finish_feed:.3f})"
-    )
-
-    # Konturblöcke nummerieren, damit P/Q klar referenzierbar sind
-    block_start = 500
-    block_step = 10
-    block_numbers = [block_start + i * block_step for i in range(len(path))]
-    block_end = block_numbers[-1]
-
-    # Anfahrbewegung und Zyklen
-    xs = [p[0] for p in path]
-    start_x, start_z = path[0]
-    entry_x = max(xs) if side_idx == 0 else min(xs)
-    retract_x, retract_z = _contour_retract_positions(
-        settings, side_idx, entry_x, safe_z
-    )
-    safe_z = retract_z
-    # Aus Sicherheits‑/Dokumentationsgründen nur kommentierte Konturinformationen ausgeben.
-    # Die Kontur wird nicht als ausführbare Bewegungsfolge in den Header geschrieben.
-    lines.append(f"(Sicherheitsposition aus Programm: X{retract_x:.3f} Z{retract_z:.3f})")
-    lines.append(f"(Kontur-Punkte: {len(path)})")
-    lines.append(f"(Startpunkt: X{start_x:.3f} Z{start_z:.3f})")
-    # Listen der ersten Punkte als Kommentar (kurz und lesbar)
-    sample_points = path[:5]
-    for (x, z) in sample_points:
-        lines.append(f"( Konturpunkt: X{x:.3f} Z{z:.3f} )")
-    if len(path) > len(sample_points):
-        lines.append(f"( ... +{len(path)-len(sample_points)} weitere Punkte )")
-
-    lines.append(f"(Anmerkung: Kontur wird nur als Kommentar ausgegeben, nicht als Bewegungsbefehle)")
-
-    return lines
-
-
-def gcode_for_face(op: Operation) -> List[str]:
-    """G-Code für Planen mit Schruppen/Schlichten und optionaler Fase."""
-    p = op.params
-
-    x0 = p.get("start_x", 0.0)
-    z0 = p.get("start_z", 0.0)
-    x1 = p.get("end_x", x0)
-    z1 = p.get("end_z", 0.0)
-
-    safe_z = p.get("safe_z", z0 + 2.0)
-    feed = p.get("feed", 0.2)
-
-    depth_per_pass = float(p.get("depth_per_pass", 0.0))
-    depth_max = float(p.get("depth_max", 0.0))
-    depth_total = abs(z0 - z1)
-
-    # effektive Zustellung pro Schnitt: bevorzugt depth_per_pass, sonst depth_max,
-    # immer gedeckelt auf die tatsächlich abzunehmende Tiefe. Anschließend wird
-    # die Zustellung auf gleichmäßige Schritte verteilt, damit der letzte Hub
-    # nicht deutlich kleiner ausfällt.
-    desired_depth = depth_per_pass if depth_per_pass > 0 else depth_max
-    if desired_depth <= 0.0:
-        desired_depth = depth_total or 1.0  # nie 0, sonst Division durch 0
-    desired_depth = max(min(desired_depth, depth_total if depth_total > 0 else desired_depth), 0.0)
-
-    finish_allow_x = max(p.get("finish_allow_x", 0.0), 0.0)
-    finish_allow_z = max(p.get("finish_allow_z", 0.0), 0.0)
-    finish_dir = int(p.get("finish_direction", 0))  # 0=Außen→Innen, 1=Innen→Außen
-
-    # gleichmäßige Verteilung der Zustellungen über die gesamte Schruppstrecke
-    if z1 < z0:
-        z_limit_rough = z1 + finish_allow_z
-    else:
-        z_limit_rough = z1 - finish_allow_z
-    total_rough_depth = abs(z0 - z_limit_rough)
-    rough_passes = max(1, math.ceil(total_rough_depth / desired_depth)) if total_rough_depth > 0 else 0
-    depth = total_rough_depth / rough_passes if rough_passes > 0 else 0.0
-
-    mode_idx = int(p.get("mode", 0))  # 0=Schruppen, 1=Schlichten, 2=Schruppen+Schlichten (fallback)
-    edge_type = int(p.get("edge_type", 0))  # 0=keine, 1=Fase, 2=Radius (wie keine)
-    edge_size = max(p.get("edge_size", 0.0), 0.0)
-    spindle = p.get("spindle", 0.0)
-    coolant_enabled = bool(p.get("coolant", False))
-    pause_enabled = bool(p.get("pause_enabled", False))
-    pause_distance = max(p.get("pause_distance", 0.0), 0.0)
-    pause_duration = 0.5
-
-    tool_num = int(p.get("tool", 0))
-
-    lines: List[str] = []
-
-    if tool_num > 0:
-        lines.append(f"(Werkzeug T{tool_num:02d})")
-        lines.append(f"T{tool_num:02d} M6")
-
-    # lokale Drehzahl, falls gesetzt
-    if spindle and spindle > 0:
-        lines.append(f"S{int(spindle)} M3")
-
-    if coolant_enabled:
-        lines.append("M8")
-
-    # -------------------------
-    # 1) Schruppen (Z-Schritte, Bewegung in X)
-    # -------------------------
-    do_rough = mode_idx in (0, 2)
-    do_finish = mode_idx in (1, 2)
-
-    if do_rough and depth > 0.0 and abs(z0 - z1) > finish_allow_z:
-        if z1 < z0:
-            dz = -depth
-            z_limit_rough = z1 + finish_allow_z
-            cmp = lambda z: z > z_limit_rough + 1e-4
-        else:
-            dz = depth
-            z_limit_rough = z1 - finish_allow_z
-            cmp = lambda z: z < z_limit_rough - 1e-4
-
-        if x1 < x0:
-            x_limit_rough = x1 + finish_allow_x
-        else:
-            x_limit_rough = x1 - finish_allow_x
-
-        z_curr = z0
-        for _ in range(rough_passes):
-            z_next = z_curr + dz
-            if dz < 0 and z_next < z_limit_rough:
-                z_next = z_limit_rough
-            elif dz > 0 and z_next > z_limit_rough:
-                z_next = z_limit_rough
-
-            lines.append(f"G0 X{x0:.3f} Z{safe_z:.3f}")
-            lines.append(f"G0 Z{z_next:.3f}")
-
-            if pause_enabled and pause_distance > 0.0:
-                lines.append(
-                    "o<step_x_pause> call "
-                    f"[{x0:.3f}] [{x_limit_rough:.3f}] "
-                    f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
-                )
-            else:
-                lines.append(f"G1 X{x_limit_rough:.3f} F{feed:.3f}")
-            lines.append(f"G0 Z{safe_z:.3f}")
-
-            z_curr = z_next
-
-    # -------------------------
-    # 2) Schlichten
-    # -------------------------
-    if do_finish:
-        lines.append("(Schlichtschnitt Plan)")
-
-        x_outside = max(x0, x1)
-        x_inside = min(x0, x1)
-        start_finish_x = x_outside if finish_dir == 0 else x_inside
-        end_finish_x = x_inside if finish_dir == 0 else x_outside
-
-        lines.append(f"G0 X{start_finish_x:.3f} Z{safe_z:.3f}")
-
-        if edge_type == 1 and edge_size > 0.0:
-            if finish_dir == 0:
-                z_fase_start = z1 + edge_size
-                lines.append(f"G0 Z{z_fase_start:.3f}")
-                lines.append(f"G1 X{(x_outside - edge_size):.3f} Z{z1:.3f} F{feed:.3f}")
-                lines.append(f"G1 X{end_finish_x:.3f} Z{z1:.3f}")
-            else:
-                z_fase_end = z1 + edge_size
-                lines.append(f"G0 Z{z1:.3f}")
-                lines.append(f"G1 X{(x_outside - edge_size):.3f} F{feed:.3f}")
-                lines.append(f"G1 X{x_outside:.3f} Z{z_fase_end:.3f}")
-        else:
-            lines.append(f"G0 Z{z1:.3f}")
-            lines.append(f"G1 X{end_finish_x:.3f} F{feed:.3f}")
-
-        lines.append(f"G0 Z{safe_z:.3f}")
-
-    return lines
-
 
 def gcode_for_operation(
     op: Operation, settings: Dict[str, object] | None = None
 ) -> List[str]:
-    if op.op_type == OpType.PROGRAM_HEADER:
-        # Programmkopf wird zentral in ProgramModel.generate_gcode() behandelt
-        return []
-    if op.op_type == OpType.FACE:
-        return gcode_for_face(op)
-    if op.op_type == OpType.CONTOUR:
-        return gcode_for_contour(op, settings or {})
-    if op.op_type == OpType.TURN:
-        return gcode_from_path(op.path,
-                               op.params.get("feed", 0.2),
-                               op.params.get("safe_z", 2.0))
-    if op.op_type == OpType.BORE:
-        return gcode_from_path(op.path,
-                               op.params.get("feed", 0.15),
-                               op.params.get("safe_z", 2.0))
-    if op.op_type == OpType.DRILL:
-        return gcode_for_drill(op)
-    if op.op_type == OpType.GROOVE:
-        return gcode_for_groove(op)
-    if op.op_type == OpType.ABSPANEN:
-        return gcode_for_abspanen(op, settings or {})
-    if op.op_type == OpType.THREAD:
-        safe_z = float(op.params.get("safe_z", 2.0))
-        major_diameter = float(op.params.get("major_diameter", 0.0))
-        pitch = float(op.params.get("pitch", 1.5))
-        length = float(op.params.get("length", 0.0))
+    try:
+        from slicer import gcode_for_operation as _s
+    except Exception:
+        _s = None
 
-        raw_thread_depth = op.params.get("thread_depth")
-        if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
-            thread_depth = float(raw_thread_depth)
-        else:
-            thread_depth = pitch * 0.6134
+    if _s:
+        return _s(op, settings or {})
 
-        raw_first_depth = op.params.get("first_depth")
-        if isinstance(raw_first_depth, (int, float)) and raw_first_depth > 0:
-            first_depth = float(raw_first_depth)
-        else:
-            first_depth = max(thread_depth * 0.1, pitch * 0.05)
-
-        raw_peak_offset = op.params.get("peak_offset")
-        if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
-            peak_offset = float(raw_peak_offset)
-        else:
-            peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
-
-        retract_r = float(op.params.get("retract_r", 1.5))
-        infeed_q = float(op.params.get("infeed_q", 29.5))
-        spring_passes_raw = op.params.get("spring_passes")
-        if isinstance(spring_passes_raw, (int, float)) and spring_passes_raw > 0:
-            spring_passes = max(0, int(spring_passes_raw))
-        else:
-            spring_passes = max(0, int(op.params.get("passes", 1)))
-        e_val = float(op.params.get("e", 0.0))
-        l_val = int(float(op.params.get("l", 0)))
-
-        orientation_raw = op.params.get("orientation", 0)
-        orientation_idx = 0
-        if isinstance(orientation_raw, (int, float)):
-            orientation_idx = max(
-                0,
-                min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1),
-            )
-        orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
-        standard_data = op.params.get("standard")
-        standard_label = ""
-        if isinstance(standard_data, dict):
-            std_label_tmp = standard_data.get("label")
-            if isinstance(std_label_tmp, str):
-                standard_label = std_label_tmp
-
-        comments: List[str] = []
-        if standard_label and standard_label != "Benutzerdefiniert":
-            comments.append(f"(Normgewinde: {standard_label})")
-        comments.append(f"(Gewindetyp: {orientation_label})")
-
-        lines: List[str] = []
-        _append_tool_and_spindle(
-            lines,
-            op.params.get("tool"),
-            op.params.get("spindle"),
-        )
-        lines.extend(comments)
-
-        lines.append(f"G0 X{major_diameter:.3f} Z{safe_z:.3f}")
-        lines.append(
-            (
-                "G76 "
-                f"P{pitch:.4f} "
-                f"Z{-abs(length):.3f} "
-                f"I{peak_offset:.4f} "
-                f"J{first_depth:.4f} "
-                f"R{retract_r:.4f} "
-                f"K{thread_depth:.4f} "
-                f"Q{infeed_q:.4f} "
-                f"H{spring_passes:d} "
-                f"E{e_val:.4f} "
-                f"L{l_val:d}"
-            )
-        )
-        return lines
-    if op.op_type == OpType.KEYWAY:
-        return gcode_for_keyway(op)
     return []
-
-
-# ----------------------------------------------------------------------
-# Handler
-# ----------------------------------------------------------------------
-
-    def toggle_legend(self):
-        # keep a small header visible, toggle between collapsed/expanded
-        self._legend_collapsed = not getattr(self, "_legend_collapsed", False)
-        self.update()
-
-    def set_collision(self, active: bool):
-        active = bool(active)
-        if active == self._collision_active:
-            return
-        self._collision_active = active
-        self._blink_state = False
-        if active:
-            if not self._blink_timer.isActive():
-                self._blink_timer.start()
-        else:
-            self._blink_timer.stop()
-        self.update()
-
-    def _on_blink_timer(self):
-        if not self._collision_active:
-            self._blink_timer.stop()
-            return
-        self._blink_state = not self._blink_state
-        self.update()
-
-    def mousePressEvent(self, event):
-        # Click on the legend box to toggle it
-        try:
-            if self._legend_click_rect is not None and self._legend_click_rect.contains(event.pos()):
-                self.toggle_legend()
-                event.accept()
-                return
-        except Exception:
-            pass
-        super().mousePressEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        # Double click anywhere toggles legend
-        self.toggle_legend()
-        event.accept()
-
-    def keyPressEvent(self, event):
-        # 'L' toggles legend
-        try:
-            if event.key() in (QtCore.Qt.Key_L,):
-                self.toggle_legend()
-                event.accept()
-                return
-        except Exception:
-            pass
-        super().keyPressEvent(event)
 
 
 class HandlerClass:
@@ -2814,12 +2030,22 @@ class HandlerClass:
         self.paths = paths
         self.model = ProgramModel()
         self.root_widget = None  # wird nach Panel-Suche gesetzt
+        self.tools: Dict[int, Tool] = {}  # loaded tool table
+        self._loaded_tools: Dict[int, Tool] | None = None  # cache for repopulating combos after deferred widgets
+        self._missing_iso_tools: List[int] = []
         self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._thread_standard_populated = False
         self._thread_standard_signal_connected = False
         self._thread_applying_standard = False
         self._step_last_dir: str | None = None
+        self._loading_step = False
+        self._deleting = False
+        self._saving_step = False
+        self._moving_up = False
+        self._moving_down = False
+        self._generating_gcode = False
+        self._creating_new_program = False
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
@@ -3209,7 +2435,7 @@ class HandlerClass:
         return None
 
     def _find_any_widget(self, obj_name: str):
-        """Globale Suche per objectName in allen Widgets (embedded-sicher)."""
+        """Globale Suche per objectName in allen Widgets (embedded-sicher mit erweiterten Fallbacks)."""
         roots: list[QtWidgets.QWidget] = []
         root = self.root_widget or self._find_root_widget()
         if root:
@@ -3227,18 +2453,37 @@ class HandlerClass:
                 if isinstance(w, QtWidgets.QWidget):
                     roots.append(w.window())
 
+        # ENHANCED: Search in all root candidates
         for r in roots:
             obj = r.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
             if obj:
                 return obj
+        
         app = QtWidgets.QApplication.instance()
         if app:
+            # First pass: exact match
             for w in app.allWidgets():
                 try:
                     if w.objectName() == obj_name:
                         return w
                 except Exception:
                     continue
+            
+            # ENHANCED: Second pass with tolerant matching for buttons/widgets that might have suffixes
+            if obj_name.startswith("btn") or obj_name in ["contour_add_segment", "contour_delete_segment", "contour_move_up", "contour_move_down"]:
+                for w in app.allWidgets():
+                    try:
+                        on = w.objectName()
+                        if on and (on == obj_name or re.match(rf"^{re.escape(obj_name)}(_\d+)?$", on)):
+                            return w
+                    except Exception:
+                        continue
+        
+        # ENHANCED: If still not found, try direct attribute access as last resort
+        widget = getattr(self.w, obj_name, None)
+        if widget is not None:
+            return widget
+            
         return None
 
     def _find_panel_tab_widget(self) -> QtWidgets.QTabWidget | None:
@@ -3347,7 +2592,7 @@ class HandlerClass:
         return None
 
     def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
-        """Robuste Widget-Auflösung.
+        """Robuste Widget-Auflösung mit erweiterten Fallbacks für embedded Panel.
 
         Wichtig: Für Parametereinsammeln muss das *richtige* Widget gefunden werden.
         Daher: erst exakte Matches, dann tolerante Matches (z.B. 'foo_2'), dabei
@@ -3358,7 +2603,6 @@ class HandlerClass:
         widget = getattr(self.w, name, None)
         if widget is not None:
             return widget
-
 
         # 1b) Prefer widgets inside our panel's root (works even if hidden)
         try:
@@ -3485,7 +2729,150 @@ class HandlerClass:
             except Exception:
                 pass
 
+        # 5) ENHANCED: If still not found, set up polling for deferred widgets
+        if not hasattr(self, "_deferred_widgets"):
+            self._deferred_widgets = set()
+        if name not in self._deferred_widgets:
+            self._deferred_widgets.add(name)
+            # Set up polling timer for this widget (check every 100ms for 3 seconds)
+            QtCore.QTimer.singleShot(100, lambda: self._poll_for_widget(name, 30))  # 30 * 100ms = 3 seconds
+
         return None
+    
+    def _poll_for_widget(self, name: str, attempts_left: int):
+        """Pollt für ein Widget, das bei der ersten Suche nicht gefunden wurde."""
+        if attempts_left <= 0:
+            print(f"[LatheEasyStep] gave up polling for widget '{name}'")
+            return
+        
+        # Try to find the widget again
+        widget = self._find_widget_immediate(name)
+        if widget is not None:
+            # Found it! Set the attribute and connect signals if it's a button
+            setattr(self, name, widget)
+            print(f"[LatheEasyStep] found deferred widget '{name}': {widget}")
+            
+            # If it's a button, try to connect its signal
+            if isinstance(widget, QtWidgets.QPushButton):
+                self._connect_button_signal(widget, name)
+            
+            # Update UI state if needed
+            self._update_ui_after_widget_found(name, widget)
+            return
+        
+        # Not found yet, schedule next poll
+        QtCore.QTimer.singleShot(100, lambda: self._poll_for_widget(name, attempts_left - 1))
+    
+    def _find_widget_immediate(self, name: str) -> QtWidgets.QWidget | None:
+        """Schnelle Widget-Suche ohne Scoring (für Polling)."""
+        # Direct attribute
+        widget = getattr(self.w, name, None)
+        if widget is not None:
+            return widget
+        
+        # Root-based search
+        root = self.root_widget or self._find_root_widget()
+        if root is not None:
+            try:
+                return root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
+            except Exception:
+                pass
+        
+        # Global search
+        app = QtWidgets.QApplication.instance()
+        if app:
+            for w in app.allWidgets():
+                try:
+                    if w.objectName() == name:
+                        return w
+                except Exception:
+                    continue
+        
+        return None
+    
+    def _connect_button_signal(self, button: QtWidgets.QPushButton, name: str):
+        """Verbindet das Signal eines gefundenen Buttons."""
+        try:
+            if name == "btnAdd":
+                button.clicked.connect(self._handle_add_operation)
+            elif name == "btnDelete":
+                button.clicked.connect(self._handle_delete_operation)
+            elif name == "btnMoveUp":
+                button.clicked.connect(self._handle_move_up)
+            elif name == "btnMoveDown":
+                button.clicked.connect(self._handle_move_down)
+            elif name == "btnNewProgram":
+                button.clicked.connect(self._handle_new_program)
+            elif name == "btnGenerate":
+                button.clicked.connect(self._handle_generate_gcode)
+            elif name == "btn_save_step":
+                button.clicked.connect(self._handle_save_step)
+            elif name == "btn_load_step":
+                button.clicked.connect(self._handle_load_step)
+            elif name == "btn_thread_preset":
+                button.clicked.connect(self._apply_thread_preset_force)
+            elif name == "contour_add_segment":
+                button.clicked.connect(self._handle_contour_add_segment)
+            elif name == "contour_delete_segment":
+                button.clicked.connect(self._handle_contour_delete_segment)
+            elif name == "contour_move_up":
+                button.clicked.connect(self._handle_contour_move_up)
+            elif name == "contour_move_down":
+                button.clicked.connect(self._handle_contour_move_down)
+            print(f"[LatheEasyStep] connected signal for deferred button '{name}'")
+        except Exception as e:
+            print(f"[LatheEasyStep] failed to connect signal for button '{name}': {e}")
+    
+    def _update_ui_after_widget_found(self, name: str, widget: QtWidgets.QWidget):
+        """Aktualisiert UI-Zustand nachdem ein Widget gefunden wurde."""
+        try:
+            # Update visibility states that depend on this widget
+            if name in ["face_mode", "face_edge_type"]:
+                self._update_face_visibility()
+            elif name in ["program_retract_mode", "program_unit"]:
+                self._update_retract_visibility()
+            elif name == "program_has_subspindle":
+                self._update_subspindle_visibility()
+            elif name == "program_shape":
+                self._update_program_visibility()
+            if self._loaded_tools and name in {
+                'face_tool', 'thread_tool', 'groove_tool', 'drill_tool', 'parting_tool',
+                'contour_tool', 'taper_tool', 'boring_tool'
+            }:
+                self._populate_tool_combos(self._loaded_tools)
+        except Exception as e:
+            print(f"[LatheEasyStep] error updating UI after finding '{name}': {e}")
+    
+    def _force_visibility_updates(self):
+        """Erzwingt Sichtbarkeits-Updates für embedded Panel (QtVCP-spezifisch)."""
+        try:
+            # Force update all visibility-dependent widgets
+            self._update_program_visibility()
+            self._update_retract_visibility()
+            self._update_subspindle_visibility()
+            self._update_face_visibility()
+            self._update_contour_edge_controls()
+            
+            # Force repaint of main widgets
+            for widget in [self.tab_params, self.list_ops, self.preview]:
+                if widget is not None:
+                    try:
+                        widget.update()
+                        widget.repaint()
+                    except Exception:
+                        pass
+            
+            # Ensure contour table is visible if it exists
+            if self.contour_segments is not None:
+                try:
+                    self.contour_segments.setVisible(True)
+                    self.contour_segments.update()
+                except Exception:
+                    pass
+                    
+            print("[LatheEasyStep] forced visibility updates for embedded mode")
+        except Exception as e:
+            print(f"[LatheEasyStep] error in force visibility updates: {e}")
     
     def _setup_slice_view(self):
         # Optional: side view + slice view (draggable Z slice)
@@ -3748,6 +3135,64 @@ class HandlerClass:
         QtCore.QTimer.singleShot(0, self._finalize_ui_ready)
         QtCore.QTimer.singleShot(200, self._finalize_ui_ready)
         QtCore.QTimer.singleShot(700, self._finalize_ui_ready)
+        # ENHANCED: More aggressive retries for embedded panel robustness
+        QtCore.QTimer.singleShot(100, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(300, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(500, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(1000, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(1500, self._finalize_ui_ready)
+        QtCore.QTimer.singleShot(2000, self._finalize_ui_ready)
+
+    def _find_all_core_widgets_comprehensive(self):
+        """Umfassende Suche nach Kern-Widgets mit mehreren Fallback-Strategien."""
+        root = self._ensure_root_widget() or self._find_root_widget()
+        if not root:
+            return
+        
+        def _find_widget_multi(attr_name, obj_names, widget_type):
+            """Suche nach einem Widget mit mehreren Strategien."""
+            current = getattr(self, attr_name, None)
+            if current and isinstance(current, widget_type):
+                return current
+            
+            # Strategie 1-2: Nach objectName suchen (direkt und rekursiv)
+            for obj_name in obj_names:
+                w = root.findChild(widget_type, obj_name, QtCore.Qt.FindChildrenRecursively)
+                if w:
+                    setattr(self, attr_name, w)
+                    return w
+            
+            # Strategie 3: Nach Widget-Typ suchen
+            children = root.findChildren(widget_type)
+            if len(children) == 1:
+                setattr(self, attr_name, children[0])
+                return children[0]
+            
+            return None
+        
+        # Kern-Widgets suchen und speichern
+        self.list_ops = _find_widget_multi("list_ops", ["listOperations"], QtWidgets.QListWidget) or self.list_ops
+        self.tab_params = _find_widget_multi("tab_params", ["tabParams"], QtWidgets.QTabWidget) or self.tab_params
+        self.btn_add = _find_widget_multi("btn_add", ["btnAdd"], QtWidgets.QPushButton) or self.btn_add
+        self.btn_delete = _find_widget_multi("btn_delete", ["btnDelete"], QtWidgets.QPushButton) or self.btn_delete
+        self.btn_move_up = _find_widget_multi("btn_move_up", ["btnMoveUp"], QtWidgets.QPushButton) or self.btn_move_up
+        self.btn_move_down = _find_widget_multi("btn_move_down", ["btnMoveDown"], QtWidgets.QPushButton) or self.btn_move_down
+        self.btn_new_program = _find_widget_multi("btn_new_program", ["btnNewProgram"], QtWidgets.QPushButton) or self.btn_new_program
+        self.btn_generate = _find_widget_multi("btn_generate", ["btnGenerate"], QtWidgets.QPushButton) or self.btn_generate
+        self.btn_save_step = _find_widget_multi("btn_save_step", ["btnSaveStep", "btn_save_step"], QtWidgets.QPushButton) or self.btn_save_step
+        self.btn_load_step = _find_widget_multi("btn_load_step", ["btnLoadStep", "btn_load_step"], QtWidgets.QPushButton) or self.btn_load_step
+        self.contour_segments = _find_widget_multi("contour_segments", ["contour_segments"], QtWidgets.QTableWidget) or self.contour_segments
+        self.contour_add_segment = _find_widget_multi("contour_add_segment", ["contour_add_segment"], QtWidgets.QPushButton) or self.contour_add_segment
+        self.contour_delete_segment = _find_widget_multi("contour_delete_segment", ["contour_delete_segment"], QtWidgets.QPushButton) or self.contour_delete_segment
+        self.contour_move_up = _find_widget_multi("contour_move_up", ["contour_move_up"], QtWidgets.QPushButton) or self.contour_move_up
+        self.contour_move_down = _find_widget_multi("contour_move_down", ["contour_move_down"], QtWidgets.QPushButton) or self.contour_move_down
+
+    def _ensure_root_widget(self) -> QtWidgets.QWidget | None:
+        """Stellt sicher, dass self.root_widget gesetzt ist."""
+        if self.root_widget:
+            return self.root_widget
+        self.root_widget = self._find_root_widget()
+        return self.root_widget
 
     def _finalize_ui_ready(self):
         """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
@@ -3756,8 +3201,8 @@ class HandlerClass:
         #  2) once after the embedded UI is constructed.
         # If we run our widget lookup / signal connections too early, we bind to the wrong widgets
         # and later UI updates (visibility, previews) won't work.
-        if not getattr(self, 'w', None) or getattr(self.w, 'program_unit', None) is None:
-            print('[LatheEasyStep] initialized__(): widgets not ready (no program_unit) - deferring')
+        if not getattr(self, 'w', None):
+            print('[LatheEasyStep] _finalize_ui_ready: widgets not ready (no program_unit) - deferring')
             return
 
         self._ensure_core_widgets()
@@ -3778,6 +3223,15 @@ class HandlerClass:
         self.btn_move_down = self.btn_move_down or self._find_any_widget("btnMoveDown")
         self.btn_new_program = self.btn_new_program or self._find_any_widget("btnNewProgram")
         self.btn_generate = self.btn_generate or self._find_any_widget("btnGenerate")
+        # ENHANCED: Additional search strategies for critical buttons
+        if self.btn_add is None:
+            self.btn_add = self._get_widget_by_name("btnAdd")
+        if self.btn_generate is None:
+            self.btn_generate = self._get_widget_by_name("btnGenerate")
+        if self.btn_save_step is None:
+            self.btn_save_step = self._get_widget_by_name("btn_save_step")
+        if self.btn_load_step is None:
+            self.btn_load_step = self._get_widget_by_name("btn_load_step")
         # auch Kontur-Buttons per objectName auflösen
         self.contour_add_segment = self.contour_add_segment or self._find_any_widget("contour_add_segment")
         self.contour_delete_segment = self.contour_delete_segment or self._find_any_widget("contour_delete_segment")
@@ -3813,6 +3267,8 @@ class HandlerClass:
             self._find_combo_boxes()
             self._apply_language_texts()
             self._handle_global_change()
+            # ENHANCED: Force visibility updates for embedded mode
+            self._force_visibility_updates()
         except Exception:
             pass
 
@@ -4145,10 +3601,33 @@ class HandlerClass:
         print(f"[LatheEasyStep] debug list widgets: {lists}")
 
     def _connect_button_once(self, button, handler, flag_name: str):
-        """Verbindet Buttons nur einmal, egal wie oft _connect_signals aufgerufen wird."""
-        if button and not getattr(self, flag_name, False):
-            button.clicked.connect(handler)
-            setattr(self, flag_name, True)
+
+        """Verbindet Buttons stabil (keine Doppel-Auslösung).
+
+    
+
+        Wir disconnecten *immer* zuerst, weil Buttons an mehreren Stellen initialisiert werden können
+
+        (_ensure_core_widgets, _connect_signals, usw.). Das verhindert zuverlässig Mehrfachverbindungen.
+
+        """
+
+        if not button:
+
+            return
+
+        try:
+
+            button.clicked.disconnect()
+
+        except Exception:
+
+            pass
+
+        button.clicked.connect(handler)
+
+        setattr(self, flag_name, True)
+
 
     def _ensure_core_widgets(self):
         """Sucht fehlende Kern-Widgets (Liste/Buttons/Tabs) im UI-Baum nach."""
@@ -4202,6 +3681,23 @@ class HandlerClass:
         self.btn_generate = _find("btn_generate", QtWidgets.QPushButton)
         self.btn_save_step = _find("btn_save_step", QtWidgets.QPushButton)
         self.btn_load_step = _find("btn_load_step", QtWidgets.QPushButton)
+        self.btn_save_program = _find("btn_save_program", QtWidgets.QPushButton)
+        self.btn_load_program = _find("btn_load_program", QtWidgets.QPushButton)
+        self.btn_load_tool_table = _find("btn_load_tool_table", QtWidgets.QPushButton)
+        self.tool_table_path = _find("tool_table_path", QtWidgets.QLineEdit)
+        self.lbl_tool_table_path = _find("lbl_tool_table_path", QtWidgets.QLabel)
+        
+        # Tool combos and previews
+        self.face_tool = _find("face_tool", QtWidgets.QComboBox)
+        self.drill_tool = _find("drill_tool", QtWidgets.QComboBox)
+        self.groove_tool = _find("groove_tool", QtWidgets.QComboBox)
+        self.thread_tool = _find("thread_tool", QtWidgets.QComboBox)
+        self.parting_tool = _find("parting_tool", QtWidgets.QComboBox)
+        self.face_tool_img = _find("face_tool_img", QtWidgets.QLabel)
+        self.drill_tool_img = _find("drill_tool_img", QtWidgets.QLabel)
+        self.groove_tool_img = _find("groove_tool_img", QtWidgets.QLabel)
+        self.thread_tool_img = _find("thread_tool_img", QtWidgets.QLabel)
+        self.parting_tool_img = _find("parting_tool_img", QtWidgets.QLabel)
         # Falls wir die standard Liste nicht finden, versuche ersatzweise gcode_list
         if self.list_ops is None:
             alt = root.findChild(QtWidgets.QListWidget, "gcode_list", QtCore.Qt.FindChildrenRecursively)
@@ -4358,6 +3854,8 @@ class HandlerClass:
                 "depth": self._get_widget_by_name("drill_depth"),
                 "feed": self._get_widget_by_name("drill_feed"),
                 "safe_z": self._get_widget_by_name("drill_safe_z"),
+                "dwell": self._get_widget_by_name("drill_dwell"),
+                "peck_depth": self._get_widget_by_name("drill_peck_depth"),
             },
             OpType.KEYWAY: {
                 "mode": self._get_widget_by_name("key_mode"),
@@ -4464,9 +3962,15 @@ class HandlerClass:
             self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
             self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
             self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+            self._connect_button_once(self.btn_load_tool_table, self._handle_load_tool_table, "_btn_load_tool_table_connected")
+            self._connect_button_once(self.btn_save_program, self._handle_save_program, "_btn_save_program_connected")
+            self._connect_button_once(self.btn_load_program, self._handle_load_program, "_btn_load_program_connected")
             if self.list_ops and not getattr(self, "_list_ops_connected", False):
                 self.list_ops.currentRowChanged.connect(self._handle_selection_change)
                 self._list_ops_connected = True
+            if self.list_ops and not getattr(self, "_list_ops_double_click_connected", False):
+                self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
+                self._list_ops_double_click_connected = True
             if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
                 self.list_ops.clicked.connect(self._mark_operation_user_selected)
                 self._list_ops_click_connected = True
@@ -4478,6 +3982,14 @@ class HandlerClass:
                     self._update_parting_mode_visibility
                 )
                 self._parting_mode_connected = True
+
+            # Tool combo previews
+            tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
+            for combo_name in tool_combos:
+                combo = getattr(self, combo_name, None)
+                if combo and not getattr(self, f"_{combo_name}_connected", False):
+                    combo.currentIndexChanged.connect(self._update_tool_previews)
+                    setattr(self, f"_{combo_name}_connected", True)
 
             # Parameterfelder
             for widgets in self.param_widgets.values():
@@ -4518,6 +4030,12 @@ class HandlerClass:
                     self.face_mode.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
                 if getattr(self, "face_edge_type", None):
                     self.face_edge_type.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
+            except Exception:
+                pass
+            # --- Live update + visibility for Bohren (Drill) ---
+            try:
+                if getattr(self, "drill_mode", None):
+                    self.drill_mode.currentIndexChanged.connect(lambda *_: self._update_drill_visibility())
             except Exception:
                 pass
 
@@ -5069,6 +4587,27 @@ class HandlerClass:
             contour_name = self._current_parting_contour_name()
             params["contour_name"] = contour_name
             params["source_path"] = self._resolve_contour_path(contour_name)
+        elif op_type == OpType.FACE:
+            # Defaults für FACE, da slicer.py keine harten Defaults hat
+            defaults = {
+                "retract": 0.5,
+                "depth_max": 0.4,
+                "feed": 0.2,
+                "spindle": 1300.0,
+                "tool": 1,
+                "mode": 0,
+                "edge_type": 0,
+                "edge_size": 0.0,
+                "finish_allow_z": 0.05,
+                "start_x": 40.0,
+                "start_z": 1.0,
+                "end_x": -1.0,
+                "end_z": 0.0,
+                "coolant": False,
+            }
+            for key, default in defaults.items():
+                if key not in params or params[key] is None or params[key] == "":
+                    params[key] = default
         return params
     def _collect_program_header(self) -> Dict[str, object]:
         """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
@@ -5206,6 +4745,51 @@ class HandlerClass:
             header["s3_max"] = 0.0
 
         return header
+
+    def _tool_change_position_lines(self, header: Dict[str, object]) -> List[str]:
+        """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT).
+        
+        Berücksichtigt absolute/inkrementale Flags:
+        - absolute: WCS (Normal Peek Value) verwenden
+        - inkremental: Maschinenkoordinaten (G53) verwenden
+        """
+        xt = float(header.get("xt", 0.0))
+        zt = float(header.get("zt", 0.0))
+        xt_abs = bool(header.get("xt_absolute", False))
+        zt_abs = bool(header.get("zt_absolute", False))
+
+        lines: List[str] = []
+        
+        # Wenn beide absolut: komplett im WCS
+        if xt_abs and zt_abs:
+            lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
+            return lines
+        
+        # Wenn beide inkremental: G53 verwenden
+        if not xt_abs and not zt_abs:
+            lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
+            return lines
+        
+        # Mischfall: X absolut, Z inkremental (oder umgekehrt)
+        # Erst G53 für inkrementale Achsen
+        g53_parts = []
+        if not xt_abs:
+            g53_parts.append(f"X{xt:.3f}")
+        if not zt_abs:
+            g53_parts.append(f"Z{zt:.3f}")
+        if g53_parts:
+            lines.append(f"G53 G0 {' '.join(g53_parts)}")
+        
+        # Dann WCS für absolute Achsen
+        wcs_parts = []
+        if xt_abs:
+            wcs_parts.append(f"X{xt:.3f}")
+        if zt_abs:
+            wcs_parts.append(f"Z{zt:.3f}")
+        if wcs_parts:
+            lines.append(f"G0 {' '.join(wcs_parts)}")
+        
+        return lines
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
         table = self.contour_segments
@@ -5791,10 +5375,12 @@ class HandlerClass:
         else:
             op.params = self._collect_params(op.op_type)
         self.model.update_geometry(op)
+        description = self._describe_operation(op, idx + 1)
         if self.list_ops:
             item = self.list_ops.item(idx)
             if item:
-                item.setText(self._describe_operation(op, idx + 1))
+                item.setText(description)
+        op.params["comment"] = description
         self._refresh_preview()
         if op.op_type == OpType.CONTOUR:
             self._update_parting_contour_choices()
@@ -5868,15 +5454,25 @@ class HandlerClass:
             self._adding_operation = False
 
     def _handle_delete_operation(self):
-        if self.list_ops is None:
+        if self._deleting:
             return
-        idx = self.list_ops.currentRow()
-        if idx < 0:
-            return
-        self.model.remove_operation(idx)
-        self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
-        self._refresh_preview()
-        self._update_parting_contour_choices()
+        self._deleting = True
+        try:
+            if self.list_ops is None:
+                return
+            idx = self.list_ops.currentRow()
+            if idx < 0:
+                return
+            if idx == 0:
+                parent = self.root_widget or self._find_root_widget()
+                QtWidgets.QMessageBox.warning(parent, "Löschen", "Der Programmkopf kann nicht gelöscht werden.")
+                return
+            self.model.remove_operation(idx)
+            self._refresh_operation_list(select_index=min(idx, len(self.model.operations) - 1))
+            self._refresh_preview()
+            self._update_parting_contour_choices()
+        finally:
+            self._deleting = False
 
     def _selected_operation_index(self) -> int:
         if self.list_ops is None:
@@ -5938,85 +5534,417 @@ class HandlerClass:
         self._handle_selection_change(idx)
 
     def _handle_save_step(self):
-        idx = self._selected_operation_index()
-        if idx < 0:
-            parent = self.root_widget or self._find_root_widget()
-            QtWidgets.QMessageBox.warning(parent, "Step speichern", "Bitte zuerst eine Operation auswählen.")
+        if self._saving_step:
             return
-        parent = self.root_widget or self._find_root_widget()
-        start_dir = self._step_last_dir or QtCore.QDir.homePath()
-        default_name = os.path.join(start_dir, "lathe_step.step.json")
-        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            parent,
-            "Step speichern",
-            default_name,
-            STEP_FILE_FILTER,
-        )
-        if not file_path:
-            return
-        if not file_path.lower().endswith(".step.json"):
-            file_path += ".step.json"
+        self._saving_step = True
         try:
-            self._update_selected_operation(force=True)
-            op = self.model.operations[idx]
-            data = self._operation_to_step_data(op)
-            with open(file_path, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, indent=2)
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(parent, "Step speichern", f"Step konnte nicht gespeichert werden:\n{exc}")
-            return
-        self._step_last_dir = os.path.dirname(file_path)
-        QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
+            idx = self._selected_operation_index()
+            if idx < 0:
+                parent = self.root_widget or self._find_root_widget()
+                QtWidgets.QMessageBox.warning(parent, "Step speichern", "Bitte zuerst eine Operation auswählen.")
+                return
+            parent = self.root_widget or self._find_root_widget()
+            start_dir = self._step_last_dir or QtCore.QDir.homePath()
+            default_name = os.path.join(start_dir, "lathe_step.step.json")
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                parent,
+                "Step speichern",
+                default_name,
+                STEP_FILE_FILTER,
+            )
+            if not file_path:
+                return
+            if not file_path.lower().endswith(".step.json"):
+                file_path += ".step.json"
+            try:
+                self._update_selected_operation(force=True)
+                op = self.model.operations[idx]
+                warning = self._tool_orientation_mismatch(op)
+                if warning:
+                    QtWidgets.QMessageBox.warning(parent, "Werkzeuglage prüfen", warning)
+                data = self._operation_to_step_data(op)
+                with builtins.open(file_path, "w", encoding="utf-8") as handle:
+                    json.dump(data, handle, indent=2)
+            except Exception as exc:
+                QtWidgets.QMessageBox.critical(parent, "Step speichern", f"Step konnte nicht gespeichert werden:\n{exc}")
+                return
+            self._step_last_dir = os.path.dirname(file_path)
+            QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
+        finally:
+            self._saving_step = False
+
+    def _operation_side_hint(self, op: Operation) -> str | None:
+        """Return 'outside' or 'inside' for operations that expose a side/orientation choice."""
+        params = op.params or {}
+        if op.op_type == OpType.FACE:
+            try:
+                idx = int(float(params.get("finish_direction", 0)))
+            except Exception:
+                idx = 0
+            return "outside" if idx == 0 else "inside"
+        if op.op_type == OpType.GROOVE:
+            try:
+                idx = int(float(params.get("lage", 0)))
+            except Exception:
+                idx = 0
+            if idx == 0:
+                return "outside"
+            if idx == 1:
+                return "inside"
+        if op.op_type == OpType.ABSPANEN:
+            try:
+                idx = int(float(params.get("side", 0)))
+            except Exception:
+                idx = 0
+            return "outside" if idx == 0 else "inside"
+        if op.op_type == OpType.THREAD:
+            try:
+                idx = int(float(params.get("orientation", 0)))
+            except Exception:
+                idx = 0
+            return "outside" if idx == 0 else "inside"
+        return None
+
+    def _tool_comment_side_hint(self, comment: str) -> str | None:
+        if not comment:
+            return None
+        normalized = re.sub(r"[^a-z0-9]+", " ", comment.lower())
+        words = normalized.split()
+        inside_words = {"innen", "inside", "inner", "id"}
+        outside_words = {"außen", "aussen", "outside", "outer", "od"}
+        if any(word in inside_words for word in words):
+            return "inside"
+        if any(word in outside_words for word in words):
+            return "outside"
+        return None
+
+    def _tool_orientation_mismatch(self, op: Operation) -> str | None:
+        hint = self._operation_side_hint(op)
+        if not hint:
+            return None
+        try:
+            tool_num = int(float(op.params.get("tool", 0)))
+        except Exception:
+            tool_num = 0
+        if tool_num <= 0:
+            return None
+        tool = self.tools.get(tool_num)
+        if not tool:
+            return None
+        comment_hint = self._tool_comment_side_hint(tool.comment)
+        if comment_hint and comment_hint != hint:
+            detail = tool.comment or tool.iso_code or ""
+            if detail:
+                detail = f" ({detail})"
+            return (
+                f"Tool T{tool.toolno:02d} scheint für {comment_hint} zu sein"
+                f", die Operation wirkt aber wie {hint}{detail}."
+            )
+        return None
+
+    def _collect_tool_orientation_warnings(self) -> List[str]:
+        warnings: List[str] = []
+        for idx, op in enumerate(self.model.operations):
+            message = self._tool_orientation_mismatch(op)
+            if message:
+                warnings.append(f"Schritt {idx+1}: {message}")
+        return warnings
+
+    def _radius_warning_details(self) -> List[Dict[str, object]]:
+        details: List[Dict[str, object]] = []
+        for idx, op in enumerate(self.model.operations):
+            if op.op_type != OpType.ABSPANEN:
+                continue
+            tool_value = op.params.get("tool")
+            try:
+                tool_num = int(float(tool_value)) if tool_value is not None else 0
+            except Exception:
+                tool_num = 0
+            if tool_num <= 0:
+                continue
+            tool = self.tools.get(tool_num)
+            radius = tool.radius_mm if tool else 0.0
+            if radius <= 0.0:
+                comment = tool.comment if tool and tool.comment else "kein Kommentar"
+                message = (
+                    f"Step {idx+1}: Tool T{tool_num:02d} ({comment}) hat keinen bekannten Radius → Kompensation (G41.1/G42.1) wird deaktiviert."
+                )
+                details.append(
+                    {"idx": idx, "op": op, "tool_num": tool_num, "message": message}
+                )
+        return details
 
     def _handle_load_step(self):
-        parent = self.root_widget or self._find_root_widget()
-        start_dir = self._step_last_dir or QtCore.QDir.homePath()
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            parent,
-            "Step laden",
-            start_dir,
-            STEP_FILE_FILTER,
-        )
-        if not file_path:
+        if self._loading_step:
             return
+        self._loading_step = True
         try:
-            with open(file_path, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(parent, "Step laden", f"Step konnte nicht geöffnet werden:\n{exc}")
-            return
+            parent = self.root_widget or self._find_root_widget()
+            start_dir = self._step_last_dir or QtCore.QDir.homePath()
+            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                parent,
+                "Step laden",
+                start_dir,
+                STEP_FILE_FILTER,
+            )
+            if not file_path:
+                return
+            try:
+                with builtins.open(file_path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except Exception as exc:
+                QtWidgets.QMessageBox.critical(parent, "Step laden", f"Step konnte nicht geöffnet werden:\n{exc}")
+                return
 
-        op = self._step_data_to_operation(data)
-        if op is None:
-            QtWidgets.QMessageBox.warning(parent, "Step laden", "Die ausgewählte Datei enthält keinen gültigen Step.")
-            return
+            op = self._step_data_to_operation(data)
+            if op is None:
+                QtWidgets.QMessageBox.warning(parent, "Step laden", "Die ausgewählte Datei enthält keinen gültigen Step.")
+                return
 
-        self._insert_loaded_operation(op)
-        self._step_last_dir = os.path.dirname(file_path)
-        self._update_parting_ready_state()
+            self._insert_loaded_operation(op)
+            self._step_last_dir = os.path.dirname(file_path)
+            self._update_parting_ready_state()
 
-    
-        # Einstich/Abstich-Tab: Lage/Bezugspunkt-Grafiken + Ein-/Ausblenden
-        self._setup_groove_tab_ui()
+        
+            # Einstich/Abstich-Tab: Lage/Bezugspunkt-Grafiken + Ein-/Ausblenden
+            self._setup_groove_tab_ui()
+        finally:
+            self._loading_step = False
+
+    def _handle_save_program(self):
+        """Speichert das komplette Programm (Header + alle Operations) als JSON."""
+        try:
+            parent = self.root_widget or self._find_root_widget()
+            default_dir = QtCore.QDir.homePath()
+            
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                parent,
+                "Programm speichern",
+                default_dir,
+                "LatheEasyStep Dateien (*.lse);;Alle Dateien (*)",
+            )
+            if not file_path:
+                return
+            
+            # Ensure .lse extension
+            if not file_path.lower().endswith(".lse"):
+                file_path += ".lse"
+            
+            # Collect header
+            header = self._collect_program_header()
+            
+            # Collect all operations as dicts
+            ops_data = []
+            for op in self.model.operations:
+                op_dict = {
+                    "op_type": op.op_type,
+                    "params": dict(op.params),  # deepcopy dict
+                    "path": op.path,  # may be empty or contain points/primitives
+                    "title": op.params.get("title", ""),
+                }
+                ops_data.append(op_dict)
+            
+            # Build complete program structure
+            program_data = {
+                "version": 1,
+                "header": header,
+                "operations": ops_data,
+            }
+            
+            # Write JSON
+            with builtins.open(file_path, "w", encoding="utf-8") as f:
+                json.dump(program_data, f, indent=2, default=str)
+            
+            QtWidgets.QMessageBox.information(
+                parent,
+                "Programm gespeichert",
+                f"Programm gespeichert unter:\n{file_path}",
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                parent or None,
+                "Fehler beim Speichern",
+                f"Programm konnte nicht gespeichert werden:\n{e}",
+            )
+
+    def _handle_load_program(self):
+        """Lädt ein komplettes Programm (Header + Operations) aus JSON."""
+        try:
+            parent = self.root_widget or self._find_root_widget()
+            default_dir = QtCore.QDir.homePath()
+            
+            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                parent,
+                "Programm laden",
+                default_dir,
+                "LatheEasyStep Dateien (*.lse);;Alle Dateien (*)",
+            )
+            if not file_path:
+                return
+            
+            # Load JSON
+            with builtins.open(file_path, "r", encoding="utf-8") as f:
+                program_data = json.load(f)
+            
+            if program_data.get("version") != 1:
+                QtWidgets.QMessageBox.warning(
+                    parent,
+                    "Programm laden",
+                    "Ungültiges Dateiformat oder nicht unterstützte Version.",
+                )
+                return
+            
+            # Clear current operations
+            self.model.operations.clear()
+            self._op_row_user_selected = False
+            
+            # Load header values into UI
+            header = program_data.get("header", {})
+            self._apply_header_to_ui(header)
+            
+            # Load operations
+            ops_data = program_data.get("operations", [])
+            for op_dict in ops_data:
+                op = Operation(
+                    op_type=op_dict.get("op_type", ""),
+                    params=dict(op_dict.get("params", {})),
+                    path=op_dict.get("path", []),
+                )
+                self.model.add_operation(op)
+            
+            # Refresh UI
+            self._refresh_operation_list(select_index=-1)
+            self._refresh_preview()
+            
+            QtWidgets.QMessageBox.information(
+                parent,
+                "Programm geladen",
+                f"Programm mit {len(ops_data)} Steps geladen.",
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                parent or None,
+                "Fehler beim Laden",
+                f"Programm konnte nicht geladen werden:\n{e}",
+            )
+
+    def _apply_header_to_ui(self, header: Dict[str, object]):
+        """Setzt Header-Werte in UI-Widgets."""
+        def _set_widget_value(widget, value):
+            if widget is None or value is None:
+                return
+            try:
+                if hasattr(widget, "setValue") and isinstance(value, (int, float)):
+                    widget.setValue(float(value))
+                elif hasattr(widget, "setCurrentText") and isinstance(value, str):
+                    widget.setCurrentText(str(value))
+                elif hasattr(widget, "setChecked"):
+                    widget.setChecked(bool(value))
+            except Exception:
+                pass
+        
+        # Apply header values
+        _set_widget_value(self.program_xt, header.get("xt"))
+        _set_widget_value(self.program_zt, header.get("zt"))
+        _set_widget_value(self.program_name, header.get("program_name"))
+        _set_widget_value(self.program_xa, header.get("xa"))
+        _set_widget_value(self.program_xi, header.get("xi"))
+        _set_widget_value(self.program_za, header.get("za"))
+        _set_widget_value(self.program_zi, header.get("zi"))
+        _set_widget_value(self.program_zb, header.get("zb"))
+        _set_widget_value(self.program_xra, header.get("xra"))
+        _set_widget_value(self.program_xri, header.get("xri"))
+        _set_widget_value(self.program_zra, header.get("zra"))
+        _set_widget_value(self.program_zri, header.get("zri"))
+        _set_widget_value(self.program_sc, header.get("sc"))
+        _set_widget_value(self.program_s1, header.get("s1_max"))
+        _set_widget_value(self.program_s3, header.get("s3_max"))
+        _set_widget_value(self.program_npv, header.get("npv"))
+        _set_widget_value(self.program_unit, header.get("unit"))
+        _set_widget_value(self.program_shape, header.get("shape"))
+        _set_widget_value(self.program_retract_mode, header.get("retract_mode"))
+        
+        # Absolute flags
+        if self.program_xt_absolute:
+            self.program_xt_absolute.setChecked(bool(header.get("xt_absolute", False)))
+        if self.program_zt_absolute:
+            self.program_zt_absolute.setChecked(bool(header.get("zt_absolute", False)))
+        if self.program_xra_absolute:
+            self.program_xra_absolute.setChecked(bool(header.get("xra_absolute", False)))
+        if self.program_xri_absolute:
+            self.program_xri_absolute.setChecked(bool(header.get("xri_absolute", False)))
+        if self.program_zra_absolute:
+            self.program_zra_absolute.setChecked(bool(header.get("zra_absolute", False)))
+        if self.program_zri_absolute:
+            self.program_zri_absolute.setChecked(bool(header.get("zri_absolute", False)))
+        if self.program_has_subspindle:
+            self.program_has_subspindle.setChecked(bool(header.get("has_subspindle", False)))
+
+    def _on_step_double_clicked(self, item):
+        """Doppelklick auf Step: Tab öffnen und Daten anzeigen."""
+        try:
+            index = self.list_ops.row(item)
+            if index < 0 or index >= len(self.model.operations):
+                return
+            
+            op = self.model.operations[index]
+            
+            # Map op_type to tab name
+            tab_map = {
+                OpType.PROGRAM_HEADER: "tabProgram",
+                OpType.FACE: "tabFace",
+                OpType.CONTOUR: "tabContour",
+                OpType.ABSPANEN: "tabParting",
+                OpType.THREAD: "tabThread",
+                OpType.GROOVE: "tabGroove",
+                OpType.DRILL: "tabDrill",
+                OpType.KEYWAY: "tabKeyway",
+            }
+            
+            tab_name = tab_map.get(op.op_type)
+            if tab_name and self.tab_params:
+                # Find tab index by name
+                for i in range(self.tab_params.count()):
+                    if self.tab_params.widget(i).objectName() == tab_name:
+                        self.tab_params.setCurrentIndex(i)
+                        break
+            
+            # Load operation data into UI
+            self._load_operation_into_widgets(op)
+        except Exception as e:
+            print(f"[LatheEasyStep] _on_step_double_clicked: {e}")
+
     def _handle_move_up(self):
-        if self.list_ops is None:
+        if self._moving_up:
             return
-        idx = self.list_ops.currentRow()
-        if idx <= 0:
-            return
-        self.model.move_up(idx)
-        self._refresh_operation_list(select_index=idx - 1)
-        self._refresh_preview()
+        self._moving_up = True
+        try:
+            if self.list_ops is None:
+                return
+            idx = self.list_ops.currentRow()
+            if idx <= 0:
+                return
+            self.model.move_up(idx)
+            self._refresh_operation_list(select_index=idx - 1)
+            self._refresh_preview()
+        finally:
+            self._moving_up = False
 
     def _handle_move_down(self):
-        if self.list_ops is None:
+        if self._moving_down:
             return
-        idx = self.list_ops.currentRow()
-        if idx < 0 or idx >= self.list_ops.count() - 1:
-            return
-        self.model.move_down(idx)
-        self._refresh_operation_list(select_index=idx + 1)
-        self._refresh_preview()
+        self._moving_down = True
+        try:
+            if self.list_ops is None:
+                return
+            idx = self.list_ops.currentRow()
+            if idx < 0 or idx >= self.list_ops.count() - 1:
+                return
+            self.model.move_down(idx)
+            self._refresh_operation_list(select_index=idx + 1)
+            self._refresh_preview()
+        finally:
+            self._moving_down = False
 
     def _init_contour_table(self):
         """Sorgt für Spalten/Headers in der Kontur-Tabelle."""
@@ -6319,23 +6247,106 @@ class HandlerClass:
             self.contour_edge_size.blockSignals(False)
 
     def _handle_new_program(self):
-        self.model.operations.clear()
-        self._op_row_user_selected = False
-        self._refresh_operation_list(select_index=-1)
-        self._refresh_preview()
+        if self._creating_new_program:
+            return
+        self._creating_new_program = True
+        try:
+            self.model.operations.clear()
+            self._op_row_user_selected = False
+            self._refresh_operation_list(select_index=-1)
+            self._refresh_preview()
+        finally:
+            self._creating_new_program = False
 
     def _handle_generate_gcode(self):
         """G-Code erzeugen, Datei schreiben und Benutzer informieren."""
+        if self._generating_gcode:
+            return
+        self._generating_gcode = True
         try:
             header = self._collect_program_header()
 
-            filepath = self._build_program_filepath(header.get("program_name", ""))
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            default_filepath = self._build_program_filepath(header.get("program_name", ""))
+            os.makedirs(os.path.dirname(default_filepath), exist_ok=True)
+            filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self.root_widget,
+                "G-Code speichern",
+                default_filepath,
+                "G-Code Dateien (*.ngc);;Alle Dateien (*)"
+            )
+            if not filepath:
+                return  # User cancelled
+
             self.model.program_settings = header
+            self.model.program_settings["tools"] = self.tools
             self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
 
+            unique_tools = set()
+            for op in self.model.operations:
+                if op.op_type == OpType.PROGRAM_HEADER:
+                    continue
+                try:
+                    val = op.params.get("tool")
+                    tool_val = int(float(val)) if val is not None else 0
+                except Exception:
+                    tool_val = 0
+                if tool_val > 0:
+                    unique_tools.add(tool_val)
+            if len(unique_tools) >= 2:
+                xt = header.get("xt")
+                zt = header.get("zt")
+                if xt is None or zt is None:
+                    QtWidgets.QMessageBox.warning(
+                        self.root_widget or None,
+                        "Werkzeugwechselposition fehlt",
+                        "Bitte XT und ZT im Programm-Tab eintragen, da mehrere Werkzeuge verwendet werden.",
+                    )
+                    if self.program_xt:
+                        try:
+                            self.program_xt.setFocus()
+                        except Exception:
+                            pass
+                    return
+
+            warnings = self._collect_tool_orientation_warnings()
+            if warnings:
+                preview = "\n".join(warnings[:5])
+                if len(warnings) > 5:
+                    preview += f"\n... und {len(warnings) - 5} weitere Schritte"
+                QtWidgets.QMessageBox.warning(
+                    self.root_widget or None,
+                    "Werkzeuglage prüfen",
+                    f"Bitte prüfen Sie die Werkzeugauswahl:\n{preview}",
+                )
+            radius_details = self._radius_warning_details()
+            if radius_details:
+                preview = "\n".join(detail["message"] for detail in radius_details[:5])
+                if len(radius_details) > 5:
+                    preview += f"\n... und {len(radius_details) - 5} weitere Schritte"
+                resp = QtWidgets.QMessageBox.warning(
+                    self.root_widget or None,
+                    "Nasenradius fehlt",
+                    f"{preview}\n\nTrotzdem ohne Nose Compensation fortfahren?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No,
+                )
+                nose_disabled = resp != QtWidgets.QMessageBox.Yes
+                for detail in radius_details:
+                    op = detail["op"]
+                    op.params["nose_comp_disabled"] = nose_disabled
+                    if nose_disabled:
+                        op.params["nose_comp_reason"] = detail["message"]
+                    else:
+                        op.params.pop("nose_comp_reason", None)
+            
+            # Build header + footer lines with toolchange positions
+            header_lines = self._tool_change_position_lines(header)
+            footer_lines = self._tool_change_position_lines(header)
+            self.model.program_settings["header_lines"] = header_lines
+            self.model.program_settings["footer_lines"] = footer_lines
+            
             lines = self.model.generate_gcode()
-            with open(filepath, "w") as f:
+            with builtins.open(filepath, "w") as f:
                 f.write("\n".join(lines))
             open_fn = getattr(Action, "CALLBACK_OPEN_PROGRAM", None)
             if callable(open_fn):
@@ -6354,7 +6365,328 @@ class HandlerClass:
                 "LatheEasyStep",
                 f"Fehler beim Erzeugen des Programms:\n{e}",
             )
+        finally:
+            self._generating_gcode = False
         return
+
+    def _handle_load_tool_table(self):
+        """Tool table laden und Werkzeug-Dropdowns füllen."""
+        try:
+            settings = QtCore.QSettings()
+            last_path = settings.value("LatheEasyStep/ToolTablePath", "", type=str) or ""
+            default_path = last_path or os.path.expanduser("~/linuxcnc/configs")
+            filepath, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self.root_widget,
+                "Werkzeugtabelle laden",
+                default_path,
+                "tool.tbl (*.tbl);;Tool Table Dateien (*.tbl);;Alle Dateien (*)"
+            )
+            if not filepath:
+                return  # User cancelled
+
+            tools, missing_iso = self._parse_tool_table(filepath)
+            self.tools = tools
+            self._missing_iso_tools = missing_iso
+            self._populate_tool_combos(tools)
+            self._update_tool_previews()
+
+            if self.tool_table_path:
+                self.tool_table_path.setText(filepath)
+                self.tool_table_path.setCursorPosition(0)
+            if self.lbl_tool_table_path:
+                self.lbl_tool_table_path.setText(filepath)
+
+            settings.setValue("LatheEasyStep/ToolTablePath", filepath)
+            QtWidgets.QMessageBox.information(
+                self.root_widget or None,
+                "LatheEasyStep",
+                f"Werkzeugtabelle geladen: {len(tools)} Werkzeuge gefunden.",
+            )
+            if missing_iso:
+                formatted = ", ".join(f"T{num:02d}" for num in missing_iso)
+                QtWidgets.QMessageBox.information(
+                    self.root_widget or None,
+                    "ISO fehlt",
+                    f"ISO-Code/Radius konnte für die folgenden Werkzeuge nicht ermittelt werden (optional):\n{formatted}",
+                )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self.root_widget or None,
+                "LatheEasyStep",
+                f"Fehler beim Laden der Werkzeugtabelle:\n{e}",
+            )
+
+    def _parse_tool_table(self, filepath: str) -> tuple[Dict[int, Tool], List[int]]:
+        """Parse LinuxCNC tool table file and return structured tool info plus ISO warnings."""
+        tools: Dict[int, Tool] = {}
+        duplicates: set[int] = set()
+        missing_iso: List[int] = []
+
+        with builtins.open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            for lineno, line in enumerate(f, 1):
+                raw = line.strip()
+                if not raw or raw.startswith(";") or raw.startswith("#"):
+                    continue
+                left, _, comment = raw.partition(";")
+                left = left.strip()
+                comment = comment.strip()
+                if not left:
+                    continue
+
+                tokens = left.split()
+                token_map: Dict[str, str] = {}
+                for token in tokens:
+                    if len(token) < 2:
+                        continue
+                    key = token[0].upper()
+                    value = token[1:]
+                    if not value:
+                        continue
+                    token_map.setdefault(key, value)
+
+                if "T" not in token_map or "P" not in token_map:
+                    continue
+                try:
+                    toolno = int(float(token_map["T"]))
+                except Exception:
+                    continue
+                if toolno <= 0 or toolno >= 10000:
+                    continue
+                if toolno in tools:
+                    duplicates.add(toolno)
+                    continue
+                try:
+                    pocket = int(float(token_map.get("P", "0")))
+                except Exception:
+                    pocket = 0
+                try:
+                    diameter = float(token_map.get("D", "0"))
+                except Exception:
+                    diameter = 0.0
+
+                orientation = None
+                q_value = token_map.get("Q")
+                if q_value is not None:
+                    try:
+                        orientation = int(float(q_value))
+                    except Exception:
+                        orientation = None
+
+                iso_code, iso_size, radius = self._extract_iso_from_comment(comment)
+                if not iso_code:
+                    missing_iso.append(toolno)
+                radius_value = float(radius or 0.0)
+                radius_source = "ISO" if radius_value > 0 else None
+                if radius_value <= 0 and diameter > 0 and diameter <= 5.0:
+                    radius_value = diameter
+                    radius_source = "D"
+                kind = self._tool_kind_from_orientation(orientation)
+                tool = Tool(
+                    t=toolno,
+                    p=pocket,
+                    d=diameter,
+                    q=orientation,
+                    comment=comment,
+                    iso_code=iso_code,
+                    iso_size=iso_size,
+                    radius_mm=radius_value,
+                    kind=kind,
+                    radius_source=radius_source,
+                )
+                tools[toolno] = tool
+
+        if missing_iso:
+            formatted = ", ".join(f"T{num:02d}" for num in sorted(set(missing_iso)))
+            print(f"[LatheEasyStep] Hinweis: ISO/Radius fehlt bei: {formatted} (optional)")
+        if duplicates:
+            print(f"[LatheEasyStep] Tool-Tabelle: Duplikate ignoriert für {', '.join(f'T{num:02d}' for num in sorted(duplicates))}")
+
+        return tools, sorted(set(missing_iso))
+
+    def _extract_iso_from_comment(self, comment: str) -> tuple[str | None, str | None, float | None]:
+        if not comment:
+            return None, None, None
+        text = comment.upper()
+        for match in _ISO_PATTERN.finditer(text):
+            prefix = match.group(1)
+            radius_digits = match.group(2)
+            iso_candidate = prefix + radius_digits
+            digits_only = re.sub(r"[^0-9]", "", iso_candidate)
+            if len(digits_only) < 4:
+                continue
+            size_code = digits_only[:4]
+            try:
+                radius = int(radius_digits) / 10.0
+            except Exception:
+                radius = None
+            return iso_candidate, size_code, radius
+        return None, None, None
+
+    def _tool_kind_from_orientation(self, orientation: int | None) -> str:
+        if orientation is None:
+            return "turning"
+        return _TOOL_KIND_BY_ORIENTATION.get(orientation, "parting")
+
+    def _populate_tool_combos(self, tools: Dict[int, Tool]):
+        """Populate all tool comboboxes with the same set of tools (no filtering)."""
+        self.tools = tools
+        if tools:
+            self._loaded_tools = tools
+        sorted_tools = sorted(tools.values(), key=lambda t: t.t)
+        if sorted_tools:
+            items = []
+            for tool in sorted_tools:
+                extras = []
+                if tool.d and tool.d > 0:
+                    extras.append(f"⌀{tool.d:.2f}".rstrip("0").rstrip(".") if tool.d % 1 else f"⌀{int(tool.d)}")
+                if tool.radius_mm and tool.radius_mm > 0:
+                    extras.append(f"R{tool.radius_mm:.2f}".rstrip("0").rstrip("."))
+                label_parts = [f"T{tool.t:02d}"]
+                comment = (tool.comment or "").strip()
+                if tool.iso_code:
+                    label_parts.append(tool.iso_code)
+                elif comment:
+                    label_parts.append(comment.split(";")[0].strip())
+                if extras:
+                    label_parts.append(f"({' '.join(extras)})")
+                items.append((tool.t, " – ".join(label_parts)))
+        else:
+            items = []
+
+        combo_names = [
+            "face_tool",
+            "drill_tool",
+            "groove_tool",
+            "thread_tool",
+            "parting_tool",
+        ]
+        for combo_name in combo_names:
+            combo = getattr(self, combo_name, None)
+            if combo is None:
+                combo = self._get_widget_by_name(combo_name)
+            if combo is None or not hasattr(combo, "clear"):
+                continue
+
+            previous = combo.currentData() if hasattr(combo, "currentData") else None
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("— Werkzeug wählen —", 0)
+            for tool_no, text in items:
+                combo.addItem(text, tool_no)
+
+            if previous is not None:
+                idx = combo.findData(previous)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
+
+    def _tool_combo_label(self, tool: Tool, max_comment: int = 32) -> str:
+        """Return a short label used inside tool dropdowns."""
+        comment = (tool.comment or "").strip() or "kein Kommentar"
+        if len(comment) > max_comment:
+            comment = comment[: max_comment - 1].rstrip() + "…"
+        diameter = f"{tool.d:.2f}".rstrip("0").rstrip(".")
+        diameter = diameter if diameter else "0"
+        return f"T{tool.t:02d} – {comment} ({diameter} mm)"
+
+    def _update_tool_previews(self):
+        """Update tool preview images for all tool combos."""
+        tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
+
+        for combo_name in tool_combos:
+            combo = getattr(self, combo_name, None)
+            img_label = getattr(self, combo_name + "_img", None)
+            if combo is None or img_label is None:
+                continue
+            
+            tool_num = combo.currentData()
+            tool_num = int(tool_num) if tool_num is not None else 0
+            tool = self.tools.get(tool_num)
+            if tool:
+                pixmap = self._render_tool_preview(tool)
+                img_label.setPixmap(pixmap)
+                img_label.setText("")
+            else:
+                img_label.setPixmap(QtGui.QPixmap())
+                img_label.setText("Kein Werkzeug")
+
+    def _render_tool_preview(self, tool: Tool) -> QtGui.QPixmap:
+        """Render a simple tool preview using the parsed tool metadata."""
+        size = 140
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtGui.QColor("#f4f7fb"))
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        center_x = size / 2
+        center_y = size / 2 - 6
+        margin = 12
+
+        # draw axes
+        axis_pen = QtGui.QPen(QtGui.QColor("#63707c"))
+        axis_pen.setWidth(1)
+        painter.setPen(axis_pen)
+        painter.drawLine(margin, center_y, size - margin, center_y)
+        painter.drawLine(center_x, margin, center_x, size - margin)
+        painter.setFont(QtGui.QFont("Arial", 8))
+        painter.drawText(size - margin + 4, center_y - 2, "X")
+        painter.drawText(center_x + 2, margin - 2, "Z")
+
+        # tool body dimensions
+        tool_span = max(tool.d, 1.0)
+        scale = max((size - margin * 2) / max(tool_span * 1.4, 1.0), 0.5)
+        body_height = tool_span * 0.35
+        tip_depth = tool_span * 0.6
+        base_half = tool_span * 0.5
+
+        tip_y = body_height - tip_depth
+
+        polygon = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(-base_half, body_height),
+                QtCore.QPointF(base_half, body_height),
+                QtCore.QPointF(base_half * 0.35, body_height - tool_span * 0.45),
+                QtCore.QPointF(0, tip_y),
+                QtCore.QPointF(-base_half * 0.35, body_height - tool_span * 0.45),
+            ]
+        )
+
+        orientation_angle = self._tool_orientation_angle(tool.orientation)
+
+        painter.save()
+        painter.translate(center_x, center_y)
+        painter.rotate(orientation_angle)
+        painter.scale(scale, scale)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#2c3e50"), 0))
+        painter.setBrush(QtGui.QColor("#e76f51"))
+        painter.drawPolygon(polygon)
+
+        if tool.radius_mm and tool.radius_mm > 0:
+            nose_radius = max(tool.radius_mm, tool_span * 0.08)
+            circle_pen = QtGui.QPen(QtGui.QColor("#1d3557"))
+            circle_pen.setWidthF(0.3)
+            painter.setPen(circle_pen)
+            painter.setBrush(QtGui.QColor("#f4a261"))
+            painter.drawEllipse(QtCore.QPointF(0, tip_y), nose_radius, nose_radius)
+        painter.restore()
+
+        painter.setPen(QtGui.QColor("#1c1e26"))
+        info_text = f"T{tool.t:02d}"
+        if tool.iso_code:
+            info_text += f" · {tool.iso_code}"
+        painter.drawText(margin, size - margin + 6, info_text)
+        if tool.orientation is not None:
+            painter.drawText(size - margin - 32, size - margin + 6, f"Q{tool.orientation}")
+
+        painter.end()
+        return pixmap
+
+    def _tool_orientation_angle(self, orientation: int | None) -> float:
+        if orientation is None:
+            return 0.0
+        return (orientation % 8) * 45.0
+
     def _build_program_filepath(self, name_raw: str | None) -> str:
         base = (name_raw or "").strip()
         if not base:
@@ -6848,6 +7180,43 @@ class HandlerClass:
         if getattr(self, 'face_edge_size', None) is not None:
             self.face_edge_size.setVisible(True)
 
+    def _update_drill_visibility(self):
+        """Show/hide drill UI elements depending on mode."""
+        try:
+            root = self.w.get('MainWindow', None)
+        except Exception:
+            root = None
+
+        # locate widgets lazily
+        if root is not None:
+            if getattr(self, 'drill_mode', None) is None:
+                self.drill_mode = root.findChild(QtWidgets.QComboBox, "drill_mode")
+            if getattr(self, 'label_drill_dwell', None) is None:
+                self.label_drill_dwell = root.findChild(QtWidgets.QLabel, "label_drill_dwell")
+            if getattr(self, 'drill_dwell', None) is None:
+                self.drill_dwell = root.findChild(QtWidgets.QDoubleSpinBox, "drill_dwell")
+            if getattr(self, 'label_drill_peck_depth', None) is None:
+                self.label_drill_peck_depth = root.findChild(QtWidgets.QLabel, "label_drill_peck_depth")
+            if getattr(self, 'drill_peck_depth', None) is None:
+                self.drill_peck_depth = root.findChild(QtWidgets.QDoubleSpinBox, "drill_peck_depth")
+
+        if getattr(self, 'drill_mode', None) is None:
+            return
+
+        mode_text = (self.drill_mode.currentText() or "").strip()
+        dwell_visible = "G82" in mode_text
+        peck_visible = ("G83" in mode_text) or ("G73" in mode_text)
+
+        if getattr(self, 'label_drill_dwell', None) is not None:
+            self.label_drill_dwell.setVisible(dwell_visible)
+        if getattr(self, 'drill_dwell', None) is not None:
+            self.drill_dwell.setVisible(dwell_visible)
+
+        if getattr(self, 'label_drill_peck_depth', None) is not None:
+            self.label_drill_peck_depth.setVisible(peck_visible)
+        if getattr(self, 'drill_peck_depth', None) is not None:
+            self.drill_peck_depth.setVisible(peck_visible)
+
     def _describe_operation(self, op, number=None):
         def wrap(s):
             return f"{int(number)}. {s}" if number is not None else s
@@ -6904,9 +7273,10 @@ class HandlerClass:
             tool = p.get("tool", "T01")
             return wrap(f"Gewinde {orient} (P {fnum(pitch,2)}; Z {fnum(z0)}→{fnum(z1)}) ({tool})")
         if t == OpType.ABSPANEN:
-            z = p.get("z", 0.0)
+            contour_name = p.get("contour_name", "unbekannt")
+            strategy = p.get("slice_strategy", "parallel_z")
             tool = p.get("tool", "T01")
-            return wrap(f"Abstechen (Z {fnum(z)}) ({tool})")
+            return wrap(f"Abspanen ({contour_name}, {strategy}) ({tool})")
         # fallback
         return wrap(f"{t}: {p}")
     def _renumber_operations(self):

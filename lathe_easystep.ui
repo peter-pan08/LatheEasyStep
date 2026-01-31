@@ -65,6 +65,20 @@
             </property>
            </widget>
           </item>
+          <item>
+           <widget class="QPushButton" name="btn_save_program">
+            <property name="text">
+             <string>Programm speichern</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_load_program">
+            <property name="text">
+             <string>Programm laden</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </item>
        </layout>
@@ -812,6 +826,34 @@
                 <item row="25" column="1">
                  <widget class="QLineEdit" name="program_name" />
                 </item>
+                <item row="26" column="0">
+                 <widget class="QLabel" name="label_tool_table_path">
+                  <property name="text">
+                   <string>Tooltabelle</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="26" column="1">
+                 <layout class="QHBoxLayout" name="horizontalLayoutTool">
+                  <item>
+                   <widget class="QLineEdit" name="tool_table_path">
+                    <property name="readOnly">
+                     <bool>true</bool>
+                    </property>
+                    <property name="placeholderText">
+                     <string>Keine geladen</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="btn_load_tool_table">
+                    <property name="text">
+                     <string>Laden…</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
                </layout>
               </widget>
               <widget class="QWidget" name="tabFace">
@@ -1166,15 +1208,19 @@
                  </widget>
                 </item>
                 <item row="17" column="1">
-                 <widget class="QSpinBox" name="face_tool">
-                  <property name="minimum">
-                   <number>1</number>
+                 <widget class="QComboBox" name="face_tool">
+                 </widget>
+                </item>
+                <item row="17" column="2">
+                 <widget class="QLabel" name="face_tool_img">
+                  <property name="minimumSize">
+                   <size>
+                    <width>96</width>
+                    <height>96</height>
+                   </size>
                   </property>
-                  <property name="maximum">
-                   <number>99</number>
-                  </property>
-                  <property name="value">
-                   <number>1</number>
+                  <property name="text">
+                   <string>Tool Preview</string>
                   </property>
                  </widget>
                 </item>
@@ -1470,12 +1516,19 @@
                  </widget>
                 </item>
                 <item row="3" column="1">
-                 <widget class="QSpinBox" name="parting_tool">
-                  <property name="maximum">
-                   <number>999</number>
+                 <widget class="QComboBox" name="parting_tool">
+                 </widget>
+                </item>
+                <item row="3" column="2">
+                 <widget class="QLabel" name="parting_tool_img">
+                  <property name="minimumSize">
+                   <size>
+                    <width>96</width>
+                    <height>96</height>
+                   </size>
                   </property>
-                  <property name="value">
-                   <number>1</number>
+                  <property name="text">
+                   <string>Tool Preview</string>
                   </property>
                  </widget>
                 </item>
@@ -1766,12 +1819,19 @@
                  </widget>
                 </item>
                 <item row="4" column="1">
-                 <widget class="QSpinBox" name="thread_tool">
-                  <property name="maximum">
-                   <number>99</number>
+                 <widget class="QComboBox" name="thread_tool">
+                 </widget>
+                </item>
+                <item row="4" column="2">
+                 <widget class="QLabel" name="thread_tool_img">
+                  <property name="minimumSize">
+                   <size>
+                    <width>96</width>
+                    <height>96</height>
+                   </size>
                   </property>
-                  <property name="value">
-                   <number>0</number>
+                  <property name="text">
+                   <string>Tool Preview</string>
                   </property>
                  </widget>
                 </item>
@@ -2121,12 +2181,19 @@
                  </widget>
                 </item>
                 <item row="0" column="1">
-                 <widget class="QSpinBox" name="groove_tool">
-                  <property name="maximum">
-                   <number>99</number>
+                 <widget class="QComboBox" name="groove_tool">
+                 </widget>
+                </item>
+                <item row="0" column="2">
+                 <widget class="QLabel" name="groove_tool_img">
+                  <property name="minimumSize">
+                   <size>
+                    <width>96</width>
+                    <height>96</height>
+                   </size>
                   </property>
-                  <property name="value">
-                   <number>0</number>
+                  <property name="text">
+                   <string>Tool Preview</string>
                   </property>
                  </widget>
                 </item>
@@ -2374,12 +2441,19 @@
                  </widget>
                 </item>
                 <item row="1" column="1">
-                 <widget class="QSpinBox" name="drill_tool">
-                  <property name="maximum">
-                   <number>99</number>
+                 <widget class="QComboBox" name="drill_tool">
+                 </widget>
+                </item>
+                <item row="1" column="2">
+                 <widget class="QLabel" name="drill_tool_img">
+                  <property name="minimumSize">
+                   <size>
+                    <width>96</width>
+                    <height>96</height>
+                   </size>
                   </property>
-                  <property name="value">
-                   <number>0</number>
+                  <property name="text">
+                   <string>Tool Preview</string>
                   </property>
                  </widget>
                 </item>
@@ -2435,17 +2509,27 @@
                  <widget class="QComboBox" name="drill_mode">
                   <item>
                    <property name="text">
-                    <string>Normal</string>
+                    <string>G81 Bohren</string>
                    </property>
                   </item>
                   <item>
                    <property name="text">
-                    <string>Spanbruch</string>
+                    <string>G82 Bohren mit Verweilzeit</string>
                    </property>
                   </item>
                   <item>
                    <property name="text">
-                    <string>Spanbruch + Rückzug</string>
+                    <string>G83 Peck drilling</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>G73 Chip breaking drilling</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>G84 Gewindebohren</string>
                    </property>
                   </item>
                  </widget>
@@ -2453,7 +2537,7 @@
                 <item row="5" column="0">
                  <widget class="QLabel" name="label_26">
                   <property name="text">
-                   <string>Hole Diameter</string>
+                   <string>Lochdurchmesser</string>
                   </property>
                  </widget>
                 </item>
@@ -2490,7 +2574,7 @@
                 <item row="7" column="0">
                  <widget class="QLabel" name="label_28">
                   <property name="text">
-                   <string>Feed</string>
+                   <string>Vorschub</string>
                   </property>
                  </widget>
                 </item>
@@ -2521,6 +2605,40 @@
                   </property>
                   <property name="value">
                    <double>2.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="9" column="0">
+                 <widget class="QLabel" name="label_drill_dwell">
+                  <property name="text">
+                   <string>Verweilzeit (G82)</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="9" column="1">
+                 <widget class="QDoubleSpinBox" name="drill_dwell">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.500000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="10" column="0">
+                 <widget class="QLabel" name="label_drill_peck_depth">
+                  <property name="text">
+                   <string>Peck-Tiefe (G83/G73)</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="10" column="1">
+                 <widget class="QDoubleSpinBox" name="drill_peck_depth">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>5.000000000000000</double>
                   </property>
                  </widget>
                 </item>
