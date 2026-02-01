@@ -2426,6 +2426,128 @@
                   </property>
                  </widget>
                 </item>
+                <item row="18" column="0">
+                 <widget class="QLabel" name="label_groove_step_a">
+                  <property name="text">
+                   <string>Zustellung pro Pass</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="18" column="1">
+                 <widget class="QDoubleSpinBox" name="groove_step_a">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.400000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="19" column="0">
+                 <widget class="QLabel" name="label_groove_overlap">
+                  <property name="text">
+                   <string>Ueberdeckung</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="19" column="1">
+                 <widget class="QDoubleSpinBox" name="groove_overlap">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.200000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="20" column="0">
+                 <widget class="QLabel" name="label_groove_retract">
+                  <property name="text">
+                   <string>Rueckzug</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="20" column="1">
+                 <widget class="QDoubleSpinBox" name="groove_retract">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.200000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="21" column="0">
+                 <widget class="QLabel" name="label_groove_finish">
+                  <property name="text">
+                   <string>Schlichtaufmass</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="21" column="1">
+                 <widget class="QDoubleSpinBox" name="groove_finish">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="22" column="0">
+                 <widget class="QLabel" name="label_groove_sweep_feed">
+                  <property name="text">
+                   <string>Spanbruch-Vorschub</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="22" column="1">
+                 <widget class="QDoubleSpinBox" name="groove_sweep_feed">
+                  <property name="suffix">
+                   <string> mm/U</string>
+                  </property>
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.150000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="23" column="0">
+                 <widget class="QLabel" name="label_groove_chip_amp">
+                  <property name="text">
+                   <string>Spanbruch-Amplitude</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="23" column="1">
+                 <widget class="QDoubleSpinBox" name="groove_chip_amp">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="24" column="0">
+                 <widget class="QLabel" name="label_groove_chip_n">
+                  <property name="text">
+                   <string>Spanbruch-Zyklen</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="24" column="1">
+                 <widget class="QSpinBox" name="groove_chip_n">
+                  <property name="maximum">
+                   <number>1000</number>
+                  </property>
+                  <property name="value">
+                   <number>0</number>
+                  </property>
+                 </widget>
+                </item>
                <item row="3" column="0"><widget class="QLabel" name="label_groove_lage"><property name="text"><string>Lage</string></property></widget></item><item row="3" column="1"><widget class="QComboBox" name="groove_lage"><item><property name="text"><string>Mantel – Außen (OD)</string></property></item><item><property name="text"><string>Mantel – Innen (ID)</string></property></item><item><property name="text"><string>Stirn – Hauptspindel (Z−)</string></property></item><item><property name="text"><string>Stirn – Gegenspindel (Z+)</string></property></item></widget></item><item row="4" column="0"><widget class="QLabel" name="label_groove_lage_img"><property name="text"><string /></property></widget></item><item row="4" column="1"><widget class="QLabel" name="groove_lage_img"><property name="minimumSize"><size /></property><property name="minimumSize"><size><width>180</width><height>70</height></size></property><property name="maximumSize"><size><width>180</width><height>70</height></size></property><property name="frameShape"><enum>QFrame::Box</enum></property><property name="scaledContents"><bool>true</bool></property><property name="text"><string /></property></widget></item><item row="5" column="0"><widget class="QLabel" name="label_groove_ref"><property name="text"><string>Bezugspunkt Z0</string></property></widget></item><item row="5" column="1"><widget class="QComboBox" name="groove_ref"><item><property name="text"><string>Mitte</string></property></item><item><property name="text"><string>Linke Flanke</string></property></item><item><property name="text"><string>Rechte Flanke</string></property></item></widget></item><item row="6" column="0"><widget class="QLabel" name="label_groove_ref_img"><property name="text"><string /></property></widget></item><item row="6" column="1"><widget class="QLabel" name="groove_ref_img"><property name="minimumSize"><size /></property><property name="minimumSize"><size><width>180</width><height>70</height></size></property><property name="maximumSize"><size><width>180</width><height>70</height></size></property><property name="frameShape"><enum>QFrame::Box</enum></property><property name="scaledContents"><bool>true</bool></property><property name="text"><string /></property></widget></item><item row="7" column="0"><widget class="QLabel" name="label_groove_use_tool_width"><property name="text"><string /></property></widget></item><item row="7" column="1"><widget class="QCheckBox" name="groove_use_tool_width"><property name="text"><string>Werkzeugbreite separat angeben</string></property></widget></item></layout>
               </widget>
               <widget class="QWidget" name="tabDrill">
