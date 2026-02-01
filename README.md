@@ -1,210 +1,427 @@
-# Lathe EasyStep
+Lathe EasyStep
+Deutsch
+Was ist Lathe EasyStep?
 
-## Deutsch
-
-### Was ist Lathe EasyStep?
-Lathe EasyStep ist ein **Onboard-Drehpanel für LinuxCNC**, mit dem sich viele Drehteile **direkt an der Maschine** programmieren lassen – ohne externes CAM.
+Lathe EasyStep ist ein konversationelles Drehbank-Panel für LinuxCNC, mit dem sich typische Drehbearbeitungen direkt an der Maschine programmieren lassen – ohne externes CAM.
 
 Der Fokus liegt auf:
-- reproduzierbaren, maschinensicheren Bewegungen
-- klaren Zustellungen und Rückzugsbewegungen
-- schneller Bedienung im Werkstattalltag
 
-Ziel ist es, einen großen Teil typischer Drehteile (Schruppen, Konturen, Fasen, Radien) direkt im Panel zu erzeugen.
+klaren, reproduzierbaren Abläufen
 
-### Funktionen
-- **Programmkopf**: Definition von Rohteilgeometrie, Einheiten (mm/inch), Rückzugsebenen und Sicherheitsabständen
-- **Operationen**:
-  - **Planen (FACE)**: Ebenes Bearbeiten mit optionalen Fasen oder Radien an den Ecken
-  - **Kontur (CONTOUR)**: Punktweise Definition von Profilen mit Geraden, Fasen und Radien (innen/außen) – nur Geometrie, kein G-Code
-  - **Gewinde (THREAD)**: Erzeugung von metrischen oder Trapezgewinden mit G76-Zyklus
-  - **Nut (GROOVE)**: Axial oder radial gerichtete Nuten mit variabler Breite
-  - **Bohren (DRILL)**: Bohroperationen mit LinuxCNC-Zyklen (G81 einfaches Bohren, G82 mit Verweilzeit, G83/G73 Peck-Bohrung, G84 Gewindebohren) – dynamische UI für zyklusspezifische Parameter
-  - **Abspanen (ABSPANEN)**: Schruppbearbeitung mit parallelen oder Querschnitt-Strategien, G71/G72-Zyklen für monotone Konturen, sonst Moves-Modus
-  - **Keilnut (KEYWAY)**: Makro-basierte Keilnutbearbeitung
-- **Live-Vorschau**: XZ-Seitenansicht mit Kollisionserkennung, Rohteildarstellung und Bearbeitungspfaden
-- **Validierung**: Automatische Prüfung geometrischer Machbarkeit vor G-Code-Generierung, harte Validierung ohne Defaults für Pflichtparameter
-- **Zweisprachige Benutzeroberfläche**: Deutsch (Standard) und Englisch
-- **Dynamische UI**: Parameterfelder erscheinen/verschwinden basierend auf gewählten Modi (z.B. Verweilzeit nur bei G82)
-- **G-Code-Generierung**: Optimierte Ausgabe mit LinuxCNC-Zyklen, Fanuc-kompatibel, mit Save-Dialog für Dateien
-- **Speicherung und Laden**: Programme als JSON-Dateien speichern/laden
-- **Sicherheitsfeatures**: Simultane X/Z-Rückzüge, parametergesteuerte Zustellungen, Kollisionsvermeidung
-- **Werkzeugintegration**: Automatisches Laden von Tools aus LinuxCNC, Dropdown-Auswahl mit Lagegrafik, Warnungen bei Innen/Außen-Mismatch
-- **G-Code-Generator (aktuelle Logik)**:
-  - **Toolwechsel**: Vor jedem `T.. M6` immer `G53 G0 X<TC_X> Z<TC_Z>` (TC aus Panel), danach `G0 X<X_safe> Z<Z_safe>`
-  - **Safe-Bereich**: `X_safe = Rohteil_OD + XRA`, `Z_safe = ZRA` (absolute Zahlen)
-  - **Rückzug nach jedem Cutting-Step**: immer getrennt `G0 X<X_safe>` dann `G0 Z<Z_safe>`
-  - **Anfahrt aus SAFE**: diagonal erlaubt `G0 X<X_start> Z<Z_start>`
-  - **Kühlung**: pro Step explizit `M7` (Mist), `M8` (Flood), `M9` (Off)
-  - **Bohren (LinuxCNC)**: Canned Cycles mit `G17` vor dem Zyklus, danach `G80` und zurück zu `G18`
-  - **Kommentare**: Inhalte werden von Klammern bereinigt (keine verschachtelten Kommentare)
+sicheren Werkzeugbewegungen
 
----
+sofortiger grafischer Rückmeldung
 
-### Voraussetzungen
-- LinuxCNC (getestet mit QTVCP / QtDragon)
-- Python 3
-- `qtpy` (falls nicht vorhanden: `pip3 install --user qtpy`)
-  - Die Panel-Initialisierung fällt zurück auf PyQt5, wenn qtpy nicht importierbar ist.
+Wiederverwendbarkeit von Bearbeitungsschritten
 
-Installation / Einbindung
-Panel-Dateien in ein geeignetes Verzeichnis kopieren (z. B. in den Screen-Ordner)
+Das Panel ist für den Werkstattalltag gedacht und kein vollwertiger CAM-Ersatz.
 
-Panel im verwendeten QTVCP-Screen einbinden
+🔧 Projektstatus / Haftungsausschluss
 
-LinuxCNC neu starten
+⚠️ Wichtiger Hinweis
 
-Hinweis: Details zur Einbindung hängen vom verwendeten Screen ab (QtDragon, eigener Screen etc.).
+Lathe EasyStep befindet sich aktiv in Entwicklung.
 
-Grundbedienung (Kurzüberblick)
-Kontur
-Kontur wird punktweise aufgebaut – die Vorschau rechnet aus den Segmenten echte Linien oder Bögen.
+Es gibt keine Garantie auf vollständige oder fehlerfreie Funktion.
 
-Pro Punkt können Kanten definiert werden:
+Der erzeugte G-Code muss vor der Nutzung geprüft werden.
 
-- keine
-- Fase
-- Radius (nur gültige Winkel + Länge lösen echte Bögen aus; bei zu großen Radien erscheint eine Warnung in der Konsole)
+Vor dem Einsatz an der realen Maschine sollte:
 
-Bei Radien kann Innen/Außen gewählt werden
+der Code verstanden werden
 
-Abspanen
-Auswahl der Abspanstrategie (z. B. parallel Z)
+eine Simulation oder ein Trockenlauf durchgeführt werden
 
-Zustellung, Schrittweite und Sicherheitsabstände einstellen
+sichergestellt sein, dass Werkzeug, Spannmittel und Maschine geeignet sind
 
-Vorschau prüfen
+Die Nutzung erfolgt auf eigene Verantwortung.
 
-G-Code erzeugen
+Grundsätzlicher Workflow
 
-Sicherheitsparameter
-SC: Sicherheitsabstand vor dem Material
+Die Bedienung folgt einem festen Ablauf über die Reiter (Tabs).
+Alle Eingaben wirken sich direkt auf die Vorschau aus.
 
-XRA / ZRA: Rückzugsbewegungen (absolut oder inkremental)
+Reiter „Programm“
 
-Aktueller Stand / Einschränkungen
-- Vollständige Integration von LinuxCNC-Zyklen (G71/G72 für Abspanen, G81-G84 für Bohren)
-- Fokus auf Schrupp- und Schlichtstrategien mit geometrisch korrekter Behandlung von Radien
-- Radien werden als echte Bögen in der Vorschau dargestellt; G-Code nutzt Zyklen für optimale Ausgabe
-- **LinuxCNC-spezifisch**: Bohrzyklen schalten intern auf `G17` und zurück zu `G18`
-- Projekt ist aktiv in Entwicklung – neue Operationen und Verbesserungen werden regelmäßig hinzugefügt
+Hier werden die globalen Programmeinstellungen festgelegt:
 
-Lizenz
-Siehe Lizenzdatei im Repository.
+Sicherheitsabstände und Rückzugsebenen
+
+Rohteilgeometrie (Form, Durchmesser, Länge)
+
+Nullpunkt / Bezug
+
+maximale Drehzahlen
+
+Werkzeugdatenbank
+
+Die Werkzeugdatenbank sollte hier geladen werden.
+
+Dadurch weiß das Panel:
+
+welches Werkzeug verwendet wird
+
+welche Werkzeugorientierung vorliegt
+
+ob eine Radiuskorrektur (Nasenradius) notwendig ist
+
+Sind im Werkzeugkommentar ISO-Codes von Schneidplatten hinterlegt, können diese automatisch erkannt und ausgewertet werden.
+
+➡️ Sobald alle Parameter gesetzt sind, wird das Rohteil in der Vorschau dargestellt.
+
+Reiter „Planen“
+
+Hier wird das Planen der Stirnfläche definiert:
+
+zu planender Bereich
+
+Strategie:
+
+Schruppen
+
+Schlichten
+
+Schruppen + Schlichten
+
+optionales Schlichtaufmaß beim Schruppen
+
+Die Optionen sind bewusst selbsterklärend gehalten.
+
+➡️ Werkzeugweg und Kontur sind sofort in der Vorschau sichtbar.
+➡️ Der Schritt erscheint gleichzeitig in der Step-Liste auf der linken Seite.
+
+Step-Verwaltung (linke Seite)
+
+Links befindet sich die Liste aller Bearbeitungsschritte (Steps).
+
+Unterhalb der Liste können Steps:
+
+einzeln gespeichert
+
+wieder geladen
+
+in anderen Programmen wiederverwendet werden
+
+Praxisbeispiel:
+Ein Step „Planen 40 mm Welle“ wird gespeichert.
+Später kann dieser Step in einem neuen Programm geladen werden, ohne alle Parameter neu einzugeben.
+
+Zusätzlich können:
+
+alle Steps gemeinsam gespeichert werden
+
+komplette Programme wieder geladen werden
+
+➡️ Ideal, um bestehende Programme gezielt zu ändern (z. B. Radius oder Durchmesser anpassen).
+
+Reiter „Kontur“
+
+In diesem Reiter wird nur Geometrie definiert – keine Bearbeitung.
+
+Konturen entstehen durch Punktangaben
+
+mögliche Eingaben:
+
+nur X
+
+nur Z
+
+X und Z kombiniert
+
+Aus den Punkten wird automatisch eine zusammenhängende Kontur berechnet.
+
+Wichtig:
+
+Jede Kontur sollte einen eindeutigen Namen erhalten
+
+Dieser Name wird später zur Auswahl der Kontur verwendet
+
+➡️ Die Kontur ist direkt in der Vorschau sichtbar.
+
+Reiter „Abspanen“
+
+Hier wird eine zuvor definierte Kontur bearbeitet:
+
+Auswahl der Kontur über ihren Namen
+
+Bearbeitungsparameter:
+
+innen / außen
+
+Schruppen oder Schlichten
+
+Werkzeug
+
+Zustellungen, Vorschub, Drehzahl
+
+➡️ Die gewählte Strategie wird grafisch in der Vorschau dargestellt.
+
+Reiter „Gewinde“
+
+Dieser Reiter dient zum Gewindeschneiden:
+
+Innen- oder Außengewinde
+
+Werkzeugauswahl
+
+vollständige G76-Parameter
+
+Es stehen vordefinierte Presets für:
+
+metrische Gewinde
+
+Trapezgewinde
+
+zur Verfügung.
+Die Parameter können bei Bedarf angepasst werden.
+
+Reiter „Einstich / Abstich“
+
+Hier werden Einstiche und Abstiche definiert:
+
+Einstich innen oder außen
+
+Abstich mit:
+
+reduziertem Vorschub
+
+reduzierter Drehzahl ab bestimmter Position
+
+Technischer Hintergrund:
+
+Die Einstichlogik wird als Subroutine direkt in den G-Code geschrieben
+
+Es wird keine zusätzliche Datei benötigt
+
+➡️ Das erzeugte Programm ist systemunabhängig lauffähig.
+
+Reiter „Bohren“
+
+Der Reiter „Bohren“ ist bewusst einfach gehalten:
+
+Werkzeug auswählen
+
+Bohrart:
+
+normal
+
+Spanbruch
+
+Spanbruch + Rückzug
+
+➡️ Gedacht für zentrales Bohren auf der Drehbank.
+
+Reiter „Keilnut“
+
+Dieser Reiter ist für Nutenstoßen / Verzahnungen auf der Drehbank vorgesehen.
+
+Aktueller Stand:
+
+Funktion ist theoretisch vorbereitet
+
+praktische Umsetzung erfolgt in einem späteren Entwicklungsschritt
+
+Ziel:
+
+Nuten stoßen
+
+Verzahnungen herstellen
+
+perspektivisch unter Nutzung der C-Achse
+
+Zusammenfassung
+
+Lathe EasyStep ist darauf ausgelegt:
+
+typische Drehaufgaben schnell und sicher zu erstellen
+
+Programme schrittweise aufzubauen
+
+Bearbeitungsschritte wiederzuverwenden
+
+Die Kombination aus:
+
+klarer Reiter-Struktur
+
+sofortiger Vorschau
+
+speicherbaren Steps
+
+macht das Panel besonders praxisnah für den Werkstattbetrieb.
 
 English
 What is Lathe EasyStep?
-Lathe EasyStep is an onboard turning panel for LinuxCNC designed to create turning programs directly at the machine, without external CAM software.
+
+Lathe EasyStep is a conversational turning panel for LinuxCNC that allows common turning operations to be programmed directly at the machine, without external CAM software.
 
 The focus is on:
 
-deterministic and machine-safe toolpaths
+clear and reproducible workflows
 
-clear depth-of-cut and retract logic
+safe tool movements
 
-fast shop-floor usability
+immediate graphical feedback
 
-The goal is to cover a large portion of typical turning jobs directly inside the panel.
+reusability of machining steps
 
-Features
-- **Program Header**: Definition of stock geometry, units (mm/inch), retract planes and safety clearances
-- **Operations**:
-  - **Facing (FACE)**: Flat machining with optional chamfers or radii at corners
-  - **Contour (CONTOUR)**: Point-wise profile definition with lines, chamfers and radii (inner/outer) – geometry only, no G-code
-  - **Threading (THREAD)**: Generation of metric or trapezoidal threads using G76 cycle
-  - **Grooving (GROOVE)**: Axial or radial grooves with variable width
-  - **Drilling (DRILL)**: Drilling operations with LinuxCNC cycles (G81 simple drilling, G82 with dwell, G83/G73 peck drilling, G84 tapping) – dynamic UI for cycle-specific parameters
-  - **Parting (ABSPANEN)**: Roughing with parallel or cross-section strategies, G71/G72 cycles for monotonic contours, otherwise moves mode
-  - **Keyway (KEYWAY)**: Macro-based keyway machining
-- **Live Preview**: XZ side view with collision detection, stock display and toolpaths
-- **Validation**: Automatic check of geometric feasibility before G-code generation, strict validation without defaults for required parameters
-- **Bilingual UI**: German (default) and English
-- **Dynamic UI**: Parameter fields appear/disappear based on selected modes (e.g., dwell only for G82)
-- **G-Code Generation**: Optimized output with LinuxCNC cycles, Fanuc-compatible, with save dialog for files
-- **Save/Load**: Programs saved/loaded as JSON files
-- **Safety Features**: Simultaneous X/Z retracts, parameter-driven feeds, collision avoidance
-- **Tool Integration**: Automatic loading of tools from LinuxCNC, dropdown selection with location graphic, warnings for inner/outer mismatch
-- **G-code generator (current behavior)**:
-  - **Tool change**: Always `G53 G0 X<TC_X> Z<TC_Z>` before any `T.. M6` (TC from panel), then `G0 X<X_safe> Z<Z_safe>`
-  - **Safe zone**: `X_safe = stock_OD + XRA`, `Z_safe = ZRA` (absolute values)
-  - **Retract after each cutting step**: always separate `G0 X<X_safe>` then `G0 Z<Z_safe>`
-  - **Approach from SAFE**: diagonal allowed `G0 X<X_start> Z<Z_start>`
-  - **Coolant**: explicit per step `M7` (mist), `M8` (flood), `M9` (off)
-  - **Drilling (LinuxCNC)**: canned cycles switch to `G17`, then `G80`, then back to `G18`
-  - **Comments**: content is sanitized (no nested parentheses)
+The panel is intended for shop-floor use and is not a full CAM replacement.
 
-Requirements
-- LinuxCNC (tested with QTVCP / QtDragon)
-- Python 3
-- `qtpy` (install via `pip3 install --user qtpy`; the panel automatically falls back to PyQt5 if qtpy is unavailable)
+🔧 Project Status / Disclaimer
 
-Installation / Integration
-Copy the panel files into an appropriate screen directory
+⚠️ Important Notice
 
-Integrate the panel into your QTVCP screen
+Lathe EasyStep is under active development.
 
-Restart LinuxCNC
+There is no guarantee that all features work correctly.
 
-Current limitations
-- Full integration of LinuxCNC cycles (G71/G72 for parting, G81-G84 for drilling)
-- Focus on roughing and finishing strategies with geometrically correct radius handling
-- Radii displayed as true arcs in preview; G-code uses cycles for optimal output
-- **LinuxCNC-specific**: drilling cycles temporarily switch to `G17` and back to `G18`
-- Project under active development – new operations and improvements added regularly
+Any generated G-code must be reviewed before use.
 
+Before running a program on a real machine, you should:
 
-## 🔍 Vorschau & Geometrie-Darstellung
+understand the generated code
 
-### Interaktive Legende
-- Die Vorschau enthält eine **interaktive Legende**.
-- **Das Wort „Legende“ ist immer sichtbar** und dient als Klickfläche.
-- Durch Anklicken kann die Legende **ein- und ausgeklappt** werden.
-- Im eingeklappten Zustand wird nur der Titel angezeigt.
-- Die Legende beeinflusst ausschließlich die Anzeige, **nicht** die Berechnung.
+perform a simulation or dry run
 
-### Linienarten in der Vorschau
-| Darstellung | Bedeutung |
-|------------|----------|
-| Grün (durchgezogen) | Kontur / Soll-Geometrie |
-| Gelb (durchgezogen) | Aktiver Bearbeitungspfad |
-| Grau (gestrichelt) | Rohteil |
-| Türkis (gestrichelt) | Rückzugsebenen |
-| Rot (gestrichelt) | Bearbeitungs- / Sicherheitsgrenze |
+ensure compatibility with your machine, tooling, and setup
 
-## 🛡 Sicherheitsbereiche
-- Rohteil, Rückzugsebenen und Bearbeitungsgrenzen werden geometrisch korrekt dargestellt.
-- Überschreitungen der Bearbeitungsgrenze werden visuell hervorgehoben.
+Use of this software is at your own risk.
 
-## 🔧 Reiter „Planen“ – Fase oder Radius
-- Am Ende der Planfläche kann optional eine **Fase oder ein Radius** definiert werden.
-- Unterstützt: Keine / Fase / Radius.
-- Wirkt sich auf Vorschau und generierten Bearbeitungspfad aus.
+Basic Workflow
 
+Operation follows a fixed sequence via tabs.
+All inputs are immediately reflected in the preview.
 
+“Program” Tab
 
-## 🔍 Preview & Geometry Display
+Defines the global program settings:
 
-### Interactive Legend
-- The preview includes an **interactive legend**.
-- The word **“Legend” is always visible** and acts as a click target.
-- Clicking toggles the legend **collapsed / expanded**.
-- In collapsed state only the title is shown.
-- The legend affects visualization only, **not calculations**.
+safety clearances and retract planes
 
-### Line Types in Preview
-| Style | Meaning |
-|------|--------|
-| Green (solid) | Target contour |
-| Yellow (solid) | Active toolpath |
-| Grey (dashed) | Stock |
-| Cyan (dashed) | Retract planes |
-| Red (dashed) | Machining / safety limit |
+stock geometry (shape, diameter, length)
 
-## 🛡 Safety Areas
-- Stock, retract planes and safety limits are shown geometrically correct.
-- Violations of the machining limit are highlighted visually.
+work offset
 
-## 🔧 Facing Tab – Chamfer or Radius
-- A **chamfer or radius** can be defined at the end of a facing operation.
-- Supported: None / Chamfer / Radius.
-- Affects preview geometry and generated toolpath.
+maximum spindle speeds
+
+Tool database
+
+The tool table should be loaded here.
+
+This allows the panel to know:
+
+which tool is used
+
+tool orientation
+
+whether nose radius compensation is required
+
+If ISO insert codes are stored in the tool comment, they can be parsed automatically.
+
+➡️ Once all parameters are set, the stock is shown in the preview.
+
+“Facing” Tab
+
+Defines facing operations:
+
+facing area
+
+strategy:
+
+roughing
+
+finishing
+
+rough + finish
+
+optional finish allowance
+
+➡️ Toolpath and contour are immediately visible in the preview.
+➡️ The step appears in the step list on the left.
+
+Step Management (left side)
+
+The left panel shows a list of all machining steps.
+
+Steps can be:
+
+saved individually
+
+loaded again
+
+reused in other programs
+
+Entire programs can also be saved and loaded.
+
+“Contour” Tab
+
+Defines geometry only, not machining.
+
+contours are built from points
+
+X only, Z only, or X/Z combined
+
+Each contour should have a unique name, which is later used for machining selection.
+
+“Parting / Roughing” Tab
+
+Applies machining to an existing contour:
+
+select contour by name
+
+inside / outside
+
+roughing or finishing
+
+tool, feed, depth, spindle speed
+
+“Thread” Tab
+
+Used for thread cutting:
+
+internal or external threads
+
+tool selection
+
+full G76 parameter set
+
+metric and trapezoidal presets available
+
+“Groove / Parting” Tab
+
+Defines grooves and parting operations.
+
+The groove logic is written as a subroutine directly into the G-code, requiring no external files.
+
+“Drilling” Tab
+
+Simple drilling operations:
+
+normal
+
+chip break
+
+chip break + retract
+
+Intended for center drilling on a lathe.
+
+“Keyway” Tab
+
+Intended for slotting / gear cutting.
+
+Currently:
+
+feature is theoretically prepared
+
+implementation planned for future development
+
+Summary
+
+Lathe EasyStep is designed to:
+
+create common turning operations quickly and safely
+
+build programs step by step
+
+efficiently reuse machining steps
+
+The clear tab structure, instant preview, and reusable steps make it well suited for daily shop-floor use.

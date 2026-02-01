@@ -293,6 +293,13 @@ TEXT_TRANSLATIONS = {
     "label_groove_reduced_feed_start_x": {"de": "Abstech-X", "en": "Parting X"},
     "label_groove_reduced_feed": {"de": "Abstech-Vorschub", "en": "Parting Feed"},
     "label_groove_reduced_rpm": {"de": "Abstech-Drehzahl", "en": "Parting Spindle"},
+    "label_groove_step_a": {"de": "Zustellung pro Pass", "en": "Depth per pass"},
+    "label_groove_overlap": {"de": "Ueberdeckung", "en": "Overlap"},
+    "label_groove_retract": {"de": "Rueckzug", "en": "Retract"},
+    "label_groove_finish": {"de": "Schlichtaufmass", "en": "Finish allowance"},
+    "label_groove_sweep_feed": {"de": "Spanbruch-Vorschub", "en": "Chip break feed"},
+    "label_groove_chip_amp": {"de": "Spanbruch-Amplitude", "en": "Chip break amplitude"},
+    "label_groove_chip_n": {"de": "Spanbruch-Zyklen", "en": "Chip break cycles"},
 
     "label_drill_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_drill_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
@@ -424,6 +431,25 @@ PARTING_TOOLTIP_TRANSLATIONS = {
     "parting_allow_undercut": {
         "de": "Erlaubt Hinterschnitte (Schnitt über Kontur hinaus)",
         "en": "Allow undercuts (cut beyond contour)",
+    },
+}
+
+GROOVE_TOOLTIP_TRANSLATIONS = {
+    "groove_depth": {
+        "de": "Tiefe radial; X ist Durchmesser (G7). X-Aenderung = 2 * Tiefe.",
+        "en": "Radial depth; X is diameter (G7). X change = 2 * depth.",
+    },
+    "groove_step_a": {
+        "de": "Zustellung pro Pass radial; X ist Durchmesser (G7).",
+        "en": "Depth per pass is radial; X is diameter (G7).",
+    },
+    "groove_retract": {
+        "de": "Rueckzug radial; X ist Durchmesser (G7).",
+        "en": "Retract is radial; X is diameter (G7).",
+    },
+    "groove_finish": {
+        "de": "Schlichtaufmass radial; X ist Durchmesser (G7).",
+        "en": "Finish allowance is radial; X is diameter (G7).",
     },
 }
 
@@ -3840,6 +3866,13 @@ class HandlerClass:
                 "depth": self._get_widget_by_name("groove_depth"),
                 "z": self._get_widget_by_name("groove_z"),
                 "feed": self._get_widget_by_name("groove_feed"),
+                "stepA": self._get_widget_by_name("groove_step_a"),
+                "overlap": self._get_widget_by_name("groove_overlap"),
+                "retract": self._get_widget_by_name("groove_retract"),
+                "finish": self._get_widget_by_name("groove_finish"),
+                "sweep_feed": self._get_widget_by_name("groove_sweep_feed"),
+                "chip_amp": self._get_widget_by_name("groove_chip_amp"),
+                "chip_n": self._get_widget_by_name("groove_chip_n"),
                 "safe_z": self._get_widget_by_name("groove_safe_z"),
                 "reduced_feed_start_x": self._get_widget_by_name("groove_reduced_feed_start_x"),
                 "reduced_feed": self._get_widget_by_name("groove_reduced_feed"),
@@ -4092,6 +4125,10 @@ class HandlerClass:
             self._apply_parting_tooltips(lang)
         except Exception:
             pass
+        try:
+            self._apply_groove_tooltips(lang)
+        except Exception:
+            pass
 
     def _apply_combo_translations(self, lang: str):
         for name, options in COMBO_OPTION_TRANSLATIONS.items():
@@ -4230,6 +4267,22 @@ class HandlerClass:
             except Exception:
                 pass
             self._contour_table_connected = True
+
+    def _apply_groove_tooltips(self, lang: str):
+        """Setzt Tooltips für bekannte Nut-Widgets gemäß Sprache."""
+        for name, translations in GROOVE_TOOLTIP_TRANSLATIONS.items():
+            widget = self._get_widget_by_name(name)
+            if widget is None:
+                continue
+            text = translations.get(lang) or translations.get("de")
+            try:
+                widget.setToolTip(text)
+                try:
+                    widget.setWhatsThis(text)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
         if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
             self.contour_start_x.valueChanged.connect(self._update_contour_preview_temp)
