@@ -2025,6 +2025,237 @@ def gcode_for_operation(
     return []
 
 
+class WidgetResolveError(RuntimeError):
+    pass
+
+
+def _qname(obj):
+    try:
+        return obj.metaObject().className()
+    except Exception:
+        return type(obj).__name__
+
+
+def _path_to_root(w, max_up=25):
+    """Debug helper: show parent chain up to root."""
+    parts = []
+    cur = w
+    for _ in range(max_up):
+        if cur is None:
+            break
+        on = getattr(cur, "objectName", lambda: "")()
+        parts.append(f"{_qname(cur)}('{on}')")
+        cur = cur.parent()
+    return " <- ".join(parts)
+
+
+def _pick_best_root(widgets):
+    """
+    Try to select a usable root from widgets/handler context.
+    Priority:
+      1) first QMainWindow in parent tree
+      2) first QDialog in parent tree
+      3) topLevelWidget() of any widget
+      4) QApplication.activeWindow()
+    """
+    for w in widgets:
+        cur = w
+        for _ in range(30):
+            if cur is None:
+                break
+            if isinstance(cur, QtWidgets.QMainWindow):
+                return cur
+            if isinstance(cur, QtWidgets.QDialog):
+                return cur
+            cur = cur.parent()
+
+    for w in widgets:
+        try:
+            tl = w.topLevelWidget()
+            if tl is not None:
+                return tl
+        except Exception:
+            pass
+
+    try:
+        aw = QtWidgets.QApplication.activeWindow()
+        if aw is not None:
+            return aw
+    except Exception:
+        pass
+
+    return None
+
+
+class WidgetResolver:
+    """
+    Central widget resolver:
+      - resolve(): strict, type-safe, collision-aware
+      - try_resolve(): returns None instead of exception
+      - resolve_later(): retry via QTimer (embed/timing robust)
+    """
+
+    def __init__(self, *, root=None, widgets=None, logger=None):
+        self.logger = logger
+        self.root = root
+        self.widgets = list(widgets) if widgets else []
+
+        if self.root is None:
+            self.root = _pick_best_root(self.widgets)
+
+    def _log(self, level, msg):
+        if self.logger:
+            fn = getattr(self.logger, level, None)
+            if callable(fn):
+                fn(msg)
+                return
+        if level in ("warning", "error"):
+            print(f"[WidgetResolver][{level.upper()}] {msg}")
+        else:
+            print(f"[WidgetResolver][{level.upper()}] {msg}")
+
+    def _candidates(self, cls, name=None, *, root=None):
+        roots = []
+        if root is not None:
+            roots.append(root)
+        if self.root is not None and self.root not in roots:
+            roots.append(self.root)
+
+        for w in self.widgets:
+            try:
+                tl = w.topLevelWidget()
+            except Exception:
+                tl = None
+            if tl is not None and tl not in roots:
+                roots.append(tl)
+
+        found = []
+        for r in roots:
+            if r is None:
+                continue
+            if name:
+                c = r.findChildren(cls, name, QtCore.Qt.FindChildrenRecursively)
+            else:
+                c = r.findChildren(cls, QtCore.Qt.FindChildrenRecursively)
+            found.extend(c)
+
+        for w in self.widgets:
+            if w is None:
+                continue
+            if name:
+                c = w.findChildren(cls, name, QtCore.Qt.FindChildrenRecursively)
+            else:
+                c = w.findChildren(cls, QtCore.Qt.FindChildrenRecursively)
+            found.extend(c)
+
+        uniq = []
+        seen = set()
+        for x in found:
+            key = int(x.winId()) if hasattr(x, "winId") else id(x)
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(x)
+        return uniq
+
+    def resolve(
+        self,
+        cls,
+        name,
+        *,
+        root=None,
+        required=True,
+        allow_multiple=False,
+        prefer_visible=True,
+        debug_context=False,
+    ):
+        if not issubclass(cls, QtCore.QObject):
+            raise ValueError("cls must be a Qt QObject subclass")
+
+        cands = self._candidates(cls, name=name, root=root)
+
+        if len(cands) == 0:
+            msg = f"Widget '{name}' ({cls.__name__}) not found."
+            if debug_context:
+                msg += f" root={_qname(self.root) if self.root else None}"
+            if required:
+                raise WidgetResolveError(msg)
+            self._log("warning", msg)
+            return None
+
+        if len(cands) > 1 and not allow_multiple:
+            details = []
+            for i, w in enumerate(cands[:10]):
+                details.append(
+                    f"  [{i}] {_qname(w)} name='{w.objectName()}' visible={getattr(w,'isVisible',lambda:None)()} "
+                    f"enabled={getattr(w,'isEnabled',lambda:None)()} path={_path_to_root(w)}"
+                )
+            msg = (
+                f"objectName collision for '{name}' ({cls.__name__}): {len(cands)} matches.\n"
+                + "\n".join(details)
+            )
+            raise WidgetResolveError(msg)
+
+        if len(cands) == 1:
+            return cands[0]
+
+        if prefer_visible:
+            vis = [w for w in cands if getattr(w, "isVisible", lambda: False)()]
+            if len(vis) == 1:
+                return vis[0]
+            en = [w for w in cands if getattr(w, "isEnabled", lambda: False)()]
+            if len(en) == 1:
+                return en[0]
+            self._log("warning", f"Multiple matches for '{name}', selecting first after visibility heuristic.")
+            return (vis or en or cands)[0]
+
+        self._log("warning", f"Multiple matches for '{name}', selecting first (no heuristic).")
+        return cands[0]
+
+    def try_resolve(self, cls, name, **kwargs):
+        try:
+            return self.resolve(cls, name, required=False, **kwargs)
+        except WidgetResolveError as e:
+            self._log("warning", str(e))
+            return None
+
+    def resolve_later(
+        self,
+        cls,
+        name,
+        callback,
+        *,
+        root=None,
+        interval_ms=100,
+        timeout_ms=3000,
+        allow_multiple=False,
+        prefer_visible=True,
+        debug_context=False,
+    ):
+        start = QtCore.QElapsedTimer()
+        start.start()
+
+        def _tick():
+            try:
+                w = self.resolve(
+                    cls,
+                    name,
+                    root=root,
+                    required=True,
+                    allow_multiple=allow_multiple,
+                    prefer_visible=prefer_visible,
+                    debug_context=debug_context,
+                )
+                callback(w, None)
+            except WidgetResolveError as e:
+                if start.elapsed() >= timeout_ms:
+                    callback(None, e)
+                else:
+                    QtCore.QTimer.singleShot(interval_ms, _tick)
+
+        _tick()
+
+
 class HandlerClass:
     def __init__(self, halcomp, widgets, paths):
         self.hal = halcomp
@@ -2049,7 +2280,7 @@ class HandlerClass:
             panel_root = self._find_root_widget()
 
         if panel_root is None:
-            print('[LatheEasyStep][CRITICAL] Panel root "easystep" not found - aborting to avoid wrong widget bindings')
+            self._log('[LatheEasyStep][CRITICAL] Panel root "easystep" not found - aborting to avoid wrong widget bindings', level="error")
             raise RuntimeError('Panel root "easystep" not found')
 
         self.w = panel_root
@@ -2123,7 +2354,7 @@ class HandlerClass:
                 return w
             w = self._find_any_widget(name)
             if w is not None:
-                print(f"[LatheEasyStep] resolved '{name}' via global search")
+                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
             return w
 
         self.btn_add = _resolve_widget("btnAdd")
@@ -2280,6 +2511,7 @@ class HandlerClass:
 
         # Root-Widget des Panels (für globale Suche nach Labels/Spinboxen)
         self.root_widget = self._find_root_widget()
+        self._setup_resolver()
 
         # Nach vollständiger Initialisierung aller Widget-Attribute
         # sicherstellen, dass Kern-Widgets gefunden und Signale verbunden werden.
@@ -2302,6 +2534,337 @@ class HandlerClass:
         )
 
     # ---- interne Helfer zur Widget-Suche ------------------------------
+    def _setup_resolver(self):
+        widget_list = []
+        try:
+            if hasattr(self, "w") and self.w is not None:
+                widget_list.append(self.w)
+        except Exception:
+            pass
+        if self.root_widget is not None and self.root_widget not in widget_list:
+            widget_list.append(self.root_widget)
+        self._resolver = WidgetResolver(
+            root=getattr(self, "root_widget", None),
+            widgets=widget_list,
+            logger=getattr(self, "LOG", None),
+        )
+
+    def _log(self, *parts, level: str | None = None):
+        msg = " ".join(str(p) for p in parts)
+        if level is None:
+            level = "info"
+            lowered = msg.lower()
+            if "[debug]" in msg:
+                level = "debug"
+            elif "[critical]" in lowered or " error" in lowered or "error:" in lowered:
+                level = "error"
+            elif "warn" in lowered:
+                level = "warning"
+        try:
+            logger = getattr(self, "LOG", None)
+            if logger:
+                fn = getattr(logger, level, None)
+                if callable(fn):
+                    fn(msg)
+                    return
+        except Exception:
+            pass
+        print(msg)
+
+    def _resolve_core_widgets_strict(self):
+        if not hasattr(self, "_resolver"):
+            self._setup_resolver()
+
+        mapping = [
+            ("list_ops", "listOperations", QtWidgets.QListWidget),
+            ("tab_params", "tabParams", QtWidgets.QTabWidget),
+            ("btn_add", "btnAdd", QtWidgets.QPushButton),
+            ("btn_delete", "btnDelete", QtWidgets.QPushButton),
+            ("btn_move_up", "btnMoveUp", QtWidgets.QPushButton),
+            ("btn_move_down", "btnMoveDown", QtWidgets.QPushButton),
+            ("btn_new_program", "btnNewProgram", QtWidgets.QPushButton),
+            ("btn_generate", "btnGenerate", QtWidgets.QPushButton),
+            ("btn_save_step", "btnSaveStep", QtWidgets.QPushButton),
+            ("btn_load_step", "btnLoadStep", QtWidgets.QPushButton),
+            ("btn_save_program", "btnSaveProgram", QtWidgets.QPushButton),
+            ("btn_load_program", "btnLoadProgram", QtWidgets.QPushButton),
+            ("btn_load_tool_table", "btnLoadToolTable", QtWidgets.QPushButton),
+            ("contour_segments", "contour_segments", QtWidgets.QTableWidget),
+            ("preview", "previewWidget", LathePreviewWidget),
+            ("contour_preview", "contourPreview", LathePreviewWidget),
+            ("preview_slice", "previewSliceWidget", QtWidgets.QWidget),
+            ("program_unit", "program_unit", QtWidgets.QComboBox),
+            ("program_shape", "program_shape", QtWidgets.QComboBox),
+            ("program_retract_mode", "program_retract_mode", QtWidgets.QComboBox),
+            ("program_has_subspindle", "program_has_subspindle", QtWidgets.QCheckBox),
+            ("program_xa", "program_xa", QtWidgets.QDoubleSpinBox),
+            ("program_xi", "program_xi", QtWidgets.QDoubleSpinBox),
+            ("program_za", "program_za", QtWidgets.QDoubleSpinBox),
+            ("program_zi", "program_zi", QtWidgets.QDoubleSpinBox),
+            ("program_zb", "program_zb", QtWidgets.QDoubleSpinBox),
+            ("program_w", "program_w", QtWidgets.QDoubleSpinBox),
+            ("program_l", "program_l", QtWidgets.QDoubleSpinBox),
+            ("program_n", "program_n", QtWidgets.QSpinBox),
+            ("program_sw", "program_sw", QtWidgets.QDoubleSpinBox),
+            ("program_xt", "program_xt", QtWidgets.QDoubleSpinBox),
+            ("program_zt", "program_zt", QtWidgets.QDoubleSpinBox),
+            ("program_sc", "program_sc", QtWidgets.QDoubleSpinBox),
+            ("program_name", "program_name", QtWidgets.QLineEdit),
+            ("program_xra", "program_xra", QtWidgets.QDoubleSpinBox),
+            ("program_xri", "program_xri", QtWidgets.QDoubleSpinBox),
+            ("program_zra", "program_zra", QtWidgets.QDoubleSpinBox),
+            ("program_zri", "program_zri", QtWidgets.QDoubleSpinBox),
+            ("program_xra_absolute", "program_xra_absolute", QtWidgets.QCheckBox),
+            ("program_xri_absolute", "program_xri_absolute", QtWidgets.QCheckBox),
+            ("program_zra_absolute", "program_zra_absolute", QtWidgets.QCheckBox),
+            ("program_zri_absolute", "program_zri_absolute", QtWidgets.QCheckBox),
+            ("program_xt_absolute", "program_xt_absolute", QtWidgets.QCheckBox),
+            ("program_zt_absolute", "program_zt_absolute", QtWidgets.QCheckBox),
+            ("program_s1", "program_s1", QtWidgets.QDoubleSpinBox),
+            ("program_s3", "program_s3", QtWidgets.QDoubleSpinBox),
+            ("label_prog_xi", "label_prog_xi", QtWidgets.QLabel),
+            ("label_prog_w", "label_prog_w", QtWidgets.QLabel),
+            ("label_prog_l", "label_prog_l", QtWidgets.QLabel),
+            ("label_prog_n", "label_prog_n", QtWidgets.QLabel),
+            ("label_prog_sw", "label_prog_sw", QtWidgets.QLabel),
+            ("label_prog_xra", "label_prog_xra", QtWidgets.QLabel),
+            ("label_prog_xri", "label_prog_xri", QtWidgets.QLabel),
+            ("label_prog_zra", "label_prog_zra", QtWidgets.QLabel),
+            ("label_prog_zri", "label_prog_zri", QtWidgets.QLabel),
+            ("label_prog_s1", "label_prog_s1", QtWidgets.QLabel),
+            ("label_prog_s3", "label_prog_s3", QtWidgets.QLabel),
+            ("thread_standard", "thread_standard", QtWidgets.QComboBox),
+            ("thread_orientation", "thread_orientation", QtWidgets.QComboBox),
+            ("thread_spindle", "thread_spindle", QtWidgets.QDoubleSpinBox),
+            ("thread_depth", "thread_depth", QtWidgets.QDoubleSpinBox),
+            ("thread_first_depth", "thread_first_depth", QtWidgets.QDoubleSpinBox),
+            ("thread_peak_offset", "thread_peak_offset", QtWidgets.QDoubleSpinBox),
+            ("thread_retract_r", "thread_retract_r", QtWidgets.QDoubleSpinBox),
+            ("thread_infeed_q", "thread_infeed_q", QtWidgets.QDoubleSpinBox),
+            ("thread_spring_passes", "thread_spring_passes", QtWidgets.QSpinBox),
+            ("thread_e", "thread_e", QtWidgets.QDoubleSpinBox),
+            ("thread_l", "thread_l", QtWidgets.QSpinBox),
+            ("parting_mode", "parting_mode", QtWidgets.QComboBox),
+            ("contour_name", "contour_name", QtWidgets.QLineEdit),
+            ("contour_start_x", "contour_start_x", QtWidgets.QDoubleSpinBox),
+            ("contour_start_z", "contour_start_z", QtWidgets.QDoubleSpinBox),
+            ("contour_edge_type", "contour_edge_type", QtWidgets.QComboBox),
+            ("contour_edge_size", "contour_edge_size", QtWidgets.QDoubleSpinBox),
+            ("contour_add_segment", "contour_add_segment", QtWidgets.QPushButton),
+            ("contour_delete_segment", "contour_delete_segment", QtWidgets.QPushButton),
+            ("contour_move_up", "contour_move_up", QtWidgets.QPushButton),
+            ("contour_move_down", "contour_move_down", QtWidgets.QPushButton),
+            ("face_mode", "face_mode", QtWidgets.QComboBox),
+            ("face_edge_type", "face_edge_type", QtWidgets.QComboBox),
+            ("face_edge_size", "face_edge_size", QtWidgets.QDoubleSpinBox),
+            ("face_start_x", "face_start_x", QtWidgets.QDoubleSpinBox),
+            ("face_start_z", "face_start_z", QtWidgets.QDoubleSpinBox),
+            ("face_end_x", "face_end_x", QtWidgets.QDoubleSpinBox),
+            ("face_end_z", "face_end_z", QtWidgets.QDoubleSpinBox),
+            ("face_depth_max", "face_depth_max", QtWidgets.QDoubleSpinBox),
+            ("label_face_edge_size", "label_face_edge_size", QtWidgets.QLabel),
+            ("label_face_finish_allow_x", "label_face_finish_allow_x", QtWidgets.QLabel),
+            ("label_face_finish_allow_z", "label_face_finish_allow_z", QtWidgets.QLabel),
+            ("label_face_depth_max", "label_face_depth_max", QtWidgets.QLabel),
+            ("label_face_pause", "label_face_pause", QtWidgets.QLabel),
+            ("label_face_pause_distance", "label_face_pause_distance", QtWidgets.QLabel),
+            ("face_pause_enabled", "face_pause_enabled", QtWidgets.QCheckBox),
+            ("face_pause_distance", "face_pause_distance", QtWidgets.QDoubleSpinBox),
+            ("face_finish_allow_x", "face_finish_allow_x", QtWidgets.QDoubleSpinBox),
+            ("face_finish_allow_z", "face_finish_allow_z", QtWidgets.QDoubleSpinBox),
+            ("drill_mode", "drill_mode", QtWidgets.QComboBox),
+            ("label_drill_dwell", "label_drill_dwell", QtWidgets.QLabel),
+            ("label_drill_peck_depth", "label_drill_peck_depth", QtWidgets.QLabel),
+            ("drill_dwell", "drill_dwell", QtWidgets.QDoubleSpinBox),
+            ("drill_peck_depth", "drill_peck_depth", QtWidgets.QDoubleSpinBox),
+            ("parting_contour", "parting_contour", QtWidgets.QComboBox),
+            ("parting_side", "parting_side", QtWidgets.QComboBox),
+            ("parting_tool", "parting_tool", QtWidgets.QComboBox),
+            ("parting_spindle", "parting_spindle", QtWidgets.QDoubleSpinBox),
+            ("parting_feed", "parting_feed", QtWidgets.QDoubleSpinBox),
+            ("parting_depth_per_pass", "parting_depth_per_pass", QtWidgets.QDoubleSpinBox),
+            ("parting_pause_enabled", "parting_pause_enabled", QtWidgets.QCheckBox),
+            ("parting_pause_distance", "parting_pause_distance", QtWidgets.QDoubleSpinBox),
+            ("label_parting_slice_strategy", "label_parting_slice_strategy", QtWidgets.QLabel),
+            ("parting_slice_strategy", "parting_slice_strategy", QtWidgets.QComboBox),
+            ("label_parting_slice_step", "label_parting_slice_step", QtWidgets.QLabel),
+            ("parting_slice_step", "parting_slice_step", QtWidgets.QDoubleSpinBox),
+            ("label_parting_allow_undercut", "label_parting_allow_undercut", QtWidgets.QLabel),
+            ("parting_allow_undercut", "parting_allow_undercut", QtWidgets.QCheckBox),
+            ("label_parting_depth", "label_parting_depth", QtWidgets.QLabel),
+            ("label_parting_pause", "label_parting_pause", QtWidgets.QLabel),
+            ("label_parting_pause_distance", "label_parting_pause_distance", QtWidgets.QLabel),
+            ("thread_tool", "thread_tool", QtWidgets.QComboBox),
+            ("thread_major_diameter", "thread_major_diameter", QtWidgets.QDoubleSpinBox),
+            ("thread_pitch", "thread_pitch", QtWidgets.QDoubleSpinBox),
+            ("thread_length", "thread_length", QtWidgets.QDoubleSpinBox),
+            ("label_prog_npv", "label_prog_npv", QtWidgets.QLabel),
+            ("label_prog_unit", "label_prog_unit", QtWidgets.QLabel),
+            ("label_prog_shape", "label_prog_shape", QtWidgets.QLabel),
+            ("label_prog_xa", "label_prog_xa", QtWidgets.QLabel),
+            ("label_prog_za", "label_prog_za", QtWidgets.QLabel),
+            ("label_prog_zi", "label_prog_zi", QtWidgets.QLabel),
+            ("label_prog_zb", "label_prog_zb", QtWidgets.QLabel),
+            ("label_prog_retract_mode", "label_prog_retract_mode", QtWidgets.QLabel),
+            ("label_prog_xt", "label_prog_xt", QtWidgets.QLabel),
+            ("label_prog_zt", "label_prog_zt", QtWidgets.QLabel),
+            ("label_prog_sc", "label_prog_sc", QtWidgets.QLabel),
+            ("label_prog_name", "label_prog_name", QtWidgets.QLabel),
+            ("label_language", "label_language", QtWidgets.QLabel),
+            ("label_face_start_x", "label_face_start_x", QtWidgets.QLabel),
+            ("label_face_start_z", "label_face_start_z", QtWidgets.QLabel),
+            ("label_face_end_x", "label_face_end_x", QtWidgets.QLabel),
+            ("label_face_end_z", "label_face_end_z", QtWidgets.QLabel),
+            ("label_face_mode", "label_face_mode", QtWidgets.QLabel),
+            ("label_face_finish_direction", "label_face_finish_direction", QtWidgets.QLabel),
+            ("label_face_edge_type", "label_face_edge_type", QtWidgets.QLabel),
+            ("label_face_chamfer", "label_face_chamfer", QtWidgets.QLabel),
+            ("label_face_fase", "label_face_fase", QtWidgets.QLabel),
+            ("label_face_edge_chamfer", "label_face_edge_chamfer", QtWidgets.QLabel),
+            ("label_face_radius", "label_face_radius", QtWidgets.QLabel),
+            ("label_face_edge_radius", "label_face_edge_radius", QtWidgets.QLabel),
+            ("label_face_spindle", "label_face_spindle", QtWidgets.QLabel),
+            ("label_face_tool", "label_face_tool", QtWidgets.QLabel),
+            ("label_face_coolant", "label_face_coolant", QtWidgets.QLabel),
+            ("label_3", "label_3", QtWidgets.QLabel),
+            ("label_4", "label_4", QtWidgets.QLabel),
+            ("label_drill_tool", "label_drill_tool", QtWidgets.QLabel),
+            ("label_drill_spindle", "label_drill_spindle", QtWidgets.QLabel),
+            ("label_drill_coolant", "label_drill_coolant", QtWidgets.QLabel),
+            ("label_drill_mode", "label_drill_mode", QtWidgets.QLabel),
+            ("label_26", "label_26", QtWidgets.QLabel),
+            ("label_27", "label_27", QtWidgets.QLabel),
+            ("label_28", "label_28", QtWidgets.QLabel),
+            ("label_29", "label_29", QtWidgets.QLabel),
+            ("label_parting_contour", "label_parting_contour", QtWidgets.QLabel),
+            ("label_parting_side", "label_parting_side", QtWidgets.QLabel),
+            ("label_parting_tool", "label_parting_tool", QtWidgets.QLabel),
+            ("label_parting_spindle", "label_parting_spindle", QtWidgets.QLabel),
+            ("label_parting_coolant", "label_parting_coolant", QtWidgets.QLabel),
+            ("label_parting_feed", "label_parting_feed", QtWidgets.QLabel),
+            ("label_parting_mode", "label_parting_mode", QtWidgets.QLabel),
+            ("label_thread_orientation", "label_thread_orientation", QtWidgets.QLabel),
+            ("label_thread_standard", "label_thread_standard", QtWidgets.QLabel),
+            ("label_thread_tool", "label_thread_tool", QtWidgets.QLabel),
+            ("label_thread_spindle", "label_thread_spindle", QtWidgets.QLabel),
+            ("label_thread_coolant", "label_thread_coolant", QtWidgets.QLabel),
+            ("label_thread_major_diameter", "label_thread_major_diameter", QtWidgets.QLabel),
+            ("label_thread_pitch", "label_thread_pitch", QtWidgets.QLabel),
+            ("label_thread_length", "label_thread_length", QtWidgets.QLabel),
+            ("label_thread_passes", "label_thread_passes", QtWidgets.QLabel),
+            ("label_thread_safe_z", "label_thread_safe_z", QtWidgets.QLabel),
+            ("label_thread_depth", "label_thread_depth", QtWidgets.QLabel),
+            ("label_thread_first_depth", "label_thread_first_depth", QtWidgets.QLabel),
+            ("label_thread_peak_offset", "label_thread_peak_offset", QtWidgets.QLabel),
+            ("label_thread_retract_r", "label_thread_retract_r", QtWidgets.QLabel),
+            ("label_thread_infeed_q", "label_thread_infeed_q", QtWidgets.QLabel),
+            ("label_thread_spring_passes", "label_thread_spring_passes", QtWidgets.QLabel),
+            ("label_thread_e", "label_thread_e", QtWidgets.QLabel),
+            ("label_thread_l", "label_thread_l", QtWidgets.QLabel),
+            ("label_contour_start_x", "label_contour_start_x", QtWidgets.QLabel),
+            ("label_contour_start_z", "label_contour_start_z", QtWidgets.QLabel),
+            ("label_contour_coord_mode", "label_contour_coord_mode", QtWidgets.QLabel),
+            ("label_contour_name", "label_contour_name", QtWidgets.QLabel),
+            ("label_contour_edge_type", "label_contour_edge_type", QtWidgets.QLabel),
+            ("label_retract_hint", "label_retract_hint", QtWidgets.QLabel),
+            ("label_groove_cutting_width", "label_groove_cutting_width", QtWidgets.QLabel),
+            ("label_23", "label_23", QtWidgets.QLabel),
+            ("btn_slice_view", "btn_slice_view", QtWidgets.QAbstractButton),
+            ("btn_thread_preset", "btn_thread_preset", QtWidgets.QPushButton),
+            ("groove_tool", "groove_tool", QtWidgets.QComboBox),
+            ("groove_spindle", "groove_spindle", QtWidgets.QDoubleSpinBox),
+            ("groove_coolant", "groove_coolant", QtWidgets.QComboBox),
+            ("groove_diameter", "groove_diameter", QtWidgets.QDoubleSpinBox),
+            ("groove_width", "groove_width", QtWidgets.QDoubleSpinBox),
+            ("groove_ref", "groove_ref", QtWidgets.QComboBox),
+            ("groove_lage", "groove_lage", QtWidgets.QComboBox),
+            ("groove_use_tool_width", "groove_use_tool_width", QtWidgets.QCheckBox),
+            ("groove_cutting_width", "groove_cutting_width", QtWidgets.QDoubleSpinBox),
+            ("groove_depth", "groove_depth", QtWidgets.QDoubleSpinBox),
+            ("groove_z", "groove_z", QtWidgets.QDoubleSpinBox),
+            ("groove_feed", "groove_feed", QtWidgets.QDoubleSpinBox),
+            ("groove_step_a", "groove_step_a", QtWidgets.QDoubleSpinBox),
+            ("groove_overlap", "groove_overlap", QtWidgets.QDoubleSpinBox),
+            ("groove_retract", "groove_retract", QtWidgets.QDoubleSpinBox),
+            ("groove_finish", "groove_finish", QtWidgets.QDoubleSpinBox),
+            ("groove_sweep_feed", "groove_sweep_feed", QtWidgets.QDoubleSpinBox),
+            ("groove_chip_amp", "groove_chip_amp", QtWidgets.QDoubleSpinBox),
+            ("groove_chip_n", "groove_chip_n", QtWidgets.QSpinBox),
+            ("groove_safe_z", "groove_safe_z", QtWidgets.QDoubleSpinBox),
+            ("groove_reduced_feed_start_x", "groove_reduced_feed_start_x", QtWidgets.QDoubleSpinBox),
+            ("groove_reduced_feed", "groove_reduced_feed", QtWidgets.QDoubleSpinBox),
+            ("groove_reduced_rpm", "groove_reduced_rpm", QtWidgets.QDoubleSpinBox),
+            ("groove_lage_img", "groove_lage_img", QtWidgets.QLabel),
+            ("groove_ref_img", "groove_ref_img", QtWidgets.QLabel),
+            ("key_mode", "key_mode", QtWidgets.QComboBox),
+            ("key_radial_side", "key_radial_side", QtWidgets.QComboBox),
+            ("key_coolant", "key_coolant", QtWidgets.QComboBox),
+            ("key_slot_count", "key_slot_count", QtWidgets.QSpinBox),
+            ("key_slot_start_angle", "key_slot_start_angle", QtWidgets.QDoubleSpinBox),
+            ("key_start_diameter", "key_start_diameter", QtWidgets.QDoubleSpinBox),
+            ("key_start_z", "key_start_z", QtWidgets.QDoubleSpinBox),
+            ("key_nut_length", "key_nut_length", QtWidgets.QDoubleSpinBox),
+            ("key_nut_depth", "key_nut_depth", QtWidgets.QDoubleSpinBox),
+            ("key_cutting_width", "key_cutting_width", QtWidgets.QDoubleSpinBox),
+            ("key_top_clearance", "key_top_clearance", QtWidgets.QDoubleSpinBox),
+            ("key_depth_per_pass", "key_depth_per_pass", QtWidgets.QDoubleSpinBox),
+            ("key_plunge_feed", "key_plunge_feed", QtWidgets.QDoubleSpinBox),
+            ("key_use_c_axis", "key_use_c_axis", QtWidgets.QCheckBox),
+            ("key_use_c_axis_switch", "key_use_c_axis_switch", QtWidgets.QCheckBox),
+            ("key_c_axis_switch_p", "key_c_axis_switch_p", QtWidgets.QDoubleSpinBox),
+            ("label_groove_tool", "label_groove_tool", QtWidgets.QLabel),
+            ("label_groove_spindle", "label_groove_spindle", QtWidgets.QLabel),
+            ("label_groove_coolant", "label_groove_coolant", QtWidgets.QLabel),
+            ("label_20", "label_20", QtWidgets.QLabel),
+            ("label_21", "label_21", QtWidgets.QLabel),
+            ("label_22", "label_22", QtWidgets.QLabel),
+            ("label_24", "label_24", QtWidgets.QLabel),
+            ("label_25", "label_25", QtWidgets.QLabel),
+            ("label_groove_reduced_feed_start_x", "label_groove_reduced_feed_start_x", QtWidgets.QLabel),
+            ("label_groove_reduced_feed", "label_groove_reduced_feed", QtWidgets.QLabel),
+            ("label_groove_reduced_rpm", "label_groove_reduced_rpm", QtWidgets.QLabel),
+            ("label_groove_step_a", "label_groove_step_a", QtWidgets.QLabel),
+            ("label_groove_overlap", "label_groove_overlap", QtWidgets.QLabel),
+            ("label_groove_retract", "label_groove_retract", QtWidgets.QLabel),
+            ("label_groove_finish", "label_groove_finish", QtWidgets.QLabel),
+            ("label_groove_sweep_feed", "label_groove_sweep_feed", QtWidgets.QLabel),
+            ("label_groove_chip_amp", "label_groove_chip_amp", QtWidgets.QLabel),
+            ("label_groove_chip_n", "label_groove_chip_n", QtWidgets.QLabel),
+            ("label_30", "label_30", QtWidgets.QLabel),
+            ("label_31", "label_31", QtWidgets.QLabel),
+            ("label_key_coolant", "label_key_coolant", QtWidgets.QLabel),
+            ("label_32", "label_32", QtWidgets.QLabel),
+            ("label_33", "label_33", QtWidgets.QLabel),
+            ("label_34", "label_34", QtWidgets.QLabel),
+            ("label_35", "label_35", QtWidgets.QLabel),
+            ("label_36", "label_36", QtWidgets.QLabel),
+            ("label_37", "label_37", QtWidgets.QLabel),
+            ("label_key_cutting_width", "label_key_cutting_width", QtWidgets.QLabel),
+            ("label_38", "label_38", QtWidgets.QLabel),
+            ("label_39", "label_39", QtWidgets.QLabel),
+            ("label_40", "label_40", QtWidgets.QLabel),
+            ("label_41", "label_41", QtWidgets.QLabel),
+            ("label_42", "label_42", QtWidgets.QLabel),
+            ("label_43", "label_43", QtWidgets.QLabel),
+        ]
+
+        for attr, obj_name, cls in mapping:
+            if getattr(self, attr, None) is not None:
+                continue
+            w = self._resolver.try_resolve(cls, obj_name, debug_context=True)
+            if w is not None:
+                setattr(self, attr, w)
+
+    def _ensure_list_ops_type(self):
+        if self.list_ops is not None and not isinstance(self.list_ops, QtWidgets.QListWidget):
+            try:
+                self.LOG.warning(
+                    f"[LatheEasyStep] list_ops has wrong type: {_qname(self.list_ops)}; resetting to None"
+                )
+            except Exception:
+                self._log(f"[LatheEasyStep] list_ops has wrong type: {_qname(self.list_ops)}; resetting to None", level="info")
+            self.list_ops = None
+
     def _force_attach_core_widgets(self):
         """Robuste Suche nach Liste/Buttons direkt im Panel-Baum und erneutes Verbinden."""
         app = QtWidgets.QApplication.instance()
@@ -2337,6 +2900,7 @@ class HandlerClass:
             return None
 
         self.list_ops = self.list_ops or _grab("listOperations", QtWidgets.QListWidget)
+        self._ensure_list_ops_type()
         self.tab_params = self.tab_params or _grab("tabParams", QtWidgets.QTabWidget)
         self.btn_add = self.btn_add or _grab("btnAdd", QtWidgets.QPushButton)
         self.btn_delete = self.btn_delete or _grab("btnDelete", QtWidgets.QPushButton)
@@ -2556,10 +3120,10 @@ class HandlerClass:
 
             texts = [obj.itemText(i).strip().lower() for i in range(obj.count())]
             if "mm" in texts and "inch" in texts:
-                print(f"[LatheEasyStep] using '{name}' as program_unit combo")
+                self._log(f"[LatheEasyStep] using '{name}' as program_unit combo", level="info")
                 return obj
 
-        print("[LatheEasyStep] no unit combo found via widgets")
+        self._log("[LatheEasyStep] no unit combo found via widgets", level="info")
 
         root = self.root_widget or self._find_root_widget()
         if root is not None:
@@ -2570,9 +3134,8 @@ class HandlerClass:
                     "metric" in txt and "imperial" in txt
                 ):
                     combo_name = combo.objectName() or "anonymous"
-                    print(
-                        f"[LatheEasyStep] using tree-scan combo '{combo_name}' as program_unit"
-                    )
+                    self._log(
+                        f"[LatheEasyStep] using tree-scan combo '{combo_name}' as program_unit", level="info")
                     return combo
 
         return None
@@ -2582,18 +3145,18 @@ class HandlerClass:
         # Root-Widget holen
         root = self.root_widget or self._find_root_widget()
         if root is None:
-            print("[LatheEasyStep] _find_shape_combo: no root_widget")
+            self._log("[LatheEasyStep] _find_shape_combo: no root_widget", level="info")
             return None
 
         for combo in root.findChildren(QtWidgets.QComboBox):
             texts = [combo.itemText(i).strip().lower() for i in range(combo.count())]
-            print(f"[LatheEasyStep] shape combo candidate {combo.objectName()}: {texts}")
+            self._log(f"[LatheEasyStep] shape combo candidate {combo.objectName()}: {texts}", level="info")
             if any(t in texts for t in ("zylinder", "rohr", "rechteck", "n-eck")):
                 # In embedded-macro mode, widgets may not exist yet when we do the first
                 # round of signal wiring (during import / early init). This means
                 # `program_shape` can be discovered later and would then change its value
                 # without triggering _handle_global_change(). So: bind + connect here.
-                print(f"[LatheEasyStep] using '{combo.objectName()}' as program_shape combo")
+                self._log(f"[LatheEasyStep] using '{combo.objectName()}' as program_shape combo", level="info")
 
                 self.program_shape = combo
 
@@ -2614,7 +3177,7 @@ class HandlerClass:
 
                 return combo
 
-        print("[LatheEasyStep] no shape combo found in tree")
+        self._log("[LatheEasyStep] no shape combo found in tree", level="info")
         return None
 
     def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
@@ -2768,7 +3331,7 @@ class HandlerClass:
     def _poll_for_widget(self, name: str, attempts_left: int):
         """Pollt für ein Widget, das bei der ersten Suche nicht gefunden wurde."""
         if attempts_left <= 0:
-            print(f"[LatheEasyStep] gave up polling for widget '{name}'")
+            self._log(f"[LatheEasyStep] gave up polling for widget '{name}'", level="info")
             return
         
         # Try to find the widget again
@@ -2776,7 +3339,7 @@ class HandlerClass:
         if widget is not None:
             # Found it! Set the attribute and connect signals if it's a button
             setattr(self, name, widget)
-            print(f"[LatheEasyStep] found deferred widget '{name}': {widget}")
+            self._log(f"[LatheEasyStep] found deferred widget '{name}': {widget}", level="info")
             
             # If it's a button, try to connect its signal
             if isinstance(widget, QtWidgets.QPushButton):
@@ -2845,9 +3408,9 @@ class HandlerClass:
                 button.clicked.connect(self._handle_contour_move_up)
             elif name == "contour_move_down":
                 button.clicked.connect(self._handle_contour_move_down)
-            print(f"[LatheEasyStep] connected signal for deferred button '{name}'")
+            self._log(f"[LatheEasyStep] connected signal for deferred button '{name}'", level="info")
         except Exception as e:
-            print(f"[LatheEasyStep] failed to connect signal for button '{name}': {e}")
+            self._log(f"[LatheEasyStep] failed to connect signal for button '{name}': {e}", level="error")
     
     def _update_ui_after_widget_found(self, name: str, widget: QtWidgets.QWidget):
         """Aktualisiert UI-Zustand nachdem ein Widget gefunden wurde."""
@@ -2867,7 +3430,7 @@ class HandlerClass:
             }:
                 self._populate_tool_combos(self._loaded_tools)
         except Exception as e:
-            print(f"[LatheEasyStep] error updating UI after finding '{name}': {e}")
+            self._log(f"[LatheEasyStep] error updating UI after finding '{name}': {e}", level="error")
     
     def _force_visibility_updates(self):
         """Erzwingt Sichtbarkeits-Updates für embedded Panel (QtVCP-spezifisch)."""
@@ -2896,9 +3459,9 @@ class HandlerClass:
                 except Exception:
                     pass
                     
-            print("[LatheEasyStep] forced visibility updates for embedded mode")
+            self._log("[LatheEasyStep] forced visibility updates for embedded mode", level="info")
         except Exception as e:
-            print(f"[LatheEasyStep] error in force visibility updates: {e}")
+            self._log(f"[LatheEasyStep] error in force visibility updates: {e}", level="error")
     
     def _setup_slice_view(self):
         # Optional: side view + slice view (draggable Z slice)
@@ -3031,16 +3594,15 @@ class HandlerClass:
 
         if self.program_retract_mode:
             items = [self.program_retract_mode.itemText(i) for i in range(self.program_retract_mode.count())]
-            print(
+            self._log(
                 f"[LatheEasyStep] retract combo found: "
                 f"{self.program_retract_mode.objectName()}, "
                 f"items={items}, "
-                f"current='{self.program_retract_mode.currentText()}'"
-            )
+                f"current='{self.program_retract_mode.currentText()}'", level="info")
             # Signal hier (spät) sicher verbinden
             self.program_retract_mode.currentIndexChanged.connect(self._handle_global_change)
         else:
-            print("[LatheEasyStep] initialized__: no program_retract_mode combo found")
+            self._log("[LatheEasyStep] initialized__: no program_retract_mode combo found", level="info")
 
         # falls wir die Rohteilform-Combo jetzt haben: Signal anschließen
         if self.program_shape:
@@ -3137,9 +3699,9 @@ class HandlerClass:
             self._unit_timer.setInterval(200)  # alle 200 ms prüfen
             self._unit_timer.timeout.connect(self._check_unit_change)
             self._unit_timer.start()
-            print("[LatheEasyStep] unit polling timer started")
+            self._log("[LatheEasyStep] unit polling timer started", level="info")
         else:
-            print("[LatheEasyStep] initialized__: still no unit combo")
+            self._log("[LatheEasyStep] initialized__: still no unit combo", level="info")
 
         # Jetzt sicherstellen, dass die Preview-Widgets referenziert sind
         self._ensure_preview_widgets()
@@ -3147,7 +3709,7 @@ class HandlerClass:
         # Buttons/Liste sicher verbinden (falls erst jetzt gefunden)
         self._connect_signals()
         try:
-            print(f"[LatheEasyStep] core widgets: list_ops={self.list_ops}, btn_add={self.btn_add}, btn_delete={self.btn_delete}")
+            self._log(f"[LatheEasyStep] core widgets: list_ops={self.list_ops}, btn_add={self.btn_add}, btn_delete={self.btn_delete}", level="info")
         except Exception:
             pass
         # Finaler Versuch nach vollständigem UI-Aufbau
@@ -3228,7 +3790,7 @@ class HandlerClass:
         # If we run our widget lookup / signal connections too early, we bind to the wrong widgets
         # and later UI updates (visibility, previews) won't work.
         if not getattr(self, 'w', None):
-            print('[LatheEasyStep] _finalize_ui_ready: widgets not ready (no program_unit) - deferring')
+            self._log('[LatheEasyStep] _finalize_ui_ready: widgets not ready (no program_unit) - deferring', level="info")
             return
 
         self._ensure_core_widgets()
@@ -3266,7 +3828,7 @@ class HandlerClass:
         self._ensure_contour_widgets()
         self._init_contour_table()
         try:
-            print(f"[LatheEasyStep] core widgets FIX: add={self.btn_add} del={self.btn_delete} list={self.list_ops}")
+            self._log(f"[LatheEasyStep] core widgets FIX: add={self.btn_add} del={self.btn_delete} list={self.list_ops}", level="info")
         except Exception:
             pass
         self._setup_param_maps()
@@ -3274,10 +3836,9 @@ class HandlerClass:
         self._setup_thread_helpers()
         self._debug_widget_names()
         try:
-            print(
+            self._log(
                 "[LatheEasyStep][debug] finalize: parting_contour=",
-                self._get_widget_by_name("parting_contour"),
-            )
+                self._get_widget_by_name("parting_contour"), level="debug")
         except Exception:
             pass
         # Nach vollständigem Aufbau sicherstellen, dass die Kern-Widgets
@@ -3362,7 +3923,7 @@ class HandlerClass:
                 names.append(
                     f"{c.objectName()} vis={c.isVisible()} score={_score_table(c)} parent={parent.objectName() if parent else None}"
                 )
-            print(f"[LatheEasyStep][debug] contour table candidates: {names}, chosen={getattr(self.contour_segments, 'objectName', lambda: None)() if self.contour_segments else None}")
+            self._log(f"[LatheEasyStep][debug] contour table candidates: {names}, chosen={getattr(self.contour_segments, 'objectName', lambda: None)() if self.contour_segments else None}", level="debug")
         except Exception:
             pass
         self.contour_edge_type = grab("contour_edge_type")
@@ -3597,7 +4158,7 @@ class HandlerClass:
                         pass
             # Debug-Ausgabe
             try:
-                print(f"[LatheEasyStep] _apply_thread_preset: profile={profile}, pitch={p}, changed={changed}")
+                self._log(f"[LatheEasyStep] _apply_thread_preset: profile={profile}, pitch={p}, changed={changed}", level="info")
             except Exception:
                 pass
         finally:
@@ -3606,7 +4167,7 @@ class HandlerClass:
     def _apply_thread_preset_force(self):
         """Handler: Preset hart anwenden (Button)."""
         try:
-            print("[LatheEasyStep] btn_thread_preset clicked: applying preset force")
+            self._log("[LatheEasyStep] btn_thread_preset clicked: applying preset force", level="info")
         except Exception:
             pass
         try:
@@ -3618,13 +4179,13 @@ class HandlerClass:
         """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
         root = self.root_widget or self._find_root_widget()
         if root is None:
-            print("[LatheEasyStep] debug: no root widget")
+            self._log("[LatheEasyStep] debug: no root widget", level="debug")
             return
         btns = [w.objectName() for w in root.findChildren(QtWidgets.QPushButton)]
         lists = [w.objectName() for w in root.findChildren(QtWidgets.QListWidget)]
-        print(f"[LatheEasyStep] debug root: {root.objectName()}")
-        print(f"[LatheEasyStep] debug buttons: {btns}")
-        print(f"[LatheEasyStep] debug list widgets: {lists}")
+        self._log(f"[LatheEasyStep] debug root: {root.objectName()}", level="debug")
+        self._log(f"[LatheEasyStep] debug buttons: {btns}", level="debug")
+        self._log(f"[LatheEasyStep] debug list widgets: {lists}", level="debug")
 
     def _connect_button_once(self, button, handler, flag_name: str):
 
@@ -3732,13 +4293,15 @@ class HandlerClass:
 
         # Fallbacks, falls die Typ-Suche scheitert
         if self.list_ops is None:
-            candidates = root.findChildren(QtWidgets.QListWidget) or root.findChildren(QtWidgets.QWidget)
+            candidates = root.findChildren(QtWidgets.QListWidget)
             if candidates:
                 self.list_ops = candidates[0]
+        self._ensure_list_ops_type()
         if self.tab_params is None:
             candidates = root.findChildren(QtWidgets.QTabWidget)
             if candidates:
                 self.tab_params = candidates[0]
+        self._resolve_core_widgets_strict()
 
         # Falls wir erst jetzt Buttons gefunden haben: Signale verbinden
         self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
@@ -3797,7 +4360,7 @@ class HandlerClass:
         idx = self.program_unit.currentIndex()
         if idx != self._unit_last_index:
             self._unit_last_index = idx
-            print(f"[LatheEasyStep] unit changed (poll) idx={idx}")
+            self._log(f"[LatheEasyStep] unit changed (poll) idx={idx}", level="info")
             self._apply_unit_suffix()
             self._update_program_visibility()
             self._update_retract_visibility()
@@ -3981,13 +4544,17 @@ class HandlerClass:
         try:
             self._update_selected_operation(row)
         except Exception as e:
-            print(f"[LatheEasyStep] _on_param_changed: update failed: {e}")
+            self._log(f"[LatheEasyStep] _on_param_changed: update failed: {e}", level="error")
 
     def _connect_signals(self):
             # Stelle sicher, dass die Kern-Widgets vorhanden sind, bevor wir Signale verbinden
             self._ensure_core_widgets()
             if self.tab_params is None:
                 self.tab_params = self._get_widget_by_name("tabParams")
+            self._ensure_list_ops_type()
+            if not hasattr(self, "_resolver"):
+                self._setup_resolver()
+            self._resolve_core_widgets_strict()
 
             self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
             self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
@@ -4015,6 +4582,35 @@ class HandlerClass:
                     self._update_parting_mode_visibility
                 )
                 self._parting_mode_connected = True
+            if self.list_ops is None:
+                def _on_list_ops_ready(w, err):
+                    if err is not None:
+                        try:
+                            self.LOG.error(f"listOperations resolve failed: {err}")
+                        except Exception:
+                            self._log(err, level="info")
+                        return
+                    if not isinstance(w, QtWidgets.QListWidget):
+                        return
+                    self.list_ops = w
+                    if not getattr(self, "_list_ops_connected", False):
+                        self.list_ops.currentRowChanged.connect(self._handle_selection_change)
+                        self._list_ops_connected = True
+                    if not getattr(self, "_list_ops_double_click_connected", False):
+                        self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
+                        self._list_ops_double_click_connected = True
+                    if not getattr(self, "_list_ops_click_connected", False):
+                        self.list_ops.clicked.connect(self._mark_operation_user_selected)
+                        self._list_ops_click_connected = True
+
+                self._resolver.resolve_later(
+                    QtWidgets.QListWidget,
+                    "listOperations",
+                    _on_list_ops_ready,
+                    timeout_ms=5000,
+                    interval_ms=150,
+                    debug_context=True,
+                )
 
             # Tool combo previews
             tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
@@ -4311,9 +4907,8 @@ class HandlerClass:
                 continue
             if op.op_type != OpType.CONTOUR:
                 try:
-                    print(
-                        f"[LatheEasyStep][debug] contour-scan skip op type {op.op_type}"
-                    )
+                    self._log(
+                        f"[LatheEasyStep][debug] contour-scan skip op type {op.op_type}", level="debug")
                 except Exception:
                     pass
                 continue
@@ -4367,15 +4962,15 @@ class HandlerClass:
             live_name = self.contour_name.text().strip() if getattr(self, "contour_name", None) else ""
             live_rows = self.contour_segments.rowCount() if getattr(self, "contour_segments", None) else 0
             available = self._available_contour_names()
-            print(prefix)
-            print(f"  ops: {op_infos if op_infos else 'keine Kontur-Operationen'}")
-            print(f"  live contour widget name='{live_name}' rows={live_rows}")
-            print(f"  available names for parting: {available}")
+            self._log(prefix, level="info")
+            self._log(f"  ops: {op_infos if op_infos else 'keine Kontur-Operationen'}", level="warning")
+            self._log(f"  live contour widget name='{live_name}' rows={live_rows}", level="info")
+            self._log(f"  available names for parting: {available}", level="info")
             if getattr(self, "parting_contour", None):
                 current = self.parting_contour.currentText().strip()
-                print(f"  parting combo current text='{current}' editable={self.parting_contour.isEditable()}")
+                self._log(f"  parting combo current text='{current}' editable={self.parting_contour.isEditable()}", level="info")
         except Exception as exc:
-            print(f"[LatheEasyStep][debug] parting contour debug failed: {exc}")
+            self._log(f"[LatheEasyStep][debug] parting contour debug failed: {exc}", level="debug")
 
     def _resolve_contour_path(self, contour_name: str) -> List[Tuple[float, float]]:
         if not contour_name:
@@ -4426,7 +5021,7 @@ class HandlerClass:
         if getattr(self, "parting_contour", None) is None:
             self.parting_contour = self._get_widget_by_name("parting_contour")
         if getattr(self, "parting_contour", None) is None:
-            print("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh")
+            self._log("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh", level="debug")
             return
 
         self._debug_contour_state("before refresh")
@@ -5303,7 +5898,7 @@ class HandlerClass:
             if active is not None and active >= 0 and inserts:
                 active += inserts
         except Exception as exc:
-            print("[LatheEasyStep] stock/retract preview ERROR:", exc)
+            self._log("[LatheEasyStep] stock/retract preview ERROR:", exc, level="error")
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
         self._set_preview_paths(paths, active, include_contour_preview=True)
@@ -5348,11 +5943,10 @@ class HandlerClass:
             lst.blockSignals(False)
             try:
                 items = [lst.item(i).text() for i in range(lst.count())]
-                print(
+                self._log(
                     f"[LatheEasyStep][debug] list '{lst.objectName()}' "
                     f"count={lst.count()} items={items} vis={lst.isVisible()} "
-                    f"size={lst.size()}"
-                )
+                    f"size={lst.size()}", level="debug")
                 # Sichtbarkeit erzwingen – eigener Style gegen dunkle QSS
                 lst.setStyleSheet(
                     "QListWidget { background: #f5f5f5; color: #000000; }"
@@ -5454,7 +6048,7 @@ class HandlerClass:
         self._adding_operation = True
         try:
             try:
-                print("[LatheEasyStep] add operation triggered")
+                self._log("[LatheEasyStep] add operation triggered", level="info")
             except Exception:
                 pass
             op_type = self._current_op_type()
@@ -5483,7 +6077,7 @@ class HandlerClass:
                     contour_name = self._current_parting_contour_name()
                     contour_path = self._resolve_contour_path(contour_name)
                     if not contour_name or not contour_path:
-                        print("[LatheEasyStep] Abspanen benötigt eine vorhandene Kontur-Auswahl")
+                        self._log("[LatheEasyStep] Abspanen benötigt eine vorhandene Kontur-Auswahl", level="info")
                         self._update_parting_ready_state()
                         return
                     params["contour_name"] = contour_name
@@ -5493,7 +6087,7 @@ class HandlerClass:
                 self.model.add_operation(op)
                 try:
                     debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
-                    print(f"[LatheEasyStep][debug] operations now: {debug_ops}")
+                    self._log(f"[LatheEasyStep][debug] operations now: {debug_ops}", level="debug")
                 except Exception:
                     pass
 
@@ -5965,7 +6559,7 @@ class HandlerClass:
             # Load operation data into UI
             self._load_operation_into_widgets(op)
         except Exception as e:
-            print(f"[LatheEasyStep] _on_step_double_clicked: {e}")
+            self._log(f"[LatheEasyStep] _on_step_double_clicked: {e}", level="info")
 
     def _handle_move_up(self):
         if self._moving_up:
@@ -6117,7 +6711,7 @@ class HandlerClass:
                 cells.append(
                     [table.item(r, c).text() if table.item(r, c) else "" for c in range(table.columnCount())]
                 )
-            print(f"[LatheEasyStep][debug] contour rows={table.rowCount()} data={cells}")
+            self._log(f"[LatheEasyStep][debug] contour rows={table.rowCount()} data={cells}", level="debug")
         except Exception:
             pass
         # neuer Datensatz -> Vorlage-Modus, nicht automatisch Zeile editieren
@@ -6240,16 +6834,16 @@ class HandlerClass:
             }
             errs = validate_contour_segments_for_profile(params)
             if errs:
-                print("[LatheEasyStep][contour][INVALID]")
+                self._log("[LatheEasyStep][contour][INVALID]", level="error")
                 for err in errs:
-                    print("  -", err)
+                    self._log("  -", err, level="info")
                 self._set_preview_paths([])
                 return
 
             primitives = build_contour_path(params)
             self._set_preview_paths([primitives])
         except Exception as e:
-            print("[LatheEasyStep] _update_contour_preview_temp ERROR:", e)
+            self._log("[LatheEasyStep] _update_contour_preview_temp ERROR:", e, level="error")
             self._set_preview_paths([])
 
     def _sync_contour_edge_controls(self):
@@ -6411,7 +7005,7 @@ class HandlerClass:
                     f"Programm gespeichert unter:\n{filepath}\n"
                     "Automatisches Öffnen ist nicht verfügbar.",
                 )
-                print(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar")
+                self._log(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar", level="info")
         except Exception as e:
             QtWidgets.QMessageBox.critical(
                 self.root_widget or None,
@@ -6550,9 +7144,9 @@ class HandlerClass:
 
         if missing_iso:
             formatted = ", ".join(f"T{num:02d}" for num in sorted(set(missing_iso)))
-            print(f"[LatheEasyStep] Hinweis: ISO/Radius fehlt bei: {formatted} (optional)")
+            self._log(f"[LatheEasyStep] Hinweis: ISO/Radius fehlt bei: {formatted} (optional)", level="warning")
         if duplicates:
-            print(f"[LatheEasyStep] Tool-Tabelle: Duplikate ignoriert für {', '.join(f'T{num:02d}' for num in sorted(duplicates))}")
+            self._log(f"[LatheEasyStep] Tool-Tabelle: Duplikate ignoriert für {', '.join(f'T{num:02d}' for num in sorted(duplicates))}", level="info")
 
         return tools, sorted(set(missing_iso))
 
@@ -6852,7 +7446,7 @@ class HandlerClass:
 
 
     def _handle_global_change(self, *args, **kwargs):
-        print("[LatheEasyStep] _handle_global_change() called")
+        self._log("[LatheEasyStep] _handle_global_change() called", level="info")
         self._apply_unit_suffix()
         self._update_program_visibility()
         self._update_retract_visibility()
@@ -6867,7 +7461,7 @@ class HandlerClass:
         if self.program_unit is None:
             self.program_unit = self._find_unit_combo()
             if self.program_unit is None:
-                print("[LatheEasyStep] _apply_unit_suffix: no unit combo, abort")
+                self._log("[LatheEasyStep] _apply_unit_suffix: no unit combo, abort", level="info")
                 return
 
         idx = self.program_unit.currentIndex()
@@ -6879,10 +7473,10 @@ class HandlerClass:
         # Root-Widget bestimmen
         root = self.root_widget or self.program_unit.window()
         if root is None:
-            print("[LatheEasyStep] _apply_unit_suffix: no root widget")
+            self._log("[LatheEasyStep] _apply_unit_suffix: no root widget", level="info")
             return
 
-        print(f"[LatheEasyStep] _apply_unit_suffix(): unit={unit}, root={root.objectName()}")
+        self._log(f"[LatheEasyStep] _apply_unit_suffix(): unit={unit}, root={root.objectName()}", level="info")
 
         # --- 1) Alle DoubleSpinBoxen im Fenster behandeln ---
         for sb in root.findChildren(QtWidgets.QDoubleSpinBox):
@@ -6933,7 +7527,7 @@ class HandlerClass:
                 shape = self.program_shape.currentText()
 
         if shape is None or shape == "":
-            print("[LatheEasyStep] _update_program_visibility: keine Form")
+            self._log("[LatheEasyStep] _update_program_visibility: keine Form", level="warning")
             return
 
         # Normalisieren: Index (sprachneutral) oder Text (Fallback)
@@ -6946,12 +7540,12 @@ class HandlerClass:
             shape_text = str(shape)
             shape_key = shape_text.strip().lower()
 
-        print(f"[LatheEasyStep] _update_program_visibility(): shape='{shape_text}'")
+        self._log(f"[LatheEasyStep] _update_program_visibility(): shape='{shape_text}'", level="info")
 
         # Root-Widget wie in _apply_unit_suffix benutzen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
         if root is None:
-            print("[LatheEasyStep] _update_program_visibility: kein root_widget")
+            self._log("[LatheEasyStep] _update_program_visibility: kein root_widget", level="warning")
             return
 
         def _w(objname: str):
@@ -7012,19 +7606,19 @@ class HandlerClass:
             combo = widget
 
         if combo is None:
-            print("[LatheEasyStep] _update_retract_visibility: kein Combo / Modus")
+            self._log("[LatheEasyStep] _update_retract_visibility: kein Combo / Modus", level="warning")
             return
 
         idx = combo.currentIndex()
         if isinstance(mode_in, (int, float)):
             idx = int(mode_in)
 
-        print(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, index={idx}")
+        self._log(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, index={idx}", level="info")
 
         # Root-Widget wie in _update_program_visibility benutzen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
         if root is None:
-            print("[LatheEasyStep] _update_retract_visibility: kein root_widget")
+            self._log("[LatheEasyStep] _update_retract_visibility: kein root_widget", level="warning")
             return
 
         def show(name: str, visible: bool):
@@ -7040,7 +7634,7 @@ class HandlerClass:
                 except Exception:
                     w = None
             if w is None:
-                print(f"[LatheEasyStep] _update_retract_visibility: widget '{name}' nicht gefunden")
+                self._log(f"[LatheEasyStep] _update_retract_visibility: widget '{name}' nicht gefunden", level="info")
                 return
             w.setVisible(visible)
 
@@ -7101,7 +7695,7 @@ class HandlerClass:
                 self.program_s3 = None
 
         has_sub = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
-        print(f"[LatheEasyStep] _update_subspindle_visibility(): has_sub={has_sub}")
+        self._log(f"[LatheEasyStep] _update_subspindle_visibility(): has_sub={has_sub}", level="info")
 
         # Falls Referenzen fehlen, per findChild nachholen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
@@ -7113,12 +7707,12 @@ class HandlerClass:
         if self.label_prog_s3:
             self.label_prog_s3.setVisible(has_sub)
         else:
-            print("[LatheEasyStep] _update_subspindle_visibility: label_prog_s3 not found")
+            self._log("[LatheEasyStep] _update_subspindle_visibility: label_prog_s3 not found", level="warning")
 
         if self.program_s3:
             self.program_s3.setVisible(has_sub)
         else:
-            print("[LatheEasyStep] _update_subspindle_visibility: program_s3 not found")
+            self._log("[LatheEasyStep] _update_subspindle_visibility: program_s3 not found", level="warning")
 
     def _update_face_visibility(self):
         """Show/hide face (Planen) UI elements depending on mode and edge type.
