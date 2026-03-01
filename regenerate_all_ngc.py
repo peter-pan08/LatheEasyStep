@@ -87,8 +87,9 @@ def regenerate_bohren():
         Operation(OpType.PROGRAM_HEADER, {"program_name": "Bohren"}),
         Operation(OpType.DRILL, {
             "tool": 7, "spindle": 1500.0, "feed": 0.1, "mode": 0,
+            "safe_z": 2.0,
             "comment": "Loch bohren"
-        }, path=[(0.0, 0.0), (0.0, -30.0)]),
+        }, path=[(0.0, 2.0), (0.0, 0.0), (8.0, 0.0), (8.0, -27.0), (0.0, -30.0)]),
     ]
     
     settings = make_program_settings()
