@@ -112,6 +112,10 @@ alle Steps gemeinsam gespeichert werden
 
 komplette Programme wieder geladen werden
 
+Hinweis (Stand 2026-02):
+Im eingebetteten Betrieb wird die sichtbare Step-Liste jetzt strikt über die Operationsliste geführt.
+Geladene Einzel-Steps und komplette Programme erscheinen dadurch zuverlässig in der linken Liste.
+
 ➡️ Ideal, um bestehende Programme gezielt zu ändern (z. B. Radius oder Durchmesser anpassen).
 
 Reiter „Kontur“
@@ -351,6 +355,10 @@ loaded again
 reused in other programs
 
 Entire programs can also be saved and loaded.
+
+Note (as of 2026-02):
+In embedded mode, the visible step list is now strictly bound to the operations list.
+Loaded single steps and complete programs therefore appear reliably in the left list.
 
 “Contour” Tab
 

@@ -77,6 +77,15 @@ Geplante Erweiterung:
 
 ---
 
+## Embedded-Widget-Binding (2026-02 Fix)
+- Im eingebetteten QTvcp-Modus dürfen Operations-Updates ausschließlich gegen `listOperations`/`list_ops` laufen.
+- Der frühere Fallback auf beliebige `QListWidget`-Instanzen (insb. `gcode_list`) wurde entfernt, da dadurch Save/Load-Aktionen gegen die falsche Liste liefen.
+- `_refresh_operation_list()` verwirft jetzt aktiv falsch gebundene Listen (`objectName` nicht `listOperations`/`list_ops`) und resolved neu.
+- `_on_param_changed()` nutzt konsistent `self.list_ops`; damit bleiben Param-Änderungen und Selektion synchron.
+- Relevante Regressionstests: `tests/test_save_load_roundtrip.py`, `tests/test_step_double_click.py`.
+
+---
+
 ## Bekannte technische Baustellen
 - Native Arc-Intersections (statt Sampling)
 - G2/G3-Ausgabe

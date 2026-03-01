@@ -827,13 +827,187 @@
                  <widget class="QLineEdit" name="program_name" />
                 </item>
                 <item row="26" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_size">
+                  <property name="text">
+                   <string>Spannfutter</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="26" column="1">
+                 <widget class="QComboBox" name="program_chuck_size">
+                  <item>
+                   <property name="text">
+                    <string>Kein Futter</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>80 mm</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>100 mm</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>125 mm</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>160 mm</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>200 mm</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>250 mm</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+                <item row="27" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_part_type">
+                  <property name="text">
+                   <string>Werkstücktyp</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="27" column="1">
+                 <widget class="QComboBox" name="program_chuck_part_type">
+                  <item>
+                   <property name="text">
+                    <string>Welle (Vollmaterial)</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Rohr</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+                <item row="28" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_grip_mode">
+                  <property name="text">
+                   <string>Spannart</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="28" column="1">
+                 <widget class="QComboBox" name="program_chuck_grip_mode">
+                  <item>
+                   <property name="text">
+                    <string>Außen gespannt</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Innen gespannt</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+                <item row="29" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_profile">
+                  <property name="text">
+                   <string>Spannprofil</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="29" column="1">
+                 <widget class="QComboBox" name="program_chuck_profile">
+                  <item>
+                   <property name="text">
+                    <string>3-Backen Standard</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Softjaws</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Innenausdrehen</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+                <item row="30" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_x_min">
+                  <property name="text">
+                   <string>No-Go X min (mm)</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="30" column="1">
+                 <widget class="QDoubleSpinBox" name="program_chuck_x_min">
+                  <property name="suffix">
+                   <string> mm</string>
+                  </property>
+                  <property name="minimum">
+                   <double>-2000.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>2000.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="31" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_x_max">
+                  <property name="text">
+                   <string>No-Go X max (mm)</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="31" column="1">
+                 <widget class="QDoubleSpinBox" name="program_chuck_x_max">
+                  <property name="suffix">
+                   <string> mm</string>
+                  </property>
+                  <property name="minimum">
+                   <double>-2000.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>2000.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="32" column="0">
+                 <widget class="QLabel" name="label_prog_chuck_z_limit">
+                  <property name="text">
+                   <string>No-Go Z Grenze (mm)</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="32" column="1">
+                 <widget class="QDoubleSpinBox" name="program_chuck_z_limit">
+                  <property name="suffix">
+                   <string> mm</string>
+                  </property>
+                  <property name="minimum">
+                   <double>-2000.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>2000.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="33" column="0">
                  <widget class="QLabel" name="label_tool_table_path">
                   <property name="text">
                    <string>Tooltabelle</string>
                   </property>
                  </widget>
                 </item>
-                <item row="26" column="1">
+                <item row="33" column="1">
                  <layout class="QHBoxLayout" name="horizontalLayoutTool">
                   <item>
                    <widget class="QLineEdit" name="tool_table_path">
@@ -853,6 +1027,37 @@
                    </widget>
                   </item>
                  </layout>
+                </item>
+                <item row="34" column="0">
+                 <widget class="QLabel" name="label_prog_machine_profile">
+                  <property name="text">
+                   <string>Maschinenprofil</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="34" column="1">
+                 <widget class="QComboBox" name="program_machine_profile">
+                  <item>
+                   <property name="text">
+                    <string>Manuell</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Werkstatt 125 Standard</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Werkstatt 100 Soft</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Werkstatt 200 Innen</string>
+                   </property>
+                  </item>
+                 </widget>
                 </item>
                </layout>
               </widget>
@@ -1238,7 +1443,7 @@
                   </property>
                  </widget>
                 </item>
-               </layout>
+               <item row="19" column="0"><widget class="QLabel" name="label_face_depth_per_pass"><property name="text"><string>Zustellung pro Schnitt</string></property></widget></item><item row="19" column="1"><widget class="QDoubleSpinBox" name="face_depth_per_pass"><property name="suffix"><string> mm</string></property><property name="maximum"><double>1000.000000000000000</double></property><property name="value"><double>0.200000000000000</double></property></widget></item></layout>
               </widget>
               <widget class="QWidget" name="tabContour">
                <attribute name="title">
@@ -1744,6 +1949,70 @@
                   </property>
                   <property name="text">
                    <string>allow</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="14" column="0">
+                 <widget class="QLabel" name="label_parting_finish_allow_x">
+                  <property name="text">
+                   <string>Schlichtaufmaß X</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="14" column="1">
+                 <widget class="QDoubleSpinBox" name="parting_finish_allow_x">
+                  <property name="toolTip">
+                   <string>Schlichtaufmaß in X-Richtung (Durchmesser) für Schruppbearbeitung</string>
+                  </property>
+                  <property name="suffix">
+                   <string> mm</string>
+                  </property>
+                  <property name="decimals">
+                   <number>3</number>
+                  </property>
+                  <property name="minimum">
+                   <double>0.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>10.000000000000000</double>
+                  </property>
+                  <property name="singleStep">
+                   <double>0.050000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.200000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="15" column="0">
+                 <widget class="QLabel" name="label_parting_finish_allow_z">
+                  <property name="text">
+                   <string>Schlichtaufmaß Z</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="15" column="1">
+                 <widget class="QDoubleSpinBox" name="parting_finish_allow_z">
+                  <property name="toolTip">
+                   <string>Schlichtaufmaß in Z-Richtung für Schruppbearbeitung</string>
+                  </property>
+                  <property name="suffix">
+                   <string> mm</string>
+                  </property>
+                  <property name="decimals">
+                   <number>3</number>
+                  </property>
+                  <property name="minimum">
+                   <double>0.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>10.000000000000000</double>
+                  </property>
+                  <property name="singleStep">
+                   <double>0.050000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>0.100000000000000</double>
                   </property>
                  </widget>
                 </item>

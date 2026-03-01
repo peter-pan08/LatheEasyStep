@@ -61,6 +61,18 @@ def is_monotonic_x_decreasing(path: List[Point]) -> bool:
     return all(x1 >= x2 for (x1, _), (x2, _) in zip(path, path[1:]))
 
 
+def is_monotonic_x_increasing(path: List[Point]) -> bool:
+    """Check if X coordinates are monotonically increasing."""
+    if len(path) < 2:
+        return True
+    return all(x1 <= x2 for (x1, _), (x2, _) in zip(path, path[1:]))
+
+
+def is_monotonic_x(path: List[Point]) -> bool:
+    """Check if X coordinates are monotonic in either direction."""
+    return is_monotonic_x_decreasing(path) or is_monotonic_x_increasing(path)
+
+
 def primitives_to_points(primitives: List[Dict[str, object]]) -> List[Point]:
     """Convert contour primitives to a list of points."""
     points = []
@@ -104,7 +116,7 @@ REQUIRED_KEYS = {
     OpType.BORE: ["feed", "safe_z", "tool"],
     OpType.THREAD: ["pitch", "length", "major_diameter", "spindle", "tool"],
     OpType.GROOVE: ["feed", "safe_z", "tool"],
-    OpType.DRILL: ["feed", "safe_z", "mode", "tool"],
+    OpType.DRILL: ["feed", "safe_z", "tool"],
     OpType.KEYWAY: ["depth_per_pass", "feed", "safe_z", "tool"],
     OpType.ABSPANEN: ["depth_per_pass", "tool"],
 }
@@ -972,15 +984,27 @@ def gcode_from_primitives(
     for pr in primitives:
         typ = pr.get("type")
         if typ == "line":
-            x, z = pr.get("end", (cur_x, cur_z))
+            # builder primitives use 'p2' as the end point, legacy code used 'end'
+            if "p2" in pr:
+                x, z = pr["p2"]
+            else:
+                x, z = pr.get("end", (cur_x, cur_z))
             x, z = float(x), float(z)
             lines.append(f"G1 X{x:.3f} Z{z:.3f}")
             cur_x, cur_z = x, z
             continue
 
         if typ == "arc":
-            x, z = pr.get("end", (cur_x, cur_z))
-            cx, cz = pr.get("center", (cur_x, cur_z))
+            # end point may be stored in 'p2' or in legacy 'end'
+            if "p2" in pr:
+                x, z = pr["p2"]
+            else:
+                x, z = pr.get("end", (cur_x, cur_z))
+            # primitives stored center as 'c' in build_contour_path; legacy code expected 'center'
+            center = pr.get("center") if pr.get("center") is not None else pr.get("c")
+            if center is None:
+                center = (cur_x, cur_z)
+            cx, cz = center
             x, z, cx, cz = float(x), float(z), float(cx), float(cz)
 
             i = cx - cur_x
@@ -1001,7 +1025,7 @@ def gcode_from_primitives(
 
 
 def contour_sub_from_points(points: List[Point], sub_num: int) -> List[str]:
-    """Create a contour subroutine using G0-only line segments."""
+    """Create a contour subroutine using G1-only line segments."""
     lines: List[str] = [f"o{sub_num} sub"]
     if not points:
         lines.append(f"o{sub_num} endsub")
@@ -1009,14 +1033,14 @@ def contour_sub_from_points(points: List[Point], sub_num: int) -> List[str]:
     prev: Optional[Point] = None
     for x, z in points:
         if prev is None or (abs(prev[0] - x) > 1e-9 or abs(prev[1] - z) > 1e-9):
-            lines.append(f"G0 X{x:.3f} Z{z:.3f}")
+            lines.append(f"G1 X{x:.3f} Z{z:.3f}")
             prev = (x, z)
     lines.append(f"o{sub_num} endsub")
     return lines
 
 
 def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: int) -> List[str]:
-    """Create a contour subroutine using G0/G2/G3 only (XZ plane, I/K arcs)."""
+    """Create a contour subroutine using G1/G2/G3 only (XZ plane, I/K arcs)."""
     lines: List[str] = [f"o{sub_num} sub"]
     if not primitives:
         lines.append(f"o{sub_num} endsub")
@@ -1027,7 +1051,7 @@ def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: in
     def _ensure_at(x: float, z: float) -> None:
         nonlocal cur_x, cur_z
         if cur_x is None or cur_z is None or abs(cur_x - x) > 1e-9 or abs(cur_z - z) > 1e-9:
-            lines.append(f"G0 X{x:.3f} Z{z:.3f}")
+            lines.append(f"G1 X{x:.3f} Z{z:.3f}")
             cur_x, cur_z = x, z
 
     for pr in primitives:
@@ -1317,6 +1341,12 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if pause_enabled and pause_distance > 0.0 and mode_idx in (0, 2):
         settings["needs_step_line_pause_sub"] = True
 
+    # finish allowance values (used for comment and radial adjustment)
+    finish_allow_x = max(float(p.get("finish_allow_x", 0.0)), 0.0)
+    finish_allow_z = max(float(p.get("finish_allow_z", 0.0)), 0.0)
+    if finish_allow_x > 0.0 or finish_allow_z > 0.0:
+        lines.append(f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm)")
+
     # harte Sicherung: Unterbrechung nur beim Schruppen
     if mode_idx != 0:
         pause_enabled = False
@@ -1341,6 +1371,14 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     path_xs = [point[0] for point in path] if path else []
     if stock_x is None:
         stock_x = max(path_xs) if path_xs else 0.0
+
+    # radial finish allowance modifies the effective stock diameter used by the
+    # roughing cycle: start a little short so the final pass leaves the allowance.
+    stock_x_adj = stock_x
+    if mode_idx == 0 and finish_allow_x > 0.0:
+        stock_x_adj = stock_x - finish_allow_x
+        # ensure we don't go negative
+        stock_x_adj = max(stock_x_adj, 0.0)
 
     # band arguments
     cfg = get_retract_cfg(settings, side_idx)
@@ -1384,6 +1422,14 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     contour_name = p.get("contour_name")
     contour_subs = settings.get("contour_subs", {}) if settings else {}
     contour_sub_num = contour_subs.get(contour_name) if contour_name else None
+    # Primitives (with arcs) for cycle subroutines - prefer over points
+    primitives = p.get("_primitives")
+
+    def _build_cycle_sub(sub_num: int) -> List[str]:
+        """Build a cycle subroutine from primitives (G1/G2/G3) or points (G1 only)."""
+        if primitives:
+            return contour_sub_from_primitives(primitives, sub_num)
+        return contour_sub_from_points(path, sub_num)
 
     if strategy_code == "parallel_x":
         if is_monotonic_x_decreasing(path):
@@ -1391,10 +1437,13 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
             lines.append("(ABSPANEN Rough - parallel X)")
             if contour_sub_num is None:
-                lines.extend(contour_sub_from_points(path, sub_num))
+                lines.extend(_build_cycle_sub(sub_num))
             lines.append("(Anfahren vor Zyklus)")
-            _emit_approach(lines, stock_x, safe_z, settings)
-            lines.append(f"G72 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            # use adjusted stock for approach too so cycle begins inside allowance
+            _emit_approach(lines, stock_x_adj, safe_z, settings)
+            # use adjusted X value for rough cycle if mode is rough
+            x_cycle = stock_x_adj if mode_idx == 0 else stock_x
+            lines.append(f"G72 Q{sub_num} X{x_cycle:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
             if mode_idx in (1, 2):
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
             # global safe retract after step
@@ -1439,18 +1488,25 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         return lines
 
     if strategy_code == "parallel_z":
-        if is_monotonic_z_decreasing(path):
+        can_use_g71 = is_monotonic_z_decreasing(path) and is_monotonic_x(path)
+        if can_use_g71:
+            if external and any(float(x) > float(stock_x) + 1e-9 for x, _ in path):
+                can_use_g71 = False
+
+        if can_use_g71:
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
             lines.append("(ABSPANEN Rough - parallel Z)")
             if contour_sub_num is None:
-                lines.extend(contour_sub_from_points(path, sub_num))
+                lines.extend(_build_cycle_sub(sub_num))
             _emit_approach(lines, stock_x, safe_z, settings)
             lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
             if mode_idx in (1, 2):
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
             # global safe retract after step
             return lines
+
+        lines.append("(Info: G71 deaktiviert - Kontur nicht zyklustauglich, nutze Move-based Roughing)")
 
         xs = [pp[0] for pp in path] if path else [stock_x]
         x_target = min(xs) if external else max(xs)
@@ -1564,23 +1620,143 @@ def _emit_coolant(lines: List[str], mode: object) -> None:
 def _get_safe_position(settings: Dict[str, object] | None) -> Optional[Tuple[float, float]]:
     if not settings:
         return None
-    xa = _float_or_none(settings.get("xa"))
     xra = _float_or_none(settings.get("xra"))
     zra = _float_or_none(settings.get("zra"))
-    if xa is None or xra is None or zra is None:
+    if xra is None or zra is None:
         return None
-    return (xa + xra, zra)
+
+    xra_absolute = bool(settings.get("xra_absolute", False))
+    zra_absolute = bool(settings.get("zra_absolute", False))
+
+    if xra_absolute:
+        x_safe = xra
+    else:
+        xa = _float_or_none(settings.get("xa"))
+        if xa is None:
+            return None
+        x_safe = xa + xra
+
+    if zra_absolute:
+        z_safe = zra
+    else:
+        za = _float_or_none(settings.get("za"))
+        if za is None:
+            return None
+        z_safe = za + zra
+
+    return (x_safe, z_safe)
 
 
 def _emit_safe_retract(lines: List[str], settings: Dict[str, object] | None) -> None:
+    _emit_safe_retract_for_op(lines, settings, None)
+
+
+def _emit_safe_retract_for_op(
+    lines: List[str],
+    settings: Dict[str, object] | None,
+    op_type: Optional[str],
+    current_pos: Optional[Tuple[float, float]] = None,
+) -> None:
     safe = _get_safe_position(settings)
     if not safe:
         return
     x_safe, z_safe = safe
-    lines.append(f"G0 X{x_safe:.3f}")
-    lines.append(f"G0 Z{z_safe:.3f}")
+
+    # Lathe-specific free-travel policy:
+    # - default: simultaneous X/Z (diagonal free travel) when possible
+    # - groove/keyway (Einstich): first retract in X, then move Z
+    # - drill/thread: first retract in Z, then move X
+    # - if current point is still inside stock envelope: no diagonal free travel
+    def _inside_stock_envelope(pos: Optional[Tuple[float, float]]) -> bool:
+        if pos is None or settings is None:
+            return False
+        xa = _float_or_none(settings.get("xa"))
+        za = _float_or_none(settings.get("za"))
+        zi = _float_or_none(settings.get("zi"))
+        if xa is None or za is None or zi is None:
+            return False
+        xi = _float_or_none(settings.get("xi"))
+        if xi is None:
+            xi = 0.0
+        x, z = pos
+        x_min = min(xi, xa)
+        x_max = max(xi, xa)
+        z_min = min(zi, za)
+        z_max = max(zi, za)
+        eps = 1e-6
+        return (x_min - eps) <= x <= (x_max + eps) and (z_min - eps) <= z <= (z_max + eps)
+
+    def _inside_chuck_nogo(pos: Optional[Tuple[float, float]]) -> bool:
+        if pos is None or settings is None:
+            return False
+        x_min = _float_or_none(settings.get("chuck_no_go_x_min"))
+        x_max = _float_or_none(settings.get("chuck_no_go_x_max"))
+        z_lim = _float_or_none(settings.get("chuck_no_go_z_limit"))
+        if x_min is None or x_max is None or z_lim is None:
+            return False
+        x, z = pos
+        lo = min(x_min, x_max)
+        hi = max(x_min, x_max)
+        eps = 1e-6
+        if x < lo - eps or x > hi + eps:
+            return False
+
+        za = _float_or_none(settings.get("za"))
+        if za is None:
+            # project default convention: negative Z goes towards chuck
+            return z <= z_lim + eps
+        if z_lim <= za:
+            return z <= z_lim + eps
+        return z >= z_lim - eps
+
+    inside_stock = _inside_stock_envelope(current_pos)
+    inside_chuck_nogo = _inside_chuck_nogo(current_pos)
+
+    if op_type in (OpType.GROOVE, OpType.KEYWAY):
+        lines.append(f"G0 X{x_safe:.3f}")
+        lines.append(f"G0 Z{z_safe:.3f}")
+    elif op_type in (OpType.DRILL, OpType.THREAD):
+        lines.append(f"G0 Z{z_safe:.3f}")
+        lines.append(f"G0 X{x_safe:.3f}")
+    elif inside_stock or inside_chuck_nogo:
+        # Conservative fallback for turning-like ops while still in/at stock.
+        lines.append(f"G0 X{x_safe:.3f}")
+        lines.append(f"G0 Z{z_safe:.3f}")
+    else:
+        lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
+
     if settings is not None:
         settings["_is_at_safe"] = True
+
+
+def _estimate_operation_end_pos(op: Operation) -> Optional[Tuple[float, float]]:
+    """Best-effort estimate of the operation's last material-near point (X,Z)."""
+    path = op.path or []
+    if path:
+        last = path[-1]
+        if isinstance(last, (tuple, list)) and len(last) >= 2:
+            try:
+                return (float(last[0]), float(last[1]))
+            except Exception:
+                pass
+
+    p = op.params or {}
+    if op.op_type in (OpType.GROOVE, OpType.KEYWAY):
+        a_end = _float_or_none(p.get("A_end"))
+        mode = int(_float_or_none(p.get("mode")) or 0)
+        c_val = _float_or_none(p.get("C"))
+        if a_end is not None and c_val is not None:
+            if mode == 0:
+                return (a_end, c_val)
+            return (c_val, a_end)
+
+    if op.op_type == OpType.FACE:
+        x = _float_or_none(p.get("end_x"))
+        z = _float_or_none(p.get("end_z"))
+        if x is not None and z is not None:
+            return (x, z)
+
+    return None
 
 
 def _emit_approach(lines: List[str], start_x: float, start_z: float, settings: Dict[str, object] | None) -> None:
@@ -1621,16 +1797,18 @@ def _append_tool_and_spindle(lines: List[str], tool_value: object | None, spindl
         if tool_num != last_tool:
             lines.append(f"(Werkzeug T{tool_num:02d})")
             if settings is not None:
+                skip_tool_move = bool(settings.pop("_skip_tool_move", False))
                 safe = _get_safe_position(settings)
                 if safe and not settings.get("_is_at_safe"):
                     x_safe, z_safe = safe
-                    lines.append(f"G0 X{x_safe:.3f}")
                     lines.append(f"G0 Z{z_safe:.3f}")
+                    lines.append(f"G0 X{x_safe:.3f}")
                     settings["_is_at_safe"] = True
                 # Coolant off before toolchange
                 lines.append("M9")
-                toolchange_lines = move_to_toolchange_pos(settings)
-                lines.extend(toolchange_lines)
+                if not skip_tool_move:
+                    toolchange_lines = move_to_toolchange_pos(settings)
+                    lines.extend(toolchange_lines)
             lines.append(f"T{tool_num:02d} M6")
             if settings is not None:
                 settings["_current_tool"] = tool_num
@@ -1680,6 +1858,16 @@ def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None
     return lines
 
 
+# Mapping: combo index (float from _collect_params) → G-code mode string
+DRILL_MODE_MAP: Dict[int, str] = {
+    0: "G81",  # Normal drilling
+    1: "G82",  # Drilling with dwell
+    2: "G83",  # Peck drilling (full retract)
+    3: "G73",  # Chip breaking drilling (partial retract)
+    4: "G84",  # Tapping
+}
+
+
 def gcode_for_drill(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
     settings = settings or {}
     path = op.path or []
@@ -1687,12 +1875,19 @@ def gcode_for_drill(op: Operation, settings: Dict[str, object] | None = None) ->
         return []
     p = op.params
     require_tool(p, "DRILL")
-    mode_raw = p.get("mode", "G81")
+    # Resolve mode: may be float index from combo or string from test/manual
+    mode_raw_value = p.get("mode", "G81")
+    try:
+        mode_idx = int(float(mode_raw_value))
+        mode = DRILL_MODE_MAP.get(mode_idx, "G81")
+    except (TypeError, ValueError):
+        # Already a string like "G81" — validate it
+        mode = str(mode_raw_value) if str(mode_raw_value) in DRILL_MODE_MAP.values() else "G81"
     # Validate mode-specific required parameters
-    if mode_raw == "G82":
+    if mode == "G82":
         require(p, ["dwell"], "DRILL G82")
-    elif mode_raw in ["G83", "G73"]:
-        require(p, ["peck_depth"], "DRILL " + mode_raw)
+    elif mode in ["G83", "G73"]:
+        require(p, ["peck_depth"], "DRILL " + mode)
     lines: List[str] = []
     _append_tool_and_spindle(
         lines,
@@ -1701,11 +1896,14 @@ def gcode_for_drill(op: Operation, settings: Dict[str, object] | None = None) ->
         settings,
     )
     _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
-    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     safe_z = float(op.params.get("safe_z", 2.0))
     feed = float(op.params.get("feed", 0.12))
     depth_z = path[-1][1]
     x_start = path[0][0]
+    retract = float(op.params.get("retract", safe_z))
+    if retract < safe_z:
+        lines.append(f"(WARN: retract ({retract:.3f}) < safe_z ({safe_z:.3f}); verwende safe_z)")
+        retract = safe_z
     # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
     lines.append(f"(Anfahren vor Zyklus)")
     _emit_approach(lines, x_start, safe_z, settings)
@@ -1713,34 +1911,24 @@ def gcode_for_drill(op: Operation, settings: Dict[str, object] | None = None) ->
     lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
     lines.append("G17")
     lines.append(f"F{feed:.3f}")
-    if mode_raw == "G81":
-        # G81: Drilling
-        retract = float(op.params.get("retract", safe_z))
+    if mode == "G81":
         lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
-    elif mode_raw == "G82":
-        # G82: Drilling with dwell
-        retract = float(op.params.get("retract", safe_z))
+    elif mode == "G82":
         dwell = float(p.get("dwell", 0.0))
         lines.append(f"G82 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} P{dwell:.3f} F{feed:.3f}")
-    elif mode_raw == "G83":
-        # G83: Peck drilling
-        retract = float(op.params.get("retract", safe_z))
+    elif mode == "G83":
         peck_depth = float(p.get("peck_depth", 1.0))
         lines.append(f"G83 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
-    elif mode_raw == "G73":
-        # G73: Chip breaking drilling
-        retract = float(op.params.get("retract", safe_z))
+    elif mode == "G73":
         peck_depth = float(p.get("peck_depth", 1.0))
         lines.append(f"G73 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
-    elif mode_raw == "G84":
-        # G84: Tapping
-        retract = float(op.params.get("retract", safe_z))
+    elif mode == "G84":
         lines.append(f"G84 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
     else:
-        # Fallback to G81
-        retract = float(op.params.get("retract", safe_z))
         lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
     lines.append("G80")  # Cancel canned cycle
+    # Retract to safe Z before restoring lathe plane
+    lines.append(f"G0 Z{safe_z:.3f}")
     lines.append("G18")
     return lines
 def _should_activate_abstech(
@@ -2303,7 +2491,7 @@ def gcode_for_face(op: Operation, settings: Dict[str, object] | None = None) -> 
         sub_num = 100
     lines.append(f"o{sub_num} sub")
     for x, z in cleaned_path:
-        lines.append(f"G0 X{x:.3f} Z{z:.3f}")
+        lines.append(f"G1 X{x:.3f} Z{z:.3f}")
     lines.append(f"o{sub_num} endsub")
 
     # --- Zyklen ---
@@ -2311,6 +2499,7 @@ def gcode_for_face(op: Operation, settings: Dict[str, object] | None = None) -> 
     lines.append(f"(Anfahren vor Zyklus)")
     _emit_approach(lines, start_x, start_z, settings)
     if mode in (0, 2):  # Schruppen
+        # standard roughing cycle (no radial adjustment for face)
         lines.append(
             f"G72 Q{sub_num} X{start_x:.3f} Z{start_z:.3f} D{finish_allow_z:.3f} "
             f"I{depth_per_pass:.3f} R{retract:.3f}"
@@ -2370,6 +2559,7 @@ def gcode_for_thread(op: Operation, settings: Dict[str, object] | None = None) -
             0,
             min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1),
         )
+    internal = (orientation_idx == 1)
     orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
     standard_data = op.params.get("standard")
     standard_label = ""
@@ -2377,6 +2567,28 @@ def gcode_for_thread(op: Operation, settings: Dict[str, object] | None = None) -
         std_label_tmp = standard_data.get("label")
         if isinstance(std_label_tmp, str):
             standard_label = std_label_tmp
+
+    # -----------------------------------------------------------------
+    # Internal vs. external threading — LinuxCNC G76 direction logic
+    # -----------------------------------------------------------------
+    # LinuxCNC interp_convert.cc:
+    #   boring = (i_number > 0)
+    # When boring==1 (I>0) the tool moves OUTWARD (+X) for each pass.
+    # When boring==0 (I<0) the tool moves INWARD  (-X) for each pass.
+    #
+    # External thread: start at major Ø, cut inward  → I < 0 (default)
+    # Internal thread: start at bore surface (minor Ø of thread =
+    #   major - 2*K in G7 diameter mode), cut outward → I > 0
+    # -----------------------------------------------------------------
+    if internal:
+        # Mirror peak_offset sign: must be positive for boring=1
+        peak_offset = abs(peak_offset)
+        # Approach at the bore surface (minor diameter)
+        approach_x = major_diameter - 2.0 * thread_depth
+    else:
+        # External: peak_offset must be negative (boring=0)
+        peak_offset = -abs(peak_offset)
+        approach_x = major_diameter
 
     comments: List[str] = []
     if standard_label and standard_label != "Benutzerdefiniert":
@@ -2397,7 +2609,7 @@ def gcode_for_thread(op: Operation, settings: Dict[str, object] | None = None) -
 
     # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
     lines.append(f"(Anfahren vor Gewinde)")
-    _emit_approach(lines, major_diameter, safe_z, settings)
+    _emit_approach(lines, approach_x, safe_z, settings)
     lines.append(
         (
             "G76 "
@@ -2507,9 +2719,12 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         settings["_skip_tool_move"] = True
 
     # Modes / safety
-    # G18 XZ-plane, G7 diameter mode, G90 absolute, G40 cancel comp, G80 cancel canned, G21 mm, G95 feed/rev
+    # G18 XZ-plane, G7 diameter mode, G90 absolute, G40 cancel comp, G80 cancel canned
+    # G7 ist erforderlich, da alle X-Werte und I-Offsets als Durchmesser erzeugt werden.
     header_lines.append("G18 G7 G90 G40 G80")
-    header_lines.append("G21")
+    unit_norm = str(unit).strip().lower()
+    is_imperial = unit_norm in ("inch", "in", "zoll", "imperial")
+    header_lines.append("G20" if is_imperial else "G21")
     header_lines.append("G95")
     header_lines.append("G54")
     header_lines.append("")
@@ -2722,17 +2937,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         # Load tool before this step if needed
         op_tool = _get_tool_number(op.params)
         if op_tool > 0:
-            # For the first cutting step, skip toolchange move since it's already done at program start
-            if step_num == 1:
-                settings["_skip_tool_move"] = True
-                main_flow_lines.append(f"(Werkzeug T{op_tool:02d})")
-                main_flow_lines.append(f"T{op_tool:02d} M6")
-                settings["_current_tool"] = op_tool
-            else:
-                tool_lines: List[str] = []
-                _append_tool_and_spindle(tool_lines, op_tool, None, settings)
-                if tool_lines:
-                    main_flow_lines.extend(tool_lines)
+            tool_lines: List[str] = []
+            _append_tool_and_spindle(tool_lines, op_tool, None, settings)
+            if tool_lines:
+                main_flow_lines.extend(tool_lines)
         
         # For ABSPANEN, resolve contour path
         if op.op_type == OpType.ABSPANEN:
@@ -2741,8 +2949,9 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
                 # Find contour operation
                 contour_op = next((o for o in operations if o.op_type == OpType.CONTOUR and o.params.get("name") == contour_name), None)
                 if contour_op and contour_op.path:
-                    # Convert primitives to points if needed
+                    # Keep primitives for G71/G72 cycle subs (G2/G3 arcs)
                     if contour_op.path and isinstance(contour_op.path[0], dict):
+                        op.params["_primitives"] = contour_op.path
                         op.path = primitives_to_points(contour_op.path)
                     else:
                         op.path = contour_op.path
@@ -2778,7 +2987,8 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         # global safe retract after each cutting step
         if op_lines and any(not line.startswith("(") for line in op_lines):
             if op.op_type not in (OpType.CONTOUR, OpType.PROGRAM_HEADER):
-                _emit_safe_retract(main_flow_lines, settings)
+                current_pos = _estimate_operation_end_pos(op)
+                _emit_safe_retract_for_op(main_flow_lines, settings, op.op_type, current_pos=current_pos)
 
     lines: List[str] = []
     lines.extend(header_lines)
