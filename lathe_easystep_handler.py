@@ -50,6 +50,7 @@ _TOOL_KIND_BY_ORIENTATION: Dict[int, str] = {
     9: "threading",
 }
 _ISO_PATTERN = re.compile(r"\b([A-Z]{2,}[A-Z0-9]*?)(\d{2})\b")
+_INSERT_SHAPE_KEYS = {"C", "D", "V", "S", "T", "W", "R"}
 
 
 @dataclass
@@ -2714,9 +2715,9 @@ class HandlerClass:
                 setattr(self, attr_name, w)
             except Exception:
                 pass
-            if w is not None and debug_context:
+            if w is not None and debug_context and getattr(self, "_verbose_widget_logs", False):
                 try:
-                    self._log(f"[LatheEasyStep] deferred-resolved '{name}' -> {attr_name}", level="info")
+                    self._log(f"[LatheEasyStep] deferred-resolved '{name}' -> {attr_name}", level="debug")
                 except Exception:
                     pass
 
@@ -2795,6 +2796,7 @@ class HandlerClass:
         self.preview = getattr(self.w, "previewWidget", None)
         # Queue für nachträgliche Widget-Suchen, bis das Panel vollständig geladen ist
         self._deferred_lookup_queue: List[Tuple[str, str, object, bool]] = []
+        self._verbose_widget_logs = False
 
         # Slice view widgets live inside the embedded panel (objectName: easystep).
         # Depending on how QTVCP instantiates the panel, they may not be direct attributes on self.w.
@@ -3392,7 +3394,7 @@ class HandlerClass:
                 ui_ready = False
             if not ui_ready:
                 # Panel not ready; defer the lookup until _finalize_ui_ready
-                self._deferred_lookup_queue.append((attr, obj_name, cls, True))
+                self._deferred_lookup_queue.append((attr, obj_name, cls, False))
                 continue
             w = self._resolver.try_resolve(cls, obj_name, debug_context=True)
             if w is not None:
@@ -3761,16 +3763,55 @@ class HandlerClass:
         bevorzugt Eingabewidgets (Spin/DoubleSpin/Combo/LineEdit/Check/Radio).
         """
 
+        def _panel_scope_root() -> QtWidgets.QWidget | None:
+            tab = getattr(self, "tab_params", None)
+            if tab is None:
+                try:
+                    tab = getattr(self, "root_widget", None)
+                    if tab is not None:
+                        tab = tab.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively)
+                except Exception:
+                    tab = None
+            if tab is not None:
+                probe = tab
+                while probe is not None:
+                    try:
+                        has_tabs = probe.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
+                        has_ops = probe.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
+                        if has_tabs and has_ops:
+                            return probe
+                    except Exception:
+                        pass
+                    try:
+                        probe = probe.parentWidget()
+                    except Exception:
+                        probe = None
+            try:
+                return getattr(self, "root_widget", None) or self._find_root_widget()
+            except Exception:
+                return None
+
+        scope_root = _panel_scope_root()
+
+        def _is_descendant_of_scope(w: QtWidgets.QWidget | None) -> bool:
+            if w is None or scope_root is None:
+                return False
+            while w is not None:
+                if w is scope_root:
+                    return True
+                try:
+                    w = w.parentWidget()
+                except Exception:
+                    w = None
+            return False
+
         # 1) direct attribute (fast path)
         widget = getattr(self.w, name, None)
-        if widget is not None:
+        if widget is not None and _is_descendant_of_scope(widget):
             return widget
 
         # 1b) Prefer widgets inside our panel's root (works even if hidden)
-        try:
-            root = getattr(self, "root_widget", None) or getattr(self, "_find_root_widget", lambda: None)()
-        except Exception:
-            root = None
+        root = scope_root
         if root is not None:
             try:
                 w_in_root = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
@@ -3809,7 +3850,7 @@ class HandlerClass:
             # prefer widgets inside our panel if possible
             panel_score = 0
             try:
-                panel_score = 0 if self._is_widget_in_our_panel(w) else 10
+                panel_score = 0 if _is_descendant_of_scope(w) else 10
             except Exception:
                 panel_score = 10
             return exact + suffix_ok + type_score + panel_score
@@ -3818,17 +3859,7 @@ class HandlerClass:
         # (kept as separate method to avoid nested closure issues)
         if not hasattr(self, "_is_widget_in_our_panel"):
             def _is_widget_in_our_panel(w: QtWidgets.QWidget) -> bool:
-                while w is not None:
-                    try:
-                        if w.objectName() in PANEL_WIDGET_NAMES:
-                            return True
-                    except Exception:
-                        pass
-                    try:
-                        w = w.parentWidget()
-                    except Exception:
-                        w = None
-                return False
+                return _is_descendant_of_scope(w)
             self._is_widget_in_our_panel = _is_widget_in_our_panel  # type: ignore
 
         # 2) Exact match inside known panel (only search global widget list
@@ -3938,20 +3969,27 @@ class HandlerClass:
         except Exception:
             pass
 
-        # 5) ENHANCED: If still not found, set up polling for deferred widgets
-        if not hasattr(self, "_deferred_widgets"):
-            self._deferred_widgets = set()
-        if name not in self._deferred_widgets:
-            self._deferred_widgets.add(name)
-            # Set up polling timer for this widget (check every 100ms for 3 seconds)
-            QtCore.QTimer.singleShot(100, lambda: self._poll_for_widget(name, 30))  # 30 * 100ms = 3 seconds
+        # 5) ENHANCED: Polling only after ui_ready (before that, deferred queue handles lookups).
+        # This avoids spawning many timers during early embedded startup.
+        try:
+            ui_ready = bool(getattr(self.w, "ui_ready", False))
+        except Exception:
+            ui_ready = False
+        if ui_ready:
+            if not hasattr(self, "_deferred_widgets"):
+                self._deferred_widgets = set()
+            if name not in self._deferred_widgets:
+                self._deferred_widgets.add(name)
+                # Shorter polling window: 12 * 120ms ~= 1.44s (instead of 3s)
+                QtCore.QTimer.singleShot(120, lambda: self._poll_for_widget(name, 12))
 
         return None
     
     def _poll_for_widget(self, name: str, attempts_left: int):
         """Pollt für ein Widget, das bei der ersten Suche nicht gefunden wurde."""
         if attempts_left <= 0:
-            self._log(f"[LatheEasyStep] gave up polling for widget '{name}'", level="info")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log(f"[LatheEasyStep] gave up polling for widget '{name}'", level="debug")
             return
         
         # Try to find the widget again
@@ -3959,7 +3997,8 @@ class HandlerClass:
         if widget is not None:
             # Found it! Set the attribute and connect signals if it's a button
             setattr(self, name, widget)
-            self._log(f"[LatheEasyStep] found deferred widget '{name}': {widget}", level="info")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log(f"[LatheEasyStep] found deferred widget '{name}': {widget}", level="debug")
             
             # If it's a button, try to connect its signal
             if isinstance(widget, QtWidgets.QPushButton):
@@ -3970,7 +4009,7 @@ class HandlerClass:
             return
         
         # Not found yet, schedule next poll
-        QtCore.QTimer.singleShot(100, lambda: self._poll_for_widget(name, attempts_left - 1))
+        QtCore.QTimer.singleShot(120, lambda: self._poll_for_widget(name, attempts_left - 1))
     
     def _find_widget_immediate(self, name: str) -> QtWidgets.QWidget | None:
         """Schnelle Widget-Suche ohne Scoring (für Polling)."""
@@ -4060,6 +4099,11 @@ class HandlerClass:
                 'contour_tool', 'taper_tool', 'boring_tool'
             }:
                 self._populate_tool_combos(self._loaded_tools)
+                self._update_tool_previews()
+            if name in {
+                'face_tool_img', 'thread_tool_img', 'groove_tool_img', 'drill_tool_img', 'parting_tool_img'
+            }:
+                self._update_tool_previews()
         except Exception as e:
             self._log(f"[LatheEasyStep] error updating UI after finding '{name}': {e}", level="error")
     
@@ -4387,7 +4431,10 @@ class HandlerClass:
             self._log(f"[LatheEasyStep] core widgets: list_ops={self.list_ops}, btn_add={self.btn_add}, btn_delete={self.btn_delete}", level="info")
         except Exception:
             pass
+        QtCore.QTimer.singleShot(0, self._reposition_tool_preview_widgets)
         self._setup_thread_helpers()
+        self._ensure_tool_preview_calibration_controls()
+        QtCore.QTimer.singleShot(0, self._auto_load_tool_table)
         # The embedded panel is started in a host environment (QTvcp embed).
         # Depending on timing, the first initialized__ can run before *all* widgets
         # are fully realized / named, so we do a few delayed passes.
@@ -4519,6 +4566,7 @@ class HandlerClass:
         self._setup_param_maps()
         self._connect_signals()
         self._setup_thread_helpers()
+        self._ensure_tool_preview_calibration_controls()
         self._debug_widget_names()
         try:
             self._log(
@@ -5446,6 +5494,12 @@ class HandlerClass:
     def _apply_language_texts(self):
         lang = self._current_language_code()
         for name, translations in TEXT_TRANSLATIONS.items():
+            # Schutz für Embedded-Mode: generische Qt-Labelnamen wie label_32,
+            # label_38 etc. kollidieren häufig mit Host-GUI-Widgets (z. B.
+            # QtDragon Tool-Info). Diese Namen daher grundsätzlich nicht
+            # automatisch überschreiben.
+            if re.match(r"^label_\d+$", str(name or "")):
+                continue
             widget = self._get_widget_by_name(name)
             if widget is None:
                 continue
@@ -7948,6 +8002,52 @@ class HandlerClass:
                 f"Fehler beim Laden der Werkzeugtabelle:\n{e}",
             )
 
+    def _auto_load_tool_table(self):
+        """Werkzeugtabelle beim Start still laden (ohne Dialoge)."""
+        if getattr(self, "_tool_table_auto_loaded", False):
+            return
+        self._tool_table_auto_loaded = True
+
+        candidates: List[str] = []
+        try:
+            settings = QtCore.QSettings()
+            last_path = settings.value("LatheEasyStep/ToolTablePath", "", type=str) or ""
+            if last_path:
+                candidates.append(last_path)
+        except Exception:
+            pass
+
+        try:
+            local_default = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tool.tbl"))
+            candidates.append(local_default)
+        except Exception:
+            pass
+
+        for filepath in candidates:
+            try:
+                if not filepath or not os.path.exists(filepath):
+                    continue
+                tools, missing_iso = self._parse_tool_table(filepath)
+                if not tools:
+                    continue
+                self.tools = tools
+                self._missing_iso_tools = missing_iso
+                self._populate_tool_combos(tools)
+                self._update_tool_previews()
+                if self.tool_table_path:
+                    self.tool_table_path.setText(filepath)
+                    self.tool_table_path.setCursorPosition(0)
+                if self.lbl_tool_table_path:
+                    self.lbl_tool_table_path.setText(filepath)
+                try:
+                    QtCore.QSettings().setValue("LatheEasyStep/ToolTablePath", filepath)
+                except Exception:
+                    pass
+                self._log(f"[LatheEasyStep] Werkzeugtabelle automatisch geladen: {filepath}", level="info")
+                return
+            except Exception as exc:
+                self._log(f"[LatheEasyStep] auto-load tool.tbl fehlgeschlagen ({filepath}): {exc}", level="debug")
+
     def _parse_tool_table(self, filepath: str) -> tuple[Dict[int, Tool], List[int]]:
         """Parse LinuxCNC tool table file and return structured tool info plus ISO warnings."""
         tools: Dict[int, Tool] = {}
@@ -8121,8 +8221,156 @@ class HandlerClass:
         diameter = diameter if diameter else "0"
         return f"T{tool.t:02d} – {comment} ({diameter} mm)"
 
+    def _ensure_tool_preview_widgets(self):
+        """Ensure tool combo + preview label refs exist even in deferred embedded loading."""
+        for combo_name in ("face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"):
+            if getattr(self, combo_name, None) is None:
+                try:
+                    setattr(self, combo_name, self._get_widget_by_name(combo_name))
+                except Exception:
+                    pass
+        for img_name in ("face_tool_img", "drill_tool_img", "groove_tool_img", "thread_tool_img", "parting_tool_img"):
+            if getattr(self, img_name, None) is None:
+                try:
+                    setattr(self, img_name, self._get_widget_by_name(img_name))
+                except Exception:
+                    pass
+
+    def _style_tool_preview_label(self, img_label: QtWidgets.QLabel):
+        """Make tool preview labels readable and visually fixed."""
+        try:
+            min_sz = img_label.minimumSize()
+            if min_sz.width() <= 0 or min_sz.height() <= 0:
+                img_label.setMinimumSize(96, 96)
+            max_sz = img_label.maximumSize()
+            if max_sz.width() <= 0 or max_sz.height() <= 0:
+                img_label.setMaximumSize(96, 96)
+            img_label.setFrameShape(QtWidgets.QFrame.Box)
+            img_label.setLineWidth(1)
+            img_label.setMidLineWidth(0)
+            img_label.setAlignment(QtCore.Qt.AlignCenter)
+            img_label.setWordWrap(True)
+            img_label.setScaledContents(False)
+        except Exception:
+            pass
+
+    def _render_tool_placeholder(self, text: str) -> QtGui.QPixmap:
+        """Render placeholder pixmap so no loose text appears in tabs."""
+        w, h = 96, 96
+        pixmap = QtGui.QPixmap(w, h)
+        pixmap.fill(QtGui.QColor("#f4f7fb"))
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#7a8794"), 1, QtCore.Qt.DashLine))
+        painter.drawRect(1, 1, w - 2, h - 2)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#9aa5b1"), 1))
+        painter.drawLine(18, h - 24, w - 18, 24)
+        painter.drawLine(18, 24, w - 18, h - 24)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#2d3748"), 1))
+        painter.setFont(QtGui.QFont("Arial", 8))
+        painter.drawText(QtCore.QRectF(8, h - 30, w - 16, 24), QtCore.Qt.AlignCenter, text)
+        painter.end()
+        return pixmap
+
+    def _tool_number_from_combo(self, combo: QtWidgets.QComboBox | None) -> int:
+        if combo is None:
+            return 0
+        try:
+            data = combo.currentData()
+        except Exception:
+            data = None
+
+        if isinstance(data, (int, float)):
+            try:
+                n = int(data)
+                if n > 0:
+                    return n
+            except Exception:
+                pass
+
+        if isinstance(data, str):
+            m = re.search(r"\bT\s*(\d+)\b", data, re.IGNORECASE)
+            if not m:
+                m = re.search(r"(\d+)", data)
+            if m:
+                try:
+                    n = int(m.group(1))
+                    if n > 0:
+                        return n
+                except Exception:
+                    pass
+
+        try:
+            txt = combo.currentText() or ""
+        except Exception:
+            txt = ""
+        m = re.search(r"\bT\s*(\d+)\b", txt, re.IGNORECASE)
+        if m:
+            try:
+                n = int(m.group(1))
+                if n > 0:
+                    return n
+            except Exception:
+                pass
+        return 0
+
+    def _reposition_tool_preview_widgets(self):
+        """Place tool preview labels under the tool combo in each tab to avoid overlaying inputs."""
+        if getattr(self, "_tool_preview_repositioned", False):
+            return
+        self._ensure_tool_preview_widgets()
+
+        pairs = [
+            ("face_tool", "face_tool_img"),
+            ("drill_tool", "drill_tool_img"),
+            ("groove_tool", "groove_tool_img"),
+            ("thread_tool", "thread_tool_img"),
+            ("parting_tool", "parting_tool_img"),
+        ]
+
+        moved_any = False
+        for combo_name, img_name in pairs:
+            combo = getattr(self, combo_name, None)
+            img_label = getattr(self, img_name, None)
+            if combo is None or img_label is None:
+                continue
+            parent = combo.parentWidget()
+            if parent is None:
+                continue
+            layout = parent.layout()
+            if not isinstance(layout, QtWidgets.QFormLayout):
+                continue
+
+            row, role = layout.getWidgetPosition(combo)
+            if row < 0:
+                continue
+
+            try:
+                layout.removeWidget(img_label)
+            except Exception:
+                pass
+
+            target_row = row + 1
+            while layout.itemAt(target_row, QtWidgets.QFormLayout.FieldRole) is not None:
+                target_row += 1
+
+            layout.setWidget(target_row, QtWidgets.QFormLayout.FieldRole, img_label)
+            self._style_tool_preview_label(img_label)
+            try:
+                img_label.show()
+            except Exception:
+                pass
+            moved_any = True
+
+        if moved_any:
+            self._tool_preview_repositioned = True
+
     def _update_tool_previews(self):
         """Update tool preview images for all tool combos."""
+        self._ensure_tool_preview_widgets()
+        self._ensure_tool_preview_calibration_controls()
+        self._reposition_tool_preview_widgets()
         tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
 
         for combo_name in tool_combos:
@@ -8130,17 +8378,166 @@ class HandlerClass:
             img_label = getattr(self, combo_name + "_img", None)
             if combo is None or img_label is None:
                 continue
+            self._style_tool_preview_label(img_label)
             
-            tool_num = combo.currentData()
-            tool_num = int(tool_num) if tool_num is not None else 0
+            tool_num = self._tool_number_from_combo(combo)
             tool = self.tools.get(tool_num)
             if tool:
-                pixmap = self._render_tool_preview(tool)
-                img_label.setPixmap(pixmap)
-                img_label.setText("")
+                try:
+                    pixmap = self._render_tool_preview(tool)
+                    scaled = pixmap.scaled(
+                        max(1, img_label.width() - 6),
+                        max(1, img_label.height() - 6),
+                        QtCore.Qt.KeepAspectRatio,
+                        QtCore.Qt.SmoothTransformation,
+                    )
+                    img_label.setPixmap(scaled)
+                    img_label.setText("")
+                except Exception as exc:
+                    self._log(f"[LatheEasyStep] tool preview render failed for T{tool_num:02d}: {exc}", level="warning")
+                    lang = self._current_language_code() if hasattr(self, "_current_language_code") else "de"
+                    txt = "Toolfehler" if lang == "de" else "Tool error"
+                    img_label.setPixmap(self._render_tool_placeholder(txt))
+                    img_label.setText("")
             else:
-                img_label.setPixmap(QtGui.QPixmap())
-                img_label.setText("Kein Werkzeug")
+                lang = self._current_language_code() if hasattr(self, "_current_language_code") else "de"
+                txt = "Tool wählen" if lang == "de" else "Select tool"
+                img_label.setPixmap(self._render_tool_placeholder(txt))
+                img_label.setText("")
+
+    def _ensure_tool_preview_calibration_controls(self):
+        """Create runtime controls to calibrate tool preview orientation."""
+        try:
+            existing_offset = self._get_widget_by_name("tool_preview_orient_offset")
+        except Exception:
+            existing_offset = None
+        try:
+            existing_mirror = self._get_widget_by_name("tool_preview_orient_mirror")
+        except Exception:
+            existing_mirror = None
+
+        if existing_offset is not None and existing_mirror is not None:
+            self.tool_preview_orient_offset = existing_offset
+            self.tool_preview_orient_mirror = existing_mirror
+            self._apply_tool_preview_calibration_settings_to_controls()
+            return
+
+        tool_path = getattr(self, "tool_table_path", None) or self._get_widget_by_name("tool_table_path")
+        load_btn = getattr(self, "btn_load_tool_table", None) or self._get_widget_by_name("btn_load_tool_table")
+
+        parent = None
+        if tool_path is not None:
+            parent = tool_path.parentWidget()
+        if parent is None and load_btn is not None:
+            parent = load_btn.parentWidget()
+        if parent is None:
+            return
+
+        layout = parent.layout()
+        if layout is None:
+            return
+
+        label = QtWidgets.QLabel(parent)
+        label.setObjectName("label_tool_preview_orientation")
+        label.setText("Vorschau-Lage")
+
+        row_widget = QtWidgets.QWidget(parent)
+        row_widget.setObjectName("tool_preview_orientation_row")
+        row_layout = QtWidgets.QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        offset = QtWidgets.QDoubleSpinBox(row_widget)
+        offset.setObjectName("tool_preview_orient_offset")
+        offset.setRange(-360.0, 360.0)
+        offset.setSingleStep(5.0)
+        offset.setDecimals(1)
+        offset.setSuffix(" °")
+        offset.setToolTip("Winkel-Offset für Werkzeugvorschau (Anzeige)")
+
+        mirror = QtWidgets.QCheckBox(row_widget)
+        mirror.setObjectName("tool_preview_orient_mirror")
+        mirror.setText("spiegeln")
+        mirror.setToolTip("Vorschau-Lage spiegeln (Anzeige)")
+
+        row_layout.addWidget(offset)
+        row_layout.addWidget(mirror)
+        row_layout.addStretch(1)
+
+        inserted = False
+        if isinstance(layout, QtWidgets.QFormLayout):
+            insert_row = layout.rowCount()
+            layout.insertRow(insert_row, label, row_widget)
+            inserted = True
+        elif isinstance(layout, QtWidgets.QGridLayout):
+            row = layout.rowCount()
+            layout.addWidget(label, row, 0)
+            layout.addWidget(row_widget, row, 1)
+            inserted = True
+
+        if not inserted:
+            try:
+                label.setParent(None)
+                row_widget.setParent(None)
+            except Exception:
+                pass
+            return
+
+        self.tool_preview_orient_offset = offset
+        self.tool_preview_orient_mirror = mirror
+        self.tool_preview_orient_label = label
+
+        self._apply_tool_preview_calibration_settings_to_controls()
+
+        try:
+            offset.valueChanged.connect(self._on_tool_preview_calibration_changed)
+        except Exception:
+            pass
+        try:
+            mirror.toggled.connect(self._on_tool_preview_calibration_changed)
+        except Exception:
+            pass
+
+    def _apply_tool_preview_calibration_settings_to_controls(self):
+        offset_widget = getattr(self, "tool_preview_orient_offset", None)
+        mirror_widget = getattr(self, "tool_preview_orient_mirror", None)
+        if offset_widget is None or mirror_widget is None:
+            return
+        try:
+            settings = QtCore.QSettings()
+            offset = float(settings.value("LatheEasyStep/ToolPreviewOrientationOffsetDeg", 0.0))
+            mirror = bool(settings.value("LatheEasyStep/ToolPreviewOrientationMirror", False, type=bool))
+        except Exception:
+            offset = 0.0
+            mirror = False
+
+        try:
+            offset_widget.blockSignals(True)
+            offset_widget.setValue(offset)
+            offset_widget.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            mirror_widget.blockSignals(True)
+            mirror_widget.setChecked(mirror)
+            mirror_widget.blockSignals(False)
+        except Exception:
+            pass
+
+    def _on_tool_preview_calibration_changed(self):
+        try:
+            offset_widget = getattr(self, "tool_preview_orient_offset", None)
+            mirror_widget = getattr(self, "tool_preview_orient_mirror", None)
+            if offset_widget is None or mirror_widget is None:
+                return
+            offset = float(offset_widget.value())
+            mirror = bool(mirror_widget.isChecked())
+            settings = QtCore.QSettings()
+            settings.setValue("LatheEasyStep/ToolPreviewOrientationOffsetDeg", offset)
+            settings.setValue("LatheEasyStep/ToolPreviewOrientationMirror", mirror)
+        except Exception:
+            return
+        self._update_tool_previews()
 
     def _render_tool_preview(self, tool: Tool) -> QtGui.QPixmap:
         """Render a simple tool preview using the parsed tool metadata."""
@@ -8159,48 +8556,89 @@ class HandlerClass:
         axis_pen = QtGui.QPen(QtGui.QColor("#63707c"))
         axis_pen.setWidth(1)
         painter.setPen(axis_pen)
-        painter.drawLine(margin, center_y, size - margin, center_y)
-        painter.drawLine(center_x, margin, center_x, size - margin)
-        painter.setFont(QtGui.QFont("Arial", 8))
-        painter.drawText(size - margin + 4, center_y - 2, "X")
-        painter.drawText(center_x + 2, margin - 2, "Z")
-
-        # tool body dimensions
-        tool_span = max(tool.d, 1.0)
-        scale = max((size - margin * 2) / max(tool_span * 1.4, 1.0), 0.5)
-        body_height = tool_span * 0.35
-        tip_depth = tool_span * 0.6
-        base_half = tool_span * 0.5
-
-        tip_y = body_height - tip_depth
-
-        polygon = QtGui.QPolygonF(
-            [
-                QtCore.QPointF(-base_half, body_height),
-                QtCore.QPointF(base_half, body_height),
-                QtCore.QPointF(base_half * 0.35, body_height - tool_span * 0.45),
-                QtCore.QPointF(0, tip_y),
-                QtCore.QPointF(-base_half * 0.35, body_height - tool_span * 0.45),
-            ]
+        painter.drawLine(
+            QtCore.QLineF(float(margin), float(center_y), float(size - margin), float(center_y))
         )
+        painter.drawLine(
+            QtCore.QLineF(float(center_x), float(margin), float(center_x), float(size - margin))
+        )
+        painter.setFont(QtGui.QFont("Arial", 8))
+        # Lathe convention for side view: Z horizontal, X vertical
+        painter.drawText(QtCore.QPointF(float(size - margin + 4), float(center_y - 2)), "Z")
+        painter.drawText(QtCore.QPointF(float(center_x + 2), float(margin - 2)), "X")
 
-        orientation_angle = self._tool_orientation_angle(tool.orientation)
+        profile = self._infer_insert_profile(tool)
+        shape_key = profile.get("shape_key", "")
+        family = profile.get("family", "turning")
+        handed = profile.get("handed", "neutral")
+        groove_width_mm = profile.get("groove_width_mm", 0.0)
+
+        if tool.d and tool.d >= 1.0:
+            visual_span = float(tool.d)
+        elif family in ("turning", "thread", "groove"):
+            visual_span = 6.0
+        elif family == "holder":
+            visual_span = 8.0
+        else:
+            visual_span = 4.0
+
+        tool_span = max(visual_span, 1.0)
+        scale = max((size - margin * 2) / max(tool_span * 2.1, 1.0), 0.5)
+        scale = min(scale, 12.0)
+        insert_size = max(2.0, min(tool_span * 0.65, 5.5))
+
+        polygon, circle_radius = self._build_insert_geometry(shape_key, insert_size, family, handed, groove_width_mm)
 
         painter.save()
         painter.translate(center_x, center_y)
-        painter.rotate(orientation_angle)
         painter.scale(scale, scale)
+
+        insert_angle = self._tool_orientation_angle(tool.orientation)
+        holder_angle = self._tool_holder_angle(tool.orientation, family, handed)
+
+        painter.save()
+        painter.rotate(holder_angle)
+
+        # holder/shank (gives a clearer orientation from Q tool position)
+        shank_pen = QtGui.QPen(QtGui.QColor("#6b7280"), 0)
+        painter.setPen(shank_pen)
+        painter.setBrush(QtGui.QColor("#d1d5db"))
+        shank_on_positive_x = (handed == "internal")
+        if family == "holder":
+            shank = QtCore.QRectF(-insert_size * 2.1, -insert_size * 0.42, insert_size * 4.2, insert_size * 0.84)
+        elif shank_on_positive_x:
+            shank = QtCore.QRectF(insert_size * 0.6, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
+        else:
+            shank = QtCore.QRectF(-insert_size * 2.0, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
+        painter.drawRect(shank)
+        painter.restore()
+
+        painter.save()
+        painter.rotate(insert_angle)
+
         painter.setPen(QtGui.QPen(QtGui.QColor("#2c3e50"), 0))
         painter.setBrush(QtGui.QColor("#e76f51"))
-        painter.drawPolygon(polygon)
+        if polygon is not None:
+            painter.drawPolygon(polygon)
+        elif circle_radius > 0:
+            painter.drawEllipse(QtCore.QPointF(0.0, 0.0), circle_radius, circle_radius)
 
         if tool.radius_mm and tool.radius_mm > 0:
-            nose_radius = max(tool.radius_mm, tool_span * 0.08)
-            circle_pen = QtGui.QPen(QtGui.QColor("#1d3557"))
-            circle_pen.setWidthF(0.3)
+            nose_radius = max(tool.radius_mm, insert_size * 0.06)
+            nose_radius = min(nose_radius, insert_size * 0.24)
+            circle_pen = QtGui.QPen(QtGui.QColor(29, 53, 87, 140))
+            circle_pen.setWidthF(0.18)
             painter.setPen(circle_pen)
-            painter.setBrush(QtGui.QColor("#f4a261"))
-            painter.drawEllipse(QtCore.QPointF(0, tip_y), nose_radius, nose_radius)
+            painter.setBrush(QtGui.QColor(244, 162, 97, 90))
+            if polygon is not None and len(polygon) > 0:
+                if handed == "internal":
+                    nose_pt = min((polygon[i] for i in range(len(polygon))), key=lambda p: p.x())
+                else:
+                    nose_pt = max((polygon[i] for i in range(len(polygon))), key=lambda p: p.x())
+                painter.drawEllipse(nose_pt, nose_radius, nose_radius)
+            else:
+                tip_x = -circle_radius if handed == "internal" else circle_radius
+                painter.drawEllipse(QtCore.QPointF(tip_x, 0.0), nose_radius, nose_radius)
         painter.restore()
 
         painter.setPen(QtGui.QColor("#1c1e26"))
@@ -8214,10 +8652,219 @@ class HandlerClass:
         painter.end()
         return pixmap
 
+    def _infer_insert_shape_key(self, tool: Tool) -> str:
+        """Infer ISO insert shape letter from iso_code or tool comment.
+
+        Supports full codes (e.g. CNMG1204) and shorthand tokens in comments
+        like DCMT/CCMT/VCMT even without trailing size digits.
+        """
+        iso = (tool.iso_code or "").upper().strip()
+        if iso and iso[0] in _INSERT_SHAPE_KEYS:
+            return iso[0]
+
+        comment = (tool.comment or "").upper()
+        if not comment:
+            return ""
+
+        token_pattern = re.compile(r"\b([A-Z][A-Z0-9]{2,})\b")
+        for match in token_pattern.finditer(comment):
+            token = match.group(1)
+            if token and token[0] in _INSERT_SHAPE_KEYS:
+                return token[0]
+        return ""
+
+    def _infer_insert_profile(self, tool: Tool) -> Dict[str, object]:
+        """Infer insert family/shape/hand from tool metadata and comment."""
+        comment = (tool.comment or "")
+        text = comment.upper()
+        shape_key = self._infer_insert_shape_key(tool)
+
+        family = "turning"
+        handed = "neutral"
+        groove_width_mm = 0.0
+
+        if re.search(r"\b(E|I)R\d+\b", text) or "GEWINDE" in text or "AG60" in text or "MMT" in text:
+            family = "thread"
+            if re.search(r"\bIR\d+\b", text) or "INNEN" in text:
+                handed = "internal"
+            elif re.search(r"\bER\d+\b", text) or "AUSSEN" in text or "AUßEN" in text:
+                handed = "external"
+            if not shape_key:
+                shape_key = "V"
+        elif re.search(r"\b(MGMN|MRMN)\d+\b", text) or "EINSTECH" in text or "ABSTECH" in text:
+            family = "groove"
+            if "INNEN" in text:
+                handed = "internal"
+            elif "AUSSEN" in text or "AUßEN" in text:
+                handed = "external"
+            match = re.search(r"\b(?:MGMN|MRMN)(\d{3})\b", text)
+            if match:
+                try:
+                    groove_width_mm = int(match.group(1)) / 100.0
+                except Exception:
+                    groove_width_mm = 0.0
+            if not shape_key:
+                shape_key = "S"
+        elif "ER" in text and ("AUFNAHME" in text or "COLLET" in text or "SPAN" in text):
+            family = "holder"
+            handed = "neutral"
+            if not shape_key:
+                shape_key = ""
+
+        return {
+            "shape_key": shape_key,
+            "family": family,
+            "handed": handed,
+            "groove_width_mm": groove_width_mm,
+        }
+
+    def _build_insert_geometry(
+        self,
+        shape_key: str,
+        insert_size: float,
+        family: str = "turning",
+        handed: str = "neutral",
+        groove_width_mm: float = 0.0,
+    ) -> tuple[QtGui.QPolygonF | None, float]:
+        """Return insert polygon/circle radius by ISO shape letter.
+
+        Key mapping (ISO first letter):
+        C=80° rhombic, D=55° rhombic, V=35° rhombic, S=90° square,
+        T=60° triangle, W=80° trigon, R=round.
+        """
+        key = (shape_key or "").upper().strip()
+
+        if family == "holder":
+            drill_len = insert_size * 1.6
+            drill_half = insert_size * 0.12
+            poly = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(drill_len, 0.0),
+                    QtCore.QPointF(-insert_size * 0.2, drill_half),
+                    QtCore.QPointF(-insert_size * 0.2, -drill_half),
+                ]
+            )
+            return poly, 0.0
+
+        if family == "thread":
+            tip_angle = 60.0
+            tip_x = insert_size * 0.95
+            rear_x = insert_size * 0.55
+            half_h = (tip_x + rear_x) * math.tan(math.radians(tip_angle) * 0.5)
+            half_h = min(half_h, insert_size * 0.95)
+            direction = 1.0
+            poly = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(direction * tip_x, 0.0),
+                    QtCore.QPointF(-direction * rear_x, half_h),
+                    QtCore.QPointF(-direction * rear_x, -half_h),
+                ]
+            )
+            return poly, 0.0
+
+        if family == "groove":
+            if groove_width_mm > 0:
+                blade_h = max(insert_size * 0.16, min(insert_size * 0.55, insert_size * (groove_width_mm / 3.0) * 0.5))
+            else:
+                blade_h = insert_size * 0.28
+            blade_tip = insert_size * 0.95
+            blade_back = insert_size * 0.9
+            direction = -1.0 if handed == "internal" else 1.0
+            poly = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(direction * blade_tip, -blade_h),
+                    QtCore.QPointF(-direction * blade_back, -blade_h),
+                    QtCore.QPointF(-direction * blade_back, blade_h),
+                    QtCore.QPointF(direction * blade_tip, blade_h),
+                ]
+            )
+            return poly, 0.0
+
+        if key == "R":
+            return None, insert_size * 0.56
+
+        if key in ("C", "D", "V", "S"):
+            angle_map = {"C": 80.0, "D": 55.0, "V": 35.0, "S": 90.0}
+            corner_angle = angle_map[key]
+            half_h = insert_size * 0.52
+            tan_half = math.tan(math.radians(corner_angle) * 0.5)
+            tan_half = tan_half if tan_half > 1e-6 else 1e-6
+            half_w = min(insert_size * 1.55, half_h / tan_half)
+            poly = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(half_w, 0.0),
+                    QtCore.QPointF(0.0, half_h),
+                    QtCore.QPointF(-half_w, 0.0),
+                    QtCore.QPointF(0.0, -half_h),
+                ]
+            )
+            return poly, 0.0
+
+        if key in ("T", "W"):
+            tip_angle = 60.0 if key == "T" else 80.0
+            tip_x = insert_size * 0.9
+            rear_x = insert_size * 0.55
+            height = (tip_x + rear_x) * math.tan(math.radians(tip_angle) * 0.5)
+            height = min(height, insert_size * 0.95)
+            poly = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(tip_x, 0.0),
+                    QtCore.QPointF(-rear_x, height),
+                    QtCore.QPointF(-rear_x, -height),
+                ]
+            )
+            return poly, 0.0
+
+        # fallback: 80° rhombic (similar to C-type)
+        fallback, _ = self._build_insert_geometry("C", insert_size)
+        return fallback, 0.0
+
     def _tool_orientation_angle(self, orientation: int | None) -> float:
         if orientation is None:
             return 0.0
-        return (orientation % 8) * 45.0
+        angle_map = {
+            0: 0.0,
+            1: 225.0,
+            2: 225.0,
+            3: 135.0,
+            4: 180.0,
+            5: 225.0,
+            6: 270.0,
+            7: 315.0,
+            8: 225.0,
+            9: 315.0,
+        }
+        angle = angle_map.get(int(orientation), 0.0)
+        try:
+            settings = QtCore.QSettings()
+            offset = float(settings.value("LatheEasyStep/ToolPreviewOrientationOffsetDeg", 0.0))
+            mirrored = bool(settings.value("LatheEasyStep/ToolPreviewOrientationMirror", False, type=bool))
+            angle = -angle if mirrored else angle
+            angle += offset
+        except Exception:
+            pass
+        return angle
+
+    def _tool_holder_angle(self, orientation: int | None, family: str, handed: str) -> float:
+        """Return holder angle constrained to orthogonal X/Z directions.
+
+        CNC setup convention: holder is clamped parallel to machine axes (X or Z),
+        not at arbitrary diagonal angles.
+        """
+        if family in ("holder", "drilling"):
+            base = 0.0
+        else:
+            base = self._tool_orientation_angle(orientation)
+
+        orthogonal = (0.0, 90.0, 180.0, 270.0)
+        snapped = min(orthogonal, key=lambda candidate: abs(((base - candidate + 180.0) % 360.0) - 180.0))
+
+        # Internal boring bars are commonly shown opposite in side-view to keep
+        # the shank away from the workpiece in preview.
+        if handed == "internal" and snapped in (0.0, 180.0):
+            snapped = 180.0 if snapped == 0.0 else 0.0
+
+        return snapped
 
     def _build_program_filepath(self, name_raw: str | None) -> str:
         base = (name_raw or "").strip()
