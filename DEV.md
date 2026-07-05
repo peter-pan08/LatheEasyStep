@@ -87,6 +87,12 @@ Geplante Erweiterung:
 ---
 
 ## Bekannte technische Baustellen
+- Handler-Robustheit in Testdoubles und Embedded-Startpfaden (`self.w`, `_startup_complete`)
+- Klare Trennung zwischen Generator-Fertigstellung und noch offenen UI-/Bindings-Themen
+- Preview-Pipeline trennt aktuell Werkstueckkontur, Bearbeitungsbild und Hilfsgeometrie nicht strikt genug
+- Preview soll im Zweifel zu wenig statt zu viel zeigen; keine impliziten Verbindungen oder Fantasie-Hilfslinien
+- Programmkopf-Vorschau ist noch nicht frueh genug initialisiert; Rohteil/Sicherheitslagen erscheinen aktuell erst nach expliziter Header-Selektion stabil
+- Gewinde-Vorschau ist derzeit nur symbolisch und muss spaeter aus den realen Gewindeparametern geometrisch abgeleitet werden
 - Native Arc-Intersections (statt Sampling)
 - G2/G3-Ausgabe
 - Werkzeuggeometrie (Nasenradius, Lage, Schneidenlänge)

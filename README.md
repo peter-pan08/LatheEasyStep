@@ -1,435 +1,212 @@
 Lathe EasyStep
-Deutsch
-Was ist Lathe EasyStep?
+===============
 
-Lathe EasyStep ist ein konversationelles Drehbank-Panel für LinuxCNC, mit dem sich typische Drehbearbeitungen direkt an der Maschine programmieren lassen – ohne externes CAM.
+Deutsch
+-------
+
+## Was ist Lathe EasyStep?
+
+Lathe EasyStep ist ein konversationelles Drehbank-Panel fuer LinuxCNC. Typische
+Drehbearbeitungen koennen direkt an der Maschine erstellt, geprueft und als
+G-Code ausgegeben werden, ohne externes CAM.
 
 Der Fokus liegt auf:
 
-klaren, reproduzierbaren Abläufen
+- klaren, reproduzierbaren Ablaeufen
+- sicheren Werkzeugbewegungen
+- sofortiger grafischer Rueckmeldung
+- wiederverwendbaren Bearbeitungsschritten
 
-sicheren Werkzeugbewegungen
+Lathe EasyStep ist fuer den Werkstattalltag gedacht, nicht als vollwertiger
+CAM-Ersatz.
 
-sofortiger grafischer Rückmeldung
+## Projektstatus
 
-Wiederverwendbarkeit von Bearbeitungsschritten
+Stand: 5. Juli 2026
 
-Das Panel ist für den Werkstattalltag gedacht und kein vollwertiger CAM-Ersatz.
+Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
+weiter als ein reiner Prototyp:
 
-🔧 Projektstatus / Haftungsausschluss
+- Generator- und Sicherheitsphasen fuer Werkzeugwechsel, Anfahrten,
+  Rueckzuege und Modals sind umgesetzt
+- Save/Load fuer einzelne Steps und komplette Programme ist vorhanden
+- Embedded-Betrieb in LinuxCNC wurde zuletzt gezielt stabilisiert
+- Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
 
-⚠️ Wichtiger Hinweis
+Der aktuelle Schwerpunkt liegt nicht mehr auf der Grundfunktion des
+G-Code-Generators, sondern auf:
 
-Lathe EasyStep befindet sich aktiv in Entwicklung.
+- Konsolidierung der UI-/Handler-Logik
+- Regressionen im Test- und Embedded-Kontext
+- sauberer, konsistenter Dokumentation
+- weiterer Absicherung fuer reale Maschinenablaeufe
 
-Es gibt keine Garantie auf vollständige oder fehlerfreie Funktion.
+## Wichtiger Hinweis
 
-Der erzeugte G-Code muss vor der Nutzung geprüft werden.
+Es gibt keine Garantie auf vollstaendige oder fehlerfreie Funktion.
 
-Vor dem Einsatz an der realen Maschine sollte:
+Der erzeugte G-Code muss vor der Nutzung geprueft werden. Vor dem Einsatz an
+der realen Maschine sollte:
 
-der Code verstanden werden
-
-eine Simulation oder ein Trockenlauf durchgeführt werden
-
-sichergestellt sein, dass Werkzeug, Spannmittel und Maschine geeignet sind
+- der Code verstanden werden
+- eine Simulation oder ein Trockenlauf durchgefuehrt werden
+- sichergestellt sein, dass Werkzeug, Spannmittel und Maschine geeignet sind
 
 Die Nutzung erfolgt auf eigene Verantwortung.
 
-Grundsätzlicher Workflow
+## Grundsaetzlicher Workflow
 
-Die Bedienung folgt einem festen Ablauf über die Reiter (Tabs).
-Alle Eingaben wirken sich direkt auf die Vorschau aus.
+Die Bedienung folgt einem festen Ablauf ueber die Reiter. Alle Eingaben wirken
+sich direkt auf Vorschau und Step-Verwaltung aus.
 
-Reiter „Programm“
+## Reiter "Programm"
 
 Hier werden die globalen Programmeinstellungen festgelegt:
 
-Sicherheitsabstände und Rückzugsebenen
+- Sicherheitsabstaende und Rueckzugsebenen
+- Rohteilgeometrie
+- Nullpunkt und Bezug
+- maximale Drehzahlen
+- Werkzeugdatenbank
+- Maschinenprofil, Spannfutter und Spannart
 
-Rohteilgeometrie (Form, Durchmesser, Länge)
+Sobald alle Parameter gesetzt sind, wird das Rohteil in der Vorschau
+dargestellt.
 
-Nullpunkt / Bezug
+## Reiter "Planen"
 
-maximale Drehzahlen
+Hier wird das Planen der Stirnflaeche definiert:
 
-Werkzeugdatenbank
+- zu planender Bereich
+- Schruppen, Schlichten oder kombiniert
+- optionales Schlichtaufmass
+- Kantenform und Kantenmass
 
-Die Werkzeugdatenbank sollte hier geladen werden.
+Werkzeugweg und Kontur sind sofort in der Vorschau sichtbar. Der Schritt
+erscheint gleichzeitig in der Step-Liste.
 
-Dadurch weiß das Panel:
+## Step-Verwaltung
 
-welches Werkzeug verwendet wird
+Links befindet sich die Liste aller Bearbeitungsschritte.
 
-welche Werkzeugorientierung vorliegt
+Moeglich sind:
 
-ob eine Radiuskorrektur (Nasenradius) notwendig ist
+- einzelne Steps speichern und wieder laden
+- komplette Programme speichern und wieder laden
+- bestehende Programme gezielt aendern
 
-Sind im Werkzeugkommentar ISO-Codes von Schneidplatten hinterlegt, können diese automatisch erkannt und ausgewertet werden.
+Im Embedded-Betrieb wird die sichtbare Step-Liste bewusst strikt ueber die
+Operationsliste gefuehrt, damit geladene Steps und Programme konsistent in der
+UI erscheinen.
 
-➡️ Sobald alle Parameter gesetzt sind, wird das Rohteil in der Vorschau dargestellt.
+## Reiter "Kontur"
 
-Reiter „Planen“
+In diesem Reiter wird nur Geometrie definiert, keine Bearbeitung.
 
-Hier wird das Planen der Stirnfläche definiert:
+Konturen entstehen aus Punktangaben und Segmenten. Unterstuetzt werden:
 
-zu planender Bereich
+- nur X
+- nur Z
+- X und Z kombiniert
+- Kanten als Fase oder Radius
+- Innen-/Aussenseite pro Radius
 
-Strategie:
+Jede Kontur sollte einen eindeutigen Namen erhalten, damit sie spaeter fuer
+Abspanen oder Folgeoperationen ausgewaehlt werden kann.
 
-Schruppen
-
-Schlichten
-
-Schruppen + Schlichten
-
-optionales Schlichtaufmaß beim Schruppen
-
-Die Optionen sind bewusst selbsterklärend gehalten.
-
-➡️ Werkzeugweg und Kontur sind sofort in der Vorschau sichtbar.
-➡️ Der Schritt erscheint gleichzeitig in der Step-Liste auf der linken Seite.
-
-Step-Verwaltung (linke Seite)
-
-Links befindet sich die Liste aller Bearbeitungsschritte (Steps).
-
-Unterhalb der Liste können Steps:
-
-einzeln gespeichert
-
-wieder geladen
-
-in anderen Programmen wiederverwendet werden
-
-Praxisbeispiel:
-Ein Step „Planen 40 mm Welle“ wird gespeichert.
-Später kann dieser Step in einem neuen Programm geladen werden, ohne alle Parameter neu einzugeben.
-
-Zusätzlich können:
-
-alle Steps gemeinsam gespeichert werden
-
-komplette Programme wieder geladen werden
-
-Hinweis (Stand 2026-02):
-Im eingebetteten Betrieb wird die sichtbare Step-Liste jetzt strikt über die Operationsliste geführt.
-Geladene Einzel-Steps und komplette Programme erscheinen dadurch zuverlässig in der linken Liste.
-
-➡️ Ideal, um bestehende Programme gezielt zu ändern (z. B. Radius oder Durchmesser anpassen).
-
-Reiter „Kontur“
-
-In diesem Reiter wird nur Geometrie definiert – keine Bearbeitung.
-
-Konturen entstehen durch Punktangaben
-
-mögliche Eingaben:
-
-nur X
-
-nur Z
-
-X und Z kombiniert
-
-Aus den Punkten wird automatisch eine zusammenhängende Kontur berechnet.
-
-Wichtig:
-
-Jede Kontur sollte einen eindeutigen Namen erhalten
-
-Dieser Name wird später zur Auswahl der Kontur verwendet
-
-➡️ Die Kontur ist direkt in der Vorschau sichtbar.
-
-Reiter „Abspanen“
+## Reiter "Abspanen"
 
 Hier wird eine zuvor definierte Kontur bearbeitet:
 
-Auswahl der Kontur über ihren Namen
+- Auswahl der Kontur ueber ihren Namen
+- innen oder aussen
+- Schruppen oder Schlichten
+- Werkzeug
+- Zustellung, Vorschub und Drehzahl
 
-Bearbeitungsparameter:
+Die Strategie wird grafisch dargestellt. Die Sicherheits- und Retract-Logik
+wurde zuletzt gezielt ueberarbeitet.
 
-innen / außen
-
-Schruppen oder Schlichten
-
-Werkzeug
-
-Zustellungen, Vorschub, Drehzahl
-
-➡️ Die gewählte Strategie wird grafisch in der Vorschau dargestellt.
-
-Reiter „Gewinde“
+## Reiter "Gewinde"
 
 Dieser Reiter dient zum Gewindeschneiden:
 
-Innen- oder Außengewinde
+- Innen- oder Aussengewinde
+- Werkzeugauswahl
+- vollstaendige G76-Parameter
+- Presets fuer metrische Gewinde und Trapezgewinde
 
-Werkzeugauswahl
-
-vollständige G76-Parameter
-
-Es stehen vordefinierte Presets für:
-
-metrische Gewinde
-
-Trapezgewinde
-
-zur Verfügung.
-Die Parameter können bei Bedarf angepasst werden.
-
-Reiter „Einstich / Abstich“
+## Reiter "Einstich / Abstich"
 
 Hier werden Einstiche und Abstiche definiert:
 
-Einstich innen oder außen
+- innen oder aussen
+- reduzierter Vorschub
+- reduzierte Drehzahl ab definierter Position
 
-Abstich mit:
+Die Einstichlogik wird als Subroutine direkt in den G-Code geschrieben. Es
+wird keine zusaetzliche Datei benoetigt.
 
-reduziertem Vorschub
+## Reiter "Bohren"
 
-reduzierter Drehzahl ab bestimmter Position
+Der Bohr-Reiter ist bewusst einfach gehalten:
 
-Technischer Hintergrund:
+- Werkzeug auswaehlen
+- normal bohren
+- Spanbruch
+- Spanbruch mit Rueckzug
 
-Die Einstichlogik wird als Subroutine direkt in den G-Code geschrieben
+Gedacht ist er fuer zentrales Bohren auf der Drehbank.
 
-Es wird keine zusätzliche Datei benötigt
+## Reiter "Keilnut"
 
-➡️ Das erzeugte Programm ist systemunabhängig lauffähig.
-
-Reiter „Bohren“
-
-Der Reiter „Bohren“ ist bewusst einfach gehalten:
-
-Werkzeug auswählen
-
-Bohrart:
-
-normal
-
-Spanbruch
-
-Spanbruch + Rückzug
-
-➡️ Gedacht für zentrales Bohren auf der Drehbank.
-
-Reiter „Keilnut“
-
-Dieser Reiter ist für Nutenstoßen / Verzahnungen auf der Drehbank vorgesehen.
+Dieser Reiter ist fuer Nutenstossen und spaetere Verzahnungsfunktionen
+vorgesehen.
 
 Aktueller Stand:
 
-Funktion ist theoretisch vorbereitet
+- funktional vorbereitet
+- noch kein fertig ausgearbeiteter Werkstatt-Workflow
+- perspektivisch fuer C-Achsen-nahe Erweiterungen gedacht
 
-praktische Umsetzung erfolgt in einem späteren Entwicklungsschritt
+## Aktuelle Prioritaeten
 
-Ziel:
+Die naechsten sinnvollen Arbeiten im Projekt sind:
 
-Nuten stoßen
+1. Test- und UI-Regressionen im Handler sauber schliessen
+2. Vorschau robuster machen, damit nur beabsichtigte Werkstueck- und Hilfsgeometrie sichtbar wird
+3. Embedded- und Standalone-Verhalten weiter angleichen
+4. Dokumentation und interne Statusdokumente konsistent halten
+5. reale Werkstattablaeufe und Maschinenprofile weiter verifizieren
 
-Verzahnungen herstellen
+Aktuell offen in der Vorschau:
 
-perspektivisch unter Nutzung der C-Achse
+- der Programmkopf soll seine Rohteil- und Sicherheitsgeometrie sofort stabil zeigen, nicht erst nach expliziter Auswahl
+- die Gewindedarstellung soll kuenftig aus den eingestellten Geometriewerten abgeleitet werden, nicht nur symbolisch erscheinen
 
-Zusammenfassung
+## Zusammenfassung
 
-Lathe EasyStep ist darauf ausgelegt:
-
-typische Drehaufgaben schnell und sicher zu erstellen
-
-Programme schrittweise aufzubauen
-
-Bearbeitungsschritte wiederzuverwenden
-
-Die Kombination aus:
-
-klarer Reiter-Struktur
-
-sofortiger Vorschau
-
-speicherbaren Steps
-
-macht das Panel besonders praxisnah für den Werkstattbetrieb.
+Lathe EasyStep ist ein praxisorientiertes LinuxCNC-Drehpanel mit Fokus auf
+sichere Bewegungen, direkter Vorschau und wiederverwendbaren Steps. Der Kern
+des Systems ist vorhanden; die laufende Arbeit verschiebt sich zunehmend von
+Grundfunktionalitaet zu Robustheit, Integration und Werkstattreife.
 
 English
-What is Lathe EasyStep?
+-------
 
-Lathe EasyStep is a conversational turning panel for LinuxCNC that allows common turning operations to be programmed directly at the machine, without external CAM software.
+## What is Lathe EasyStep?
 
-The focus is on:
+Lathe EasyStep is a conversational turning panel for LinuxCNC. It is intended
+to create common lathe operations directly at the machine, with immediate
+preview and reusable steps, without relying on external CAM.
 
-clear and reproducible workflows
+Current focus areas are:
 
-safe tool movements
+- safe tool motion
+- deterministic workflows
+- direct visual feedback
+- reusable machining steps
 
-immediate graphical feedback
-
-reusability of machining steps
-
-The panel is intended for shop-floor use and is not a full CAM replacement.
-
-🔧 Project Status / Disclaimer
-
-⚠️ Important Notice
-
-Lathe EasyStep is under active development.
-
-There is no guarantee that all features work correctly.
-
-Any generated G-code must be reviewed before use.
-
-Before running a program on a real machine, you should:
-
-understand the generated code
-
-perform a simulation or dry run
-
-ensure compatibility with your machine, tooling, and setup
-
-Use of this software is at your own risk.
-
-Basic Workflow
-
-Operation follows a fixed sequence via tabs.
-All inputs are immediately reflected in the preview.
-
-“Program” Tab
-
-Defines the global program settings:
-
-safety clearances and retract planes
-
-stock geometry (shape, diameter, length)
-
-work offset
-
-maximum spindle speeds
-
-Tool database
-
-The tool table should be loaded here.
-
-This allows the panel to know:
-
-which tool is used
-
-tool orientation
-
-whether nose radius compensation is required
-
-If ISO insert codes are stored in the tool comment, they can be parsed automatically.
-
-➡️ Once all parameters are set, the stock is shown in the preview.
-
-“Facing” Tab
-
-Defines facing operations:
-
-facing area
-
-strategy:
-
-roughing
-
-finishing
-
-rough + finish
-
-optional finish allowance
-
-➡️ Toolpath and contour are immediately visible in the preview.
-➡️ The step appears in the step list on the left.
-
-Step Management (left side)
-
-The left panel shows a list of all machining steps.
-
-Steps can be:
-
-saved individually
-
-loaded again
-
-reused in other programs
-
-Entire programs can also be saved and loaded.
-
-Note (as of 2026-02):
-In embedded mode, the visible step list is now strictly bound to the operations list.
-Loaded single steps and complete programs therefore appear reliably in the left list.
-
-“Contour” Tab
-
-Defines geometry only, not machining.
-
-contours are built from points
-
-X only, Z only, or X/Z combined
-
-Each contour should have a unique name, which is later used for machining selection.
-
-“Parting / Roughing” Tab
-
-Applies machining to an existing contour:
-
-select contour by name
-
-inside / outside
-
-roughing or finishing
-
-tool, feed, depth, spindle speed
-
-“Thread” Tab
-
-Used for thread cutting:
-
-internal or external threads
-
-tool selection
-
-full G76 parameter set
-
-metric and trapezoidal presets available
-
-“Groove / Parting” Tab
-
-Defines grooves and parting operations.
-
-The groove logic is written as a subroutine directly into the G-code, requiring no external files.
-
-“Drilling” Tab
-
-Simple drilling operations:
-
-normal
-
-chip break
-
-chip break + retract
-
-Intended for center drilling on a lathe.
-
-“Keyway” Tab
-
-Intended for slotting / gear cutting.
-
-Currently:
-
-feature is theoretically prepared
-
-implementation planned for future development
-
-Summary
-
-Lathe EasyStep is designed to:
-
-create common turning operations quickly and safely
-
-build programs step by step
-
-efficiently reuse machining steps
-
-The clear tab structure, instant preview, and reusable steps make it well suited for daily shop-floor use.
+The project is under active development. The current work is focused less on
+basic generator features and more on stability, UI consistency, and shop-floor
+readiness.
