@@ -1093,7 +1093,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     width = 1
                     style = QtCore.Qt.DashDotLine
                 else:
-                    color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("yellow")
+                    color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("red")
                     width = 2
                     style = QtCore.Qt.SolidLine
 
@@ -1196,7 +1196,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
                     legend_items = [
                         ("Kontur", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
-                        ("Aktiv", QtGui.QPen(QtGui.QColor(255, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Aktiv", QtGui.QPen(QtGui.QColor(255, 0, 0), 2, QtCore.Qt.SolidLine)),
                         ("Rohteil", QtGui.QPen(QtGui.QColor(180, 180, 180), 1, QtCore.Qt.SolidLine)),
                         ("Rückzug", QtGui.QPen(QtGui.QColor(0, 255, 255), 1, QtCore.Qt.DashLine)),
                         ("Bearbeitungslinie", QtGui.QPen(QtGui.QColor(255, 0, 0), 1, QtCore.Qt.DashLine)),
@@ -1252,23 +1252,16 @@ class LathePreviewWidget(QtWidgets.QWidget):
 # Simple path builders
 # ----------------------------------------------------------------------
 def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
-    """Build a 2D preview path for facing (Planen).
+    """Build the resulting contour for a facing operation.
 
-    IMPORTANT: This returns the *cutting contour* only (no closing back to Z0),
-    because otherwise the preview draws an extra diagonal/return line.
-
-    Conventions / expectations in this project:
-      - X is a diameter coordinate (as used everywhere else in LatheEasyStep).
-      - Facing is shown from the center (x_inner) outward to the OD (x_outer).
-      - The face plane is z_end (often 0.0). z_start is a safe/approach Z.
-      - Chamfer/radius is applied at the outer corner (x_outer, z_end) going into -Z.
+    Preview rule:
+      - show only the programmed target contour
+      - do not show approach, retract or tool motion
     """
     # Check if a custom path is provided
     if "path" in params and params["path"]:
-        print(f"DEBUG: Using custom path from params: {params['path']}")
         path_data = params["path"]
         if isinstance(path_data, list) and path_data:
-            # Assume path is list of dicts with 'x' and 'z', or tuples
             path = []
             for point in path_data:
                 if isinstance(point, dict):
@@ -1279,15 +1272,6 @@ def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
                 else:
                     continue
                 path.append((float(x), float(z)))
-            # Add start line for facing preview
-            sx = params.get("start_x", None)
-            sz = params.get("start_z", None)
-            ez = params.get("end_z", sz)
-            ex = params.get("end_x", None)
-            if sx is not None and sz is not None and ez is not None:
-                path = [(float(sx), float(sz)), (float(sx), float(ez))] + path
-            if ex is not None and ez is not None:
-                path.append((float(ex), float(ez)))
             return path
 
     # --- X extents (diameter) ---
@@ -1324,8 +1308,7 @@ def build_face_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 
     path: List[Tuple[float, float]] = []
 
-    # Start at center/inner diameter at safe Z, then to face plane
-    path.append((x_inner, z_start))
+    # Show only the final face contour at the target plane.
     path.append((x_inner, z_end))
 
     # Apply edge at outer corner (x_outer, z_end)
@@ -1544,6 +1527,13 @@ def build_worklimit_primitives(program: Dict[str, Any], stock_prims: List[Dict[s
                         x_vals.append(float(pt[0]))
                     except Exception:
                         pass
+        elif isinstance(prim, dict) and prim.get("type") == "line":
+            for pt in (prim.get("p1"), prim.get("p2")):
+                if isinstance(pt, (tuple, list)) and len(pt) >= 2:
+                    try:
+                        x_vals.append(float(pt[0]))
+                    except Exception:
+                        pass
 
     if x_vals:
         min_x = min(x_vals)
@@ -1636,20 +1626,14 @@ def build_bore_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 
 
 def build_thread_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
-    """Build a 2D preview path for threading (Gewinde).
+    """Build the resulting contour for a thread operation.
 
-    For external threads (orientation=0): starts at major_diameter, passes go
-    inward (smaller X) — the tool cuts from the OD toward the minor diameter.
-
-    For internal threads (orientation=1): starts at the bore surface
-    (major - 2*depth), passes go outward (larger X) — the boring-bar
-    threading tool cuts from the bore wall outward.
+    The preview shows only the target geometry of the threaded zone, not the
+    pass sequence of the tool.
     """
-    major = params.get("major_diameter", 0.0)
-    pitch = params.get("pitch", 1.5)
-    length = params.get("length", 0.0)
-    passes = max(1, int(params.get("passes", 1)))
-    safe_z = params.get("safe_z", 2.0)
+    major = float(params.get("major_diameter", 0.0) or 0.0)
+    pitch = max(0.1, float(params.get("pitch", 1.5) or 1.5))
+    length = abs(float(params.get("length", 0.0) or 0.0))
     orientation = int(params.get("orientation", 0))
     internal = (orientation == 1)
 
@@ -1660,27 +1644,37 @@ def build_thread_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     else:
         thread_depth = pitch * 0.6134
 
+    if length <= 1e-9:
+        return []
+
     if internal:
-        # Bore surface = minor diameter of internal thread
         bore_dia = major - 2.0 * thread_depth
-        start = (bore_dia, safe_z)
-        path = [start, (bore_dia, 0.0)]
-        depth_per_pass = pitch * 0.1
-        for i in range(passes):
-            # Passes go outward (increasing X) into the bore wall
-            x_val = bore_dia + depth_per_pass * (i + 1)
-            path.append((x_val, -abs(length)))
-            if i != passes - 1:
-                path.append((x_val, safe_z))
+        root_dia = max(bore_dia, major)
+        crest_dia = min(bore_dia, major)
     else:
-        start = (major, safe_z)
-        path = [start, (major, 0.0)]
-        depth_per_pass = pitch * 0.1
-        for i in range(passes):
-            x_val = major - depth_per_pass * (i + 1)
-            path.append((x_val, -abs(length)))
-            if i != passes - 1:
-                path.append((x_val, safe_z))
+        crest_dia = max(0.0, major)
+        root_dia = max(0.0, major - 2.0 * thread_depth)
+
+    if abs(root_dia - crest_dia) <= 1e-9:
+        return [(crest_dia, 0.0), (crest_dia, -length)]
+
+    path: List[Tuple[float, float]] = []
+    path.append((crest_dia, 0.0))
+
+    teeth = max(1, int(math.ceil(length / pitch)))
+    z = 0.0
+    for _ in range(teeth):
+        z_mid = max(-length, z - (pitch * 0.5))
+        z_next = max(-length, z - pitch)
+        path.append((root_dia, z_mid))
+        path.append((crest_dia, z_next))
+        z = z_next
+        if z <= -length + 1e-9:
+            break
+
+    if path[-1][1] > -length:
+        path.append((root_dia, -length))
+
     return path
 
 
@@ -1726,17 +1720,10 @@ def build_groove_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
         (diameter, z_right),  # zurück auf Anfangshöhe
     ]
 def build_drill_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
-    """Drill preview path (Bohren).
+    """Build the resulting contour for a drill operation.
 
-    Goals (per user request / ShopTurn-like behavior):
-      - Z0 is the front face (surface) -> shown at z = 0 in the preview.
-      - Drilling goes into the material: negative Z.
-        *If the user enters a positive depth, it is interpreted as "into material" and converted to negative.*
-      - Show the drilled diameter and a 118° drill point (59° half-angle).
-
-    Conventions in this project:
-      - X is a *diameter* coordinate (0 = centerline).
-      - Z is horizontal in the preview (see preview widget mapping).
+    The preview shows only the final drilled bore shape, without approach,
+    retract or tool motion.
     """
     # --- read inputs
     try:
@@ -1749,21 +1736,15 @@ def build_drill_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     except Exception:
         depth = 0.0
 
-    try:
-        safe_z = float(params.get("safe_z", 2.0) or 2.0)
-    except Exception:
-        safe_z = 2.0
-
     diameter = max(0.0, diameter)
 
     # into material => negative Z
     if depth > 0:
         depth = -abs(depth)
 
-    # If no diameter, show only centerline move.
+    # If no diameter, show only the target axis/depth.
     if diameter <= 1e-9:
         return [
-            (0.0, safe_z),
             (0.0, 0.0),
             (0.0, depth),
         ]
@@ -1782,8 +1763,7 @@ def build_drill_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
         cone_start_z = 0.0  # very shallow: point intersects the surface
 
     return [
-        (0.0, safe_z),            # approach on center
-        (0.0, 0.0),               # on surface (Z0)
+        (0.0, 0.0),               # axis at the surface
         (diameter, 0.0),          # diameter at surface
         (diameter, cone_start_z), # cylindrical wall
         (0.0, depth),             # 118° point to center
@@ -1802,17 +1782,17 @@ def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
     if mode == 0:  # axial
         radial_side = int(params.get("radial_side", 0))
         rad_sign = -1 if radial_side == 0 else 1
-        top_z = start_z + top_clearance
         bottom_z = start_z - nut_length
         final_dia = start_dia + rad_sign * 2 * nut_depth
         return [
-            (start_dia, top_z),
             (start_dia, start_z),
+            (start_dia, bottom_z),
             (final_dia, bottom_z),
+            (final_dia, start_z),
         ]
 
     # face mode
-    top_x = start_dia + top_clearance
+    top_x = start_dia
     inner_x = start_dia - 2 * nut_length
     back_z = start_z - nut_depth
     return [
@@ -3746,20 +3726,24 @@ class HandlerClass:
             return False
 
         # 1) direct attribute (fast path)
-        widget = getattr(self.w, name, None)
+        widget_root = getattr(self, "w", None)
+        widget = getattr(widget_root, name, None) if widget_root is not None else None
         if widget is not None and _is_descendant_of_scope(widget):
             return widget
 
-        preferred_types = (
-            QtWidgets.QDoubleSpinBox,
-            QtWidgets.QSpinBox,
-            QtWidgets.QComboBox,
-            QtWidgets.QLineEdit,
-            QtWidgets.QCheckBox,
-            QtWidgets.QRadioButton,
-            QtWidgets.QAbstractButton,
-            QtWidgets.QTableWidget,
-            QtWidgets.QListWidget,
+        preferred_types = tuple(
+            t for t in (
+                getattr(QtWidgets, "QDoubleSpinBox", None),
+                getattr(QtWidgets, "QSpinBox", None),
+                getattr(QtWidgets, "QComboBox", None),
+                getattr(QtWidgets, "QLineEdit", None),
+                getattr(QtWidgets, "QCheckBox", None),
+                getattr(QtWidgets, "QRadioButton", None),
+                getattr(QtWidgets, "QAbstractButton", None),
+                getattr(QtWidgets, "QTableWidget", None),
+                getattr(QtWidgets, "QListWidget", None),
+            )
+            if t is not None
         )
 
         def _score(w: QtWidgets.QWidget) -> int:
@@ -5280,6 +5264,10 @@ class HandlerClass:
         except Exception:
             row = -1
         if row < 0:
+            try:
+                self._refresh_preview()
+            except Exception:
+                pass
             return
         try:
             self._update_selected_operation(force=True)
@@ -5318,15 +5306,7 @@ class HandlerClass:
                 if not isinstance(w, QtWidgets.QListWidget):
                     return
                 self.list_ops = w
-                if not getattr(self, "_list_ops_connected", False):
-                    self.list_ops.currentRowChanged.connect(self._handle_selection_change)
-                    self._list_ops_connected = True
-                if not getattr(self, "_list_ops_double_click_connected", False):
-                    self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
-                    self._list_ops_double_click_connected = True
-                if not getattr(self, "_list_ops_click_connected", False):
-                    self.list_ops.clicked.connect(self._mark_operation_user_selected)
-                    self._list_ops_click_connected = True
+                self._connect_list_ops_signals()
 
             self._resolver.resolve_later(
                 QtWidgets.QListWidget,
@@ -5430,6 +5410,43 @@ class HandlerClass:
             ]:
                 self._connect_live_update(w)
 
+    def _connect_list_ops_signals(self):
+            widget = getattr(self, "list_ops", None)
+            if widget is None:
+                return
+
+            if getattr(self, "_list_ops_signal_widget", None) is not widget:
+                self._list_ops_connected = False
+                self._list_ops_double_click_connected = False
+                self._list_ops_click_connected = False
+                self._list_ops_activate_connected = False
+                self._list_ops_signal_widget = widget
+
+            if not getattr(self, "_list_ops_connected", False):
+                try:
+                    widget.currentRowChanged.connect(self._handle_selection_change)
+                except Exception:
+                    pass
+                self._list_ops_connected = True
+            if not getattr(self, "_list_ops_double_click_connected", False):
+                try:
+                    widget.itemDoubleClicked.connect(self._on_step_double_clicked)
+                except Exception:
+                    pass
+                self._list_ops_double_click_connected = True
+            if not getattr(self, "_list_ops_click_connected", False):
+                try:
+                    widget.clicked.connect(self._mark_operation_user_selected)
+                except Exception:
+                    pass
+                self._list_ops_click_connected = True
+            if not getattr(self, "_list_ops_activate_connected", False):
+                try:
+                    widget.itemActivated.connect(self._on_step_double_clicked)
+                except Exception:
+                    pass
+                self._list_ops_activate_connected = True
+
     def _connect_core_signals(self):
             """Connect only the signals required for an immediately usable panel."""
             self._ensure_core_widgets()
@@ -5446,15 +5463,7 @@ class HandlerClass:
             self._connect_button_once(self.btn_load_tool_table, self._handle_load_tool_table, "_btn_load_tool_table_connected")
             self._connect_button_once(self.btn_save_program, self._handle_save_program, "_btn_save_program_connected")
             self._connect_button_once(self.btn_load_program, self._handle_load_program, "_btn_load_program_connected")
-            if self.list_ops and not getattr(self, "_list_ops_connected", False):
-                self.list_ops.currentRowChanged.connect(self._handle_selection_change)
-                self._list_ops_connected = True
-            if self.list_ops and not getattr(self, "_list_ops_double_click_connected", False):
-                self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
-                self._list_ops_double_click_connected = True
-            if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
-                self.list_ops.clicked.connect(self._mark_operation_user_selected)
-                self._list_ops_click_connected = True
+            self._connect_list_ops_signals()
             if self.tab_params and not getattr(self, "_tab_params_connected", False):
                 self.tab_params.currentChanged.connect(self._handle_tab_changed)
                 self._tab_params_connected = True
@@ -6223,6 +6232,18 @@ class HandlerClass:
         else:
             header["s3_max"] = 0.0
 
+        cached = getattr(self, "_program_header_cache", None)
+        if isinstance(cached, dict):
+            merged = dict(cached)
+            for key, value in header.items():
+                if value is None:
+                    continue
+                if isinstance(value, str) and value == "":
+                    continue
+                merged[key] = value
+            header = merged
+
+        self._program_header_cache = dict(header)
         return header
 
     def _tool_change_position_lines(self, header: Dict[str, object]) -> List[str]:
@@ -6532,6 +6553,7 @@ class HandlerClass:
     def _load_program_header_to_form(self, params: Dict[str, object]):
         if not isinstance(params, dict):
             return
+        self._program_header_cache = dict(params)
         self._collect_program_header()
 
         def _set_combo(widget, value):
@@ -6727,23 +6749,62 @@ class HandlerClass:
         if self.preview is None and self.contour_preview is None:
             return
         paths: List[List[Tuple[float, float]]] = []
+        active = -1
 
-        # Kontur-Eingabe immer mitzeigen, wenn wir auf dem Kontur-Tab sind oder keine Ops existieren
-        if self.contour_start_x or self.contour_segments:
-            params: Dict[str, object] = {
-                "start_x": self.contour_start_x.value() if self.contour_start_x else 0.0,
-                "start_z": self.contour_start_z.value() if self.contour_start_z else 0.0,
-                "coord_mode": self.contour_coord_mode.currentIndex() if getattr(self, "contour_coord_mode", None) else 0,
-                "segments": self._collect_contour_segments(),
-            }
-            paths.append(build_contour_path(params))
-
-        # vorhandene Operationen hinzufügen
+        # Vorhandene Operationen zeigen: nur deren programmierte Zielkontur.
         if self.model.operations:
-            paths.extend([op.path for op in self.model.operations if op.path])
-            active = self.list_ops.currentRow() if self.list_ops else -1
+            selected_row = self.list_ops.currentRow() if self.list_ops else -1
+            for row_idx, op in enumerate(self.model.operations):
+                if not op.path:
+                    continue
+                path_idx = len(paths)
+                paths.append(op.path)
+                if row_idx == selected_row:
+                    active = path_idx
         else:
-            active = -1
+            # Kein gespeicherter Step aktiv: zeige genau die aktuell editierte
+            # Geometrie des aktiven Tabs, aber keine implizite Mischkontur.
+            try:
+                current_type = self._current_op_type()
+            except Exception:
+                current_type = OpType.PROGRAM_HEADER
+
+            if current_type == OpType.CONTOUR and (self.contour_start_x or self.contour_segments):
+                params: Dict[str, object] = {
+                    "start_x": self.contour_start_x.value() if self.contour_start_x else 0.0,
+                    "start_z": self.contour_start_z.value() if self.contour_start_z else 0.0,
+                    "coord_mode": self.contour_coord_mode.currentIndex() if getattr(self, "contour_coord_mode", None) else 0,
+                    "segments": self._collect_contour_segments(),
+                }
+                contour_prims = build_contour_path(params)
+                if contour_prims:
+                    paths.append(contour_prims)
+                    active = len(paths) - 1
+            elif current_type != OpType.PROGRAM_HEADER:
+                try:
+                    params = self._collect_params(current_type)
+                except Exception:
+                    params = {}
+                if current_type == OpType.ABSPANEN:
+                    contour_name = self._current_parting_contour_name()
+                    params["contour_name"] = contour_name
+                    params["source_path"] = self._resolve_contour_path(contour_name)
+                preview_builder = {
+                    OpType.FACE: build_face_path,
+                    OpType.THREAD: build_thread_path,
+                    OpType.GROOVE: build_groove_path,
+                    OpType.DRILL: build_drill_path,
+                    OpType.KEYWAY: build_keyway_path,
+                    OpType.ABSPANEN: build_abspanen_path,
+                }.get(current_type)
+                if preview_builder:
+                    try:
+                        draft_path = preview_builder(params)
+                    except Exception:
+                        draft_path = []
+                    if draft_path:
+                        paths.append(draft_path)
+                        active = len(paths) - 1
 
         # Raw stock outline + retract planes as thin references (program header only).
         prog = self._collect_program_header() or {}
@@ -7057,6 +7118,28 @@ class HandlerClass:
                 path.append((x, z))
         return Operation(op_type, params, path)
 
+    def _rebuild_all_operation_geometry(self) -> None:
+        """Rebuild derived preview geometry from params for all operations.
+
+        Stored `path` data in save files is only cached preview geometry.
+        After preview logic changes, loaded programs must be regenerated from
+        the authoritative parameters to avoid stale or mismatched contours.
+        """
+        if not getattr(self, "model", None):
+            return
+
+        for op in self.model.operations:
+            if op.op_type == OpType.PROGRAM_HEADER:
+                op.path = []
+                continue
+            if op.op_type == OpType.ABSPANEN:
+                contour_name = str(op.params.get("contour_name") or "")
+                op.params["source_path"] = self._resolve_contour_path(contour_name)
+            try:
+                self.model.update_geometry(op)
+            except Exception as exc:
+                self._log(f"[LatheEasyStep] geometry rebuild failed for {op.op_type}: {exc}", level="warning")
+
     def _insert_loaded_operation(self, op: Operation):
         self.model.update_geometry(op)
         self.model.add_operation(op)
@@ -7351,6 +7434,8 @@ class HandlerClass:
                 if op is None:
                     continue
                 self.model.add_operation(op)
+
+            self._rebuild_all_operation_geometry()
             
             # Refresh UI
             self._refresh_operation_list(select_index=-1)
@@ -7370,6 +7455,9 @@ class HandlerClass:
 
     def _apply_header_to_ui(self, header: Dict[str, object]):
         """Setzt Header-Werte in UI-Widgets."""
+        if isinstance(header, dict):
+            self._program_header_cache = dict(header)
+
         def _set_widget_value(widget, value):
             if widget is None or value is None:
                 return
@@ -9018,7 +9106,7 @@ class HandlerClass:
         self._update_retract_visibility()
         self._update_subspindle_visibility()
         self._update_face_visibility()
-        if self._startup_complete:
+        if getattr(self, "_startup_complete", False):
             self._refresh_preview()
 
     def _apply_machine_profile_preset(self) -> None:
