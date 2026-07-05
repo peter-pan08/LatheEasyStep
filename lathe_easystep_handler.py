@@ -195,6 +195,18 @@ PANEL_WIDGET_NAMES = (
     'MainWindow',
     'VCPWindow',
 )
+
+
+def _looks_like_panel_widget(widget: QtWidgets.QWidget | None) -> bool:
+    """Return True when a widget is the actual LatheEasyStep panel root."""
+    if widget is None:
+        return False
+    try:
+        has_ops = widget.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
+        has_tabs = widget.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
+        return bool(has_ops and has_tabs)
+    except Exception:
+        return False
 TEXT_TRANSLATIONS = {
     "label_prog_npv": {"de": "Nullpunktverschiebung", "en": "Work Offset"},
     "label_prog_unit": {"de": "Maßeinheit", "en": "Units"},
@@ -2281,16 +2293,28 @@ def _pick_best_root(widgets):
     """
     Try to select a usable root from widgets/handler context.
     Priority:
-      1) first QMainWindow in parent tree
-      2) first QDialog in parent tree
-      3) topLevelWidget() of any widget
-      4) QApplication.activeWindow()
+      1) nearest panel/root marker in parent tree
+      2) first QMainWindow/QDialog in parent tree
+      3) the first passed widget
     """
     for w in widgets:
         cur = w
         for _ in range(30):
             if cur is None:
                 break
+            try:
+                if cur.objectName() in PANEL_WIDGET_NAMES:
+                    if cur.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel_widget(cur):
+                        pass
+                    else:
+                        return cur
+            except Exception:
+                pass
+            try:
+                if _looks_like_panel_widget(cur):
+                    return cur
+            except Exception:
+                pass
             if isinstance(cur, QtWidgets.QMainWindow):
                 return cur
             if isinstance(cur, QtWidgets.QDialog):
@@ -2298,19 +2322,8 @@ def _pick_best_root(widgets):
             cur = cur.parent()
 
     for w in widgets:
-        try:
-            tl = w.topLevelWidget()
-            if tl is not None:
-                return tl
-        except Exception:
-            pass
-
-    try:
-        aw = QtWidgets.QApplication.activeWindow()
-        if aw is not None:
-            return aw
-    except Exception:
-        pass
+        if w is not None:
+            return w
 
     return None
 
@@ -2394,12 +2407,8 @@ class WidgetResolver:
             roots.append(self.root)
 
         for w in self.widgets:
-            try:
-                tl = w.topLevelWidget()
-            except Exception:
-                tl = None
-            if tl is not None and tl not in roots:
-                roots.append(tl)
+            if w is not None and w not in roots:
+                roots.append(w)
 
         found = []
         # If name is an idx lookup (id:NN or digits), search by dynamic property 'idx'
@@ -2418,19 +2427,6 @@ class WidgetResolver:
                 for r in roots:
                     try:
                         for w in r.findChildren(cls, QtCore.Qt.FindChildrenRecursively):
-                            try:
-                                val = w.property("idx")
-                                if val is None:
-                                    continue
-                                if (isinstance(val, int) and val == iid) or (isinstance(val, str) and val.isdigit() and int(val) == iid):
-                                    found.append(w)
-                            except Exception:
-                                continue
-                    except Exception:
-                        continue
-                for wroot in self.widgets:
-                    try:
-                        for w in wroot.findChildren(cls, QtCore.Qt.FindChildrenRecursively):
                             try:
                                 val = w.property("idx")
                                 if val is None:
@@ -2724,30 +2720,42 @@ class HandlerClass:
     def __init__(self, halcomp, widgets, paths):
         self.hal = halcomp
         self.w = widgets
-        # IMPORTANT: Bind widget lookups strictly to the embedded panel root 'easystep' (not MainWindow)
+        # Restrict all lookups to the panel subtree. The handler may receive
+        # either the panel widget itself or the host container that embeds it.
         self._main_window = widgets
         panel_root = None
-
-        # QTVCP sometimes passes the panel root widget directly as `widgets` (not the main window).
         try:
-            if hasattr(self._main_window, 'objectName') and self._main_window.objectName() == 'easystep':
-                panel_root = self._main_window
-            else:
-                panel_root = self._main_window.findChild(QtWidgets.QWidget, 'easystep')
-                if panel_root is None:
-                    panel_root = getattr(self._main_window, 'easystep', None)
+            if isinstance(self._main_window, QtWidgets.QWidget):
+                current = self._main_window
+                while current is not None:
+                    try:
+                        if current.objectName() in PANEL_WIDGET_NAMES:
+                            if current.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel_widget(current):
+                                pass
+                            else:
+                                panel_root = current
+                                break
+                        elif _looks_like_panel_widget(current):
+                            panel_root = current
+                            break
+                    except Exception:
+                        pass
+                    current = current.parentWidget()
         except Exception:
             panel_root = None
 
-        # Root-Widget des Panels ermitteln
-        panel_root = None
-        try:
-            aw = QtWidgets.QApplication.activeWindow()
-            if isinstance(aw, QtWidgets.QMenu):
-                aw = aw.window()
-            panel_root = aw
-        except Exception:
-            panel_root = None
+        if panel_root is None:
+            try:
+                if hasattr(self._main_window, "findChild"):
+                    for panel_name in PANEL_WIDGET_NAMES:
+                        panel_root = self._main_window.findChild(QtWidgets.QWidget, panel_name)
+                        if panel_root is not None:
+                            if panel_root.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel_widget(panel_root):
+                                panel_root = None
+                                continue
+                            break
+            except Exception:
+                panel_root = None
 
         if panel_root is None:
             panel_root = self.w
@@ -2778,11 +2786,21 @@ class HandlerClass:
         self.tools: Dict[int, Tool] = {}  # loaded tool table
         self._loaded_tools: Dict[int, Tool] | None = None  # cache for repopulating combos after deferred widgets
         self._missing_iso_tools: List[int] = []
+        self.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {}
         self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._thread_standard_populated = False
         self._thread_standard_signal_connected = False
         self._thread_applying_standard = False
+        self._startup_complete = False
+        self._startup_in_progress = False
+        self._parting_choices_initialized = False
+        self._post_start_init_scheduled = False
+        self._post_start_init_done = False
+        self._post_start_init_steps = []
+        self._widget_name_cache: Dict[str, List[QtWidgets.QWidget]] = {}
+        self._startup_epoch = time.monotonic()
+        self._startup_heartbeat_scheduled = False
         self._step_last_dir: str | None = None
         self._loading_step = False
         self._deleting = False
@@ -2887,10 +2905,6 @@ class HandlerClass:
         self.program_shape = _resolve_widget("program_shape")
         self.program_retract_mode = _resolve_widget("program_retract_mode")
         self.program_has_subspindle = _resolve_widget("program_has_subspindle")
-
-        # falls das Objekt in der .ui anders heißt: automatisch finden
-        if self.program_shape is None:
-            self.program_shape = self._find_shape_combo()
 
         self.program_xa = getattr(self.w, "program_xa", None)
         self.program_xi = getattr(self.w, "program_xi", None)
@@ -3038,25 +3052,20 @@ class HandlerClass:
         self.root_widget = self._find_root_widget()
         self._setup_resolver()
 
-        # Nach vollständiger Initialisierung aller Widget-Attribute
-        # sicherstellen, dass Kern-Widgets gefunden und Signale verbunden werden.
-        self._force_attach_core_widgets()
+        # Teure UI-Auflösung und Signalverdrahtung passieren erst in initialized__ /
+        # _finalize_ui_ready(), weil QTVCP den Embed-Handler im Startup mehrfach
+        # in unvollständigen Zuständen anlegen kann.
+        self._unit_last_index = -1
 
-        # Parameter-Widgets für jede Operation
-        self._setup_param_maps()
-        self._connect_signals()
-        self._connect_contour_signals()
-        self._setup_thread_helpers()
-        self._apply_unit_suffix()
-        self._update_program_visibility()
-        self._update_parting_mode_visibility()
-        self._refresh_preview()
-        self._ensure_core_widgets()
+    def _startup_mark(self, label: str):
+        try:
+            delta = time.monotonic() - getattr(self, "_startup_epoch", time.monotonic())
+            self._log(f"[LatheEasyStep][startup +{delta:0.3f}s] {label}", level="info")
+        except Exception:
+            pass
 
-        # letzter bekannter Einheiten-Index für Polling
-        self._unit_last_index = (
-            self.program_unit.currentIndex() if self.program_unit else -1
-        )
+    def _schedule_startup_heartbeats(self):
+        return
 
     # ---- interne Helfer zur Widget-Suche ------------------------------
     def _setup_resolver(self):
@@ -3412,30 +3421,11 @@ class HandlerClass:
 
     def _force_attach_core_widgets(self):
         """Robuste Suche nach Liste/Buttons direkt im Panel-Baum und erneutes Verbinden."""
-        app = QtWidgets.QApplication.instance()
         root = self._find_root_widget()
-        # Suche primär im Panel-Baum, fallback global allWidgets (embedded-Fall)
-        search_roots = []
-        if root:
-            search_roots.append(root)
-        if app:
-            search_roots.append(app)  # signalisiert global search below
+        search_roots = [root] if root else []
 
         def _grab(name: str, cls):
-            # zuerst in allen bekannten Wurzel-Widgets suchen
             for r in search_roots:
-                if isinstance(r, QtWidgets.QApplication):
-                    # global: durch allWidgets iterieren
-                    for w in r.allWidgets():
-                        try:
-                            if w.objectName() == name and isinstance(w, cls):
-                                return w
-                        except Exception:
-                            continue
-                        # Zusatz: falls Name passt, aber Typ nicht exakt, trotzdem zurückgeben
-                        if w.objectName() == name:
-                            return w
-                    continue
                 obj = r.findChild(cls, name, QtCore.Qt.FindChildrenRecursively)
                 if obj:
                     return obj
@@ -3473,38 +3463,36 @@ class HandlerClass:
             while widget:
                 try:
                     if widget.objectName() in PANEL_WIDGET_NAMES:
+                        if widget.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel_widget(widget):
+                            pass
+                        else:
+                            return widget
+                    elif _looks_like_panel_widget(widget):
                         return widget
                 except Exception:
                     pass
                 widget = widget.parentWidget()
             return None
 
-        def _looks_like_panel(widget: QtWidgets.QWidget) -> bool:
-            """Heuristik: verhindert, dass qtdragon_lathe fälschlich als Panel root erkannt wird."""
-            try:
-                has_ops = widget.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
-                has_tabs = widget.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
-                return bool(has_ops and has_tabs)
-            except Exception:
-                return False
+        direct = getattr(self, "root_widget", None)
+        if isinstance(direct, QtWidgets.QWidget):
+            panel = _panel_from(direct)
+            if panel is not None:
+                return panel
 
-        # direkter Zugriff über widgets-Container
-        for panel_name in PANEL_WIDGET_NAMES:
-            cand = getattr(self.w, panel_name, None)
-            if isinstance(cand, QtWidgets.QWidget):
-                return cand
-
-        app = QtWidgets.QApplication.instance()
-        # bekannte Panel-Namen direkt suchen
-        if app:
-            for widget in app.allWidgets():
+        if isinstance(self.w, QtWidgets.QWidget):
+            panel = _panel_from(self.w)
+            if panel is not None:
+                return panel
+            for panel_name in PANEL_WIDGET_NAMES:
                 try:
-                    if widget.objectName() in PANEL_WIDGET_NAMES:
-                        if widget.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel(widget):
-                            continue
-                        return widget
+                    cand = self.w.findChild(QtWidgets.QWidget, panel_name, QtCore.Qt.FindChildrenRecursively)
                 except Exception:
-                    continue
+                    cand = None
+                if cand is not None:
+                    if cand.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel_widget(cand):
+                        continue
+                    return cand
 
         # aus bestehenden Widgets den Panel-Elternteil hochlaufen
         for w in filter(
@@ -3524,34 +3512,6 @@ class HandlerClass:
             if panel:
                 return panel
 
-        if app:
-            # eingebettete Panels sind NICHT topLevelWidgets(), daher allWidgets()
-            for widget in app.allWidgets():
-                try:
-                    if widget.objectName() in PANEL_WIDGET_NAMES:
-                        if widget.objectName() in ("MainWindow", "VCPWindow") and not _looks_like_panel(widget):
-                            continue
-                        return widget
-                except Exception:
-                    continue
-            # Panel nicht direkt gefunden: Liste suchen und zu Eltern hochlaufen
-            try:
-                lists = [w for w in app.allWidgets() if getattr(w, "objectName", lambda: "")() == "listOperations"]
-            except Exception:
-                lists = []
-            if lists:
-                parent_panel = _panel_from(lists[0])
-                if parent_panel:
-                    return parent_panel
-            # versuche, den Kontur-Tabellen-Container als Root zu nutzen
-            try:
-                tables = [w for w in app.allWidgets() if getattr(w, "objectName", lambda: "")() == "contour_segments"]
-            except Exception:
-                tables = []
-            for t in tables:
-                panel = _panel_from(t)
-                if panel:
-                    return panel
         # Fallback: irgend ein QWidget aus self.w
         for name in dir(self.w):
             if name.startswith("_"):
@@ -3562,43 +3522,20 @@ class HandlerClass:
                 continue
             if isinstance(obj, QtWidgets.QWidget):
                 return obj  # kein .window(), wir wollen den Embed-Baum
-        # letzter Fallback: erstes Toplevel
-        if app:
-            tops = app.topLevelWidgets()
-            if tops:
-                return tops[0]
         return None
 
     def _find_any_widget(self, obj_name: str):
         """Globale Suche per objectName in allen Widgets (embedded-sicher mit erweiterten Fallbacks)."""
         # Support lookup by numeric idx property: "id:34724" or just "34724"
+        maybe_id = None
         try:
-            maybe_id = None
             if isinstance(obj_name, str):
                 if obj_name.startswith("id:"):
                     maybe_id = obj_name.split(":", 1)[1]
                 elif obj_name.isdigit():
                     maybe_id = obj_name
-            # Only attempt a global idx-scan once the panel is declared ready
-            if maybe_id is not None and getattr(getattr(self, 'w', None), 'ui_ready', False):
-                try:
-                    iid = int(maybe_id)
-                    app = QtWidgets.QApplication.instance()
-                    if app:
-                        for w in app.allWidgets():
-                            try:
-                                val = w.property("idx")
-                                if val is None:
-                                    continue
-                                # property might be string or int
-                                if (isinstance(val, int) and val == iid) or (isinstance(val, str) and val.isdigit() and int(val) == iid):
-                                    return w
-                            except Exception:
-                                continue
-                except Exception:
-                    pass
         except Exception:
-            pass
+            maybe_id = None
         roots: list[QtWidgets.QWidget] = []
         root = self.root_widget or self._find_root_widget()
         if root:
@@ -3616,34 +3553,25 @@ class HandlerClass:
                 if isinstance(w, QtWidgets.QWidget):
                     roots.append(w.window())
 
-        # ENHANCED: Search in all root candidates
         for r in roots:
+            if maybe_id is not None:
+                try:
+                    iid = int(maybe_id)
+                    for w in r.findChildren(QtWidgets.QWidget, QtCore.Qt.FindChildrenRecursively):
+                        try:
+                            val = w.property("idx")
+                            if val is None:
+                                continue
+                            if (isinstance(val, int) and val == iid) or (isinstance(val, str) and val.isdigit() and int(val) == iid):
+                                return w
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
             obj = r.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
             if obj:
                 return obj
-        
-        app = QtWidgets.QApplication.instance()
-        # Only consult the global widget list once the panel is marked ready to
-        # avoid matching similarly named widgets in the host GUI.
-        if app and getattr(getattr(self, 'w', None), 'ui_ready', False):
-            # First pass: exact match
-            for w in app.allWidgets():
-                try:
-                    if w.objectName() == obj_name:
-                        return w
-                except Exception:
-                    continue
 
-            # ENHANCED: Second pass with tolerant matching for buttons/widgets that might have suffixes
-            if obj_name.startswith("btn") or obj_name in ["contour_add_segment", "contour_delete_segment", "contour_move_up", "contour_move_down"]:
-                for w in app.allWidgets():
-                    try:
-                        on = w.objectName()
-                        if on and (on == obj_name or re.match(rf"^{re.escape(obj_name)}(_\d+)?$", on)):
-                            return w
-                    except Exception:
-                        continue
-        
         # ENHANCED: If still not found, try direct attribute access as last resort
         widget = getattr(self.w, obj_name, None)
         if widget is not None:
@@ -3716,44 +3644,56 @@ class HandlerClass:
         return None
 
     def _find_shape_combo(self):
-        """ComboBox für Rohteilform (Zylinder/Rohr/Rechteck/N-Eck) im ganzen Fenster suchen."""
-        # Root-Widget holen
+        """Find the stock-shape combo within the panel."""
         root = self.root_widget or self._find_root_widget()
         if root is None:
-            self._log("[LatheEasyStep] _find_shape_combo: no root_widget", level="info")
             return None
+
+        explicit = root.findChild(QtWidgets.QComboBox, "program_shape", QtCore.Qt.FindChildrenRecursively)
+        if explicit is not None:
+            self.program_shape = explicit
+            return explicit
 
         for combo in root.findChildren(QtWidgets.QComboBox):
             texts = [combo.itemText(i).strip().lower() for i in range(combo.count())]
-            self._log(f"[LatheEasyStep] shape combo candidate {combo.objectName()}: {texts}", level="info")
             if any(t in texts for t in ("zylinder", "rohr", "rechteck", "n-eck")):
-                # In embedded-macro mode, widgets may not exist yet when we do the first
-                # round of signal wiring (during import / early init). This means
-                # `program_shape` can be discovered later and would then change its value
-                # without triggering _handle_global_change(). So: bind + connect here.
-                self._log(f"[LatheEasyStep] using '{combo.objectName()}' as program_shape combo", level="info")
-
                 self.program_shape = combo
-
-                if combo not in self._connected_global_widgets:
-                    self._connected_global_widgets.add(combo)
-                    try:
-                        combo.currentIndexChanged.connect(self._handle_global_change)
-                    except Exception:
-                        pass
-                    try:
-                        combo.activated.connect(self._handle_global_change)
-                    except Exception:
-                        pass
-                    try:
-                        combo.currentTextChanged.connect(self._handle_global_change)
-                    except Exception:
-                        pass
-
                 return combo
 
-        self._log("[LatheEasyStep] no shape combo found in tree", level="info")
         return None
+
+    def _rebuild_widget_name_cache(self):
+        """Build an objectName cache for the current panel subtree."""
+        root = self.root_widget or self._find_root_widget()
+        cache: Dict[str, List[QtWidgets.QWidget]] = {}
+        if root is not None:
+            try:
+                widgets = [root]
+                widgets.extend(root.findChildren(QtWidgets.QWidget, QtCore.Qt.FindChildrenRecursively))
+                for widget in widgets:
+                    try:
+                        obj_name = widget.objectName()
+                    except Exception:
+                        obj_name = ""
+                    if not obj_name:
+                        continue
+                    cache.setdefault(obj_name, []).append(widget)
+            except Exception:
+                pass
+        self._widget_name_cache = cache
+
+    def _cache_named_widget(self, widget: QtWidgets.QWidget | None):
+        if widget is None:
+            return
+        try:
+            obj_name = widget.objectName()
+        except Exception:
+            obj_name = ""
+        if not obj_name:
+            return
+        bucket = self._widget_name_cache.setdefault(obj_name, [])
+        if widget not in bucket:
+            bucket.append(widget)
 
     def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
         """Robuste Widget-Auflösung mit erweiterten Fallbacks für embedded Panel.
@@ -3810,18 +3750,6 @@ class HandlerClass:
         if widget is not None and _is_descendant_of_scope(widget):
             return widget
 
-        # 1b) Prefer widgets inside our panel's root (works even if hidden)
-        root = scope_root
-        if root is not None:
-            try:
-                w_in_root = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
-            except Exception:
-                w_in_root = None
-            if w_in_root is not None:
-                return w_in_root
-
-        app = QtWidgets.QApplication.instance()
-
         preferred_types = (
             QtWidgets.QDoubleSpinBox,
             QtWidgets.QSpinBox,
@@ -3862,22 +3790,23 @@ class HandlerClass:
                 return _is_descendant_of_scope(w)
             self._is_widget_in_our_panel = _is_widget_in_our_panel  # type: ignore
 
-        # 2) Exact match inside known panel (only search global widget list
-        # when the embedded panel is fully ready to avoid matching host widgets)
-        if app and getattr(getattr(self, 'w', None), 'ui_ready', False):
-            for w in app.allWidgets():
-                try:
-                    if w.objectName() == name and self._is_widget_in_our_panel(w):
-                        return w
-                except Exception:
-                    continue
+        cached = getattr(self, "_widget_name_cache", {}).get(name, [])
+        if cached:
+            try:
+                candidates = [w for w in cached if w is not None]
+                if candidates:
+                    candidates.sort(key=_score)
+                    return candidates[0]
+            except Exception:
+                pass
 
-        # 3) Exact match inside current root widget
+        # 2) Exact match inside current root widget
         root = self.root_widget or self._find_root_widget()
         if root is not None:
             try:
                 widget = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
                 if widget is not None:
+                    self._cache_named_widget(widget)
                     return widget
             except Exception:
                 pass
@@ -3894,40 +3823,16 @@ class HandlerClass:
                         candidates.append(w)
                 if candidates:
                     candidates.sort(key=_score)
+                    self._cache_named_widget(candidates[0])
                     return candidates[0]
             except Exception:
                 pass
 
-        # 4) Fallback: exact match anywhere (only try global scan when panel ready)
-        if app and getattr(getattr(self, 'w', None), 'ui_ready', False):
-            for w in app.allWidgets():
-                try:
-                    if w.objectName() == name:
-                        return w
-                except Exception:
-                    continue
-
-            # 4b) Tolerant match anywhere
-            try:
-                candidates = []
-                for w in app.allWidgets():
-                    try:
-                        on = w.objectName()
-                    except Exception:
-                        continue
-                    if on == name or re.match(rf"^{re.escape(name)}(_\d+)?$", on):
-                        candidates.append(w)
-                if candidates:
-                    candidates.sort(key=_score)
-                    return candidates[0]
-            except Exception:
-                pass
-
-        # 4c) Heuristics for custom preview widgets or swapped objectNames
+        # 3) Heuristics for custom preview widgets or swapped objectNames
         # Some custom widgets (LathePreviewWidget) or nested UI files may use
         # alternative objectNames like 'previewContour' instead of 'contourPreview'.
         try:
-            if app and getattr(getattr(self, 'w', None), 'ui_ready', False):
+            if root is not None:
                 lname = (name or "").lower()
                 # try common alternates: swap 'preview' <-> 'contour'
                 alternates = set()
@@ -3940,8 +3845,8 @@ class HandlerClass:
                     if 'contour' in lname:
                         alternates.add(lname.replace('contour', 'preview'))
 
-                # scan global widgets for class-name matches (LathePreviewWidget) or name alternates
-                for w in app.allWidgets():
+                # scan only widgets inside the panel root
+                for w in root.findChildren(QtWidgets.QWidget, QtCore.Qt.FindChildrenRecursively):
                     try:
                         on = (w.objectName() or "").lower()
                     except Exception:
@@ -4025,18 +3930,7 @@ class HandlerClass:
                 return root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
             except Exception:
                 pass
-        
-        # Global search — only scan global widgets if panel is ready to avoid
-        # accidental host-GUI matches during early initialization.
-        app = QtWidgets.QApplication.instance()
-        if app and getattr(getattr(self, 'w', None), 'ui_ready', False):
-            for w in app.allWidgets():
-                try:
-                    if w.objectName() == name:
-                        return w
-                except Exception:
-                    continue
-        
+
         return None
     
     def _connect_button_signal(self, button: QtWidgets.QPushButton, name: str):
@@ -4222,6 +4116,44 @@ class HandlerClass:
 
     def initialized__(self):
         """Wird aufgerufen, wenn QtVCP die UI komplett aufgebaut hat."""
+        self._startup_mark("initialized__ begin")
+        root = self.root_widget or self._find_root_widget()
+        if not _looks_like_panel_widget(root):
+            search_hosts = [
+                getattr(self, "w", None),
+                getattr(self, "_main_window", None),
+                root,
+            ]
+            for host in search_hosts:
+                if not isinstance(host, QtWidgets.QWidget):
+                    continue
+                if _looks_like_panel_widget(host):
+                    root = host
+                    break
+                for panel_name in PANEL_WIDGET_NAMES:
+                    try:
+                        cand = host.findChild(QtWidgets.QWidget, panel_name, QtCore.Qt.FindChildrenRecursively)
+                    except Exception:
+                        cand = None
+                    if _looks_like_panel_widget(cand):
+                        root = cand
+                        break
+                if _looks_like_panel_widget(root):
+                    break
+        if root is None:
+            return
+        self.w = root
+        self.root_widget = root
+        self._rebuild_widget_name_cache()
+
+        # Ignore provisional embed instances that do not yet own the actual panel UI.
+        if not _looks_like_panel_widget(root):
+            return
+
+        if self._startup_in_progress:
+            return
+        self._startup_in_progress = True
+        self._schedule_startup_heartbeats()
         self._setup_slice_view()
         # Eindeutige "idx" Dynamic-Properties vergeben (unabhängig von Label-Texten).
         # Wenn eine Mapping-Datei 'widget_ids.json' vorhanden ist, verwenden
@@ -4244,25 +4176,37 @@ class HandlerClass:
                 mapping = {}
 
             from PyQt5.QtWidgets import QWidget
-            # Collect all widgets in the application (preferred) so even anonymous
-            # widgets receive stable numeric IDs. Fall back to panel children.
+            # Restrict the idx map to the panel subtree. Anonymous host-GUI
+            # widgets must not be scanned or persisted here.
             try:
-                app = QtWidgets.QApplication.instance()
-                all_widgets = list(app.allWidgets()) if app is not None else list(self.w.findChildren(QWidget))
+                all_widgets = list(self.w.findChildren(QWidget))
             except Exception:
                 all_widgets = list(self.w.findChildren(QWidget))
+
+            panel_names = {
+                getattr(w, "objectName", lambda: "")() or ""
+                for w in all_widgets
+            }
+            panel_names.discard("")
 
             # Determine start id (avoid clashing with any provided mapping)
             next_id = 10000
             try:
-                existing_ids = [int(v) for v in mapping.values() if (isinstance(v, int) or (isinstance(v, str) and str(v).isdigit()))]
+                existing_ids = [
+                    int(v)
+                    for k, v in mapping.items()
+                    if k in panel_names and (isinstance(v, int) or (isinstance(v, str) and str(v).isdigit()))
+                ]
                 if existing_ids:
                     next_id = max(next_id, max(existing_ids) + 1)
             except Exception:
                 pass
 
-            # Build an output mapping we will persist (name -> id)
-            out_map = dict(mapping)
+            # Persist only names that actually belong to the current panel.
+            out_map = {
+                k: v for k, v in mapping.items()
+                if k in panel_names
+            }
 
             for _w in all_widgets:
                 try:
@@ -4271,16 +4215,14 @@ class HandlerClass:
                     if cur is not None:
                         continue
                     name = getattr(_w, "objectName", lambda: "")() or ""
-                    if name and name in out_map:
+                    if not name:
+                        continue
+                    if name in out_map:
                         wid = out_map[name]
                     else:
                         wid = next_id
                         next_id += 1
-                        if name:
-                            out_map[name] = wid
-                        else:
-                            # anonymous widget: create a stable key for persistence
-                            out_map[f"anon_{wid}"] = wid
+                        out_map[name] = wid
                     try:
                         _w.setProperty("idx", int(wid))
                     except Exception:
@@ -4301,7 +4243,7 @@ class HandlerClass:
         except Exception:
             pass
 
-        # Jetzt ist das Widget-Hierarchie sicher fertig -> Combos suchen
+        # Jetzt ist die Widget-Hierarchie sicher fertig -> Combos suchen
 
         # Einheiten-Combo sicherstellen
         if self.program_unit is None:
@@ -4344,7 +4286,7 @@ class HandlerClass:
             # Signal hier (spät) sicher verbinden
             self.program_retract_mode.currentIndexChanged.connect(self._handle_global_change)
         else:
-            self._log("[LatheEasyStep] initialized__: no program_retract_mode combo found", level="info")
+            pass
 
         # falls wir die Rohteilform-Combo jetzt haben: Signal anschließen
         if self.program_shape:
@@ -4420,21 +4362,12 @@ class HandlerClass:
             self._unit_timer.start()
             self._log("[LatheEasyStep] unit polling timer started", level="info")
         else:
-            self._log("[LatheEasyStep] initialized__: still no unit combo", level="info")
+            pass
+        self._startup_mark("initialized__ end")
 
         # Jetzt sicherstellen, dass die Preview-Widgets referenziert sind
-        self._ensure_preview_widgets()
-        self._refresh_preview()
-        # Buttons/Liste sicher verbinden (falls erst jetzt gefunden)
-        self._connect_signals()
-        try:
-            self._log(f"[LatheEasyStep] core widgets: list_ops={self.list_ops}, btn_add={self.btn_add}, btn_delete={self.btn_delete}", level="info")
-        except Exception:
-            pass
-        QtCore.QTimer.singleShot(0, self._reposition_tool_preview_widgets)
-        self._setup_thread_helpers()
-        self._ensure_tool_preview_calibration_controls()
-        QtCore.QTimer.singleShot(0, self._auto_load_tool_table)
+        # Die teuren Panel-Initialisierungen laufen gesammelt in
+        # _finalize_ui_ready(), damit sie im Embed-Fall nicht doppelt laufen.
         # The embedded panel is started in a host environment (QTvcp embed).
         # Depending on timing, the first initialized__ can run before *all* widgets
         # are fully realized / named, so we do a few delayed passes.
@@ -4497,6 +4430,7 @@ class HandlerClass:
 
     def _finalize_ui_ready(self):
         """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
+        self._startup_mark("_finalize_ui_ready enter")
         # IMPORTANT: This handler is imported twice in an embedded context:
         #  1) once before the LatheEasyStep .ui is actually loaded (widget tree is incomplete)
         #  2) once after the embedded UI is constructed.
@@ -4518,6 +4452,7 @@ class HandlerClass:
         # attaches them to `self.w` to avoid repeated global searches.
         try:
             self._register_known_widgets()
+            self._rebuild_widget_name_cache()
         except Exception:
             pass
 
@@ -4563,32 +4498,16 @@ class HandlerClass:
             self._log(f"[LatheEasyStep] core widgets FIX: add={self.btn_add} del={self.btn_delete} list={self.list_ops}", level="info")
         except Exception:
             pass
-        self._setup_param_maps()
-        self._connect_signals()
-        self._setup_thread_helpers()
-        self._ensure_tool_preview_calibration_controls()
-        self._debug_widget_names()
-        try:
-            self._log(
-                "[LatheEasyStep][debug] finalize: parting_contour=",
-                self._get_widget_by_name("parting_contour"), level="debug")
-        except Exception:
-            pass
+        self._ensure_preview_widgets()
+        self._connect_core_signals()
         # Nach vollständigem Aufbau sicherstellen, dass die Kern-Widgets
         # wirklich aus dem Panel stammen (nicht aus dem Host-GUI-Baum).
         self._ensure_core_widgets()
         self._update_parting_contour_choices()
         self._update_parting_ready_state()
-        self._apply_tab_titles(self._current_language_code())
-
-        # Ensure language/label texts and all visibility toggles are applied
-        # after the widgets are fully available (important for embedded use).
         try:
-            self._find_combo_boxes()
-            self._apply_language_texts()
+            self._apply_tab_titles(self._current_language_code())
             self._handle_global_change()
-            # ENHANCED: Force visibility updates for embedded mode
-            self._force_visibility_updates()
         except Exception:
             pass
         # UI is now declared ready; allow resolver warnings again
@@ -4603,11 +4522,6 @@ class HandlerClass:
                         pass
         except Exception:
             pass
-        # Abarbeiten aller zuvor aufgeschobenen Lookups
-        try:
-            self._process_deferred_lookups()
-        except Exception:
-            pass
 
         # ── Mark finalization complete so subsequent timer callbacks are skipped ──
         # Critical widgets: list_ops, btn_add, btn_generate, tab_params, program_unit
@@ -4619,11 +4533,15 @@ class HandlerClass:
         ])
         if _critical_ok:
             self._ui_finalized = True
+            self._startup_complete = True
+            self._startup_in_progress = False
             self._log(
                 f'[LatheEasyStep] _finalize_ui_ready DONE after pass {getattr(self, "_finalize_pass", "?")} — '
                 f'all critical widgets found, skipping further passes',
                 level="info",
             )
+            self._startup_mark("_finalize_ui_ready critical done")
+            self._schedule_post_start_init()
         else:
             missing = [n for n, w in [
                 ("list_ops", self.list_ops), ("btn_add", self.btn_add),
@@ -4634,6 +4552,56 @@ class HandlerClass:
                 f'still missing: {missing}, will retry on next timer',
                 level="info",
             )
+
+    def _schedule_post_start_init(self):
+        """Disabled: startup follow-up work must happen lazily on demand."""
+        self._post_start_init_scheduled = True
+        self._post_start_init_done = True
+        self._post_start_init_steps = []
+        self._startup_mark("post_start_init disabled")
+
+    def _post_start_init(self):
+        """Deferred startup work that should not block the visible panel startup."""
+        if getattr(self, "_post_start_init_done", False):
+            return
+        try:
+            steps = getattr(self, "_post_start_init_steps", [])
+            if not steps:
+                self._post_start_init_done = True
+                self._startup_mark("post_start_init complete")
+                return
+            step = steps.pop(0)
+            self._startup_mark(f"post_start_init step {getattr(step, '__name__', 'unknown')} begin")
+            step()
+            self._startup_mark(f"post_start_init step {getattr(step, '__name__', 'unknown')} end")
+        except Exception:
+            pass
+        if getattr(self, "_post_start_init_steps", []):
+            QtCore.QTimer.singleShot(120, self._post_start_init)
+        else:
+            self._post_start_init_done = True
+            self._startup_mark("post_start_init complete")
+
+    def _post_start_init_step_prepare_signals(self):
+        self._setup_param_maps()
+        self._prepare_signal_connection_context()
+        self._connect_resolver_fallbacks()
+
+    def _post_start_init_step_param_signals(self):
+        self._connect_param_change_signals()
+
+    def _post_start_init_step_global_signals(self):
+        self._connect_global_form_signals()
+
+    def _post_start_init_step_language_signal(self):
+        self._connect_language_signal()
+
+    def _post_start_init_step_mode_signals(self):
+        self._connect_mode_visibility_signals()
+
+    def _post_start_init_step_live_update_signals(self):
+        self._connect_tool_preview_signals()
+        self._connect_live_update_signals()
 
     def _ensure_contour_widgets(self):
         """Sucht fehlende Kontur-Widgets (Start X/Z, Tabelle, Name) robust über objectName."""
@@ -4657,9 +4625,6 @@ class HandlerClass:
         if root:
             candidates.extend(root.findChildren(QtWidgets.QTableWidget, "contour_segments"))
             candidates.extend(root.findChildren(QtWidgets.QTableWidget))
-        app = QtWidgets.QApplication.instance()
-        if app:
-            candidates.extend([w for w in app.allWidgets() if isinstance(w, QtWidgets.QTableWidget) and w.objectName() == "contour_segments"])
         # beste Übereinstimmung anhand Score wählen
         def _score_table(w: QtWidgets.QTableWidget) -> int:
             score = 0
@@ -4692,16 +4657,17 @@ class HandlerClass:
                 self.contour_segments.raise_()
             except Exception:
                 pass
-        try:
-            names = []
-            for c in candidates:
-                parent = c.parentWidget()
-                names.append(
-                    f"{c.objectName()} vis={c.isVisible()} score={_score_table(c)} parent={parent.objectName() if parent else None}"
-                )
-            self._log(f"[LatheEasyStep][debug] contour table candidates: {names}, chosen={getattr(self.contour_segments, 'objectName', lambda: None)() if self.contour_segments else None}", level="debug")
-        except Exception:
-            pass
+        if getattr(self, "_verbose_widget_logs", False):
+            try:
+                names = []
+                for c in candidates:
+                    parent = c.parentWidget()
+                    names.append(
+                        f"{c.objectName()} vis={c.isVisible()} score={_score_table(c)} parent={parent.objectName() if parent else None}"
+                    )
+                self._log(f"[LatheEasyStep][debug] contour table candidates: {names}, chosen={getattr(self.contour_segments, 'objectName', lambda: None)() if self.contour_segments else None}", level="debug")
+            except Exception:
+                pass
         self.contour_edge_type = grab("contour_edge_type")
         self.contour_edge_size = grab("contour_edge_size")
         self.label_contour_edge_size = grab("label_contour_edge_size")
@@ -5316,77 +5282,62 @@ class HandlerClass:
         if row < 0:
             return
         try:
-            self._update_selected_operation(row)
+            self._update_selected_operation(force=True)
         except Exception as e:
             self._log(f"[LatheEasyStep] _on_param_changed: update failed: {e}", level="error")
 
     def _connect_signals(self):
-            # Stelle sicher, dass die Kern-Widgets vorhanden sind, bevor wir Signale verbinden
+            self._prepare_signal_connection_context()
+            self._connect_core_signals()
+            self._connect_resolver_fallbacks()
+            self._connect_tool_preview_signals()
+            self._connect_param_change_signals()
+            self._connect_global_form_signals()
+            self._connect_language_signal()
+            self._connect_mode_visibility_signals()
+            self._connect_live_update_signals()
+
+    def _prepare_signal_connection_context(self):
             self._ensure_core_widgets()
             if self.tab_params is None:
                 self.tab_params = self._get_widget_by_name("tabParams")
             self._ensure_list_ops_type()
             if not hasattr(self, "_resolver"):
                 self._setup_resolver()
-            self._resolve_core_widgets_strict()
 
-            self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
-            self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
-            self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
-            self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
-            self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
-            self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
-            self._connect_button_once(self.btn_load_tool_table, self._handle_load_tool_table, "_btn_load_tool_table_connected")
-            self._connect_button_once(self.btn_save_program, self._handle_save_program, "_btn_save_program_connected")
-            self._connect_button_once(self.btn_load_program, self._handle_load_program, "_btn_load_program_connected")
-            if self.list_ops and not getattr(self, "_list_ops_connected", False):
-                self.list_ops.currentRowChanged.connect(self._handle_selection_change)
-                self._list_ops_connected = True
-            if self.list_ops and not getattr(self, "_list_ops_double_click_connected", False):
-                self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
-                self._list_ops_double_click_connected = True
-            if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
-                self.list_ops.clicked.connect(self._mark_operation_user_selected)
-                self._list_ops_click_connected = True
-            if self.tab_params and not getattr(self, "_tab_params_connected", False):
-                self.tab_params.currentChanged.connect(self._handle_tab_changed)
-                self._tab_params_connected = True
-            if self.parting_mode and not getattr(self, "_parting_mode_connected", False):
-                self.parting_mode.currentIndexChanged.connect(
-                    self._update_parting_mode_visibility
-                )
-                self._parting_mode_connected = True
-            if self.list_ops is None:
-                def _on_list_ops_ready(w, err):
-                    if err is not None:
-                        try:
-                            self.LOG.error(f"listOperations resolve failed: {err}")
-                        except Exception:
-                            self._log(err, level="info")
-                        return
-                    if not isinstance(w, QtWidgets.QListWidget):
-                        return
-                    self.list_ops = w
-                    if not getattr(self, "_list_ops_connected", False):
-                        self.list_ops.currentRowChanged.connect(self._handle_selection_change)
-                        self._list_ops_connected = True
-                    if not getattr(self, "_list_ops_double_click_connected", False):
-                        self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
-                        self._list_ops_double_click_connected = True
-                    if not getattr(self, "_list_ops_click_connected", False):
-                        self.list_ops.clicked.connect(self._mark_operation_user_selected)
-                        self._list_ops_click_connected = True
+    def _connect_resolver_fallbacks(self):
+            if self.list_ops is not None:
+                return
+            def _on_list_ops_ready(w, err):
+                if err is not None:
+                    try:
+                        self.LOG.error(f"listOperations resolve failed: {err}")
+                    except Exception:
+                        self._log(err, level="info")
+                    return
+                if not isinstance(w, QtWidgets.QListWidget):
+                    return
+                self.list_ops = w
+                if not getattr(self, "_list_ops_connected", False):
+                    self.list_ops.currentRowChanged.connect(self._handle_selection_change)
+                    self._list_ops_connected = True
+                if not getattr(self, "_list_ops_double_click_connected", False):
+                    self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
+                    self._list_ops_double_click_connected = True
+                if not getattr(self, "_list_ops_click_connected", False):
+                    self.list_ops.clicked.connect(self._mark_operation_user_selected)
+                    self._list_ops_click_connected = True
 
-                self._resolver.resolve_later(
-                    QtWidgets.QListWidget,
-                    "listOperations",
-                    _on_list_ops_ready,
-                    timeout_ms=5000,
-                    interval_ms=150,
-                    debug_context=True,
-                )
+            self._resolver.resolve_later(
+                QtWidgets.QListWidget,
+                "listOperations",
+                _on_list_ops_ready,
+                timeout_ms=5000,
+                interval_ms=150,
+                debug_context=True,
+            )
 
-            # Tool combo previews
+    def _connect_tool_preview_signals(self):
             tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
             for combo_name in tool_combos:
                 combo = getattr(self, combo_name, None)
@@ -5394,14 +5345,15 @@ class HandlerClass:
                     combo.currentIndexChanged.connect(self._update_tool_previews)
                     setattr(self, f"_{combo_name}_connected", True)
 
-            # Parameterfelder
+    def _connect_param_change_signals(self):
+            if not getattr(self, "param_widgets", None):
+                self._setup_param_maps()
             for widgets in self.param_widgets.values():
                 for widget in widgets.values():
                     if widget is None:
                         continue
                     if widget in self._connected_param_widgets:
                         continue
-                    # Preview-Widgets überspringen (haben kein valueChanged Signal)
                     if isinstance(widget, LathePreviewWidget):
                         continue
                     if isinstance(widget, QtWidgets.QComboBox):
@@ -5412,7 +5364,7 @@ class HandlerClass:
                         widget.valueChanged.connect(self._handle_param_change)
                     self._connected_param_widgets.add(widget)
 
-            # Form-Logik (Einheiten / Rohteilform / Rückzug)
+    def _connect_global_form_signals(self):
             if self.program_unit and self.program_unit not in self._connected_global_widgets:
                 self.program_unit.currentIndexChanged.connect(self._handle_global_change)
                 self._connected_global_widgets.add(self.program_unit)
@@ -5443,12 +5395,14 @@ class HandlerClass:
                 if chuck_spin and chuck_spin not in self._connected_global_widgets and hasattr(chuck_spin, "valueChanged"):
                     chuck_spin.valueChanged.connect(self._handle_global_change)
                     self._connected_global_widgets.add(chuck_spin)
-            self._apply_language_texts()
+
+    def _connect_language_signal(self):
             lang_combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
             if lang_combo and not getattr(self, "_language_connected", False):
                 lang_combo.currentIndexChanged.connect(self._handle_language_change)
                 self._language_connected = True
-            # --- Live update + visibility for Planen (Face) ---
+
+    def _connect_mode_visibility_signals(self):
             try:
                 if getattr(self, "face_mode", None):
                     self.face_mode.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
@@ -5456,16 +5410,14 @@ class HandlerClass:
                     self.face_edge_type.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
             except Exception:
                 pass
-            # --- Live update + visibility for Bohren (Drill) ---
             try:
                 if getattr(self, "drill_mode", None):
                     self.drill_mode.currentIndexChanged.connect(lambda *_: self._update_drill_visibility())
             except Exception:
                 pass
 
-            # Live-update operation model + preview when parameters change
+    def _connect_live_update_signals(self):
             for w in [
-                # Face (Planen)
                 getattr(self, "face_start_z", None), getattr(self, "face_end_z", None),
                 getattr(self, "face_stepover", None), getattr(self, "face_doc", None),
                 getattr(self, "face_allowance_x", None), getattr(self, "face_allowance_z", None),
@@ -5477,6 +5429,40 @@ class HandlerClass:
                 getattr(self, "face_tool", None), getattr(self, "face_coolant", None),
             ]:
                 self._connect_live_update(w)
+
+    def _connect_core_signals(self):
+            """Connect only the signals required for an immediately usable panel."""
+            self._ensure_core_widgets()
+            if self.tab_params is None:
+                self.tab_params = self._get_widget_by_name("tabParams")
+            self._ensure_list_ops_type()
+
+            self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
+            self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
+            self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
+            self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
+            self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
+            self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+            self._connect_button_once(self.btn_load_tool_table, self._handle_load_tool_table, "_btn_load_tool_table_connected")
+            self._connect_button_once(self.btn_save_program, self._handle_save_program, "_btn_save_program_connected")
+            self._connect_button_once(self.btn_load_program, self._handle_load_program, "_btn_load_program_connected")
+            if self.list_ops and not getattr(self, "_list_ops_connected", False):
+                self.list_ops.currentRowChanged.connect(self._handle_selection_change)
+                self._list_ops_connected = True
+            if self.list_ops and not getattr(self, "_list_ops_double_click_connected", False):
+                self.list_ops.itemDoubleClicked.connect(self._on_step_double_clicked)
+                self._list_ops_double_click_connected = True
+            if self.list_ops and not getattr(self, "_list_ops_click_connected", False):
+                self.list_ops.clicked.connect(self._mark_operation_user_selected)
+                self._list_ops_click_connected = True
+            if self.tab_params and not getattr(self, "_tab_params_connected", False):
+                self.tab_params.currentChanged.connect(self._handle_tab_changed)
+                self._tab_params_connected = True
+            if self.parting_mode and not getattr(self, "_parting_mode_connected", False):
+                self.parting_mode.currentIndexChanged.connect(
+                    self._update_parting_mode_visibility
+                )
+                self._parting_mode_connected = True
 
 
 
@@ -5698,11 +5684,6 @@ class HandlerClass:
             if op is None:
                 continue
             if op.op_type != OpType.CONTOUR:
-                try:
-                    self._log(
-                        f"[LatheEasyStep][debug] contour-scan skip op type {op.op_type}", level="debug")
-                except Exception:
-                    pass
                 continue
             name = self._contour_name_or_fallback(op, contour_idx)
             if name and name not in names:
@@ -5735,6 +5716,8 @@ class HandlerClass:
 
     def _debug_contour_state(self, context: str = ""):
         """Zusätzliche Debug-Ausgabe für die Kontur-Erkennung im Abspan-Tab."""
+        if not getattr(self, "_verbose_widget_logs", False):
+            return
         prefix = f"[LatheEasyStep][debug] parting contour ({context})" if context else "[LatheEasyStep][debug] parting contour"
         try:
             op_infos = []
@@ -5815,10 +5798,23 @@ class HandlerClass:
         if getattr(self, "parting_contour", None) is None:
             self._log("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh", level="debug")
             return
-
-        self._debug_contour_state("before refresh")
         names = self._available_contour_names()
         current = self.parting_contour.currentText().strip()
+        existing = [
+            self.parting_contour.itemText(i).strip()
+            for i in range(self.parting_contour.count())
+        ]
+
+        if getattr(self, "_startup_in_progress", False) and getattr(self, "_parting_choices_initialized", False):
+            if existing == names:
+                self._update_parting_ready_state()
+                return
+
+        if existing == names and (not current or current == self._current_parting_contour_name()):
+            self._update_parting_ready_state()
+            return
+
+        self._debug_contour_state("before refresh")
         self.parting_contour.blockSignals(True)
         self.parting_contour.clear()
         for name in names:
@@ -5828,6 +5824,7 @@ class HandlerClass:
         elif names:
             self.parting_contour.setCurrentIndex(0)
         self.parting_contour.blockSignals(False)
+        self._parting_choices_initialized = True
         self._update_parting_ready_state()
         self._debug_contour_state("after refresh")
 
@@ -5885,7 +5882,13 @@ class HandlerClass:
 
     def _handle_tab_changed(self, *_args, **_kwargs):
         """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
-        self._update_parting_contour_choices()
+        if self._current_op_type() == OpType.THREAD and not getattr(self, "_thread_standard_populated", False):
+            try:
+                self._setup_thread_helpers()
+            except Exception:
+                pass
+        if self._current_op_type() == OpType.ABSPANEN:
+            self._update_parting_contour_choices()
         self._update_parting_ready_state()
 
     def _fallback_contour_name(self, idx: int) -> str:
@@ -5969,6 +5972,8 @@ class HandlerClass:
             return
 
     def _collect_params(self, op_type: str) -> Dict[str, object]:
+        if not getattr(self, "param_widgets", None):
+            self._setup_param_maps()
         widgets = self.param_widgets.get(op_type, {})
         params: Dict[str, object] = {}
         for key, widget in widgets.items():
@@ -6385,6 +6390,8 @@ class HandlerClass:
             pass
 
     def _load_params_to_form(self, op: Operation):
+        if not getattr(self, "param_widgets", None):
+            self._setup_param_maps()
         if op.op_type == OpType.PROGRAM_HEADER:
             self._load_program_header_to_form(op.params)
             return
@@ -6816,11 +6823,12 @@ class HandlerClass:
                 lst.setCurrentRow(lst.count() - 1)
             lst.blockSignals(False)
             try:
-                items = [lst.item(i).text() for i in range(lst.count())]
-                self._log(
-                    f"[LatheEasyStep][debug] list '{lst.objectName()}' "
-                    f"count={lst.count()} items={items} vis={lst.isVisible()} "
-                    f"size={lst.size()}", level="debug")
+                if getattr(self, "_verbose_widget_logs", False):
+                    items = [lst.item(i).text() for i in range(lst.count())]
+                    self._log(
+                        f"[LatheEasyStep][debug] list '{lst.objectName()}' "
+                        f"count={lst.count()} items={items} vis={lst.isVisible()} "
+                        f"size={lst.size()}", level="debug")
                 # Sichtbarkeit erzwingen – eigener Style gegen dunkle QSS
                 lst.setStyleSheet(
                     "QListWidget { background: #f5f5f5; color: #000000; }"
@@ -6913,6 +6921,11 @@ class HandlerClass:
         # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
         self._ensure_core_widgets()
         self._force_attach_core_widgets()
+        if not self.tools:
+            try:
+                self._auto_load_tool_table()
+            except Exception:
+                pass
         # Schutz gegen doppelte Auslösung (UI kann Click-Events doppelt feuern)
         if getattr(self, "_adding_operation", False):
             return
@@ -6969,9 +6982,6 @@ class HandlerClass:
 
                 self._refresh_operation_list(select_index=len(self.model.operations) - 1)
                 self._refresh_preview()
-                # Abspan-Auswahl sofort auffrischen, damit neue Konturen unmittelbar
-                # auswählbar sind.
-                self._update_parting_contour_choices()
                 self._update_parting_ready_state()
         finally:
             self._adding_operation = False
@@ -6999,7 +7009,6 @@ class HandlerClass:
             new_idx = min(idx, len(self.model.operations) - 1)
             self._refresh_operation_list(select_index=new_idx)
             self._refresh_preview()
-            self._update_parting_contour_choices()
         finally:
             self._deleting = False
 
@@ -7059,7 +7068,6 @@ class HandlerClass:
             except Exception:
                 pass
         self._refresh_preview()
-        self._update_parting_contour_choices()
         self._handle_selection_change(idx)
 
     def _handle_save_step(self):
@@ -7850,6 +7858,11 @@ class HandlerClass:
             return
         self._generating_gcode = True
         try:
+            if not self.tools:
+                try:
+                    self._auto_load_tool_table()
+                except Exception:
+                    pass
             header = self._collect_program_header()
 
             default_filepath = self._build_program_filepath(header.get("program_name", ""))
@@ -8407,6 +8420,8 @@ class HandlerClass:
 
     def _ensure_tool_preview_calibration_controls(self):
         """Create runtime controls to calibrate tool preview orientation."""
+        if getattr(self, "_tool_preview_calibration_ready", False):
+            return
         try:
             existing_offset = self._get_widget_by_name("tool_preview_orient_offset")
         except Exception:
@@ -8415,11 +8430,17 @@ class HandlerClass:
             existing_mirror = self._get_widget_by_name("tool_preview_orient_mirror")
         except Exception:
             existing_mirror = None
+        try:
+            existing_label = self._get_widget_by_name("label_tool_preview_orientation")
+        except Exception:
+            existing_label = None
 
         if existing_offset is not None and existing_mirror is not None:
             self.tool_preview_orient_offset = existing_offset
             self.tool_preview_orient_mirror = existing_mirror
+            self.tool_preview_orient_label = existing_label
             self._apply_tool_preview_calibration_settings_to_controls()
+            self._tool_preview_calibration_ready = True
             return
 
         tool_path = getattr(self, "tool_table_path", None) or self._get_widget_by_name("tool_table_path")
@@ -8488,6 +8509,7 @@ class HandlerClass:
         self.tool_preview_orient_label = label
 
         self._apply_tool_preview_calibration_settings_to_controls()
+        self._tool_preview_calibration_ready = True
 
         try:
             offset.valueChanged.connect(self._on_tool_preview_calibration_changed)
@@ -8980,7 +9002,6 @@ class HandlerClass:
 
 
     def _handle_global_change(self, *args, **kwargs):
-        self._log("[LatheEasyStep] _handle_global_change() called", level="info")
         sender_name = ""
         try:
             sender_fn = getattr(self, "sender", None)
@@ -8997,7 +9018,8 @@ class HandlerClass:
         self._update_retract_visibility()
         self._update_subspindle_visibility()
         self._update_face_visibility()
-        self._refresh_preview()
+        if self._startup_complete:
+            self._refresh_preview()
 
     def _apply_machine_profile_preset(self) -> None:
         if getattr(self, "_applying_machine_profile", False):
@@ -9169,10 +9191,12 @@ class HandlerClass:
         # Root-Widget bestimmen
         root = self.root_widget or self.program_unit.window()
         if root is None:
-            self._log("[LatheEasyStep] _apply_unit_suffix: no root widget", level="info")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _apply_unit_suffix: no root widget", level="info")
             return
 
-        self._log(f"[LatheEasyStep] _apply_unit_suffix(): unit={unit}, root={root.objectName()}", level="info")
+        if getattr(self, "_verbose_widget_logs", False):
+            self._log(f"[LatheEasyStep] _apply_unit_suffix(): unit={unit}, root={root.objectName()}", level="info")
 
         # --- 1) Alle DoubleSpinBoxen im Fenster behandeln ---
         for sb in root.findChildren(QtWidgets.QDoubleSpinBox):
@@ -9223,7 +9247,8 @@ class HandlerClass:
                 shape = self.program_shape.currentText()
 
         if shape is None or shape == "":
-            self._log("[LatheEasyStep] _update_program_visibility: keine Form", level="warning")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _update_program_visibility: keine Form", level="warning")
             return
 
         # Normalisieren: Index (sprachneutral) oder Text (Fallback)
@@ -9236,12 +9261,14 @@ class HandlerClass:
             shape_text = str(shape)
             shape_key = shape_text.strip().lower()
 
-        self._log(f"[LatheEasyStep] _update_program_visibility(): shape='{shape_text}'", level="info")
+        if getattr(self, "_verbose_widget_logs", False):
+            self._log(f"[LatheEasyStep] _update_program_visibility(): shape='{shape_text}'", level="info")
 
         # Root-Widget wie in _apply_unit_suffix benutzen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
         if root is None:
-            self._log("[LatheEasyStep] _update_program_visibility: kein root_widget", level="warning")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _update_program_visibility: kein root_widget", level="warning")
             return
 
         def _w(objname: str):
@@ -9302,19 +9329,22 @@ class HandlerClass:
             combo = widget
 
         if combo is None:
-            self._log("[LatheEasyStep] _update_retract_visibility: kein Combo / Modus", level="warning")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _update_retract_visibility: kein Combo / Modus", level="warning")
             return
 
         idx = combo.currentIndex()
         if isinstance(mode_in, (int, float)):
             idx = int(mode_in)
 
-        self._log(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, index={idx}", level="info")
+        if getattr(self, "_verbose_widget_logs", False):
+            self._log(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, index={idx}", level="info")
 
         # Root-Widget wie in _update_program_visibility benutzen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
         if root is None:
-            self._log("[LatheEasyStep] _update_retract_visibility: kein root_widget", level="warning")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _update_retract_visibility: kein root_widget", level="warning")
             return
 
         def show(name: str, visible: bool):
@@ -9330,7 +9360,8 @@ class HandlerClass:
                 except Exception:
                     w = None
             if w is None:
-                self._log(f"[LatheEasyStep] _update_retract_visibility: widget '{name}' nicht gefunden", level="info")
+                if getattr(self, "_verbose_widget_logs", False):
+                    self._log(f"[LatheEasyStep] _update_retract_visibility: widget '{name}' nicht gefunden", level="info")
                 return
             w.setVisible(visible)
 
@@ -9391,7 +9422,8 @@ class HandlerClass:
                 self.program_s3 = None
 
         has_sub = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
-        self._log(f"[LatheEasyStep] _update_subspindle_visibility(): has_sub={has_sub}", level="info")
+        if getattr(self, "_verbose_widget_logs", False):
+            self._log(f"[LatheEasyStep] _update_subspindle_visibility(): has_sub={has_sub}", level="info")
 
         # Falls Referenzen fehlen, per findChild nachholen
         root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
@@ -9403,12 +9435,14 @@ class HandlerClass:
         if self.label_prog_s3:
             self.label_prog_s3.setVisible(has_sub)
         else:
-            self._log("[LatheEasyStep] _update_subspindle_visibility: label_prog_s3 not found", level="warning")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _update_subspindle_visibility: label_prog_s3 not found", level="warning")
 
         if self.program_s3:
             self.program_s3.setVisible(has_sub)
         else:
-            self._log("[LatheEasyStep] _update_subspindle_visibility: program_s3 not found", level="warning")
+            if getattr(self, "_verbose_widget_logs", False):
+                self._log("[LatheEasyStep] _update_subspindle_visibility: program_s3 not found", level="warning")
 
     def _update_face_visibility(self):
         """Show/hide face (Planen) UI elements depending on mode and edge type.
