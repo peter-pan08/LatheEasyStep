@@ -1,6 +1,12 @@
 # Changelog
 
 ## [Unreleased]
+- Branching: Neue Änderungen werden zuerst auf `DEV` gesammelt und müssen dort getestet werden, bevor sie nach `main` migriert werden
+- Release-Policy: `main` bleibt als lauffähige Basis; neue Arbeit wird erst nach Test auf `DEV` übernommen
+- Preview: Aktive Kontur wird in der Seitenvorschau immer im Vordergrund gezeichnet
+- Preview: Seitenvorschau bildet X aus Durchmesserprogrammierung korrekt als Radius ab
+- Preview: Zusatzvorschau als Vorderansicht für den aktuellen Z-Schnitt eingebaut
+- Preview: Einstich-/Nutgeometrie folgt in der Vorschau jetzt den Maskenwerten für OD, ID und Stirnlagen
 - Performance-Fix: LinuxCNC-Embedded-Start massiv verkürzt; GUI und Panel sind wieder nach rund 11 Sekunden benutzbar
 - Refactor: Widget-Auflösung strikt auf den Panel-Baum begrenzt, keine globalen `allWidgets()`-Scans mehr
 - Refactor: Root-Erkennung für Embedded-Panel stabilisiert, Host-`MainWindow` wird nicht mehr fälschlich als Panel benutzt

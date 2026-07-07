@@ -41,6 +41,18 @@ G-Code-Generators, sondern auf:
 - sauberer, konsistenter Dokumentation
 - weiterer Absicherung fuer reale Maschinenablaeufe
 
+## Branch-Status
+
+`main` gilt als lauffaehige Basis des Projekts.
+
+Neue Aenderungen sollen zuerst auf dem Branch `DEV` getestet werden. Erst wenn
+die Anpassungen dort fachlich und technisch verifiziert wurden, werden sie in
+den Hauptbranch migriert.
+
+Wer neue Preview-, UI- oder G-Code-Aenderungen prueft, sollte daher gezielt den
+Stand von `DEV` testen und nicht automatisch von derselben Stabilitaet wie auf
+`main` ausgehen.
+
 ## Wichtiger Hinweis
 
 Es gibt keine Garantie auf vollstaendige oder fehlerfreie Funktion.
