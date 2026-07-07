@@ -565,7 +565,7 @@ class ProgramModel:
             OpType.FACE: build_face_path,
             OpType.CONTOUR: build_contour_path,
             OpType.THREAD: build_thread_path,
-            OpType.GROOVE: build_groove_path,
+            OpType.GROOVE: build_groove_preview_path,
             OpType.DRILL: build_drill_path,
             OpType.KEYWAY: build_keyway_path,
             OpType.ABSPANEN: build_abspanen_path,
@@ -633,9 +633,19 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self._view_min_z = None
         self._view_max_z = None
         self._view_scale = None
+        self.front_program: Dict[str, object] = {}
+        self.front_operation: Operation | None = None
         self._blink_timer.timeout.connect(self._on_blink_timer)
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
+
+    def _x_to_display(self, x_val: float) -> float:
+        """Map stored X values (diameter programming) to displayed X values (radius)."""
+        try:
+            x_num = float(x_val)
+        except Exception:
+            return 0.0
+        return x_num * 0.5 if getattr(self, "x_is_diameter", False) else x_num
 
 
     def _on_blink_timer(self):
@@ -705,8 +715,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.set_slice_z(z, emit=True)
 
     def _interp_x_at_z(self, path, z: float):
-        if not path or len(path) < 2:
+        hits = self._interp_x_hits_at_z(path, z)
+        if not hits:
             return None
+        return min(hits)
+
+    def _interp_x_hits_at_z(self, path, z: float):
+        if not path or len(path) < 2:
+            return []
         hits = []
         for (x1, z1), (x2, z2) in zip(path[:-1], path[1:]):
             if abs(z2 - z1) < 1e-9:
@@ -716,9 +732,11 @@ class LathePreviewWidget(QtWidgets.QWidget):
             if (z1 <= z <= z2) or (z2 <= z <= z1):
                 t = (z - z1) / (z2 - z1)
                 hits.append(x1 + t * (x2 - x1))
-        if not hits:
-            return None
-        return min(hits)
+        uniq: List[float] = []
+        for val in sorted(float(h) for h in hits):
+            if not uniq or abs(val - uniq[-1]) > 1e-6:
+                uniq.append(val)
+        return uniq
 
     def _paint_slice_view(self, painter: QtGui.QPainter):
         painter.fillRect(self.rect(), QtCore.Qt.black)
@@ -746,6 +764,145 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
         painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
         painter.drawText(10, self.height() - 10, f"Schnitt bei Z = {self.slice_z:.3f} mm")
+
+    def set_front_context(self, program: Dict[str, object] | None = None, operation: Operation | None = None):
+        self.front_program = dict(program or {})
+        self.front_operation = operation
+        self.update()
+
+    def _front_active_diameters(self) -> List[float]:
+        if not self.paths:
+            return []
+        idx = self.active_index if self.active_index is not None else 0
+        idx = max(0, min(idx, len(self.paths) - 1))
+        path = self.paths[idx]
+        if not path:
+            return []
+        if isinstance(path[0], dict):
+            try:
+                path = self.primitives_to_points(path)
+            except Exception:
+                return []
+        return self._interp_x_hits_at_z(path, self.slice_z)
+
+    def _draw_front_keyway_overlay(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float):
+        op = getattr(self, "front_operation", None)
+        if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
+            return
+        params = getattr(op, "params", {}) or {}
+        try:
+            mode = int(float(params.get("mode", 0)))
+        except Exception:
+            mode = 0
+        if mode != 0:
+            return
+
+        try:
+            z_start = float(params.get("start_z", 0.0) or 0.0)
+            nut_length = abs(float(params.get("nut_length", 0.0) or 0.0))
+            start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
+            nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
+            slot_count = max(1, int(float(params.get("slot_count", 1) or 1)))
+            start_angle = math.radians(float(params.get("slot_start_angle", 0.0) or 0.0))
+            cutting_width = abs(float(params.get("cutting_width", 0.0) or 0.0))
+            radial_side = int(float(params.get("radial_side", 0) or 0))
+        except Exception:
+            return
+
+        z_min = min(z_start, z_start - nut_length)
+        z_max = max(z_start, z_start - nut_length)
+        if self.slice_z < z_min - 1e-6 or self.slice_z > z_max + 1e-6 or start_dia <= 0.0:
+            return
+
+        base_radius = start_dia * 0.5
+        if radial_side == 0:
+            slot_outer_radius = base_radius
+            slot_inner_radius = max(0.0, base_radius - nut_depth)
+        else:
+            slot_inner_radius = base_radius
+            slot_outer_radius = base_radius + nut_depth
+
+        if slot_outer_radius <= 1e-9:
+            return
+
+        if cutting_width > 0.0:
+            half_opening = max(math.radians(2.0), min(math.radians(40.0), cutting_width / max(slot_outer_radius, 1e-6)))
+        else:
+            half_opening = math.radians(6.0)
+
+        painter.save()
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 120, 120), 2))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 80)))
+        step = (2.0 * math.pi) / max(slot_count, 1)
+        samples = 14
+        for slot_idx in range(slot_count):
+            a_mid = start_angle + (slot_idx * step)
+            a0 = a_mid - half_opening
+            a1 = a_mid + half_opening
+            poly = QtGui.QPolygonF()
+            for i in range(samples + 1):
+                ang = a0 + ((a1 - a0) * i / samples)
+                poly.append(QtCore.QPointF(
+                    center.x() + math.cos(ang) * slot_outer_radius * scale,
+                    center.y() - math.sin(ang) * slot_outer_radius * scale,
+                ))
+            for i in range(samples, -1, -1):
+                ang = a0 + ((a1 - a0) * i / samples)
+                poly.append(QtCore.QPointF(
+                    center.x() + math.cos(ang) * slot_inner_radius * scale,
+                    center.y() - math.sin(ang) * slot_inner_radius * scale,
+                ))
+            painter.drawPolygon(poly)
+        painter.restore()
+
+    def _paint_front_view(self, painter: QtGui.QPainter):
+        painter.fillRect(self.rect(), QtCore.Qt.black)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        def _float(value: object, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                return float(value)
+            except Exception:
+                return default
+
+        prog = getattr(self, "front_program", {}) or {}
+        stock_od = abs(_float(prog.get("xa"), 0.0))
+        stock_id = abs(_float(prog.get("xi"), 0.0))
+        active_diams = [abs(d) for d in self._front_active_diameters() if abs(d) > 1e-6]
+
+        max_diameter = max([d for d in [stock_od, stock_id, *active_diams] if d > 1e-6], default=10.0)
+        r = self.rect().adjusted(20, 20, -20, -36)
+        center = QtCore.QPointF(float(r.center().x()), float(r.center().y()))
+        scale = min(r.width(), r.height()) / max(max_diameter * 1.15, 1e-6)
+
+        painter.setPen(QtGui.QPen(QtGui.QColor(70, 70, 70), 1))
+        painter.drawLine(QtCore.QPointF(r.left(), center.y()), QtCore.QPointF(r.right(), center.y()))
+        painter.drawLine(QtCore.QPointF(center.x(), r.top()), QtCore.QPointF(center.x(), r.bottom()))
+
+        if stock_od > 1e-6:
+            painter.setPen(QtGui.QPen(QtGui.QColor(150, 150, 150), 1, QtCore.Qt.DashLine))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            rad = (stock_od * 0.5) * scale
+            painter.drawEllipse(center, rad, rad)
+        if stock_id > 1e-6 and stock_id < stock_od:
+            painter.setPen(QtGui.QPen(QtGui.QColor(110, 110, 110), 1, QtCore.Qt.DashLine))
+            rad = (stock_id * 0.5) * scale
+            painter.drawEllipse(center, rad, rad)
+
+        self._draw_front_keyway_overlay(painter, center, scale)
+
+        for idx, diameter in enumerate(active_diams):
+            painter.setPen(QtGui.QPen(QtGui.QColor(255, 80, 80) if idx == 0 else QtGui.QColor(255, 170, 70), 2))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            rad = (diameter * 0.5) * scale
+            painter.drawEllipse(center, rad, rad)
+
+        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")
+        if active_diams:
+            painter.drawText(10, 16, "D aktiv: " + ", ".join(f"{d:.3f}" for d in active_diams[:3]))
 
     def mousePressEvent(self, event):  # type: ignore[override]
         # Click on legend to toggle
@@ -908,6 +1065,12 @@ class LathePreviewWidget(QtWidgets.QWidget):
             finally:
                 painter.end()
             return
+        if getattr(self, "view_mode", "side") == "front":
+            try:
+                self._paint_front_view(painter)
+            finally:
+                painter.end()
+            return
         self._legend_click_rect = None
         try:
             painter.fillRect(self.rect(), QtCore.Qt.black)
@@ -918,7 +1081,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             def _upd(xv: float, zv: float):
                 nonlocal min_x, max_x, min_z, max_z
-                x_draw = xv
+                x_draw = self._x_to_display(xv)
                 min_x = min(min_x, x_draw)
                 max_x = max(max_x, x_draw)
                 min_z = min(min_z, zv)
@@ -989,17 +1152,22 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
                 # Z horizontal, X vertikal
-                x_draw = x_val
+                x_draw = self._x_to_display(x_val)
                 x_pix = rect.left() + (z_val - min_z) * scale
                 z_pix = rect.bottom() - (x_draw - min_x) * scale
+                return QtCore.QPointF(x_pix, z_pix)
+
+            def to_screen_display(x_display: float, z_val: float) -> QtCore.QPointF:
+                x_pix = rect.left() + (z_val - min_z) * scale
+                z_pix = rect.bottom() - (x_display - min_x) * scale
                 return QtCore.QPointF(x_pix, z_pix)
 
             # optional slice indicator (selected Z)
             if getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
                 try:
                     zline = float(getattr(self, "slice_z", 0.0))
-                    p1 = to_screen(min_x, zline)
-                    p2 = to_screen(max_x, zline)
+                    p1 = to_screen_display(min_x, zline)
+                    p2 = to_screen_display(max_x, zline)
                     pen = QtGui.QPen(QtCore.Qt.white, 1, QtCore.Qt.DashLine)
                     painter.setPen(pen)
                     painter.drawLine(p1, p2)
@@ -1010,10 +1178,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
             axis_x_val = 0.0 if min_x <= 0.0 <= max_x else min_x
             axis_z_val = 0.0 if min_z <= 0.0 <= max_z else min_z
-            x_axis = to_screen(axis_x_val, min_z)
-            x_axis_end = to_screen(axis_x_val, max_z)
-            z_axis = to_screen(min_x, axis_z_val)
-            z_axis_end = to_screen(max_x, axis_z_val)
+            x_axis = to_screen_display(axis_x_val, min_z)
+            x_axis_end = to_screen_display(axis_x_val, max_z)
+            z_axis = to_screen_display(min_x, axis_z_val)
+            z_axis_end = to_screen_display(max_x, axis_z_val)
             painter.drawLine(z_axis, z_axis_end)  # Z-Achse horizontal
             painter.drawLine(x_axis, x_axis_end)  # X-Achse vertikal
 
@@ -1036,7 +1204,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             step_z = nice_step(max_z - min_z)
             val = (min_z // step_z) * step_z
             while val <= max_z:
-                pt = to_screen(axis_x_val, val)
+                pt = to_screen_display(axis_x_val, val)
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 2))
                 painter.setPen(font_pen)
@@ -1047,7 +1215,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             step_x = nice_step(max_x - min_x)
             val = (min_x // step_x) * step_x
             while val <= max_x:
-                pt = to_screen(val, axis_z_val)
+                pt = to_screen_display(val, axis_z_val)
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
@@ -1057,8 +1225,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
             # Achsbeschriftungen
             painter.setPen(font_pen)
             painter.drawText(QtCore.QPointF(rect.right() - 20, z_axis.y() - 6), "Z")
-            painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X")
-            for idx, path in enumerate(self.paths):
+            painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X/R")
+            draw_order = [idx for idx in range(len(self.paths)) if idx != self.active_index]
+            if self.active_index is not None and 0 <= self.active_index < len(self.paths):
+                draw_order.append(self.active_index)
+
+            for idx in draw_order:
+                path = self.paths[idx]
                 if not path:
                     continue
 
@@ -1094,7 +1267,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     style = QtCore.Qt.DashDotLine
                 else:
                     color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("red")
-                    width = 2
+                    width = 2 if idx != self.active_index else 3
                     style = QtCore.Qt.SolidLine
 
                 pen = QtGui.QPen(color, width)
@@ -1800,6 +1973,58 @@ def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
         (inner_x, start_z),
         (inner_x, back_z),
         (top_x, back_z),
+    ]
+
+
+def build_groove_preview_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
+    """Build the programmed groove contour for preview from the mask values."""
+    diameter = float(params.get("diameter", 0.0) or 0.0)
+    width = abs(float(params.get("width", 0.0) or 0.0))
+    depth = abs(float(params.get("depth", 0.0) or 0.0))
+    z0 = float(params.get("z", 0.0) or 0.0)
+    mode = int(params.get("mode", params.get("groove_mode", -1)) or -1)
+    ref = int(params.get("ref", 0) or 0)
+    lage = int(params.get("lage", 0) or 0)
+
+    if mode not in (0, 1):
+        mode = 0 if lage in (0, 1) else 1
+
+    if mode == 0:
+        if ref == 1:
+            z_left = z0
+            z_right = z0 + width
+        elif ref == 2:
+            z_right = z0
+            z_left = z0 - width
+        else:
+            z_left = z0 - (width / 2.0)
+            z_right = z0 + (width / 2.0)
+
+        diameter_delta = 2.0 * depth
+        x_bottom = diameter + diameter_delta if lage == 1 else diameter - diameter_delta
+        return [
+            (diameter, z_left),
+            (x_bottom, z_left),
+            (x_bottom, z_right),
+            (diameter, z_right),
+        ]
+
+    if ref == 1:
+        x_near = diameter
+        x_far = diameter + width
+    elif ref == 2:
+        x_near = diameter - width
+        x_far = diameter
+    else:
+        x_near = diameter - (width / 2.0)
+        x_far = diameter + (width / 2.0)
+
+    z_bottom = z0 + depth if lage == 3 else z0 - depth
+    return [
+        (x_near, z0),
+        (x_near, z_bottom),
+        (x_far, z_bottom),
+        (x_far, z0),
     ]
 
 
@@ -4030,7 +4255,7 @@ class HandlerClass:
 
         if self.preview_slice is not None:
             try:
-                self.preview_slice.set_view_mode("slice")
+                self.preview_slice.set_view_mode("front")
                 self.preview_slice.setVisible(False)
             except Exception:
                 pass
@@ -4038,6 +4263,11 @@ class HandlerClass:
         if self.btn_slice_view is not None:
             try:
                 self.btn_slice_view.setChecked(False)
+                self.btn_slice_view.setText("Vorderansicht")
+                self.btn_slice_view.setToolTip(
+                    "Zeigt zusaetzlich eine Vorderansicht im aktuellen Z-Schnitt. "
+                    "In der Seitenansicht die Schnittlinie mit der Maus verschieben."
+                )
                 self.btn_slice_view.toggled.connect(self._on_toggle_slice_view)
             except Exception:
                 pass
@@ -4066,7 +4296,7 @@ class HandlerClass:
         # update toggle button text
         if self.btn_slice_view is not None:
             try:
-                self.btn_slice_view.setText("Seitenansicht" if checked else "Schnittansicht")
+                self.btn_slice_view.setText("Vorderansicht aus" if checked else "Vorderansicht")
             except Exception:
                 pass
         # default slice at Z0 when enabling
@@ -4094,7 +4324,18 @@ class HandlerClass:
         except Exception:
             pass
         try:
+            self.preview_slice.set_view_mode("front")
+        except Exception:
+            pass
+        try:
             self.preview_slice.set_paths(getattr(self.preview, "paths", []), getattr(self.preview, "active_index", None))
+        except Exception:
+            pass
+        try:
+            self.preview_slice.set_front_context(
+                getattr(self.preview, "front_program", {}),
+                getattr(self.preview, "front_operation", None),
+            )
         except Exception:
             pass
 
@@ -6666,6 +6907,8 @@ class HandlerClass:
         paths: List[List[Tuple[float, float]]],
         active_index: int | None = None,
         include_contour_preview: bool = True,
+        program_context: Dict[str, object] | None = None,
+        active_operation: Operation | None = None,
     ) -> None:
         """Aktualisiert Haupt- und optional den Kontur-Tab-Preview.
 
@@ -6717,11 +6960,15 @@ class HandlerClass:
             except TypeError:
                 # Older signature: set_paths(paths)
                 self.preview.set_paths(paths)
+            try:
+                self.preview.set_front_context(program_context, active_operation)
+            except Exception:
+                pass
 
         # slice preview (if enabled)
         if self.preview_slice and getattr(self.preview_slice, "isVisible", lambda: False)():
             try:
-                self.preview_slice.set_view_mode("slice")
+                self.preview_slice.set_view_mode("front")
             except Exception:
                 pass
             try:
@@ -6735,6 +6982,10 @@ class HandlerClass:
                 self.preview_slice.set_paths(paths, active_index)
             except TypeError:
                 self.preview_slice.set_paths(paths)
+            try:
+                self.preview_slice.set_front_context(program_context, active_operation)
+            except Exception:
+                pass
         # contour preview tab (if present)
         if include_contour_preview and self.contour_preview:
             try:
@@ -6750,6 +7001,7 @@ class HandlerClass:
             return
         paths: List[List[Tuple[float, float]]] = []
         active = -1
+        active_operation: Operation | None = None
 
         # Vorhandene Operationen zeigen: nur deren programmierte Zielkontur.
         if self.model.operations:
@@ -6761,6 +7013,7 @@ class HandlerClass:
                 paths.append(op.path)
                 if row_idx == selected_row:
                     active = path_idx
+                    active_operation = op
         else:
             # Kein gespeicherter Step aktiv: zeige genau die aktuell editierte
             # Geometrie des aktiven Tabs, aber keine implizite Mischkontur.
@@ -6780,6 +7033,7 @@ class HandlerClass:
                 if contour_prims:
                     paths.append(contour_prims)
                     active = len(paths) - 1
+                    active_operation = Operation(OpType.CONTOUR, params, contour_prims)
             elif current_type != OpType.PROGRAM_HEADER:
                 try:
                     params = self._collect_params(current_type)
@@ -6792,7 +7046,7 @@ class HandlerClass:
                 preview_builder = {
                     OpType.FACE: build_face_path,
                     OpType.THREAD: build_thread_path,
-                    OpType.GROOVE: build_groove_path,
+                    OpType.GROOVE: build_groove_preview_path,
                     OpType.DRILL: build_drill_path,
                     OpType.KEYWAY: build_keyway_path,
                     OpType.ABSPANEN: build_abspanen_path,
@@ -6805,6 +7059,7 @@ class HandlerClass:
                     if draft_path:
                         paths.append(draft_path)
                         active = len(paths) - 1
+                        active_operation = Operation(current_type, params, draft_path)
 
         # Raw stock outline + retract planes as thin references (program header only).
         prog = self._collect_program_header() or {}
@@ -6839,7 +7094,13 @@ class HandlerClass:
             self._log("[LatheEasyStep] stock/retract preview ERROR:", exc, level="error")
 
         # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
-        self._set_preview_paths(paths, active, include_contour_preview=True)
+        self._set_preview_paths(
+            paths,
+            active,
+            include_contour_preview=True,
+            program_context=prog,
+            active_operation=active_operation,
+        )
 
     def _refresh_operation_list(self, select_index: int | None = None):
         """Synchronisiert die linke Operationsliste mit dem internen Modell."""
