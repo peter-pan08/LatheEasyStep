@@ -25,9 +25,7 @@ class Operation:
 
 
 def _default_geometry_builders() -> Dict[str, Callable]:
-    # Lazy import keeps the current runtime behavior without forcing a large
-    # migration in one step.
-    from lathe_easystep_handler import (
+    from .preview_geometry import (
         build_abspanen_path,
         build_contour_path,
         build_drill_path,
@@ -102,7 +100,7 @@ class ProgramModel:
         generator = self._gcode_generator
         if generator is None:
             try:
-                from slicer import generate_program_gcode
+                from .gcode_program import generate_program_gcode
             except Exception:
                 generate_program_gcode = None
             generator = generate_program_gcode

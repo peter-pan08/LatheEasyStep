@@ -2962,6 +2962,44 @@ class WidgetResolver:
 
         _tick()
 
+from lathe_easystep.preview_geometry import (  # noqa: E402
+    build_abspanen_path as _build_abspanen_path_ext,
+    build_bore_path as _build_bore_path_ext,
+    build_drill_path as _build_drill_path_ext,
+    build_face_path as _build_face_path_ext,
+    build_groove_path as _build_groove_path_ext,
+    build_groove_preview_path as _build_groove_preview_path_ext,
+    build_keyway_path as _build_keyway_path_ext,
+    build_keyway_slot_angles as _build_keyway_slot_angles_ext,
+    build_thread_path as _build_thread_path_ext,
+    build_turn_path as _build_turn_path_ext,
+    default_slice_z_for_operation as _default_slice_z_for_operation_ext,
+    front_view_polar_to_cartesian as _front_view_polar_to_cartesian_ext,
+    keyway_slice_bounds as _keyway_slice_bounds_ext,
+)
+from lathe_easystep.contour_logic import (  # noqa: E402
+    build_contour_path as _build_contour_path_ext,
+    normalize_arc_side as _normalize_arc_side_ext,
+    validate_contour_segments_for_profile as _validate_contour_segments_for_profile_ext,
+)
+
+build_face_path = _build_face_path_ext
+build_turn_path = _build_turn_path_ext
+build_bore_path = _build_bore_path_ext
+build_thread_path = _build_thread_path_ext
+build_groove_path = _build_groove_path_ext
+build_drill_path = _build_drill_path_ext
+build_keyway_path = _build_keyway_path_ext
+build_keyway_slot_angles = _build_keyway_slot_angles_ext
+front_view_polar_to_cartesian = _front_view_polar_to_cartesian_ext
+keyway_slice_bounds = _keyway_slice_bounds_ext
+default_slice_z_for_operation = _default_slice_z_for_operation_ext
+build_groove_preview_path = _build_groove_preview_path_ext
+build_abspanen_path = _build_abspanen_path_ext
+build_contour_path = _build_contour_path_ext
+normalize_arc_side = _normalize_arc_side_ext
+validate_contour_segments_for_profile = _validate_contour_segments_for_profile_ext
+
 
 class HandlerClass:
     def _register_known_widgets(self):
