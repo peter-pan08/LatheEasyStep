@@ -3,6 +3,12 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
 import math
 import re
+from lathe_easystep.gcode_drill import DRILL_MODE_MAP, generate_drill_gcode
+from lathe_easystep.gcode_face import generate_face_gcode
+from lathe_easystep.gcode_groove import generate_groove_gcode, groove_sub_definition
+from lathe_easystep.gcode_keyway import generate_keyway_gcode
+from lathe_easystep.gcode_thread import generate_thread_gcode
+from lathe_easystep.model import OpType, Operation
 
 Point = Tuple[float, float]  # (x, z)
 
@@ -93,22 +99,6 @@ def primitives_to_points(primitives: List[Dict[str, object]]) -> List[Point]:
     return points
 
 
-# ----------------------------------------------------------------------
-# Operation types and data structures
-# ----------------------------------------------------------------------
-class OpType:
-    PROGRAM_HEADER = "program_header"
-    FACE = "face"
-    CONTOUR = "contour"
-    TURN = "turn"
-    BORE = "bore"
-    THREAD = "thread"
-    GROOVE = "groove"
-    DRILL = "drill"
-    KEYWAY = "keyway"
-    ABSPANEN = "abspanen"
-
-
 REQUIRED_KEYS = {
     OpType.FACE: ["depth_max", "feed", "spindle", "tool"],
     OpType.CONTOUR: [],  # Nur Geometrie, keine Bearbeitung
@@ -120,15 +110,6 @@ REQUIRED_KEYS = {
     OpType.KEYWAY: ["depth_per_pass", "feed", "safe_z", "tool"],
     OpType.ABSPANEN: ["depth_per_pass", "tool"],
 }
-
-
-@dataclass
-class Operation:
-    op_type: str
-    params: Dict[str, object]
-    path: list = field(default_factory=list)  # list of points or primitives
-
-
 STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
     ("M2", 2.0, 0.4),
     ("M2.5", 2.5, 0.45),
@@ -1858,79 +1839,17 @@ def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None
     return lines
 
 
-# Mapping: combo index (float from _collect_params) → G-code mode string
-DRILL_MODE_MAP: Dict[int, str] = {
-    0: "G81",  # Normal drilling
-    1: "G82",  # Drilling with dwell
-    2: "G83",  # Peck drilling (full retract)
-    3: "G73",  # Chip breaking drilling (partial retract)
-    4: "G84",  # Tapping
-}
-
-
 def gcode_for_drill(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
-    settings = settings or {}
-    path = op.path or []
-    if not path:
-        return []
-    p = op.params
-    require_tool(p, "DRILL")
-    # Resolve mode: may be float index from combo or string from test/manual
-    mode_raw_value = p.get("mode", "G81")
-    try:
-        mode_idx = int(float(mode_raw_value))
-        mode = DRILL_MODE_MAP.get(mode_idx, "G81")
-    except (TypeError, ValueError):
-        # Already a string like "G81" — validate it
-        mode = str(mode_raw_value) if str(mode_raw_value) in DRILL_MODE_MAP.values() else "G81"
-    # Validate mode-specific required parameters
-    if mode == "G82":
-        require(p, ["dwell"], "DRILL G82")
-    elif mode in ["G83", "G73"]:
-        require(p, ["peck_depth"], "DRILL " + mode)
-    lines: List[str] = []
-    _append_tool_and_spindle(
-        lines,
-        _get_tool_number(op.params),
-        op.params.get("spindle"),
+    return generate_drill_gcode(
+        op,
         settings,
+        require=require,
+        require_tool=require_tool,
+        get_tool_number=_get_tool_number,
+        append_tool_and_spindle=_append_tool_and_spindle,
+        emit_coolant=_emit_coolant,
+        emit_approach=_emit_approach,
     )
-    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
-    safe_z = float(op.params.get("safe_z", 2.0))
-    feed = float(op.params.get("feed", 0.12))
-    depth_z = path[-1][1]
-    x_start = path[0][0]
-    retract = float(op.params.get("retract", safe_z))
-    if retract < safe_z:
-        lines.append(f"(WARN: retract ({retract:.3f}) < safe_z ({safe_z:.3f}); verwende safe_z)")
-        retract = safe_z
-    # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
-    lines.append(f"(Anfahren vor Zyklus)")
-    _emit_approach(lines, x_start, safe_z, settings)
-    # LinuxCNC: canned cycles use plane for plunge axis; switch to G17 for drilling
-    lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
-    lines.append("G17")
-    lines.append(f"F{feed:.3f}")
-    if mode == "G81":
-        lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
-    elif mode == "G82":
-        dwell = float(p.get("dwell", 0.0))
-        lines.append(f"G82 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} P{dwell:.3f} F{feed:.3f}")
-    elif mode == "G83":
-        peck_depth = float(p.get("peck_depth", 1.0))
-        lines.append(f"G83 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
-    elif mode == "G73":
-        peck_depth = float(p.get("peck_depth", 1.0))
-        lines.append(f"G73 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
-    elif mode == "G84":
-        lines.append(f"G84 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
-    else:
-        lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
-    lines.append("G80")  # Cancel canned cycle
-    # Retract to safe Z before restoring lathe plane
-    lines.append(f"G0 Z{safe_z:.3f}")
-    lines.append("G18")
-    return lines
 def _should_activate_abstech(
     start_x: float, threshold: float, current_x: float
 ) -> bool:
@@ -1939,368 +1858,24 @@ def _should_activate_abstech(
     return current_x >= threshold
 
 
-def _groove_sub_definition() -> List[str]:
-    return [
-        "(=== GROOVE CYCLE LIBRARY ===)",
-        "o200 sub",
-        "  #<Wbase> = #1",
-        "  #<mode>  = #2",
-        "  #<C>     = #3",
-        "  #<camp>  = #4",
-        "  #<Fsw>   = #5",
-        "  #<cn>    = #6",
-        "  o201 if [#<camp> GT 0.0001 AND #<cn> GT 0]",
-        "    #<i> = [0]",
-        "    o202 while [#<i> LT #<cn>]",
-        "      o203 if [#<mode> EQ 0]",
-        "        G1 Z[#<C> + #<Wbase> + #<camp>] F[#<Fsw>]",
-        "        G1 Z[#<C> + #<Wbase> - #<camp>] F[#<Fsw>]",
-        "        G1 Z[#<C> + #<Wbase>]           F[#<Fsw>]",
-        "      o203 else",
-        "        G1 X[#<C> + #<Wbase> + #<camp>] F[#<Fsw>]",
-        "        G1 X[#<C> + #<Wbase> - #<camp>] F[#<Fsw>]",
-        "        G1 X[#<C> + #<Wbase>]           F[#<Fsw>]",
-        "      o203 endif",
-        "      #<i> = [#<i> + 1]",
-        "    o202 endwhile",
-        "  o201 endif",
-        "o200 endsub",
-        "",
-        "o210 sub",
-        "  #<Atgt>  = #1",
-        "  #<mode>  = #2",
-        "  #<C>     = #3",
-        "  #<Astart> = #4",
-        "  #<retr>  = #5",
-        "  #<sgn>   = #6",
-        "  #<Fpl>   = #7",
-        "  #<stepW> = #8",
-        "  #<omin>  = #9",
-        "  #<omax>  = #10",
-        "  #<camp>  = #11",
-        "  #<Fsw>   = #12",
-        "  #<cn>    = #13",
-        "",
-        "  (Offset order: 0, +stepW, -stepW, +2stepW, -2stepW, ...)",
-        "  #<k> = [0]",
-        "  o211 while [1]",
-        "    o212 if [#<k> EQ 0]",
-        "      #<Woff> = [0]",
-        "    o212 else",
-        "      #<tmp>  = [#<k> + 1]",
-        "      #<tmp>  = [#<tmp> / 2]",
-        "      #<m>    = [FIX[#<tmp>]]",
-        "      #<kmod> = [#<k> MOD 2]",
-        "      o213 if [#<kmod> EQ 1]",
-        "        #<Woff> = [#<m> * #<stepW>]",
-        "      o213 else",
-        "        #<Woff> = [0 - #<m> * #<stepW>]",
-        "      o213 endif",
-        "    o212 endif",
-        "",
-        "    #<omin_lim> = [#<omin> - 0.0001]",
-        "    #<omax_lim> = [#<omax> + 0.0001]",
-        "    o214 if [#<Woff> LT #<omin_lim>]",
-        "      o211 break",
-        "    o214 endif",
-        "    o215 if [#<Woff> GT #<omax_lim>]",
-        "      o211 break",
-        "    o215 endif",
-        "",
-        "    o216 if [#<mode> EQ 0]",
-        "      (radial: width axis Z, plunge axis X)",
-        "      G0 X[#<Astart>] Z[#<C> + #<Woff>]",
-        "      G1 X[#<Atgt>] F[#<Fpl>]",
-        "      o200 call [#<Woff>] [#<mode>] [#<C>] [#<camp>] [#<Fsw>] [#<cn>]",
-        "      (retract towards start)",
-        "      G1 X[#<Atgt> - #<sgn> * #<retr>] F[#<Fpl>]",
-        "      G0 X[#<Astart>]",
-        "    o216 else",
-        "      (face: width axis X in diameter, plunge axis Z)",
-        "      G0 Z[#<Astart>] X[#<C> + #<Woff>]",
-        "      G1 Z[#<Atgt>] F[#<Fpl>]",
-        "      o200 call [#<Woff>] [#<mode>] [#<C>] [#<camp>] [#<Fsw>] [#<cn>]",
-        "      G1 Z[#<Atgt> - #<sgn> * #<retr>] F[#<Fpl>]",
-        "      G0 Z[#<Astart>]",
-        "    o216 endif",
-        "",
-        "    #<k> = [#<k> + 1]",
-        "    o217 if [#<k> GT 200]",
-        "      o211 break",
-        "    o217 endif",
-        "  o211 endwhile",
-        "",
-        "o210 endsub",
-        "",
-        "o220 sub",
-        "",
-        "  M70",
-        "  G90",
-        "  G18",
-        "",
-        "  #<mode>   = [FIX[#1]]",
-        "  #<wtool>  = [ABS[#2]]",
-        "  #<wnut>   = [ABS[#3]]",
-        "  #<C>      = [#4]",
-        "  #<Astart> = [#5]",
-        "  #<Aend>   = [#6]",
-        "  #<stepA>  = [ABS[#7]]",
-        "  #<over>   = [ABS[#8]]",
-        "  #<retr>   = [ABS[#9]]",
-        "  #<Fpl>    = [ABS[#10]]",
-        "  #<Fsw>    = [ABS[#11]]",
-        "  #<fin>    = [ABS[#12]]",
-        "  #<camp>   = [ABS[#13]]",
-        "  #<cn>     = [ABS[#14]]",
-        "  #<cn>     = [FIX[#<cn>]]",
-        "",
-        "  (Checks)",
-        "  o221 if [#<wtool> LE 0]",
-        "    (ABORT, wtool le 0)",
-        "  o221 endif",
-        "  o222 if [#<wnut> LE 0]",
-        "    (ABORT, wnut le 0)",
-        "  o222 endif",
-        "  o223 if [#<stepA> LE 0]",
-        "    (ABORT, stepA le 0)",
-        "  o223 endif",
-        "  o224 if [#<wtool> GT #<wnut> + 0.0001]",
-        "    (ABORT, tool wider than groove)",
-        "  o224 endif",
-        "",
-        "  (Width stepping)",
-        "  #<stepW> = [#<wtool> - #<over>]",
-        "  o225 if [#<stepW> GT 0.8 * #<wtool>]",
-        "    #<stepW> = [0.8 * #<wtool>]",
-        "  o225 endif",
-        "  o226 if [#<stepW> LE 0.001]",
-        "    (ABORT, overlap too large)",
-        "  o226 endif",
-        "",
-        "  #<extra> = [#<wnut> - #<wtool>]",
-        "  #<omin>  = [0 - 0.5 * #<extra>]",
-        "  #<omax>  = [0.5 * #<extra>]",
-        "  o227 if [#<stepW> GT #<omax>]",
-        "    #<stepW> = #<omax>",
-        "  o227 endif",
-        "",
-        "  (Direction along plunge axis: from start to end)",
-        "  #<sgn> = [1]",
-        "  o232 if [#<Aend> LT #<Astart>]",
-        "    #<sgn> = [0 - 1]",
-        "  o232 endif",
-        "",
-        "  (Rough target with finish allowance)",
-        "  #<Arough> = [#<Aend> - #<sgn> * #<fin>]",
-        "",
-        "  (Roughing passes up to Arough)",
-        "  #<Acur> = [#<Astart>]",
-        "  o228 if [#<sgn> * [#<Arough> - #<Astart>] GT 0]",
-        "    o229 while [#<sgn> * [#<Acur> - #<Arough>] LT 0]",
-        "      #<Anext> = [#<Acur> + #<sgn> * #<stepA>]",
-        "      o230 if [#<sgn> * [#<Anext> - #<Arough>] GT 0]",
-        "        #<Anext> = [#<Arough>]",
-        "      o230 endif",
-        "      o210 call [#<Anext>] [#<mode>] [#<C>] [#<Astart>] [#<retr>] [#<sgn>] [#<Fpl>] [#<stepW>] [#<omin>] [#<omax>] [#<camp>] [#<Fsw>] [#<cn>]",
-        "      #<Acur> = [#<Anext>]",
-        "    o229 endwhile",
-        "  o228 endif",
-        "",
-        "  (Finish pass optional)",
-        "  o231 if [#<fin> GT 0.0001]",
-        "    o210 call [#<Aend>] [#<mode>] [#<C>] [#<Astart>] [#<retr>] [#<sgn>] [#<Fpl>] [#<stepW>] [#<omin>] [#<omax>] [#<camp>] [#<Fsw>] [#<cn>]",
-        "  o231 endif",
-        "",
-        "  M72",
-        "o220 endsub",
-        "(=== END GROOVE CYCLE LIBRARY ===)",
-    ]
-
-
-def _get_param_float(params: Dict[str, object], keys: List[str], default: float | None = None) -> float | None:
-    for key in keys:
-        if key in params and params.get(key) not in (None, ""):
-            try:
-                return float(params.get(key))
-            except (TypeError, ValueError):
-                continue
-    return default
-
-
-def _get_param_int(params: Dict[str, object], keys: List[str], default: int | None = None) -> int | None:
-    for key in keys:
-        if key in params and params.get(key) not in (None, ""):
-            try:
-                return int(float(params.get(key)))
-            except (TypeError, ValueError):
-                continue
-    return default
-
-
-def _groove_center_from_ref(base: float, width: float, ref: int) -> float:
-    if ref == 1:
-        return base + (width / 2.0)
-    if ref == 2:
-        return base - (width / 2.0)
-    return base
-
-
 def gcode_for_groove(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
-    settings = settings or {}
-    require_tool(op.params, "GROOVE")
-    lines: List[str] = []
-    _append_tool_and_spindle(
-        lines,
-        _get_tool_number(op.params),
-        op.params.get("spindle"),
+    return generate_groove_gcode(
+        op,
         settings,
+        require_tool=require_tool,
+        get_tool_number=_get_tool_number,
+        append_tool_and_spindle=_append_tool_and_spindle,
+        emit_coolant=_emit_coolant,
     )
-    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
-    p = op.params
-    safe_z = float(p.get("safe_z", 2.0))
-    lage = _get_param_int(p, ["lage"], 0) or 0
-
-    mode = _get_param_int(p, ["mode", "groove_mode"])
-    if mode not in (0, 1):
-        mode = 0 if lage in (0, 1) else 1
-
-    wnut = abs(_get_param_float(p, ["wnut", "W_nut", "width", "groove_width"], 0.0) or 0.0)
-    use_tool_width = bool(p.get("use_tool_width", False))
-    wtool = _get_param_float(
-        p,
-        ["wtool", "W_tool", "tool_width", "cutting_width", "groove_cutting_width"],
-        None,
-    )
-    if use_tool_width and wtool is not None:
-        wtool = abs(wtool)
-    if wtool is None:
-        wtool = wnut
-    wtool = abs(float(wtool))
-
-    c_val = _get_param_float(p, ["C", "c", "center"], None)
-    ref = _get_param_int(p, ["ref"], 0) or 0
-    if c_val is None:
-        if mode == 0:
-            c_val = _groove_center_from_ref(float(p.get("z", 0.0) or 0.0), wnut, ref)
-        else:
-            c_val = _groove_center_from_ref(float(p.get("diameter", 0.0) or 0.0), wnut, ref)
-
-    a_start = _get_param_float(p, ["A_start", "Astart", "start"], None)
-    if a_start is None:
-        if mode == 0:
-            a_start = float(p.get("diameter", 0.0) or 0.0)
-        else:
-            a_start = float(p.get("z", 0.0) or 0.0)
-
-    a_end = _get_param_float(p, ["A_end", "Aend", "end"], None)
-    if a_end is None:
-        depth = abs(float(p.get("depth", 0.0) or 0.0))
-        if mode == 0:
-            # G7 diameter mode: radial depth must be doubled on X
-            dia_depth = 2.0 * depth
-            if lage == 1:
-                a_end = a_start + dia_depth
-            else:
-                a_end = a_start - dia_depth
-        else:
-            if lage == 3:
-                a_end = a_start + depth
-            else:
-                a_end = a_start - depth
-
-    step_a = abs(_get_param_float(p, ["stepA", "step_a", "depth_per_pass", "step"], 0.0) or 0.0)
-    if step_a <= 0.0:
-        step_a = abs(float(p.get("depth", 0.0) or 0.0))
-
-    overlap = abs(_get_param_float(p, ["overlap", "over"], 0.0) or 0.0)
-    retr = abs(_get_param_float(p, ["retract", "retr"], 0.0) or 0.0)
-    f_plunge = abs(_get_param_float(p, ["F_plunge", "f_plunge", "plunge_feed", "feed"], 0.0) or 0.0)
-    f_sweep = abs(_get_param_float(p, ["F_sweep", "f_sweep", "sweep_feed"], f_plunge) or 0.0)
-    finish = abs(_get_param_float(p, ["finish", "fin"], 0.0) or 0.0)
-    chip_amp = abs(_get_param_float(p, ["chip_amp", "camp"], 0.0) or 0.0)
-    chip_n = int(round(_get_param_float(p, ["chip_n", "cn"], 0.0) or 0.0))
-
-    if mode == 0:
-        # G7 diameter mode: radial quantities must be doubled on X
-        step_a *= 2.0
-        retr *= 2.0
-        finish *= 2.0
-
-        if lage == 1 and not (a_end > a_start):
-            raise ValueError(
-                "GROOVE innen: Aend muss groesser als Astart sein (ID + 2*Tiefe)."
-            )
-        if lage != 1 and not (a_end < a_start):
-            raise ValueError(
-                "GROOVE aussen: Aend muss kleiner als Astart sein (OD - 2*Tiefe)."
-            )
-
-    start_x = a_start if mode == 0 else c_val
-    lines.append("(Anfahren vor Groove)")
-    lines.append(f"G0 Z{safe_z:.3f}")
-    lines.append(f"G0 X{start_x:.3f}")
-
-    def _macro_arg(value: float, digits: int = 3) -> str:
-        if value < 0:
-            return f"[-{abs(value):.{digits}f}]"
-        return f"[{value:.{digits}f}]"
-
-    def _macro_arg_int(value: int) -> str:
-        if value < 0:
-            return f"[-{abs(value)}]"
-        return f"[{value:d}]"
-
-    lines.append(
-        "o220 call "
-        f"{_macro_arg(float(int(mode)), 0)} "
-        f"{_macro_arg(wtool, 3)} "
-        f"{_macro_arg(wnut, 3)} "
-        f"{_macro_arg(c_val, 3)} "
-        f"{_macro_arg(a_start, 3)} "
-        f"{_macro_arg(a_end, 3)} "
-        f"{_macro_arg(step_a, 3)} "
-        f"{_macro_arg(overlap, 3)} "
-        f"{_macro_arg(retr, 3)} "
-        f"{_macro_arg(f_plunge, 3)} "
-        f"{_macro_arg(f_sweep, 3)} "
-        f"{_macro_arg(finish, 3)} "
-        f"{_macro_arg(chip_amp, 3)} "
-        f"{_macro_arg_int(chip_n)}"
-    )
-    return lines
 
 
 def gcode_for_keyway(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
-    settings = settings or {}
-    p = op.params
-    # Strenge Validierung: depth_per_pass ist Pflicht
-    require(p, ["depth_per_pass"], "KEYWAY")
-    require_positive(p, ["depth_per_pass"], "KEYWAY")
-
-    raise ValueError(
-        "KEYWAY verwendet Makro-Variablen (#...), die im erzeugten G-Code verboten sind."
+    return generate_keyway_gcode(
+        op,
+        settings,
+        require=require,
+        require_positive=require_positive,
     )
-
-    lines = ["(KEYWAY)"]
-    lines.append(f"#<_mode> = {int(p.get('mode', 0))}")
-    lines.append(f"#<_radial_side> = {int(p.get('radial_side', 0))}")
-    lines.append(f"#<_slot_count> = {int(p.get('slot_count', 1))}")
-    lines.append(f"#<_slot_start_angle> = {p.get('slot_start_angle', 0.0):.3f}")
-    lines.append(f"#<_start_x_dia_input> = {p.get('start_x_dia', 0.0):.3f}")
-    lines.append(f"#<_start_z_input> = {p.get('start_z', 0.0):.3f}")
-    lines.append(f"#<_nut_length> = {p.get('nut_length', 0.0):.3f}")
-    lines.append(f"#<_nut_depth> = {p.get('nut_depth', 0.0):.3f}")
-    cutting_width = float(p.get("cutting_width", 0.0))
-    lines.append(f"#<_cutting_width> = {cutting_width:.3f}")
-    lines.append(f"#<_key_cutting_width> = {cutting_width:.3f}")
-    lines.append(f"#<_depth_per_pass> = {float(p['depth_per_pass']):.3f}")  # Jetzt garantiert vorhanden
-    lines.append(f"#<_top_clearance> = {p.get('top_clearance', 0.0):.3f}")
-    lines.append(f"#<_plunge_feed> = {p.get('plunge_feed', 200.0):.3f}")
-    lines.append(f"#<_use_c_axis> = {1 if p.get('use_c_axis', True) else 0}")
-    lines.append(f"#<_use_c_axis_switch> = {1 if p.get('use_c_axis_switch', True) else 0}")
-    lines.append(f"#<_c_axis_switch_p> = {int(p.get('c_axis_switch_p', 0))}")
-    lines.append("o<keyway_c> call")
-    return lines
 
 
 def gcode_for_contour(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
@@ -2406,226 +1981,27 @@ def clean_path(path: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
 
 
 def gcode_for_face(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
-    """G-Code für Planen (Face) via LinuxCNC G72/G70 - ohne harte Defaults."""
-    settings = settings or {}
-    p = op.params
-    lines: List[str] = []
-
-    def req_float(key: str) -> float:
-        if key not in p:
-            raise ValueError(f"Missing parameter: '{key}'")
-        v = p.get(key)
-        if v is None or v == "":
-            raise ValueError(f"Empty parameter: '{key}'")
-        try:
-            return float(v)
-        except Exception:
-            raise ValueError(f"Invalid float for '{key}': {v!r}")
-
-    def req_int(key: str) -> int:
-        return int(req_float(key))
-
-    def opt_bool(key: str) -> bool:
-        # bool ist nicht numerisch, aber auch hier: keine Defaults "im Sinne von"
-        # Wenn der Key fehlt -> False ist kein "Abspanparameter", sondern Feature-Flag.
-        return bool(p.get(key, False))
-
-    # --- zwingend benötigte Parameter (kommen aus UI/Settings) ---
-    mode            = req_int("mode")                 # 0/1/2
-    start_x         = req_float("start_x")
-    start_z         = req_float("start_z")
-    end_x           = req_float("end_x")
-    end_z           = req_float("end_z")
-
-    finish_allow_z  = req_float("finish_allow_z")
-    depth_per_pass  = req_float("depth_max")
-    retract         = req_float("retract")
-    feed            = req_float("feed")
-    spindle         = req_float("spindle")
-    tool_num        = require_tool(p, "FACE")
-
-    edge_type       = req_int("edge_type")
-    edge_size       = req_float("edge_size")
-
-    coolant_enabled = opt_bool("coolant")
-    pause_enabled   = opt_bool("pause_enabled")
-    pause_distance  = max(float(p.get("pause_distance", 0.0)), 0.0)
-
-    # --- Plausibilitätschecks (ohne Defaults) ---
-    if depth_per_pass <= 0.0:
-        raise ValueError("depth_max must be > 0")
-    if retract < 0.0:
-        raise ValueError("retract must be >= 0")
-    if finish_allow_z < 0.0:
-        raise ValueError("finish_allow_z must be >= 0")
-    if feed <= 0.0:
-        raise ValueError("feed must be > 0")
-    if spindle < 0.0:
-        raise ValueError("spindle must be >= 0")
-
-    # --- Tool/Spindle/Coolant ---
-    _append_tool_and_spindle(lines, tool_num, spindle, settings)
-    coolant_mode = p.get("coolant_mode", coolant_enabled)
-    _emit_coolant(lines, coolant_mode)
-    lines.append(f"F{feed:.3f}")
-
-    # --- Kontur (nur Schnittkontur, keine Anfahrt) ---
-    # G7 (Durchmesser) => Fase: ΔX = 2*edge_size
-    contour: List[Tuple[float, float]] = []
-    if edge_type == 1:
-        if edge_size <= 0.0:
-            raise ValueError("edge_size must be > 0 when edge_type==1")
-        contour.append((start_x, end_z - edge_size))
-        contour.append((start_x - 2.0 * edge_size, end_z))
-    else:
-        contour.append((start_x, end_z))
-
-    contour.append((end_x, end_z))
-    cleaned_path = clean_path(contour)
-
-    # --- WICHTIG: Subroutine VOR Zyklusaufruf definieren ---
-    allocator = settings.get("sub_allocator")
-    if allocator:
-        sub_num = allocator.allocate()
-    else:
-        sub_num = 100
-    lines.append(f"o{sub_num} sub")
-    for x, z in cleaned_path:
-        lines.append(f"G1 X{x:.3f} Z{z:.3f}")
-    lines.append(f"o{sub_num} endsub")
-
-    # --- Zyklen ---
-    # PHASE A (Regel 4): Explizite Anfahrt vor Zyklus: Z zuerst, dann X
-    lines.append(f"(Anfahren vor Zyklus)")
-    _emit_approach(lines, start_x, start_z, settings)
-    if mode in (0, 2):  # Schruppen
-        # standard roughing cycle (no radial adjustment for face)
-        lines.append(
-            f"G72 Q{sub_num} X{start_x:.3f} Z{start_z:.3f} D{finish_allow_z:.3f} "
-            f"I{depth_per_pass:.3f} R{retract:.3f}"
-        )
-    if mode in (1, 2):  # Schlichten
-        lines.append(f"G70 Q{sub_num} X{start_x:.3f} Z{start_z:.3f}")
-
-    if mode in (0, 2) and pause_enabled and pause_distance > 0.0:
-        settings["needs_step_x_pause_sub"] = True
-    # global safe retract after step
-    return lines
+    return generate_face_gcode(
+        op,
+        settings,
+        require_tool=require_tool,
+        append_tool_and_spindle=_append_tool_and_spindle,
+        emit_coolant=_emit_coolant,
+        emit_approach=_emit_approach,
+        clean_path=clean_path,
+    )
 
 def gcode_for_thread(op: Operation, settings: Dict[str, object] | None = None) -> List[str]:
-    settings = settings or {}
-    require_tool(op.params, "THREAD")
-    safe_z = float(op.params.get("safe_z", 2.0))
-    major_diameter = float(op.params.get("major_diameter", 0.0))
-    pitch = float(op.params.get("pitch", 1.5))
-    pitch_warning: str | None = None
-    if pitch <= 0.0:
-        pitch_warning = "(WARN: Ungültige Steigung; P=1.0 fallback)"
-        pitch = 1.0
-    length = float(op.params.get("length", 0.0))
-
-    raw_thread_depth = op.params.get("thread_depth")
-    if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
-        thread_depth = float(raw_thread_depth)
-    else:
-        thread_depth = pitch * 0.6134
-
-    raw_first_depth = op.params.get("first_depth")
-    if isinstance(raw_first_depth, (int, float)) and raw_first_depth > 0:
-        first_depth = float(raw_first_depth)
-    else:
-        first_depth = max(thread_depth * 0.1, pitch * 0.05)
-
-    raw_peak_offset = op.params.get("peak_offset")
-    if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
-        peak_offset = float(raw_peak_offset)
-    else:
-        peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
-
-    retract_r = float(op.params.get("retract_r", 1.5))
-    infeed_q = float(op.params.get("infeed_q", 29.5))
-    spring_passes_raw = op.params.get("spring_passes")
-    if isinstance(spring_passes_raw, (int, float)) and spring_passes_raw > 0:
-        spring_passes = max(0, int(spring_passes_raw))
-    else:
-        spring_passes = max(0, int(op.params.get("passes", 1)))
-    e_val = float(op.params.get("e", 0.0))
-    l_val = int(float(op.params.get("l", 0)))
-
-    orientation_raw = op.params.get("orientation", 0)
-    orientation_idx = 0
-    if isinstance(orientation_raw, (int, float)):
-        orientation_idx = max(
-            0,
-            min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1),
-        )
-    internal = (orientation_idx == 1)
-    orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
-    standard_data = op.params.get("standard")
-    standard_label = ""
-    if isinstance(standard_data, dict):
-        std_label_tmp = standard_data.get("label")
-        if isinstance(std_label_tmp, str):
-            standard_label = std_label_tmp
-
-    # -----------------------------------------------------------------
-    # Internal vs. external threading — LinuxCNC G76 direction logic
-    # -----------------------------------------------------------------
-    # LinuxCNC interp_convert.cc:
-    #   boring = (i_number > 0)
-    # When boring==1 (I>0) the tool moves OUTWARD (+X) for each pass.
-    # When boring==0 (I<0) the tool moves INWARD  (-X) for each pass.
-    #
-    # External thread: start at major Ø, cut inward  → I < 0 (default)
-    # Internal thread: start at bore surface (minor Ø of thread =
-    #   major - 2*K in G7 diameter mode), cut outward → I > 0
-    # -----------------------------------------------------------------
-    if internal:
-        # Mirror peak_offset sign: must be positive for boring=1
-        peak_offset = abs(peak_offset)
-        # Approach at the bore surface (minor diameter)
-        approach_x = major_diameter - 2.0 * thread_depth
-    else:
-        # External: peak_offset must be negative (boring=0)
-        peak_offset = -abs(peak_offset)
-        approach_x = major_diameter
-
-    comments: List[str] = []
-    if standard_label and standard_label != "Benutzerdefiniert":
-        comments.append(f"(Normgewinde: {_sanitize_comment_text(standard_label)})")
-    comments.append(f"(Gewindetyp: {orientation_label})")
-    if pitch_warning:
-        comments.append(pitch_warning)
-
-    lines: List[str] = []
-    _append_tool_and_spindle(
-        lines,
-        _get_tool_number(op.params),
-        op.params.get("spindle"),
+    return generate_thread_gcode(
+        op,
         settings,
+        require_tool=require_tool,
+        get_tool_number=_get_tool_number,
+        append_tool_and_spindle=_append_tool_and_spindle,
+        emit_coolant=_emit_coolant,
+        emit_approach=_emit_approach,
+        sanitize_comment_text=_sanitize_comment_text,
     )
-    _emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
-    lines.extend(comments)
-
-    # PHASE A (Regel 4): Explizite Anfahrt: Z zuerst, dann X
-    lines.append(f"(Anfahren vor Gewinde)")
-    _emit_approach(lines, approach_x, safe_z, settings)
-    lines.append(
-        (
-            "G76 "
-            f"P{pitch:.4f} "
-            f"Z{-abs(length):.3f} "
-            f"I{peak_offset:.4f} "
-            f"J{first_depth:.4f} "
-            f"R{retract_r:.4f} "
-            f"K{thread_depth:.4f} "
-            f"Q{infeed_q:.4f} "
-            f"H{spring_passes:d} "
-            f"E{e_val:.4f} "
-            f"L{l_val:d}"
-        )
-    )
-    return lines
 
 
 def gcode_for_operation(
@@ -2890,7 +2266,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     if settings.get("needs_step_x_pause_sub"):
         all_subs.append(_step_x_pause_sub_definition())
     if any(op.op_type == OpType.GROOVE for op in operations):
-        all_subs.append(_groove_sub_definition())
+        all_subs.append(groove_sub_definition())
 
     main_flow_lines: List[str] = []
 

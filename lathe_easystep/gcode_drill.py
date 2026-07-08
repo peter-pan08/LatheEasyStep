@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from typing import Callable, Dict, List
+
+from .model import Operation
+
+
+# Mapping: combo index (float from _collect_params) -> G-code mode string
+DRILL_MODE_MAP: Dict[int, str] = {
+    0: "G81",  # Normal drilling
+    1: "G82",  # Drilling with dwell
+    2: "G83",  # Peck drilling (full retract)
+    3: "G73",  # Chip breaking drilling (partial retract)
+    4: "G84",  # Tapping
+}
+
+
+def generate_drill_gcode(
+    op: Operation,
+    settings: Dict[str, object] | None,
+    *,
+    require: Callable[[Dict[str, object], List[str], str], None],
+    require_tool: Callable[[Dict[str, object], str], int],
+    get_tool_number: Callable[[Dict[str, object]], int],
+    append_tool_and_spindle: Callable[[List[str], object | None, object | None, Dict[str, object] | None], None],
+    emit_coolant: Callable[[List[str], object], None],
+    emit_approach: Callable[[List[str], float, float, Dict[str, object] | None], None],
+) -> List[str]:
+    settings = settings or {}
+    path = op.path or []
+    if not path:
+        return []
+    p = op.params
+    require_tool(p, "DRILL")
+
+    mode_raw_value = p.get("mode", "G81")
+    try:
+        mode_idx = int(float(mode_raw_value))
+        mode = DRILL_MODE_MAP.get(mode_idx, "G81")
+    except (TypeError, ValueError):
+        mode = str(mode_raw_value) if str(mode_raw_value) in DRILL_MODE_MAP.values() else "G81"
+
+    if mode == "G82":
+        require(p, ["dwell"], "DRILL G82")
+    elif mode in ["G83", "G73"]:
+        require(p, ["peck_depth"], "DRILL " + mode)
+
+    lines: List[str] = []
+    append_tool_and_spindle(
+        lines,
+        get_tool_number(op.params),
+        op.params.get("spindle"),
+        settings,
+    )
+    emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
+    safe_z = float(op.params.get("safe_z", 2.0))
+    feed = float(op.params.get("feed", 0.12))
+    depth_z = path[-1][1]
+    x_start = path[0][0]
+    retract = float(op.params.get("retract", safe_z))
+    if retract < safe_z:
+        lines.append(f"(WARN: retract ({retract:.3f}) < safe_z ({safe_z:.3f}); verwende safe_z)")
+        retract = safe_z
+
+    lines.append("(Anfahren vor Zyklus)")
+    emit_approach(lines, x_start, safe_z, settings)
+    lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
+    lines.append("G17")
+    lines.append(f"F{feed:.3f}")
+    if mode == "G81":
+        lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
+    elif mode == "G82":
+        dwell = float(p.get("dwell", 0.0))
+        lines.append(f"G82 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} P{dwell:.3f} F{feed:.3f}")
+    elif mode == "G83":
+        peck_depth = float(p.get("peck_depth", 1.0))
+        lines.append(f"G83 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
+    elif mode == "G73":
+        peck_depth = float(p.get("peck_depth", 1.0))
+        lines.append(f"G73 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
+    elif mode == "G84":
+        lines.append(f"G84 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
+    else:
+        lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
+    lines.append("G80")
+    lines.append(f"G0 Z{safe_z:.3f}")
+    lines.append("G18")
+    return lines
