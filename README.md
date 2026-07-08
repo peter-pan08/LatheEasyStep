@@ -235,10 +235,14 @@ Aktueller Stand:
 
 - Werkzeugauswahl vorhanden
 - Startwinkel und Winkelversatz fuer Wiederholungen vorhanden
+- Winkelversatz bedeutet Abstand der Nutmitten von Wiederholung zu Wiederholung, nicht Gesamtverteilung bis zur letzten Nut
 - zusaetzliche Bearbeitungsparameter fuer wiederholte Nuten erweitert
 - Winkeleingaben werden in Grad gefuehrt
 - keine unnoetige Drehzahl-Eingabe fuer stillstehendes Werkstueck beim Nutenstossen
 - Vorschau fuer Nuten und Teilung ist weiter in Arbeit, aber die Schnittansicht greift bereits auf die Gesamtgeometrie des Programms zu
+- beim Wechsel auf den Reiter `Keilnut` wird der zugehoerige Keilnut-Step automatisch in der Step-Liste aktiviert
+- geladene Programmdaten fuer Keilnut werden dadurch wieder sichtbar in die Eingabefelder geschrieben
+- Aenderungen im Keilnut-Reiter wirken damit wieder auf Vorschau, Step-Datei und Programmspeicherung
 
 ## Vorschau und Schnittansicht
 
@@ -264,6 +268,19 @@ Die Werkzeugtabelle wird wie bisher manuell geladen, der zuletzt verwendete
 Pfad wird aber gespeichert und beim naechsten Start des Panels automatisch
 wieder verwendet. Fuer den ueblichen Werkstattfall mit nur einer aktiven
 `tool.tbl` entfaellt damit das erneute Auswaehlen nach jedem Panelstart.
+
+## Programmdaten und Reiterbindung
+
+Die Eingabemasken arbeiten immer gegen die aktuell aktive Operation in der
+Step-Liste. Fuer die praktische Bedienung ist daher wichtig:
+
+- ein geladener Step muss beim Wechsel auf seinen Reiter auch wirklich aktiv selektiert sein
+- nur dann werden gespeicherte Werte korrekt in die Eingabemaske geschrieben
+- nur dann wirken nachtraegliche Aenderungen auf Vorschau, Step-Datei und Programmdatei
+
+Fuer den aktuellen Stand wurde diese Kopplung vor allem fuer `Keilnut` und den
+Programmkopf nachgezogen, damit geladene Programme wieder nachvollziehbar
+editiert werden koennen.
 
 ## Aktuelle Prioritaeten
 

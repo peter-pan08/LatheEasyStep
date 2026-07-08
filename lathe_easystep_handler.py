@@ -350,8 +350,9 @@ TEXT_TRANSLATIONS = {
     "label_35": {"de": "Start Z", "en": "Start Z"},
     "label_36": {"de": "Nutlänge", "en": "Slot Length"},
     "label_37": {"de": "Nuttiefe", "en": "Slot Depth"},
+    "label_key_slot_width": {"de": "Nutbreite", "en": "Slot Width"},
     "label_key_cutting_width": {"de": "Schneidenbreite", "en": "Cutting Width"},
-    "label_38": {"de": "Kopffreiheit", "en": "Top Clearance"},
+    "label_38": {"de": "Kopffreiheit (aktuell ohne Wirkung)", "en": "Top Clearance (currently unused)"},
     "label_39": {"de": "Zustellung pro Pass", "en": "Depth per Pass"},
     "label_40": {"de": "Eintauchvorschub", "en": "Plunge Feed"},
     "label_41": {"de": "C-Achse benutzen", "en": "Use C Axis"},
@@ -927,7 +928,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             try:
                 start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
                 nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
-                cutting_width = abs(float(params.get("cutting_width", 0.0) or 0.0))
+                slot_width = abs(float(params.get("slot_width", params.get("cutting_width", 0.0)) or 0.0))
                 radial_side = int(float(params.get("radial_side", 0) or 0))
             except Exception:
                 continue
@@ -950,8 +951,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
             if slot_outer_radius <= 1e-9:
                 continue
 
-            if cutting_width > 0.0:
-                half_opening = max(math.radians(2.0), min(math.radians(40.0), cutting_width / max(slot_outer_radius, 1e-6)))
+            if slot_width > 0.0:
+                half_opening = max(math.radians(2.0), min(math.radians(40.0), slot_width / max(slot_outer_radius, 1e-6)))
             else:
                 half_opening = math.radians(6.0)
 
@@ -961,15 +962,17 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 poly = QtGui.QPolygonF()
                 for i in range(samples + 1):
                     ang = a0 + ((a1 - a0) * i / samples)
+                    x_off, y_off = front_view_polar_to_cartesian(ang, slot_outer_radius * scale)
                     poly.append(QtCore.QPointF(
-                        center.x() + math.cos(ang) * slot_outer_radius * scale,
-                        center.y() - math.sin(ang) * slot_outer_radius * scale,
+                        center.x() + x_off,
+                        center.y() + y_off,
                     ))
                 for i in range(samples, -1, -1):
                     ang = a0 + ((a1 - a0) * i / samples)
+                    x_off, y_off = front_view_polar_to_cartesian(ang, slot_inner_radius * scale)
                     poly.append(QtCore.QPointF(
-                        center.x() + math.cos(ang) * slot_inner_radius * scale,
-                        center.y() - math.sin(ang) * slot_inner_radius * scale,
+                        center.x() + x_off,
+                        center.y() + y_off,
                     ))
                 painter.drawPolygon(poly)
         painter.restore()
@@ -2113,7 +2116,7 @@ def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
 
 
 def build_keyway_slot_angles(params: Dict[str, object]) -> List[float]:
-    """Return all slot center angles in radians for keyway front preview."""
+    """Return the center angle of each slot in radians for keyway front preview."""
     try:
         slot_count = max(1, int(float(params.get("slot_count", 1) or 1)))
     except Exception:
@@ -2131,6 +2134,15 @@ def build_keyway_slot_angles(params: Dict[str, object]) -> List[float]:
         step_deg = 360.0 / float(slot_count)
 
     return [math.radians(start_angle_deg + (slot_idx * step_deg)) for slot_idx in range(slot_count)]
+
+
+def front_view_polar_to_cartesian(angle_rad: float, radius: float) -> tuple[float, float]:
+    """Map front-view angles to screen-space coordinates.
+
+    Front view uses a clock-face convention: 0 degrees is at 12 o'clock and
+    angles increase clockwise, so 90 degrees lands at 3 o'clock.
+    """
+    return (math.sin(angle_rad) * radius, -math.cos(angle_rad) * radius)
 
 
 def keyway_slice_bounds(params: Dict[str, object]) -> tuple[float, float] | None:
@@ -3470,7 +3482,12 @@ class HandlerClass:
             "thread_major_diameter", "thread_pitch", "thread_length", "thread_passes",
             "thread_safe_z", "thread_depth", "thread_peak_offset", "thread_first_depth",
             "thread_retract_r", "thread_infeed_q", "thread_spring_passes", "thread_e",
-            "thread_l", "btn_thread_preset",
+            "thread_l", "btn_thread_preset", "tool_table_path", "lbl_tool_table_path",
+            "key_mode", "key_radial_side", "key_tool", "key_coolant", "key_slot_count",
+            "key_slot_start_angle", "key_slot_angle_step", "key_start_diameter", "key_start_z",
+            "key_nut_length", "key_nut_depth", "key_cutting_width", "key_top_clearance",
+            "key_depth_per_pass", "key_plunge_feed", "key_use_c_axis", "key_use_c_axis_switch",
+            "key_c_axis_switch_p",
         ):
             setattr(self, attr_name, getattr(self.w, attr_name, None))
 
@@ -4033,6 +4050,7 @@ class HandlerClass:
             ("key_start_z", "key_start_z", QtWidgets.QDoubleSpinBox),
             ("key_nut_length", "key_nut_length", QtWidgets.QDoubleSpinBox),
             ("key_nut_depth", "key_nut_depth", QtWidgets.QDoubleSpinBox),
+            ("key_slot_width", "key_slot_width", QtWidgets.QDoubleSpinBox),
             ("key_cutting_width", "key_cutting_width", QtWidgets.QDoubleSpinBox),
             ("key_top_clearance", "key_top_clearance", QtWidgets.QDoubleSpinBox),
             ("key_depth_per_pass", "key_depth_per_pass", QtWidgets.QDoubleSpinBox),
@@ -4069,6 +4087,7 @@ class HandlerClass:
             ("label_35", "label_35", QtWidgets.QLabel),
             ("label_36", "label_36", QtWidgets.QLabel),
             ("label_37", "label_37", QtWidgets.QLabel),
+            ("label_key_slot_width", "label_key_slot_width", QtWidgets.QLabel),
             ("label_key_cutting_width", "label_key_cutting_width", QtWidgets.QLabel),
             ("label_38", "label_38", QtWidgets.QLabel),
             ("label_39", "label_39", QtWidgets.QLabel),
@@ -5274,6 +5293,13 @@ class HandlerClass:
             pass
         self._ensure_preview_widgets()
         self._connect_core_signals()
+        try:
+            self._connect_param_change_signals()
+            self._connect_global_form_signals()
+            self._connect_tool_preview_signals()
+            self._connect_mode_visibility_signals()
+        except Exception as exc:
+            self._log(f"[LatheEasyStep] finalize signal setup failed: {exc}", level="warning")
         # Nach vollständigem Aufbau sicherstellen, dass die Kern-Widgets
         # wirklich aus dem Panel stammen (nicht aus dem Host-GUI-Baum).
         self._ensure_core_widgets()
@@ -5969,25 +5995,26 @@ class HandlerClass:
                 "peck_depth": self._get_widget_by_name("drill_peck_depth"),
             },
             OpType.KEYWAY: {
-                "tool": self._get_widget_by_name("key_tool"),
-                "feed": self._get_widget_by_name("key_plunge_feed"),
-                "mode": self._get_widget_by_name("key_mode"),
-                "radial_side": self._get_widget_by_name("key_radial_side"),
-                "coolant": self._get_widget_by_name("key_coolant"),
-                "slot_count": self._get_widget_by_name("key_slot_count"),
-                "slot_start_angle": self._get_widget_by_name("key_slot_start_angle"),
-                "slot_angle_step": self._get_widget_by_name("key_slot_angle_step"),
-                "start_x_dia": self._get_widget_by_name("key_start_diameter"),
-                "start_z": self._get_widget_by_name("key_start_z"),
-                "nut_length": self._get_widget_by_name("key_nut_length"),
-                "nut_depth": self._get_widget_by_name("key_nut_depth"),
-                "cutting_width": self._get_widget_by_name("key_cutting_width"),
-                "top_clearance": self._get_widget_by_name("key_top_clearance"),
-                "depth_per_pass": self._get_widget_by_name("key_depth_per_pass"),
-                "plunge_feed": self._get_widget_by_name("key_plunge_feed"),
-                "use_c_axis": self._get_widget_by_name("key_use_c_axis"),
-                "use_c_axis_switch": self._get_widget_by_name("key_use_c_axis_switch"),
-                "c_axis_switch_p": self._get_widget_by_name("key_c_axis_switch_p"),
+                "tool": getattr(self, "key_tool", None) or self._get_widget_by_name("key_tool"),
+                "feed": getattr(self, "key_plunge_feed", None) or self._get_widget_by_name("key_plunge_feed"),
+                "mode": getattr(self, "key_mode", None) or self._get_widget_by_name("key_mode"),
+                "radial_side": getattr(self, "key_radial_side", None) or self._get_widget_by_name("key_radial_side"),
+                "coolant": getattr(self, "key_coolant", None) or self._get_widget_by_name("key_coolant"),
+                "slot_count": getattr(self, "key_slot_count", None) or self._get_widget_by_name("key_slot_count"),
+                "slot_start_angle": getattr(self, "key_slot_start_angle", None) or self._get_widget_by_name("key_slot_start_angle"),
+                "slot_angle_step": getattr(self, "key_slot_angle_step", None) or self._get_widget_by_name("key_slot_angle_step"),
+                "start_x_dia": getattr(self, "key_start_diameter", None) or self._get_widget_by_name("key_start_diameter"),
+                "start_z": getattr(self, "key_start_z", None) or self._get_widget_by_name("key_start_z"),
+                "nut_length": getattr(self, "key_nut_length", None) or self._get_widget_by_name("key_nut_length"),
+                "nut_depth": getattr(self, "key_nut_depth", None) or self._get_widget_by_name("key_nut_depth"),
+                "slot_width": getattr(self, "key_slot_width", None) or self._get_widget_by_name("key_slot_width"),
+                "cutting_width": getattr(self, "key_cutting_width", None) or self._get_widget_by_name("key_cutting_width"),
+                "top_clearance": getattr(self, "key_top_clearance", None) or self._get_widget_by_name("key_top_clearance"),
+                "depth_per_pass": getattr(self, "key_depth_per_pass", None) or self._get_widget_by_name("key_depth_per_pass"),
+                "plunge_feed": getattr(self, "key_plunge_feed", None) or self._get_widget_by_name("key_plunge_feed"),
+                "use_c_axis": getattr(self, "key_use_c_axis", None) or self._get_widget_by_name("key_use_c_axis"),
+                "use_c_axis_switch": getattr(self, "key_use_c_axis_switch", None) or self._get_widget_by_name("key_use_c_axis_switch"),
+                "c_axis_switch_p": getattr(self, "key_c_axis_switch_p", None) or self._get_widget_by_name("key_c_axis_switch_p"),
             },
             OpType.ABSPANEN: {
                 "side": self._get_widget_by_name("parting_side"),
@@ -6123,8 +6150,7 @@ class HandlerClass:
                     setattr(self, f"_{combo_name}_connected", True)
 
     def _connect_param_change_signals(self):
-            if not getattr(self, "param_widgets", None):
-                self._setup_param_maps()
+            self._setup_param_maps()
             for widgets in self.param_widgets.values():
                 for widget in widgets.values():
                     if widget is None:
@@ -6689,14 +6715,50 @@ class HandlerClass:
 
     def _handle_tab_changed(self, *_args, **_kwargs):
         """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
-        if self._current_op_type() == OpType.THREAD and not getattr(self, "_thread_standard_populated", False):
+        current_type = self._current_op_type()
+        if current_type != OpType.PROGRAM_HEADER:
+            try:
+                self._select_operation_for_current_tab(current_type)
+            except Exception as exc:
+                self._log(f"[LatheEasyStep] tab-to-operation sync failed: {exc}", level="warning")
+        if current_type == OpType.PROGRAM_HEADER:
+            try:
+                header = self._collect_program_header()
+                self._load_program_header_to_form(header)
+            except Exception:
+                pass
+        if current_type == OpType.THREAD and not getattr(self, "_thread_standard_populated", False):
             try:
                 self._setup_thread_helpers()
             except Exception:
                 pass
-        if self._current_op_type() == OpType.ABSPANEN:
+        if current_type == OpType.ABSPANEN:
             self._update_parting_contour_choices()
         self._update_parting_ready_state()
+
+    def _find_operation_index_by_type(self, op_type: str) -> int:
+        for idx, op in enumerate(getattr(self.model, "operations", []) or []):
+            if getattr(op, "op_type", None) == op_type:
+                return idx
+        return -1
+
+    def _select_operation_for_current_tab(self, op_type: str) -> None:
+        if self.list_ops is None:
+            return
+        current_idx = self.list_ops.currentRow()
+        if 0 <= current_idx < len(self.model.operations):
+            current_op = self.model.operations[current_idx]
+            if getattr(current_op, "op_type", None) == op_type:
+                return
+        target_idx = self._find_operation_index_by_type(op_type)
+        if target_idx < 0:
+            return
+        self.list_ops.blockSignals(True)
+        try:
+            self.list_ops.setCurrentRow(target_idx)
+        finally:
+            self.list_ops.blockSignals(False)
+        self._handle_selection_change(target_idx)
 
     def _fallback_contour_name(self, idx: int) -> str:
         return f"Kontur {idx + 1}"
@@ -6779,8 +6841,7 @@ class HandlerClass:
             return
 
     def _collect_params(self, op_type: str) -> Dict[str, object]:
-        if not getattr(self, "param_widgets", None):
-            self._setup_param_maps()
+        self._setup_param_maps()
         widgets = self.param_widgets.get(op_type, {})
         params: Dict[str, object] = {}
         for key, widget in widgets.items():
@@ -6873,6 +6934,8 @@ class HandlerClass:
                 "slot_count": 1,
                 "slot_start_angle": 0.0,
                 "slot_angle_step": 0.0,
+                "slot_width": 3.0,
+                "cutting_width": 3.0,
                 "top_clearance": 1.0,
                 "depth_per_pass": 0.1,
                 "mode": 0,
@@ -7226,8 +7289,7 @@ class HandlerClass:
             pass
 
     def _load_params_to_form(self, op: Operation):
-        if not getattr(self, "param_widgets", None):
-            self._setup_param_maps()
+        self._setup_param_maps()
         if op.op_type == OpType.PROGRAM_HEADER:
             self._load_program_header_to_form(op.params)
             return
@@ -7243,13 +7305,23 @@ class HandlerClass:
                     handled = self._select_slice_strategy_index(widget, val)
                 if not handled:
                     try:
+                        data_idx = widget.findData(val)
+                    except Exception:
+                        data_idx = -1
+                    if data_idx >= 0:
+                        widget.setCurrentIndex(data_idx)
+                        handled = True
+                if not handled:
+                    try:
                         widget.setCurrentIndex(int(val))
+                        handled = True
                     except Exception:
                         try:
                             txt = str(val).strip()
                             idx = widget.findText(txt)
                             if idx >= 0:
                                 widget.setCurrentIndex(idx)
+                                handled = True
                         except Exception:
                             pass
             elif isinstance(widget, QtWidgets.QAbstractButton):
@@ -7794,12 +7866,7 @@ class HandlerClass:
     def _mark_operation_user_selected(self, *args, **kwargs):
         self._op_row_user_selected = True
 
-    def _update_selected_operation(self, *, force: bool = False):
-        if self.list_ops is None:
-            return
-        if not force and not self._op_row_user_selected:
-            return
-        idx = self.list_ops.currentRow()
+    def _sync_form_to_operation(self, idx: int) -> None:
         if idx < 0 or idx >= len(self.model.operations):
             return
         op = self.model.operations[idx]
@@ -7807,7 +7874,9 @@ class HandlerClass:
         if op.op_type == OpType.PROGRAM_HEADER:
             op.params = self._collect_program_header()
         else:
-            op.params = self._collect_params(op.op_type)
+            collected_params = self._collect_params(op.op_type)
+            op.params = dict(previous_params)
+            op.params.update(collected_params)
         for key, value in previous_params.items():
             if isinstance(key, str) and key.startswith("__") and key not in op.params:
                 op.params[key] = value
@@ -7818,6 +7887,17 @@ class HandlerClass:
             if item:
                 item.setText(description)
         op.params["comment"] = description
+
+    def _update_selected_operation(self, *, force: bool = False):
+        if self.list_ops is None:
+            return
+        if not force and not self._op_row_user_selected:
+            return
+        idx = self.list_ops.currentRow()
+        if idx < 0 or idx >= len(self.model.operations):
+            return
+        op = self.model.operations[idx]
+        self._sync_form_to_operation(idx)
         self._refresh_preview()
         if op.op_type == OpType.CONTOUR:
             self._update_parting_contour_choices()
@@ -8379,10 +8459,11 @@ class HandlerClass:
             # Clear current operations
             self.model.operations.clear()
             self._op_row_user_selected = False
+            self._active_form_operation_index = -1
             
             # Load header values into UI
             header = program_data.get("header", {})
-            self._apply_header_to_ui(header)
+            self._load_program_header_to_form(header)
             meta = program_data.get("meta", {}) if isinstance(program_data.get("meta"), dict) else {}
             self._current_program_path = self._normalized_file_path(
                 meta.get(PROGRAM_FILE_PATH_KEY) or file_path
@@ -8398,9 +8479,24 @@ class HandlerClass:
                 self.model.add_operation(op)
 
             self._rebuild_all_operation_geometry()
+
+            try:
+                self._auto_load_tool_table()
+            except Exception:
+                pass
             
             # Refresh UI
-            self._refresh_operation_list(select_index=-1)
+            selected_row = 0
+            if len(self.model.operations) > 1 and self.model.operations[0].op_type == OpType.PROGRAM_HEADER:
+                selected_row = 1
+            self._refresh_operation_list(select_index=selected_row)
+            if self.list_ops is not None and 0 <= selected_row < self.list_ops.count():
+                try:
+                    self.list_ops.setCurrentRow(selected_row)
+                except Exception:
+                    pass
+                self._op_row_user_selected = False
+                self._handle_selection_change(selected_row)
             self._refresh_preview()
             
             QtWidgets.QMessageBox.information(
@@ -10071,6 +10167,16 @@ class HandlerClass:
 
 
     def _handle_selection_change(self, row: int):
+        previous_row = getattr(self, "_active_form_operation_index", -1)
+        if (
+            not getattr(self, "_ui_loading", False)
+            and previous_row != row
+            and 0 <= previous_row < len(self.model.operations)
+        ):
+            try:
+                self._sync_form_to_operation(previous_row)
+            except Exception as exc:
+                self._log(f"[LatheEasyStep] sync previous operation failed: {exc}", level="warning")
         self._ui_loading = True
         try:
             self._op_row_user_selected = bool(
@@ -10104,6 +10210,7 @@ class HandlerClass:
             except Exception:
                 pass
             self._refresh_preview()
+            self._active_form_operation_index = row
         finally:
             self._ui_loading = False
 
