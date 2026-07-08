@@ -6,7 +6,22 @@
 - Preview: Aktive Kontur wird in der Seitenvorschau immer im Vordergrund gezeichnet
 - Preview: Seitenvorschau bildet X aus Durchmesserprogrammierung korrekt als Radius ab
 - Preview: Zusatzvorschau als Vorderansicht für den aktuellen Z-Schnitt eingebaut
+- Preview: Seitenansicht und Schnittansicht bleiben gleichzeitig sichtbar; die Seitenansicht zeigt die aktive Schnittlage als markierte Linie
+- Preview: Schnittlage kann direkt in der Seitenansicht verschoben werden; die Vorderansicht aktualisiert sich auf die gewählte Z-Position
+- Preview: Vorderansicht wertet jetzt das gesamte Programm statt nur den aktuell markierten Step aus
+- Preview: Vorderansicht nutzt eine feste Referenz auf den maximalen Werkstückdurchmesser, damit Konen und Durchmesserwechsel optisch klar kleiner oder größer werden
+- Preview: Aktuelle Endgeometrie der Schnittansicht wird zusätzlich flächig hervorgehoben, nicht nur numerisch angegeben
 - Preview: Einstich-/Nutgeometrie folgt in der Vorschau jetzt den Maskenwerten für OD, ID und Stirnlagen
+- Keyway: Reiter um Werkzeugauswahl, Winkelversatz für Wiederholungen und zusätzliche Bearbeitungsparameter erweitert
+- Keyway: Winkelfelder korrekt auf Grad umgestellt; irreführende mm-Einheit entfernt
+- Keyway: Nutenstossen ohne unnötige Drehzahl-Eingabe bereinigt, da das Werkstück zwischen den Positionen stillsteht
+- Workflow: Dateidialoge merken sich den zuletzt verwendeten Ordner für Step-, Programm-, G-Code- und Werkzeugdateien
+- Workflow: Zuletzt geladene Werkzeugtabelle wird beim Start des Panels automatisch wieder geladen
+- Workflow: Neuer Button `Änderungen speichern` aktualisiert verknüpfte Steps, Programme und vorhandene G-Code-Dateien direkt aus der aktuellen Maske
+- Workflow: Programme speichern jetzt Metadaten zu verknüpften Step- und Programmdateien, damit Änderungen später gezielt zurückgeschrieben werden können
+- Workflow: Jeder neue Bearbeitungsschritt erhält eine eigene Step-Datei; Programmspeichern stellt diese Verknüpfung ebenfalls sicher
+- Fix: Interne Dateimetadaten (`__step_file_path`, `__program_file_path`, `__gcode_file_path`) bleiben bei Parameteränderungen erhalten
+- Fix: Startfehler in der Initialisierung durch fehlende Preview-/Combo-Attribute behoben
 - Performance-Fix: LinuxCNC-Embedded-Start massiv verkürzt; GUI und Panel sind wieder nach rund 11 Sekunden benutzbar
 - Refactor: Widget-Auflösung strikt auf den Panel-Baum begrenzt, keine globalen `allWidgets()`-Scans mehr
 - Refactor: Root-Erkennung für Embedded-Panel stabilisiert, Host-`MainWindow` wird nicht mehr fälschlich als Panel benutzt

@@ -3083,13 +3083,23 @@
                  </widget>
                 </item>
                 <item row="3" column="0">
+                 <widget class="QLabel" name="label_key_tool">
+                  <property name="text">
+                   <string>Werkzeug</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="1">
+                 <widget class="QComboBox" name="key_tool"/>
+                </item>
+                <item row="4" column="0">
                  <widget class="QLabel" name="label_key_coolant">
                   <property name="text">
                    <string>Kühlung</string>
                   </property>
                  </widget>
                 </item>
-                <item row="3" column="1">
+                <item row="4" column="1">
                  <widget class="QComboBox" name="key_coolant">
                   <item>
                    <property name="text">
@@ -3103,14 +3113,14 @@
                   </item>
                  </widget>
                 </item>
-                <item row="4" column="0">
+                <item row="5" column="0">
                  <widget class="QLabel" name="label_32">
                   <property name="text">
                    <string>Nutanzahl</string>
                   </property>
                  </widget>
                 </item>
-                <item row="4" column="1">
+                <item row="5" column="1">
                  <widget class="QSpinBox" name="key_slot_count">
                   <property name="minimum">
                    <number>1</number>
@@ -3123,14 +3133,14 @@
                   </property>
                  </widget>
                 </item>
-                <item row="5" column="0">
+                <item row="6" column="0">
                  <widget class="QLabel" name="label_33">
                   <property name="text">
                    <string>Startwinkel (°)</string>
                   </property>
                  </widget>
                 </item>
-                <item row="5" column="1">
+                <item row="6" column="1">
                  <widget class="QDoubleSpinBox" name="key_slot_start_angle">
                   <property name="minimum">
                    <double>-360.000000000000000</double>
@@ -3138,16 +3148,45 @@
                   <property name="maximum">
                    <double>360.000000000000000</double>
                   </property>
+                  <property name="suffix">
+                   <string> °</string>
+                  </property>
                  </widget>
                 </item>
-                <item row="6" column="0">
+                <item row="7" column="0">
+                 <widget class="QLabel" name="label_key_slot_angle_step">
+                  <property name="text">
+                   <string>Winkelversatz (°)</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="7" column="1">
+                 <widget class="QDoubleSpinBox" name="key_slot_angle_step">
+                  <property name="minimum">
+                   <double>-360.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>360.000000000000000</double>
+                  </property>
+                  <property name="decimals">
+                   <number>4</number>
+                  </property>
+                  <property name="suffix">
+                   <string> °</string>
+                  </property>
+                  <property name="toolTip">
+                   <string>0 = automatische Gleichverteilung über 360°. Sonst expliziter Winkelversatz zwischen Wiederholungen.</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="8" column="0">
                  <widget class="QLabel" name="label_34">
                   <property name="text">
                    <string>Startdurchmesser</string>
                   </property>
                  </widget>
                 </item>
-                <item row="6" column="1">
+                <item row="8" column="1">
                  <widget class="QDoubleSpinBox" name="key_start_diameter">
                   <property name="maximum">
                    <double>1000.000000000000000</double>
@@ -3157,14 +3196,14 @@
                   </property>
                  </widget>
                 </item>
-                <item row="7" column="0">
+                <item row="9" column="0">
                  <widget class="QLabel" name="label_35">
                   <property name="text">
                    <string>Start Z</string>
                   </property>
                  </widget>
                 </item>
-                <item row="7" column="1">
+                <item row="9" column="1">
                  <widget class="QDoubleSpinBox" name="key_start_z">
                   <property name="minimum">
                    <double>-1000.000000000000000</double>
@@ -3174,14 +3213,14 @@
                   </property>
                  </widget>
                 </item>
-                <item row="8" column="0">
+                <item row="10" column="0">
                  <widget class="QLabel" name="label_36">
                   <property name="text">
                    <string>Nutlänge</string>
                   </property>
                  </widget>
                 </item>
-                <item row="8" column="1">
+                <item row="10" column="1">
                  <widget class="QDoubleSpinBox" name="key_nut_length">
                   <property name="maximum">
                    <double>1000.000000000000000</double>
@@ -3191,61 +3230,27 @@
                   </property>
                  </widget>
                 </item>
-                <item row="9" column="0">
+                <item row="11" column="0">
                  <widget class="QLabel" name="label_37">
                   <property name="text">
                    <string>Nuttiefe</string>
                   </property>
                  </widget>
                 </item>
-                <item row="9" column="1">
-                 <widget class="QDoubleSpinBox" name="key_nut_depth">
-                  <property name="maximum">
-                   <double>1000.000000000000000</double>
-                  </property>
-                  <property name="value">
-                   <double>3.000000000000000</double>
-                  </property>
-                 </widget>
-                </item>
-                <item row="10" column="0">
-                 <widget class="QLabel" name="label_key_cutting_width">
-                  <property name="text">
-                   <string>Schneidenbreite</string>
-                  </property>
-                 </widget>
-                </item>
-                <item row="10" column="1">
-                 <widget class="QDoubleSpinBox" name="key_cutting_width">
-                  <property name="maximum">
-                   <double>1000.000000000000000</double>
-                  </property>
-                  <property name="value">
-                   <double>3.000000000000000</double>
-                  </property>
-                 </widget>
-                </item>
-                <item row="11" column="0">
-                 <widget class="QLabel" name="label_38">
-                  <property name="text">
-                   <string>Kopffreiheit</string>
-                  </property>
-                 </widget>
-                </item>
                 <item row="11" column="1">
-                 <widget class="QDoubleSpinBox" name="key_top_clearance">
+                  <widget class="QDoubleSpinBox" name="key_nut_depth">
                   <property name="maximum">
                    <double>1000.000000000000000</double>
                   </property>
                   <property name="value">
-                   <double>1.000000000000000</double>
+                   <double>3.000000000000000</double>
                   </property>
                  </widget>
                 </item>
                 <item row="12" column="0">
                  <widget class="QLabel" name="label_39">
                   <property name="text">
-                   <string>Zustellung pro Pass</string>
+                   <string>Zustellung pro Schnitt</string>
                   </property>
                  </widget>
                 </item>
@@ -3262,7 +3267,7 @@
                 <item row="13" column="0">
                  <widget class="QLabel" name="label_40">
                   <property name="text">
-                   <string>Eintauchvorschub</string>
+                   <string>Vorschub</string>
                   </property>
                  </widget>
                 </item>
@@ -3277,41 +3282,75 @@
                  </widget>
                 </item>
                 <item row="14" column="0">
+                 <widget class="QLabel" name="label_key_cutting_width">
+                  <property name="text">
+                   <string>Schneidenbreite</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="14" column="1">
+                 <widget class="QDoubleSpinBox" name="key_cutting_width">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>3.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="15" column="0">
+                 <widget class="QLabel" name="label_38">
+                  <property name="text">
+                   <string>Kopffreiheit</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="15" column="1">
+                 <widget class="QDoubleSpinBox" name="key_top_clearance">
+                  <property name="maximum">
+                   <double>1000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>1.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+                <item row="16" column="0">
                  <widget class="QLabel" name="label_41">
                   <property name="text">
                    <string>C-Achse benutzen</string>
                   </property>
                  </widget>
                 </item>
-                <item row="14" column="1">
+                <item row="16" column="1">
                  <widget class="QCheckBox" name="key_use_c_axis">
                   <property name="checked">
                    <bool>true</bool>
                   </property>
                  </widget>
                 </item>
-                <item row="15" column="0">
+                <item row="17" column="0">
                  <widget class="QLabel" name="label_42">
                   <property name="text">
                    <string>C-Achse Schalter</string>
                   </property>
                  </widget>
                 </item>
-                <item row="15" column="1">
+                <item row="17" column="1">
                  <widget class="QCheckBox" name="key_use_c_axis_switch">
                   <property name="checked">
                    <bool>true</bool>
                   </property>
                  </widget>
                 </item>
-                <item row="16" column="0">
+                <item row="18" column="0">
                  <widget class="QLabel" name="label_43">
                   <property name="text">
                    <string>C-Achse Schalter P</string>
                   </property>
                  </widget>
                 </item>
-                <item row="16" column="1">
+                <item row="18" column="1">
                  <widget class="QSpinBox" name="key_c_axis_switch_p">
                   <property name="maximum">
                    <number>99</number>
@@ -3433,6 +3472,13 @@
            <widget class="QPushButton" name="btnGenerate">
             <property name="text">
              <string>Programm erzeugen</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnSaveChanges">
+            <property name="text">
+             <string>Änderungen speichern</string>
             </property>
            </widget>
           </item>
