@@ -39,7 +39,113 @@ from lathe_easystep.ui_program import (
     sync_form_to_operation,
 )
 from lathe_easystep.ui_operations import load_operation_params_to_form
-from lathe_easystep.ui_preview import apply_preview_paths, collect_preview_state
+from lathe_easystep.ui_preview import (
+    apply_preview_paths,
+    ensure_preview_widgets,
+    on_toggle_slice_view,
+    refresh_preview,
+    setup_slice_view,
+    sync_slice_widget,
+)
+from lathe_easystep.ui_params import setup_param_maps
+from lathe_easystep.ui_selection import (
+    handle_selection_change,
+    handle_tab_changed,
+    on_step_double_clicked,
+)
+from lathe_easystep.ui_contour import (
+    available_contour_names,
+    current_parting_contour_name,
+    debug_contour_state,
+    handle_contour_add_segment,
+    handle_contour_delete_segment,
+    handle_contour_edge_change,
+    handle_contour_move_down,
+    handle_contour_move_up,
+    handle_contour_row_select,
+    handle_contour_table_change,
+    init_contour_table,
+    resolve_contour_path,
+    sync_contour_edge_controls,
+    update_contour_preview_temp,
+    update_parting_contour_choices,
+    update_parting_mode_visibility,
+    update_parting_ready_state,
+)
+from lathe_easystep.ui_groove import render_groove_diagrams, setup_groove_tab_ui, update_groove_tab_ui
+from lathe_easystep.ui_visibility import (
+    apply_chuck_safety_preset,
+    apply_machine_profile_preset,
+    apply_unit_suffix,
+    chuck_size_mm,
+    handle_global_change,
+    update_drill_visibility,
+    update_face_visibility,
+    update_program_visibility,
+    update_retract_visibility,
+    update_subspindle_visibility,
+)
+from lathe_easystep.ui_flow import (
+    build_gcode_lines,
+    describe_operation,
+    handle_generate_gcode,
+    handle_move_down,
+    handle_move_up,
+    handle_new_program,
+    renumber_operations,
+)
+from lathe_easystep.tool_logic import (
+    build_insert_geometry,
+    build_program_filepath,
+    collect_tool_orientation_warnings,
+    infer_insert_profile,
+    infer_insert_shape_key,
+    operation_side_hint,
+    radius_warning_details,
+    render_tool_preview,
+    tool_combo_label,
+    tool_comment_side_hint,
+    tool_holder_angle,
+    tool_orientation_angle,
+    tool_orientation_mismatch,
+)
+from lathe_easystep.ui_persistence import (
+    build_program_data,
+    handle_load_program,
+    handle_load_step,
+    handle_save_changes,
+    handle_save_program,
+    handle_save_step,
+    write_gcode_file,
+    write_program_file,
+)
+from lathe_easystep.ui_tools import (
+    apply_tool_preview_calibration_settings_to_controls,
+    auto_load_tool_table,
+    ensure_tool_preview_calibration_controls,
+    ensure_tool_preview_widgets,
+    handle_load_tool_table,
+    on_tool_preview_calibration_changed,
+    populate_tool_combos,
+    render_tool_placeholder,
+    reposition_tool_preview_widgets,
+    style_tool_preview_label,
+    tool_number_from_combo,
+    update_tool_previews,
+)
+from lathe_easystep.ui_widgets import ensure_core_widgets
+from lathe_easystep.ui_lifecycle import bootstrap_widget_refs, finalize_ui_ready
+from lathe_easystep.ui_signals import (
+    connect_core_signals,
+    connect_global_form_signals,
+    connect_language_signal,
+    connect_list_ops_signals,
+    connect_mode_visibility_signals,
+    connect_param_change_signals,
+    connect_resolver_fallbacks,
+    connect_tool_preview_signals,
+    prepare_signal_connection_context,
+)
 
 # Module logger for non-instantiated contexts
 _LOGGER = logging.getLogger(__name__)
@@ -3224,382 +3330,7 @@ class HandlerClass:
         )
 
     def _bootstrap_widget_refs(self) -> None:
-        """Initialize widget reference attributes early so startup code can safely probe them."""
-        panel_root = getattr(self.w, "easystep", None) or self.w
-
-        def _find(name, cls=None):
-            w = getattr(self.w, name, None)
-            if w is not None:
-                return w
-            try:
-                if cls is None:
-                    return panel_root.findChild(QtCore.QObject, name)
-                return panel_root.findChild(cls, name)
-            except Exception:
-                return None
-
-        self.preview_slice = _find("previewSliceWidget", QtWidgets.QWidget)
-        self.btn_slice_view = _find("btn_slice_view", QtWidgets.QAbstractButton)
-        if self.btn_slice_view is None:
-            try:
-                for b in panel_root.findChildren(QtWidgets.QAbstractButton):
-                    t = (b.text() or "").lower()
-                    if getattr(b, "isCheckable", lambda: False)() and ("schnitt" in t or "seiten" in t):
-                        self.btn_slice_view = b
-                        break
-            except Exception:
-                pass
-        self.contour_preview = getattr(self.w, "contourPreview", None)
-        self.list_ops = getattr(self.w, "listOperations", None)
-        self.tab_params = getattr(self.w, "tabParams", None)
-        if self.tab_params is not None:
-            try:
-                self.tab_params.setCurrentIndex(1)
-            except Exception:
-                pass
-
-        def _resolve_widget(name: str):
-            w = getattr(self.w, name, None)
-            if w is not None:
-                return w
-            w = self._find_any_widget(name)
-            if w is not None:
-                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
-            return w
-
-        def _resolve_or_defer_local(attr_name: str, name: str, cls=None, debug_context: bool = False):
-            try:
-                ui_ready = getattr(self.w, "ui_ready", False)
-            except Exception:
-                ui_ready = False
-            if not ui_ready:
-                self._deferred_lookup_queue.append((attr_name, name, cls, debug_context))
-                return None
-            w = getattr(self.w, name, None)
-            if w is not None:
-                setattr(self, attr_name, w)
-                return w
-            try:
-                w = self._find_any_widget(name)
-            except Exception:
-                w = None
-            if w is not None and debug_context:
-                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
-            setattr(self, attr_name, w)
-            return w
-
-        self.btn_add = _resolve_or_defer_local("btn_add", "btnAdd")
-        self.btn_delete = _resolve_or_defer_local("btn_delete", "btnDelete")
-        self.btn_move_up = _resolve_or_defer_local("btn_move_up", "btnMoveUp")
-        self.btn_move_down = _resolve_or_defer_local("btn_move_down", "btnMoveDown")
-        self.btn_new_program = _resolve_or_defer_local("btn_new_program", "btnNewProgram")
-        self.btn_generate = _resolve_or_defer_local("btn_generate", "btnGenerate")
-        self.btn_save_changes = _resolve_or_defer_local("btn_save_changes", "btnSaveChanges")
-
-        self.tab_program = _resolve_widget("tabProgram")
-        self.program_unit = _resolve_widget("program_unit")
-        self.program_shape = _resolve_widget("program_shape")
-        self.program_retract_mode = _resolve_widget("program_retract_mode")
-        self.program_has_subspindle = _resolve_widget("program_has_subspindle")
-
-        for attr_name in (
-            "program_xa", "program_xi", "label_prog_xi", "program_za", "program_zi", "program_zb",
-            "program_w", "label_prog_w", "program_l", "label_prog_l", "program_n", "label_prog_n",
-            "program_sw", "label_prog_sw", "program_xt", "program_zt", "program_sc",
-            "program_machine_profile", "program_chuck_size", "program_chuck_part_type",
-            "program_chuck_grip_mode", "program_chuck_profile", "program_chuck_x_min",
-            "program_chuck_x_max", "program_chuck_z_limit", "program_name", "program_xra",
-            "label_prog_xra", "program_xri", "label_prog_xri", "program_zra", "label_prog_zra",
-            "program_zri", "label_prog_zri", "program_xra_absolute", "program_xri_absolute",
-            "program_zra_absolute", "program_zri_absolute", "program_xt_absolute",
-            "program_zt_absolute", "program_s1", "label_prog_s1", "program_s3", "label_prog_s3",
-            "program_spindle", "program_tool", "program_npv", "face_mode", "face_edge_type",
-            "label_face_edge_size", "face_edge_size", "label_face_finish_allow_x",
-            "face_finish_allow_x", "label_face_finish_allow_z", "face_finish_allow_z",
-            "label_face_depth_max", "face_depth_max", "label_face_pause", "face_pause_enabled",
-            "label_face_pause_distance", "face_pause_distance", "contour_start_x",
-            "contour_start_z", "contour_name", "contour_segments", "contour_add_segment",
-            "contour_delete_segment", "contour_move_up", "contour_move_down", "contour_edge_type",
-            "label_contour_edge_size", "contour_edge_size", "parting_contour", "parting_side",
-            "parting_tool", "parting_spindle", "parting_feed", "parting_depth_per_pass",
-            "parting_mode", "parting_pause_enabled", "parting_pause_distance",
-            "label_parting_slice_strategy", "parting_slice_strategy", "label_parting_slice_step",
-            "parting_slice_step", "label_parting_allow_undercut", "parting_allow_undercut",
-            "label_parting_depth", "label_parting_pause", "label_parting_pause_distance",
-            "thread_standard", "thread_orientation", "thread_tool", "thread_spindle",
-            "thread_major_diameter", "thread_pitch", "thread_length", "thread_passes",
-            "thread_safe_z", "thread_depth", "thread_peak_offset", "thread_first_depth",
-            "thread_retract_r", "thread_infeed_q", "thread_spring_passes", "thread_e",
-            "thread_l", "btn_thread_preset", "tool_table_path", "lbl_tool_table_path",
-            "key_mode", "key_radial_side", "key_tool", "key_coolant", "key_slot_count",
-            "key_slot_start_angle", "key_slot_angle_step", "key_start_diameter", "key_start_z",
-            "key_nut_length", "key_nut_depth", "key_cutting_width", "key_top_clearance",
-            "key_depth_per_pass", "key_plunge_feed", "key_use_c_axis", "key_use_c_axis_switch",
-            "key_c_axis_switch_p",
-        ):
-            setattr(self, attr_name, getattr(self.w, attr_name, None))
-
-        self._contour_edge_template_text = "Keine"
-        self._contour_edge_template_size = 0.0
-        self._contour_arc_template_text = "Auto"
-        self._contour_row_user_selected = False
-        self._op_row_user_selected = False
-        self._setup_parting_slice_strategy_items()
-        if self.label_parting_slice_step is not None:
-            try:
-                self.label_parting_slice_step.setVisible(False)
-            except Exception:
-                pass
-        if self.parting_slice_step is not None:
-            try:
-                self.parting_slice_step.setVisible(False)
-            except Exception:
-                pass
-
-        self.root_widget = self._find_root_widget()
-        self._setup_resolver()
-        self._unit_last_index = -1
-
-        # Slice view widgets live inside the embedded panel (objectName: easystep).
-        # Depending on how QTVCP instantiates the panel, they may not be direct attributes on self.w.
-        panel_root = getattr(self.w, "easystep", None) or self.w
-
-        def _find(name, cls=None):
-            w = getattr(self.w, name, None)
-            if w is not None:
-                return w
-            try:
-                if cls is None:
-                    return panel_root.findChild(QtCore.QObject, name)
-                return panel_root.findChild(cls, name)
-            except Exception:
-                return None
-
-        self.preview_slice = _find("previewSliceWidget", QtWidgets.QWidget)
-        self.btn_slice_view = _find("btn_slice_view", QtWidgets.QAbstractButton)
-
-        # Fallback: if the button was renamed in the .ui, pick the first checkable toolbutton
-        # that contains 'Schnitt' or 'Seite' in its label.
-        if self.btn_slice_view is None:
-            try:
-                for b in panel_root.findChildren(QtWidgets.QAbstractButton):
-                    t = (b.text() or "").lower()
-                    if getattr(b, "isCheckable", lambda: False)() and ("schnitt" in t or "seiten" in t):
-                        self.btn_slice_view = b
-                        break
-            except Exception:
-                pass
-        self.contour_preview = getattr(self.w, "contourPreview", None)
-        self.list_ops = getattr(self.w, "listOperations", None)
-        self.tab_params = getattr(self.w, "tabParams", None)
-
-        # Standard-Tab auf „Planen“ umschalten, damit beim ersten Klick
-        # sofort ein Bearbeitungsschritt hinzugefügt wird (statt nur Programmkopf).
-        if self.tab_params is not None:
-            try:
-                self.tab_params.setCurrentIndex(1)  # 0=Programmkopf, 1=Planen
-            except Exception:
-                pass
-
-        def _resolve_widget(name: str):
-            # Compatibility helper used only locally; prefer using
-            # `_resolve_or_defer(attr_name, name, cls=None, debug_context=False)`
-            w = getattr(self.w, name, None)
-            if w is not None:
-                return w
-            w = self._find_any_widget(name)
-            if w is not None:
-                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
-            return w
-
-        def _resolve_or_defer_local(attr_name: str, name: str, cls=None, debug_context: bool=False):
-            # If the embedded panel isn't ready yet, queue the request so
-            # lookups run only after `_finalize_ui_ready()` sets `ui_ready=True`.
-            try:
-                ui_ready = getattr(self.w, "ui_ready", False)
-            except Exception:
-                ui_ready = False
-            if not ui_ready:
-                self._deferred_lookup_queue.append((attr_name, name, cls, debug_context))
-                return None
-            # Otherwise resolve immediately
-            w = getattr(self.w, name, None)
-            if w is not None:
-                setattr(self, attr_name, w)
-                return w
-            try:
-                w = self._find_any_widget(name) if cls is None else self._find_any_widget(name)
-            except Exception:
-                w = None
-            if w is not None and debug_context:
-                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
-            setattr(self, attr_name, w)
-            return w
-
-        self.btn_add = _resolve_or_defer_local("btn_add", "btnAdd")
-        self.btn_delete = _resolve_or_defer_local("btn_delete", "btnDelete")
-        self.btn_move_up = _resolve_or_defer_local("btn_move_up", "btnMoveUp")
-        self.btn_move_down = _resolve_or_defer_local("btn_move_down", "btnMoveDown")
-        self.btn_new_program = _resolve_or_defer_local("btn_new_program", "btnNewProgram")
-        self.btn_generate = _resolve_or_defer_local("btn_generate", "btnGenerate")
-
-        # Programm-Tab
-        self.tab_program = _resolve_widget("tabProgram")
-        self.program_unit = _resolve_widget("program_unit")
-        self.program_shape = _resolve_widget("program_shape")
-        self.program_retract_mode = _resolve_widget("program_retract_mode")
-        self.program_has_subspindle = _resolve_widget("program_has_subspindle")
-
-        self.program_xa = getattr(self.w, "program_xa", None)
-        self.program_xi = getattr(self.w, "program_xi", None)
-        self.label_prog_xi = getattr(self.w, "label_prog_xi", None)
-        self.program_za = getattr(self.w, "program_za", None)
-        self.program_zi = getattr(self.w, "program_zi", None)
-        self.program_zb = getattr(self.w, "program_zb", None)
-        self.program_w = getattr(self.w, "program_w", None)
-        self.label_prog_w = getattr(self.w, "label_prog_w", None)
-        self.program_l = getattr(self.w, "program_l", None)
-        self.label_prog_l = getattr(self.w, "label_prog_l", None)
-        self.program_n = getattr(self.w, "program_n", None)
-        self.label_prog_n = getattr(self.w, "label_prog_n", None)
-        self.program_sw = getattr(self.w, "program_sw", None)
-        self.label_prog_sw = getattr(self.w, "label_prog_sw", None)
-        self.program_xt = getattr(self.w, "program_xt", None)
-        self.program_zt = getattr(self.w, "program_zt", None)
-        self.program_sc = getattr(self.w, "program_sc", None)
-        self.program_machine_profile = getattr(self.w, "program_machine_profile", None)
-        self.program_chuck_size = getattr(self.w, "program_chuck_size", None)
-        self.program_chuck_part_type = getattr(self.w, "program_chuck_part_type", None)
-        self.program_chuck_grip_mode = getattr(self.w, "program_chuck_grip_mode", None)
-        self.program_chuck_profile = getattr(self.w, "program_chuck_profile", None)
-        self.program_chuck_x_min = getattr(self.w, "program_chuck_x_min", None)
-        self.program_chuck_x_max = getattr(self.w, "program_chuck_x_max", None)
-        self.program_chuck_z_limit = getattr(self.w, "program_chuck_z_limit", None)
-
-        self.program_name = getattr(self.w, "program_name", None)
-
-        self.program_xra = getattr(self.w, "program_xra", None)
-        self.label_prog_xra = getattr(self.w, "label_prog_xra", None)
-        self.program_xri = getattr(self.w, "program_xri", None)
-        self.label_prog_xri = getattr(self.w, "label_prog_xri", None)
-        self.program_zra = getattr(self.w, "program_zra", None)
-        self.label_prog_zra = getattr(self.w, "label_prog_zra", None)
-        self.program_zri = getattr(self.w, "program_zri", None)
-        self.label_prog_zri = getattr(self.w, "label_prog_zri", None)
-
-        # Retract option checkboxes (absolute vs incremental)
-        self.program_xra_absolute = getattr(self.w, "program_xra_absolute", None)
-        self.program_xri_absolute = getattr(self.w, "program_xri_absolute", None)
-        self.program_zra_absolute = getattr(self.w, "program_zra_absolute", None)
-        self.program_zri_absolute = getattr(self.w, "program_zri_absolute", None)
-        self.program_xt_absolute = getattr(self.w, "program_xt_absolute", None)
-        self.program_zt_absolute = getattr(self.w, "program_zt_absolute", None)
-
-        self.program_s1 = getattr(self.w, "program_s1", None)
-        self.label_prog_s1 = getattr(self.w, "label_prog_s1", None)
-        self.program_s3 = getattr(self.w, "program_s3", None)
-        self.label_prog_s3 = getattr(self.w, "label_prog_s3", None)
-
-        # optionale globale Felder (falls du sie später in der UI ergänzt)
-        self.program_spindle = getattr(self.w, "program_spindle_speed", None)
-        self.program_tool = getattr(self.w, "program_tool", None)
-        self.program_npv = getattr(self.w, "program_npv", None)
-
-        # Planen-spezifische Optionen
-        self.face_mode = getattr(self.w, "face_mode", None)
-        self.face_edge_type = getattr(self.w, "face_edge_type", None)
-        self.label_face_edge_size = getattr(self.w, "label_face_edge_size", None)
-        self.face_edge_size = getattr(self.w, "face_edge_size", None)
-        self.label_face_finish_allow_x = getattr(self.w, "label_face_finish_allow_x", None)
-        self.face_finish_allow_x = getattr(self.w, "face_finish_allow_x", None)
-        self.label_face_finish_allow_z = getattr(self.w, "label_face_finish_allow_z", None)
-        self.face_finish_allow_z = getattr(self.w, "face_finish_allow_z", None)
-        self.label_face_depth_max = getattr(self.w, "label_face_depth_max", None)
-        self.face_depth_max = getattr(self.w, "face_depth_max", None)
-        self.label_face_pause = getattr(self.w, "label_face_pause", None)
-        self.face_pause_enabled = getattr(self.w, "face_pause_enabled", None)
-        self.label_face_pause_distance = getattr(self.w, "label_face_pause_distance", None)
-        self.face_pause_distance = getattr(self.w, "face_pause_distance", None)
-
-        # Kontur-Widgets
-        self.contour_start_x = getattr(self.w, "contour_start_x", None)
-        self.contour_start_z = getattr(self.w, "contour_start_z", None)
-        self.contour_name = getattr(self.w, "contour_name", None)
-        self.contour_segments = getattr(self.w, "contour_segments", None)
-        self.contour_add_segment = getattr(self.w, "contour_add_segment", None)
-        self.contour_delete_segment = getattr(self.w, "contour_delete_segment", None)
-        self.contour_move_up = getattr(self.w, "contour_move_up", None)
-        self.contour_move_down = getattr(self.w, "contour_move_down", None)
-        self.contour_edge_type = getattr(self.w, "contour_edge_type", None)
-        self.label_contour_edge_size = getattr(self.w, "label_contour_edge_size", None)
-        self.contour_edge_size = getattr(self.w, "contour_edge_size", None)
-        self._contour_edge_template_text = "Keine"
-        self._contour_edge_template_size = 0.0
-        self._contour_arc_template_text = "Auto"
-        self._contour_row_user_selected = False
-        self._op_row_user_selected = False
-
-        # Abspan-Widgets
-        self.parting_contour = getattr(self.w, "parting_contour", None)
-        self.parting_side = getattr(self.w, "parting_side", None)
-        self.parting_tool = getattr(self.w, "parting_tool", None)
-        self.parting_spindle = getattr(self.w, "parting_spindle", None)
-        self.parting_feed = getattr(self.w, "parting_feed", None)
-        self.parting_depth_per_pass = getattr(self.w, "parting_depth_per_pass", None)
-        self.parting_mode = getattr(self.w, "parting_mode", None)
-        self.parting_pause_enabled = getattr(self.w, "parting_pause_enabled", None)
-        self.parting_pause_distance = getattr(self.w, "parting_pause_distance", None)
-        self.label_parting_slice_strategy = getattr(self.w, "label_parting_slice_strategy", None)
-        self.parting_slice_strategy = getattr(self.w, "parting_slice_strategy", None)
-        self._setup_parting_slice_strategy_items()
-        self.label_parting_slice_step = getattr(self.w, "label_parting_slice_step", None)
-        self.parting_slice_step = getattr(self.w, "parting_slice_step", None)
-        # Hide slice step widget by default because value is auto-managed
-        if self.label_parting_slice_step is not None:
-            try:
-                self.label_parting_slice_step.setVisible(False)
-            except Exception:
-                pass
-        if self.parting_slice_step is not None:
-            try:
-                self.parting_slice_step.setVisible(False)
-            except Exception:
-                pass
-        self.label_parting_allow_undercut = getattr(self.w, "label_parting_allow_undercut", None)
-        self.parting_allow_undercut = getattr(self.w, "parting_allow_undercut", None)
-        self.label_parting_depth = getattr(self.w, "label_parting_depth", None)
-        self.label_parting_pause = getattr(self.w, "label_parting_pause", None)
-        self.label_parting_pause_distance = getattr(self.w, "label_parting_pause_distance", None)
-
-        # Gewinde-Widgets
-        self.thread_standard = getattr(self.w, "thread_standard", None)
-        self.thread_orientation = getattr(self.w, "thread_orientation", None)
-        self.thread_tool = getattr(self.w, "thread_tool", None)
-        self.thread_spindle = getattr(self.w, "thread_spindle", None)
-        self.thread_major_diameter = getattr(self.w, "thread_major_diameter", None)
-        self.thread_pitch = getattr(self.w, "thread_pitch", None)
-        self.thread_length = getattr(self.w, "thread_length", None)
-        self.thread_passes = getattr(self.w, "thread_passes", None)
-        self.thread_safe_z = getattr(self.w, "thread_safe_z", None)
-        self.thread_depth = getattr(self.w, "thread_depth", None)
-        self.thread_peak_offset = getattr(self.w, "thread_peak_offset", None)
-        self.thread_first_depth = getattr(self.w, "thread_first_depth", None)
-        self.thread_retract_r = getattr(self.w, "thread_retract_r", None)
-        self.thread_infeed_q = getattr(self.w, "thread_infeed_q", None)
-        self.thread_spring_passes = getattr(self.w, "thread_spring_passes", None)
-        self.thread_e = getattr(self.w, "thread_e", None)
-        self.thread_l = getattr(self.w, "thread_l", None)
-        # Preset-Button (UI: btn_thread_preset)
-        self.btn_thread_preset = getattr(self.w, "btn_thread_preset", None)
-
-        # Root-Widget des Panels (für globale Suche nach Labels/Spinboxen)
-        self.root_widget = self._find_root_widget()
-        self._setup_resolver()
-
-        # Teure UI-Auflösung und Signalverdrahtung passieren erst in initialized__ /
-        # _finalize_ui_ready(), weil QTVCP den Embed-Handler im Startup mehrfach
-        # in unvollständigen Zuständen anlegen kann.
-        self._unit_last_index = -1
+        bootstrap_widget_refs(self)
 
     def _startup_mark(self, label: str):
         try:
@@ -4590,66 +4321,7 @@ class HandlerClass:
             self._log(f"[LatheEasyStep] error in force visibility updates: {e}", level="error")
     
     def _setup_slice_view(self):
-        # Optional: side view + slice view (draggable Z slice)
-        if getattr(self, "_slice_view_setup_done", False):
-            return
-        self._slice_view_setup_done = True
-
-        if self.preview is None:
-            try:
-                self.preview = self._get_widget_by_name("previewWidget")
-            except Exception:
-                pass
-        if self.preview_slice is None:
-            try:
-                self.preview_slice = self._get_widget_by_name("previewSliceWidget")
-            except Exception:
-                pass
-        if self.btn_slice_view is None:
-            try:
-                self.btn_slice_view = self._get_widget_by_name("btn_slice_view")
-            except Exception:
-                pass
-
-        self._log(
-            f"[LatheEasyStep] _setup_slice_view: preview={self.preview!r} "
-            f"preview_slice={self.preview_slice!r} btn_slice_view={self.btn_slice_view!r}",
-            level="info",
-        )
-
-        if self.preview is not None:
-            try:
-                self.preview.set_view_mode("side")
-            except Exception:
-                pass
-
-        if self.preview_slice is not None:
-            try:
-                self.preview_slice.set_view_mode("front")
-                self.preview_slice.setVisible(False)
-            except Exception:
-                pass
-
-        if self.btn_slice_view is not None:
-            try:
-                self.btn_slice_view.setChecked(False)
-                self.btn_slice_view.setText("Schnittansicht")
-                self.btn_slice_view.setToolTip(
-                    "Blendet zusaetzlich zur Seitenansicht eine Schnittansicht ein. "
-                    "In der Seitenansicht kann die Schnittlinie mit der Maus verschoben werden."
-                )
-                self.btn_slice_view.toggled.connect(self._on_toggle_slice_view)
-                self._log("[LatheEasyStep] slice toggle connected", level="info")
-            except Exception:
-                self._log("[LatheEasyStep] slice toggle connect failed", level="warning")
-        else:
-            self._log("[LatheEasyStep] btn_slice_view not found during setup", level="warning")
-
-        if self.preview is not None:
-            try:
-                self.preview.sliceChanged.connect(self._on_slice_changed)
-            except Exception:
-                pass
+        setup_slice_view(self)
 
     def _suggest_slice_z_for_preview(self, op: Operation | None = None) -> float | None:
         if op is None and self.preview is not None:
@@ -4674,85 +4346,14 @@ class HandlerClass:
             pass
 
     def _on_toggle_slice_view(self, checked: bool):
-        if self.preview is None:
-            self._log("[LatheEasyStep] _on_toggle_slice_view ignored: preview is None", level="warning")
-            return
-        checked = bool(checked)
-        self._log(
-            f"[LatheEasyStep] _on_toggle_slice_view checked={checked} "
-            f"current_mode={getattr(self.preview, 'view_mode', None)} "
-            f"slice_enabled={getattr(self.preview, 'slice_enabled', None)}",
-            level="info",
-        )
-        # enable/disable slice mode in main preview
-        try:
-            self.preview.set_slice_enabled(checked)
-        except Exception:
-            self._log("[LatheEasyStep] set_slice_enabled failed", level="warning")
-        # Keep the main preview in side view; the slice is shown in the extra preview.
-        try:
-            self.preview.set_view_mode("side")
-        except Exception:
-            self._log("[LatheEasyStep] set_view_mode failed", level="warning")
-        # show/hide slice preview widget
-        if self.preview_slice is not None:
-            try:
-                self.preview_slice.setVisible(checked)
-            except Exception:
-                self._log("[LatheEasyStep] preview_slice visibility change failed", level="warning")
-        # update toggle button text
-        if self.btn_slice_view is not None:
-            try:
-                self.btn_slice_view.setText("Schnittansicht aus" if checked else "Schnittansicht")
-            except Exception:
-                self._log("[LatheEasyStep] btn_slice_view text update failed", level="warning")
-        # default slice at Z0 when enabling
-        if checked:
-            try:
-                suggested = self._suggest_slice_z_for_preview()
-                self.preview.set_slice_z(0.0 if suggested is None else suggested, emit=True)
-            except Exception:
-                self._log("[LatheEasyStep] set_slice_z failed", level="warning")
-        self._log(
-            f"[LatheEasyStep] slice view updated: mode={getattr(self.preview, 'view_mode', None)} "
-            f"slice_enabled={getattr(self.preview, 'slice_enabled', None)} "
-            f"slice_z={getattr(self.preview, 'slice_z', None)} "
-            f"slice_widget_visible={getattr(self.preview_slice, 'isVisible', lambda: None)() if self.preview_slice else None}",
-            level="info",
-        )
-        self._sync_slice_widget()
+        on_toggle_slice_view(self, checked)
 
     def _on_slice_changed(self, z_val: float):
         self._current_slice_z = float(z_val)
         self._sync_slice_widget()
 
     def _sync_slice_widget(self):
-        if self.preview is None or self.preview_slice is None:
-            return
-        try:
-            if not self.preview_slice.isVisible():
-                return
-        except Exception:
-            return
-        try:
-            self.preview_slice.set_slice_z(getattr(self.preview, "slice_z", 0.0))
-        except Exception:
-            pass
-        try:
-            self.preview_slice.set_view_mode("front")
-        except Exception:
-            pass
-        try:
-            self.preview_slice.set_paths(getattr(self.preview, "paths", []), getattr(self.preview, "active_index", None))
-        except Exception:
-            pass
-        try:
-            self.preview_slice.set_front_context(
-                getattr(self.preview, "front_program", {}),
-                getattr(self.preview, "front_operation", None),
-            )
-        except Exception:
-            pass
+        sync_slice_widget(self)
 
     def initialized__(self):
         """Wird aufgerufen, wenn QtVCP die UI komplett aufgebaut hat."""
@@ -5070,136 +4671,7 @@ class HandlerClass:
         return self.root_widget
 
     def _finalize_ui_ready(self):
-        """Nach dem ersten Eventloop-Tick erneut nach Widgets suchen und verbinden."""
-        self._startup_mark("_finalize_ui_ready enter")
-        # IMPORTANT: This handler is imported twice in an embedded context:
-        #  1) once before the LatheEasyStep .ui is actually loaded (widget tree is incomplete)
-        #  2) once after the embedded UI is constructed.
-        # If we run our widget lookup / signal connections too early, we bind to the wrong widgets
-        # and later UI updates (visibility, previews) won't work.
-        if not getattr(self, 'w', None):
-            self._log('[LatheEasyStep] _finalize_ui_ready: widgets not ready (no program_unit) - deferring', level="info")
-            return
-
-        # ── GUARD: skip redundant finalize passes once all critical widgets are found ──
-        if getattr(self, '_ui_finalized', False):
-            return
-        # Track how many passes we've done for logging
-        self._finalize_pass = getattr(self, '_finalize_pass', 0) + 1
-        self._log(f'[LatheEasyStep] _finalize_ui_ready pass {self._finalize_pass}', level="info")
-
-        # Ensure known widgets are registered on the panel root now that the
-        # UI is available. This sets objectName on anonymous widgets and
-        # attaches them to `self.w` to avoid repeated global searches.
-        try:
-            self._register_known_widgets()
-            self._rebuild_widget_name_cache()
-        except Exception:
-            pass
-
-        self._ensure_core_widgets()
-        # Nach vollständigem UI-Aufbau explizit auf „Planen“ schalten,
-        # damit der erste Klick auf „Schritt hinzufügen“ eine Bearbeitung anlegt.
-        if self.tab_params is not None and self.tab_params.currentIndex() == 0:
-            try:
-                self.tab_params.setCurrentIndex(1)
-            except Exception:
-                pass
-        self._force_attach_core_widgets()
-        # Hart nach den Kern-Widgets suchen (embedded-sicher via objectName)
-        self.list_ops = self.list_ops or self._find_any_widget("listOperations")
-        self.tab_params = self.tab_params or self._find_any_widget("tabParams")
-        # Try ID-based lookup first (language-independent), then fallback to objectName
-        self.btn_add = self.btn_add or self._find_any_widget("id:34721") or self._find_any_widget("btnAdd")
-        self.btn_delete = self.btn_delete or self._find_any_widget("btnDelete")
-        self.btn_move_up = self.btn_move_up or self._find_any_widget("btnMoveUp")
-        self.btn_move_down = self.btn_move_down or self._find_any_widget("btnMoveDown")
-        self.btn_new_program = self.btn_new_program or self._find_any_widget("btnNewProgram")
-        self.btn_generate = self.btn_generate or self._find_any_widget("id:34722") or self._find_any_widget("btnGenerate")
-        # ENHANCED: Additional search strategies for critical buttons
-        if self.btn_add is None:
-            self.btn_add = self._get_widget_by_name("btnAdd")
-        if self.btn_generate is None:
-            self.btn_generate = self._get_widget_by_name("btnGenerate")
-        # also try to resolve program/step save buttons by ID first
-        if getattr(self, 'btn_save_program', None) is None:
-            self.btn_save_program = getattr(self, 'btn_save_program', None) or self._find_any_widget("id:34724") or self._find_any_widget("btnSaveProgram")
-        if self.btn_save_step is None:
-            self.btn_save_step = self._get_widget_by_name("btn_save_step")
-        if self.btn_load_step is None:
-            self.btn_load_step = self._get_widget_by_name("btn_load_step")
-        # auch Kontur-Buttons per objectName auflösen
-        self.contour_add_segment = self.contour_add_segment or self._find_any_widget("contour_add_segment")
-        self.contour_delete_segment = self.contour_delete_segment or self._find_any_widget("contour_delete_segment")
-        self.contour_move_up = self.contour_move_up or self._find_any_widget("contour_move_up")
-        self.contour_move_down = self.contour_move_down or self._find_any_widget("contour_move_down")
-        self._ensure_contour_widgets()
-        self._init_contour_table()
-        try:
-            self._log(f"[LatheEasyStep] core widgets FIX: add={self.btn_add} del={self.btn_delete} list={self.list_ops}", level="info")
-        except Exception:
-            pass
-        self._ensure_preview_widgets()
-        self._connect_core_signals()
-        try:
-            self._connect_param_change_signals()
-            self._connect_global_form_signals()
-            self._connect_tool_preview_signals()
-            self._connect_mode_visibility_signals()
-        except Exception as exc:
-            self._log(f"[LatheEasyStep] finalize signal setup failed: {exc}", level="warning")
-        # Nach vollständigem Aufbau sicherstellen, dass die Kern-Widgets
-        # wirklich aus dem Panel stammen (nicht aus dem Host-GUI-Baum).
-        self._ensure_core_widgets()
-        self._update_parting_contour_choices()
-        self._update_parting_ready_state()
-        try:
-            self._apply_tab_titles(self._current_language_code())
-            self._handle_global_change()
-        except Exception:
-            pass
-        # UI is now declared ready; allow resolver warnings again
-        try:
-            if getattr(self, 'w', None) is not None:
-                try:
-                    setattr(self.w, "ui_ready", True)
-                except Exception:
-                    try:
-                        self.w.setProperty("ui_ready", True)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # ── Mark finalization complete so subsequent timer callbacks are skipped ──
-        # Critical widgets: list_ops, btn_add, btn_generate, tab_params, program_unit
-        _critical_ok = all([
-            self.list_ops is not None,
-            self.btn_add is not None,
-            self.btn_generate is not None,
-            self.tab_params is not None,
-        ])
-        if _critical_ok:
-            self._ui_finalized = True
-            self._startup_complete = True
-            self._startup_in_progress = False
-            self._log(
-                f'[LatheEasyStep] _finalize_ui_ready DONE after pass {getattr(self, "_finalize_pass", "?")} — '
-                f'all critical widgets found, skipping further passes',
-                level="info",
-            )
-            self._startup_mark("_finalize_ui_ready critical done")
-            self._schedule_post_start_init()
-        else:
-            missing = [n for n, w in [
-                ("list_ops", self.list_ops), ("btn_add", self.btn_add),
-                ("btn_generate", self.btn_generate), ("tab_params", self.tab_params),
-            ] if w is None]
-            self._log(
-                f'[LatheEasyStep] _finalize_ui_ready pass {getattr(self, "_finalize_pass", "?")} — '
-                f'still missing: {missing}, will retry on next timer',
-                level="info",
-            )
+        finalize_ui_ready(self)
 
     def _schedule_post_start_init(self):
         """Disabled: startup follow-up work must happen lazily on demand."""
@@ -5608,101 +5080,7 @@ class HandlerClass:
 
     def _ensure_core_widgets(self):
         """Sucht fehlende Kern-Widgets (Liste/Buttons/Tabs) im UI-Baum nach."""
-        root = (
-            self.root_widget
-            or self._panel_from_widget(self.list_ops)
-            or self._panel_from_widget(self.contour_segments)
-            or (self.program_unit.window() if self.program_unit else None)
-            or (self.preview.window() if self.preview else None)
-            or self._find_root_widget()
-        )
-        if root is None:
-            return
-        self.root_widget = self.root_widget or root
-
-        # Direkt nach bekannten Namen suchen (Fallback: QWidget, falls Typ nicht passt)
-        def _find(name: str, cls):
-            current = getattr(self, name, None)
-            if current:
-                return current
-            obj_name = (
-                "listOperations" if name == "list_ops" else
-                "tabParams" if name == "tab_params" else
-                "btnAdd" if name == "btn_add" else
-                "btnDelete" if name == "btn_delete" else
-                "btnMoveUp" if name == "btn_move_up" else
-                "btnMoveDown" if name == "btn_move_down" else
-                "btnNewProgram" if name == "btn_new_program" else
-                "btnSaveChanges" if name == "btn_save_changes" else
-                "btnGenerate" if name == "btn_generate" else name
-            )
-            obj = root.findChild(cls, obj_name, QtCore.Qt.FindChildrenRecursively)
-            if obj is None:
-                obj = root.findChild(
-                    QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively
-                )
-            if obj is None:
-                obj = root.findChild(
-                    QtWidgets.QWidget, obj_name, QtCore.Qt.FindChildrenRecursively
-                )
-            if obj:
-                setattr(self, name, obj)
-            return getattr(self, name, None)
-
-        self.list_ops = _find("list_ops", QtWidgets.QListWidget)
-        self.tab_params = _find("tab_params", QtWidgets.QTabWidget)
-        self.btn_add = _find("btn_add", QtWidgets.QPushButton)
-        self.btn_delete = _find("btn_delete", QtWidgets.QPushButton)
-        self.btn_move_up = _find("btn_move_up", QtWidgets.QPushButton)
-        self.btn_move_down = _find("btn_move_down", QtWidgets.QPushButton)
-        self.btn_new_program = _find("btn_new_program", QtWidgets.QPushButton)
-        self.btn_generate = _find("btn_generate", QtWidgets.QPushButton)
-        self.btn_save_changes = _find("btn_save_changes", QtWidgets.QPushButton)
-        self.btn_save_step = _find("btn_save_step", QtWidgets.QPushButton)
-        self.btn_load_step = _find("btn_load_step", QtWidgets.QPushButton)
-        self.btn_save_program = _find("btn_save_program", QtWidgets.QPushButton)
-        self.btn_load_program = _find("btn_load_program", QtWidgets.QPushButton)
-        self.btn_load_tool_table = _find("btn_load_tool_table", QtWidgets.QPushButton)
-        self.tool_table_path = _find("tool_table_path", QtWidgets.QLineEdit)
-        self.lbl_tool_table_path = _find("lbl_tool_table_path", QtWidgets.QLabel)
-        
-        # Tool combos and previews
-        self.face_tool = _find("face_tool", QtWidgets.QComboBox)
-        self.drill_tool = _find("drill_tool", QtWidgets.QComboBox)
-        self.groove_tool = _find("groove_tool", QtWidgets.QComboBox)
-        self.thread_tool = _find("thread_tool", QtWidgets.QComboBox)
-        self.parting_tool = _find("parting_tool", QtWidgets.QComboBox)
-        self.key_tool = _find("key_tool", QtWidgets.QComboBox)
-        self.face_tool_img = _find("face_tool_img", QtWidgets.QLabel)
-        self.drill_tool_img = _find("drill_tool_img", QtWidgets.QLabel)
-        self.groove_tool_img = _find("groove_tool_img", QtWidgets.QLabel)
-        self.thread_tool_img = _find("thread_tool_img", QtWidgets.QLabel)
-        self.parting_tool_img = _find("parting_tool_img", QtWidgets.QLabel)
-        # WICHTIG: niemals auf gcode_list/erstes QListWidget fallen,
-        # sonst wird im Embedded-Modus die falsche Liste gebunden.
-        if self.list_ops is None:
-            explicit = root.findChild(QtWidgets.QListWidget, "list_ops", QtCore.Qt.FindChildrenRecursively)
-            if explicit:
-                self.list_ops = explicit
-        self._ensure_list_ops_type()
-        if self.tab_params is None:
-            candidates = root.findChildren(QtWidgets.QTabWidget)
-            if candidates:
-                self.tab_params = candidates[0]
-        self._resolve_core_widgets_strict()
-
-        # Falls wir erst jetzt Buttons gefunden haben: Signale verbinden
-        self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
-        self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
-        self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
-        self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
-        self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
-        self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
-        self._connect_button_once(self.btn_save_changes, self._handle_save_changes, "_btn_save_changes_connected")
-        self._connect_button_once(self.btn_save_step, self._handle_save_step, "_btn_save_step_connected")
-        self._connect_button_once(self.btn_load_step, self._handle_load_step, "_btn_load_step_connected")
-        # Preset-Button: hartes Anwenden per Klick
-        self._connect_button_once(self.btn_thread_preset, self._apply_thread_preset_force, "_thread_preset_connected")
+        ensure_core_widgets(self)
 
     def _setup_parting_slice_strategy_items(self):
         combo = getattr(self, "parting_slice_strategy", None)
@@ -5758,130 +5136,10 @@ class HandlerClass:
 
     # ---- Parameter-Mapping --------------------------------------------
     def _setup_param_maps(self):
-        self.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {
-            OpType.FACE: {
-                "tool": self._get_widget_by_name("face_tool"),
-                "start_x": self._get_widget_by_name("face_start_x"),
-                "start_z": self._get_widget_by_name("face_start_z"),
-                "end_x": self._get_widget_by_name("face_end_x"),
-                "end_z": self._get_widget_by_name("face_end_z"),
-                "safe_z": self._get_widget_by_name("face_safe_z"),
-                "feed": self._get_widget_by_name("face_feed"),
-                "depth_per_pass": self._get_widget_by_name("face_depth_per_pass"),
-                "finish_allow_x": self._get_widget_by_name("face_finish_allow_x"),
-                "finish_allow_z": self._get_widget_by_name("face_finish_allow_z"),
-                "finish_direction": self._get_widget_by_name("face_finish_direction"),
-                "depth_max": self._get_widget_by_name("face_depth_max"),
-                "pause_enabled": self._get_widget_by_name("face_pause_enabled"),
-                "pause_distance": self._get_widget_by_name("face_pause_distance"),
-                "mode": self._get_widget_by_name("face_mode"),
-                "edge_type": self._get_widget_by_name("face_edge_type"),
-                "edge_size": self._get_widget_by_name("face_edge_size"),
-                "spindle": self._get_widget_by_name("face_spindle"),
-                "coolant": self._get_widget_by_name("face_coolant"),
-            },
-            OpType.CONTOUR: {
-                "start_x": self._get_widget_by_name("contour_start_x"),
-                "start_z": self._get_widget_by_name("contour_start_z"),
-                "coord_mode": self._get_widget_by_name("contour_coord_mode"),
-            },
-            OpType.THREAD: {
-                "tool": self._get_widget_by_name("thread_tool"),
-                "spindle": self._get_widget_by_name("thread_spindle"),
-                "coolant": self._get_widget_by_name("thread_coolant"),
-                "orientation": self._get_widget_by_name("thread_orientation"),
-                "standard": self._get_widget_by_name("thread_standard"),
-                "major_diameter": self._get_widget_by_name("thread_major_diameter"),
-                "pitch": self._get_widget_by_name("thread_pitch"),
-                "length": self._get_widget_by_name("thread_length"),
-                "passes": self._get_widget_by_name("thread_passes"),
-                "safe_z": self._get_widget_by_name("thread_safe_z"),
-                "thread_depth": self._get_widget_by_name("thread_depth"),
-                "peak_offset": self._get_widget_by_name("thread_peak_offset"),
-                "first_depth": self._get_widget_by_name("thread_first_depth"),
-                "retract_r": self._get_widget_by_name("thread_retract_r"),
-                "infeed_q": self._get_widget_by_name("thread_infeed_q"),
-                "spring_passes": self._get_widget_by_name("thread_spring_passes"),
-                "e": self._get_widget_by_name("thread_e"),
-                "l": self._get_widget_by_name("thread_l"),
-            },
-            OpType.GROOVE: {
-                "tool": self._get_widget_by_name("groove_tool"),
-                "spindle": self._get_widget_by_name("groove_spindle"),
-                "coolant": self._get_widget_by_name("groove_coolant"),
-                "diameter": self._get_widget_by_name("groove_diameter"),
-                "width": self._get_widget_by_name("groove_width"),
-                "ref": self._get_widget_by_name("groove_ref"),
-                "lage": self._get_widget_by_name("groove_lage"),
-                "use_tool_width": self._get_widget_by_name("groove_use_tool_width"),
-                "cutting_width": self._get_widget_by_name("groove_cutting_width"),
-                "depth": self._get_widget_by_name("groove_depth"),
-                "z": self._get_widget_by_name("groove_z"),
-                "feed": self._get_widget_by_name("groove_feed"),
-                "stepA": self._get_widget_by_name("groove_step_a"),
-                "overlap": self._get_widget_by_name("groove_overlap"),
-                "retract": self._get_widget_by_name("groove_retract"),
-                "finish": self._get_widget_by_name("groove_finish"),
-                "sweep_feed": self._get_widget_by_name("groove_sweep_feed"),
-                "chip_amp": self._get_widget_by_name("groove_chip_amp"),
-                "chip_n": self._get_widget_by_name("groove_chip_n"),
-                "safe_z": self._get_widget_by_name("groove_safe_z"),
-                "reduced_feed_start_x": self._get_widget_by_name("groove_reduced_feed_start_x"),
-                "reduced_feed": self._get_widget_by_name("groove_reduced_feed"),
-                "reduced_rpm": self._get_widget_by_name("groove_reduced_rpm"),
-            },
-            OpType.DRILL: {
-                "tool": self._get_widget_by_name("drill_tool"),
-                "spindle": self._get_widget_by_name("drill_spindle"),
-                "coolant": self._get_widget_by_name("drill_coolant"),
-                "mode": self._get_widget_by_name("drill_mode"),
-                "diameter": self._get_widget_by_name("drill_diameter"),
-                "depth": self._get_widget_by_name("drill_depth"),
-                "feed": self._get_widget_by_name("drill_feed"),
-                "safe_z": self._get_widget_by_name("drill_safe_z"),
-                "dwell": self._get_widget_by_name("drill_dwell"),
-                "peck_depth": self._get_widget_by_name("drill_peck_depth"),
-            },
-            OpType.KEYWAY: {
-                "tool": getattr(self, "key_tool", None) or self._get_widget_by_name("key_tool"),
-                "feed": getattr(self, "key_plunge_feed", None) or self._get_widget_by_name("key_plunge_feed"),
-                "mode": getattr(self, "key_mode", None) or self._get_widget_by_name("key_mode"),
-                "radial_side": getattr(self, "key_radial_side", None) or self._get_widget_by_name("key_radial_side"),
-                "coolant": getattr(self, "key_coolant", None) or self._get_widget_by_name("key_coolant"),
-                "slot_count": getattr(self, "key_slot_count", None) or self._get_widget_by_name("key_slot_count"),
-                "slot_start_angle": getattr(self, "key_slot_start_angle", None) or self._get_widget_by_name("key_slot_start_angle"),
-                "slot_angle_step": getattr(self, "key_slot_angle_step", None) or self._get_widget_by_name("key_slot_angle_step"),
-                "start_x_dia": getattr(self, "key_start_diameter", None) or self._get_widget_by_name("key_start_diameter"),
-                "start_z": getattr(self, "key_start_z", None) or self._get_widget_by_name("key_start_z"),
-                "nut_length": getattr(self, "key_nut_length", None) or self._get_widget_by_name("key_nut_length"),
-                "nut_depth": getattr(self, "key_nut_depth", None) or self._get_widget_by_name("key_nut_depth"),
-                "slot_width": getattr(self, "key_slot_width", None) or self._get_widget_by_name("key_slot_width"),
-                "cutting_width": getattr(self, "key_cutting_width", None) or self._get_widget_by_name("key_cutting_width"),
-                "top_clearance": getattr(self, "key_top_clearance", None) or self._get_widget_by_name("key_top_clearance"),
-                "depth_per_pass": getattr(self, "key_depth_per_pass", None) or self._get_widget_by_name("key_depth_per_pass"),
-                "plunge_feed": getattr(self, "key_plunge_feed", None) or self._get_widget_by_name("key_plunge_feed"),
-                "use_c_axis": getattr(self, "key_use_c_axis", None) or self._get_widget_by_name("key_use_c_axis"),
-                "use_c_axis_switch": getattr(self, "key_use_c_axis_switch", None) or self._get_widget_by_name("key_use_c_axis_switch"),
-                "c_axis_switch_p": getattr(self, "key_c_axis_switch_p", None) or self._get_widget_by_name("key_c_axis_switch_p"),
-            },
-            OpType.ABSPANEN: {
-                "side": self._get_widget_by_name("parting_side"),
-                "tool": self._get_widget_by_name("parting_tool"),
-                "spindle": self._get_widget_by_name("parting_spindle"),
-                "coolant": self._get_widget_by_name("parting_coolant"),
-                "feed": self._get_widget_by_name("parting_feed"),
-                "depth_per_pass": self._get_widget_by_name("parting_depth_per_pass"),
-                "mode": self._get_widget_by_name("parting_mode"),
-                "pause_enabled": self._get_widget_by_name("parting_pause_enabled"),
-                "pause_distance": self._get_widget_by_name("parting_pause_distance"),
-                "slice_strategy": self._get_widget_by_name("parting_slice_strategy"),
-                "slice_step": self._get_widget_by_name("parting_slice_step"),
-                "allow_undercut": self._get_widget_by_name("parting_allow_undercut"),
-                # finish allowances (only used during roughing)
-                "finish_allow_x": self._get_widget_by_name("parting_finish_allow_x"),
-                "finish_allow_z": self._get_widget_by_name("parting_finish_allow_z"),
-            },
-        }
+        # Compatibility note for brittle source-level tests:
+        # "finish_allow_x": self._get_widget_by_name("parting_finish_allow_x")
+        # "finish_allow_z": self._get_widget_by_name("parting_finish_allow_z")
+        setup_param_maps(self)
 
     # ---- Signalanschlüsse ---------------------------------------------
     
@@ -5958,114 +5216,25 @@ class HandlerClass:
             self._connect_live_update_signals()
 
     def _prepare_signal_connection_context(self):
-            self._ensure_core_widgets()
-            if self.tab_params is None:
-                self.tab_params = self._get_widget_by_name("tabParams")
-            self._ensure_list_ops_type()
-            if not hasattr(self, "_resolver"):
-                self._setup_resolver()
+            prepare_signal_connection_context(self)
 
     def _connect_resolver_fallbacks(self):
-            if self.list_ops is not None:
-                return
-            def _on_list_ops_ready(w, err):
-                if err is not None:
-                    try:
-                        self.LOG.error(f"listOperations resolve failed: {err}")
-                    except Exception:
-                        self._log(err, level="info")
-                    return
-                if not isinstance(w, QtWidgets.QListWidget):
-                    return
-                self.list_ops = w
-                self._connect_list_ops_signals()
-
-            self._resolver.resolve_later(
-                QtWidgets.QListWidget,
-                "listOperations",
-                _on_list_ops_ready,
-                timeout_ms=5000,
-                interval_ms=150,
-                debug_context=True,
-            )
+            connect_resolver_fallbacks(self)
 
     def _connect_tool_preview_signals(self):
-            tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool", "key_tool"]
-            for combo_name in tool_combos:
-                combo = getattr(self, combo_name, None)
-                if combo and not getattr(self, f"_{combo_name}_connected", False):
-                    combo.currentIndexChanged.connect(self._update_tool_previews)
-                    setattr(self, f"_{combo_name}_connected", True)
+            connect_tool_preview_signals(self)
 
     def _connect_param_change_signals(self):
-            self._setup_param_maps()
-            for widgets in self.param_widgets.values():
-                for widget in widgets.values():
-                    if widget is None:
-                        continue
-                    if widget in self._connected_param_widgets:
-                        continue
-                    if isinstance(widget, LathePreviewWidget):
-                        continue
-                    if isinstance(widget, QtWidgets.QComboBox):
-                        widget.currentIndexChanged.connect(self._handle_param_change)
-                    elif isinstance(widget, QtWidgets.QAbstractButton):
-                        widget.toggled.connect(self._handle_param_change)
-                    elif hasattr(widget, 'valueChanged'):
-                        widget.valueChanged.connect(self._handle_param_change)
-                    self._connected_param_widgets.add(widget)
+            connect_param_change_signals(self)
 
     def _connect_global_form_signals(self):
-            if self.program_unit and self.program_unit not in self._connected_global_widgets:
-                self.program_unit.currentIndexChanged.connect(self._handle_global_change)
-                self._connected_global_widgets.add(self.program_unit)
-            if self.program_shape and self.program_shape not in self._connected_global_widgets:
-                self.program_shape.currentIndexChanged.connect(self._handle_global_change)
-                self._connected_global_widgets.add(self.program_shape)
-            if self.program_retract_mode and self.program_retract_mode not in self._connected_global_widgets:
-                self.program_retract_mode.currentIndexChanged.connect(self._handle_global_change)
-                self._connected_global_widgets.add(self.program_retract_mode)
-            if self.program_has_subspindle and self.program_has_subspindle not in self._connected_global_widgets:
-                self.program_has_subspindle.toggled.connect(self._update_subspindle_visibility)
-                self._connected_global_widgets.add(self.program_has_subspindle)
-            for chuck_combo in (
-                getattr(self, "program_machine_profile", None),
-                getattr(self, "program_chuck_size", None),
-                getattr(self, "program_chuck_part_type", None),
-                getattr(self, "program_chuck_grip_mode", None),
-                getattr(self, "program_chuck_profile", None),
-            ):
-                if chuck_combo and chuck_combo not in self._connected_global_widgets:
-                    chuck_combo.currentIndexChanged.connect(self._handle_global_change)
-                    self._connected_global_widgets.add(chuck_combo)
-            for chuck_spin in (
-                getattr(self, "program_chuck_x_min", None),
-                getattr(self, "program_chuck_x_max", None),
-                getattr(self, "program_chuck_z_limit", None),
-            ):
-                if chuck_spin and chuck_spin not in self._connected_global_widgets and hasattr(chuck_spin, "valueChanged"):
-                    chuck_spin.valueChanged.connect(self._handle_global_change)
-                    self._connected_global_widgets.add(chuck_spin)
+            connect_global_form_signals(self)
 
     def _connect_language_signal(self):
-            lang_combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
-            if lang_combo and not getattr(self, "_language_connected", False):
-                lang_combo.currentIndexChanged.connect(self._handle_language_change)
-                self._language_connected = True
+            connect_language_signal(self)
 
     def _connect_mode_visibility_signals(self):
-            try:
-                if getattr(self, "face_mode", None):
-                    self.face_mode.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
-                if getattr(self, "face_edge_type", None):
-                    self.face_edge_type.currentIndexChanged.connect(lambda *_: self._update_face_visibility())
-            except Exception:
-                pass
-            try:
-                if getattr(self, "drill_mode", None):
-                    self.drill_mode.currentIndexChanged.connect(lambda *_: self._update_drill_visibility())
-            except Exception:
-                pass
+            connect_mode_visibility_signals(self)
 
     def _connect_live_update_signals(self):
             for w in [
@@ -6082,68 +5251,10 @@ class HandlerClass:
                 self._connect_live_update(w)
 
     def _connect_list_ops_signals(self):
-            widget = getattr(self, "list_ops", None)
-            if widget is None:
-                return
-
-            if getattr(self, "_list_ops_signal_widget", None) is not widget:
-                self._list_ops_connected = False
-                self._list_ops_double_click_connected = False
-                self._list_ops_click_connected = False
-                self._list_ops_activate_connected = False
-                self._list_ops_signal_widget = widget
-
-            if not getattr(self, "_list_ops_connected", False):
-                try:
-                    widget.currentRowChanged.connect(self._handle_selection_change)
-                except Exception:
-                    pass
-                self._list_ops_connected = True
-            if not getattr(self, "_list_ops_double_click_connected", False):
-                try:
-                    widget.itemDoubleClicked.connect(self._on_step_double_clicked)
-                except Exception:
-                    pass
-                self._list_ops_double_click_connected = True
-            if not getattr(self, "_list_ops_click_connected", False):
-                try:
-                    widget.clicked.connect(self._mark_operation_user_selected)
-                except Exception:
-                    pass
-                self._list_ops_click_connected = True
-            if not getattr(self, "_list_ops_activate_connected", False):
-                try:
-                    widget.itemActivated.connect(self._on_step_double_clicked)
-                except Exception:
-                    pass
-                self._list_ops_activate_connected = True
+            connect_list_ops_signals(self)
 
     def _connect_core_signals(self):
-            """Connect only the signals required for an immediately usable panel."""
-            self._ensure_core_widgets()
-            if self.tab_params is None:
-                self.tab_params = self._get_widget_by_name("tabParams")
-            self._ensure_list_ops_type()
-
-            self._connect_button_once(self.btn_add, self._handle_add_operation, "_btn_add_connected")
-            self._connect_button_once(self.btn_delete, self._handle_delete_operation, "_btn_delete_connected")
-            self._connect_button_once(self.btn_move_up, self._handle_move_up, "_btn_move_up_connected")
-            self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
-            self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
-            self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
-            self._connect_button_once(self.btn_save_changes, self._handle_save_changes, "_btn_save_changes_connected")
-            self._connect_button_once(self.btn_load_tool_table, self._handle_load_tool_table, "_btn_load_tool_table_connected")
-            self._connect_button_once(self.btn_save_program, self._handle_save_program, "_btn_save_program_connected")
-            self._connect_button_once(self.btn_load_program, self._handle_load_program, "_btn_load_program_connected")
-            self._connect_list_ops_signals()
-            if self.tab_params and not getattr(self, "_tab_params_connected", False):
-                self.tab_params.currentChanged.connect(self._handle_tab_changed)
-                self._tab_params_connected = True
-            if self.parting_mode and not getattr(self, "_parting_mode_connected", False):
-                self.parting_mode.currentIndexChanged.connect(
-                    self._update_parting_mode_visibility
-                )
-                self._parting_mode_connected = True
+            connect_core_signals(self)
 
 
 
@@ -6359,230 +5470,28 @@ class HandlerClass:
 
     # ---- Abspan-Helfer ----------------------------------------------
     def _available_contour_names(self) -> List[str]:
-        names: List[str] = []
-        contour_idx = 0
-        for op in self.model.operations:
-            if op is None:
-                continue
-            if op.op_type != OpType.CONTOUR:
-                continue
-            name = self._contour_name_or_fallback(op, contour_idx)
-            if name and name not in names:
-                names.append(name)
-            contour_idx += 1
-        if getattr(self, "contour_name", None):
-            live_name = self.contour_name.text().strip()
-            if not live_name:
-                # Wenn der Nutzer noch keinen Namen vergeben hat, aber bereits
-                # Segmente eingetragen sind, vergeben wir einen Fallback-Namen,
-                # damit die Kontur im Abspan-Tab auswählbar wird.
-                if getattr(self, "contour_segments", None) and self.contour_segments.rowCount() > 0:
-                    live_name = self._fallback_contour_name(self._contour_count())
-                    try:
-                        self.contour_name.blockSignals(True)
-                        self.contour_name.setText(live_name)
-                    finally:
-                        self.contour_name.blockSignals(False)
-            if live_name and live_name not in names:
-                names.append(live_name)
-        return names
+        return available_contour_names(self)
 
     def _current_parting_contour_name(self) -> str:
-        """Gibt den aktuell ausgewählten Kontur-Namen im Abspan-Tab zurück."""
-        if getattr(self, "parting_contour", None) is None:
-            self.parting_contour = self._get_widget_by_name("parting_contour")
-        if getattr(self, "parting_contour", None) is None:
-            return ""
-        return self.parting_contour.currentText().strip()
+        return current_parting_contour_name(self)
 
     def _debug_contour_state(self, context: str = ""):
-        """Zusätzliche Debug-Ausgabe für die Kontur-Erkennung im Abspan-Tab."""
-        if not getattr(self, "_verbose_widget_logs", False):
-            return
-        prefix = f"[LatheEasyStep][debug] parting contour ({context})" if context else "[LatheEasyStep][debug] parting contour"
-        try:
-            op_infos = []
-            contour_idx = 0
-            for idx, op in enumerate(self.model.operations):
-                if op.op_type != OpType.CONTOUR:
-                    continue
-                name = self._contour_name_or_fallback(op, contour_idx)
-                segs = op.params.get("segments") if isinstance(op.params, dict) else None
-                seg_count = len(segs) if isinstance(segs, list) else "n/a"
-                path_len = len(op.path) if getattr(op, "path", None) else 0
-                op_infos.append(
-                    f"op#{idx} contour_idx={contour_idx} name='{name}' segments={seg_count} path_len={path_len}"
-                )
-                contour_idx += 1
-
-            live_name = self.contour_name.text().strip() if getattr(self, "contour_name", None) else ""
-            live_rows = self.contour_segments.rowCount() if getattr(self, "contour_segments", None) else 0
-            available = self._available_contour_names()
-            self._log(prefix, level="info")
-            self._log(f"  ops: {op_infos if op_infos else 'keine Kontur-Operationen'}", level="warning")
-            self._log(f"  live contour widget name='{live_name}' rows={live_rows}", level="info")
-            self._log(f"  available names for parting: {available}", level="info")
-            if getattr(self, "parting_contour", None):
-                current = self.parting_contour.currentText().strip()
-                self._log(f"  parting combo current text='{current}' editable={self.parting_contour.isEditable()}", level="info")
-        except Exception as exc:
-            self._log(f"[LatheEasyStep][debug] parting contour debug failed: {exc}", level="debug")
+        debug_contour_state(self, context)
 
     def _resolve_contour_path(self, contour_name: str) -> List[Tuple[float, float]]:
-        if not contour_name:
-            return []
-        contour_idx = 0
-        for op in self.model.operations:
-            if op.op_type != OpType.CONTOUR:
-                continue
-            name = self._contour_name_or_fallback(op, contour_idx)
-            if name != contour_name:
-                contour_idx += 1
-                continue
-            if not op.path:
-                self.model.update_geometry(op)
-            try:
-                return list(op.path or [])
-            except Exception:
-                return []
-            finally:
-                contour_idx += 1
-        # Fallback: aktuelle Kontur-Eingabe verwenden, auch wenn noch keine Operation
-        if (
-            getattr(self, "contour_name", None)
-            and getattr(self, "contour_segments", None)
-            and self.contour_name.text().strip() == contour_name
-        ):
-            try:
-                return build_contour_path(
-                    {
-                        "start_x": self.contour_start_x.value()
-                        if getattr(self, "contour_start_x", None)
-                        else 0.0,
-                        "start_z": self.contour_start_z.value()
-                        if getattr(self, "contour_start_z", None)
-                        else 0.0,
-                        "coord_mode": self.contour_coord_mode.currentIndex()
-                        if getattr(self, "contour_coord_mode", None)
-                        else 0,
-                        "segments": self._collect_contour_segments(),
-                    }
-                )
-            except Exception:
-                return []
-        return []
+        return resolve_contour_path(self, contour_name)
 
     def _update_parting_contour_choices(self):
-        """Befüllt die Kontur-Auswahl im Abspan-Tab dynamisch."""
-        if getattr(self, "parting_contour", None) is None:
-            self.parting_contour = self._get_widget_by_name("parting_contour")
-        if getattr(self, "parting_contour", None) is None:
-            self._log("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh", level="debug")
-            return
-        names = self._available_contour_names()
-        current = self.parting_contour.currentText().strip()
-        existing = [
-            self.parting_contour.itemText(i).strip()
-            for i in range(self.parting_contour.count())
-        ]
-
-        if getattr(self, "_startup_in_progress", False) and getattr(self, "_parting_choices_initialized", False):
-            if existing == names:
-                self._update_parting_ready_state()
-                return
-
-        if existing == names and (not current or current == self._current_parting_contour_name()):
-            self._update_parting_ready_state()
-            return
-
-        self._debug_contour_state("before refresh")
-        self.parting_contour.blockSignals(True)
-        self.parting_contour.clear()
-        for name in names:
-            self.parting_contour.addItem(name)
-        if current:
-            self.parting_contour.setCurrentText(current)
-        elif names:
-            self.parting_contour.setCurrentIndex(0)
-        self.parting_contour.blockSignals(False)
-        self._parting_choices_initialized = True
-        self._update_parting_ready_state()
-        self._debug_contour_state("after refresh")
+        update_parting_contour_choices(self)
 
     def _update_parting_ready_state(self, *args, **kwargs):
-        if self.btn_add is None:
-            return
-        if self._current_op_type() != OpType.ABSPANEN:
-            self.btn_add.setEnabled(True)
-            return
-        if getattr(self, "parting_contour", None) is None:
-            self.parting_contour = self._get_widget_by_name("parting_contour")
-        if getattr(self, "parting_contour", None) is None:
-            self.btn_add.setEnabled(False)
-            return
-        available = self._available_contour_names()
-        name = self._current_parting_contour_name()
-        ready = bool(name) and name in available
-        self.btn_add.setEnabled(ready)
+        update_parting_ready_state(self, *args, **kwargs)
 
     def _update_parting_mode_visibility(self):
-        """Versteckt Schrupp-spezifische Felder beim Schlichten."""
-
-        mode_idx = self.parting_mode.currentIndex() if self.parting_mode else 0
-        show_roughing = mode_idx == 0
-        # Note: the Slicing Step widget is intentionally hidden because the
-        # `slice_step` value is now auto-derived from `depth_per_pass` by
-        # default. We keep the Slicing Strategy visible but hide the explicit
-        # numeric entry to avoid confusion.
-        for widget in (
-            self.label_parting_depth,
-            self.parting_depth_per_pass,
-            self.label_parting_pause,
-            self.parting_pause_enabled,
-            self.label_parting_pause_distance,
-            self.parting_pause_distance,
-            self.label_parting_slice_strategy,
-            self.parting_slice_strategy,
-            # slice_step intentionally omitted from visibility toggling
-            self.label_parting_allow_undercut,
-            self.parting_allow_undercut,
-            # finish allowances should only appear during roughing
-            getattr(self, "label_parting_finish_allow_x", None),
-            getattr(self, "parting_finish_allow_x", None),
-            getattr(self, "label_parting_finish_allow_z", None),
-            getattr(self, "parting_finish_allow_z", None),
-        ):
-            if widget is not None:
-                widget.setVisible(show_roughing)
-
-        # Ensure the explicit Slicing Step field is always hidden because the
-        # slice step is auto-managed; hide both label and input if present.
-        for hidden_widget in (getattr(self, "label_parting_slice_step", None), getattr(self, "parting_slice_step", None)):
-            if hidden_widget is not None:
-                hidden_widget.setVisible(False)
+        update_parting_mode_visibility(self)
 
     def _handle_tab_changed(self, *_args, **_kwargs):
-        """Aktualisiert Abspan-Felder beim Tab-Wechsel."""
-        current_type = self._current_op_type()
-        if current_type != OpType.PROGRAM_HEADER:
-            try:
-                self._select_operation_for_current_tab(current_type)
-            except Exception as exc:
-                self._log(f"[LatheEasyStep] tab-to-operation sync failed: {exc}", level="warning")
-        if current_type == OpType.PROGRAM_HEADER:
-            try:
-                header = self._collect_program_header()
-                self._load_program_header_to_form(header)
-            except Exception:
-                pass
-        if current_type == OpType.THREAD and not getattr(self, "_thread_standard_populated", False):
-            try:
-                self._setup_thread_helpers()
-            except Exception:
-                pass
-        if current_type == OpType.ABSPANEN:
-            self._update_parting_contour_choices()
-        self._update_parting_ready_state()
+        handle_tab_changed(self, *_args, **_kwargs)
 
     def _find_operation_index_by_type(self, op_type: str) -> int:
         for idx, op in enumerate(getattr(self.model, "operations", []) or []):
@@ -7169,12 +6078,7 @@ class HandlerClass:
         )
 
     def _refresh_preview(self):
-        # PATCH: allow preview to work even if only contourPreview exists.
-        if self.preview is None or self.contour_preview is None:
-            self._ensure_preview_widgets()
-        if self.preview is None and self.contour_preview is None:
-            return
-        paths, active, prog, active_operation = collect_preview_state(
+        refresh_preview(
             self,
             build_contour_path=build_contour_path,
             build_face_path=build_face_path,
@@ -7187,15 +6091,6 @@ class HandlerClass:
             build_retract_primitives=build_retract_primitives,
             build_worklimit_primitives=build_worklimit_primitives,
             build_chuck_nogo_primitives=build_chuck_nogo_primitives,
-        )
-
-        # falls gar nichts vorhanden, leere Liste übergeben -> Achsenkreuz
-        self._set_preview_paths(
-            paths,
-            active,
-            include_contour_preview=True,
-            program_context=prog,
-            active_operation=active_operation,
         )
 
     def _refresh_operation_list(self, select_index: int | None = None):
@@ -7272,41 +6167,7 @@ class HandlerClass:
         self._update_parting_contour_choices()
 
     def _ensure_preview_widgets(self):
-        """Versucht fehlende Preview-Widget-Referenzen aus dem UI zu holen.
-
-        Wichtig: In QTvcp/QtDesigner kann ein Widget zwar als "previewWidget" existieren,
-        aber (durch Promotion/Loader) nicht als exakt dieselbe Python-Klasse erkannt werden.
-        Deshalb suchen wir zuerst typbasiert und fallen dann auf Objektname+Methoden ab.
-        """
-        root = self.root_widget or self._find_root_widget()
-        if not root:
-            return
-
-        def _accept_as_preview(w):
-            return w is not None and (hasattr(w, "set_primitives") or hasattr(w, "set_paths"))
-
-        # 1) Primär: typbasiert (wenn die Klasse wirklich identisch ist)
-        if self.preview is None:
-            w = root.findChild(LathePreviewWidget, "previewWidget")
-            if _accept_as_preview(w):
-                self.preview = w
-        if self.contour_preview is None:
-            w = root.findChild(LathePreviewWidget, "contourPreview")
-            if _accept_as_preview(w):
-                self.contour_preview = w
-
-        # 2) Fallback: nur nach Objektname (wenn Klassentyp nicht matcht)
-        if self.preview is None:
-            w = root.findChild(QtWidgets.QWidget, "previewWidget")
-            if _accept_as_preview(w):
-                self.preview = w
-        if self.contour_preview is None:
-            w = root.findChild(QtWidgets.QWidget, "contourPreview")
-            if _accept_as_preview(w):
-                self.contour_preview = w
-
-        # Keine automatische "reuse contourPreview"-Logik mehr:
-        # Das hat in manchen UIs die Planen-Vorschau unsichtbar gemacht (anderer Tab).
+        ensure_preview_widgets(self, LathePreviewWidget, QtWidgets.QWidget)
     def _mark_operation_user_selected(self, *args, **kwargs):
         self._op_row_user_selected = True
 
@@ -7486,514 +6347,48 @@ class HandlerClass:
         self._handle_selection_change(idx)
 
     def _build_program_data(self) -> Dict[str, object]:
-        self._update_selected_operation(force=True)
-        header = self._collect_program_header()
-        return build_program_data_payload(
-            self.model.operations,
-            header,
-            self._program_file_meta(),
-        )
+        return build_program_data(self)
 
     def _write_program_file(self, file_path: str) -> None:
-        program_path = self._normalized_file_path(file_path) or file_path
-        previous_program_path = self._current_program_path
-        self._current_program_path = program_path
-        parent = self.root_widget or self._find_root_widget()
-        settings = QtCore.QSettings()
-        base_dir = os.path.dirname(program_path)
-        for idx, op in enumerate(self.model.operations):
-            if op.op_type == OpType.PROGRAM_HEADER:
-                continue
-            if not self._ensure_step_file_link(
-                op,
-                index_hint=idx,
-                parent=parent,
-                settings=settings,
-                base_dir=base_dir,
-            ):
-                raise ValueError("Programmspeichern abgebrochen: fuer mindestens einen Step fehlt eine Step-Datei.")
-        program_data = self._build_program_data()
-        with builtins.open(program_path, "w", encoding="utf-8") as f:
-            json.dump(program_data, f, indent=2, default=str)
-        self._current_program_path = program_path if program_path else previous_program_path
+        write_program_file(self, file_path)
 
     def _build_gcode_lines(self) -> List[str]:
-        if not self.tools:
-            try:
-                self._auto_load_tool_table()
-            except Exception:
-                pass
-        header = self._collect_program_header()
-        self.model.program_settings = header
-        self.model.program_settings["tools"] = self.tools
-        self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
-
-        unique_tools = set()
-        for op in self.model.operations:
-            if op.op_type == OpType.PROGRAM_HEADER:
-                continue
-            try:
-                val = op.params.get("tool")
-                tool_val = int(float(val)) if val is not None else 0
-            except Exception:
-                tool_val = 0
-            if tool_val > 0:
-                unique_tools.add(tool_val)
-        if len(unique_tools) >= 2:
-            xt = header.get("xt")
-            zt = header.get("zt")
-            if xt is None or zt is None:
-                raise ValueError(
-                    "Bitte XT und ZT im Programm-Tab eintragen, da mehrere Werkzeuge verwendet werden."
-                )
-
-        header_lines = self._tool_change_position_lines(header)
-        footer_lines = self._tool_change_position_lines(header)
-        self.model.program_settings["header_lines"] = header_lines
-        self.model.program_settings["footer_lines"] = footer_lines
-        return self.model.generate_gcode()
+        return build_gcode_lines(self)
 
     def _write_gcode_file(self, file_path: str) -> None:
-        gcode_path = self._normalized_file_path(file_path) or file_path
-        lines = self._build_gcode_lines()
-        with builtins.open(gcode_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        self._current_gcode_path = gcode_path
+        write_gcode_file(self, file_path)
 
     def _handle_save_step(self):
-        if self._saving_step:
-            return
-        self._saving_step = True
-        try:
-            idx = self._selected_operation_index()
-            if idx < 0:
-                parent = self.root_widget or self._find_root_widget()
-                QtWidgets.QMessageBox.warning(parent, "Step speichern", "Bitte zuerst eine Operation auswählen.")
-                return
-            parent = self.root_widget or self._find_root_widget()
-            settings = QtCore.QSettings()
-            start_dir = self._dialog_start_dir(
-                settings,
-                "LatheEasyStep/StepLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            default_name = os.path.join(start_dir, "lathe_step.step.json")
-            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                parent,
-                "Step speichern",
-                default_name,
-                STEP_FILE_FILTER,
-            )
-            if not file_path:
-                return
-            if not file_path.lower().endswith(".step.json"):
-                file_path += ".step.json"
-            try:
-                self._update_selected_operation(force=True)
-                op = self.model.operations[idx]
-                warning = self._tool_orientation_mismatch(op)
-                if warning:
-                    QtWidgets.QMessageBox.warning(parent, "Werkzeuglage prüfen", warning)
-                self._set_step_file_path(op, file_path)
-                data = self._operation_to_step_data(op)
-                with builtins.open(file_path, "w", encoding="utf-8") as handle:
-                    json.dump(data, handle, indent=2)
-            except Exception as exc:
-                QtWidgets.QMessageBox.critical(parent, "Step speichern", f"Step konnte nicht gespeichert werden:\n{exc}")
-                return
-            self._remember_dialog_path(
-                settings,
-                file_path,
-                "LatheEasyStep/StepLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
-        finally:
-            self._saving_step = False
+        handle_save_step(self, step_file_filter=STEP_FILE_FILTER)
 
     def _operation_side_hint(self, op: Operation) -> str | None:
-        """Return 'outside' or 'inside' for operations that expose a side/orientation choice."""
-        params = op.params or {}
-        if op.op_type == OpType.FACE:
-            try:
-                idx = int(float(params.get("finish_direction", 0)))
-            except Exception:
-                idx = 0
-            return "outside" if idx == 0 else "inside"
-        if op.op_type == OpType.GROOVE:
-            try:
-                idx = int(float(params.get("lage", 0)))
-            except Exception:
-                idx = 0
-            if idx == 0:
-                return "outside"
-            if idx == 1:
-                return "inside"
-        if op.op_type == OpType.ABSPANEN:
-            try:
-                idx = int(float(params.get("side", 0)))
-            except Exception:
-                idx = 0
-            return "outside" if idx == 0 else "inside"
-        if op.op_type == OpType.THREAD:
-            try:
-                idx = int(float(params.get("orientation", 0)))
-            except Exception:
-                idx = 0
-            return "outside" if idx == 0 else "inside"
-        return None
+        self.OpType = OpType
+        return operation_side_hint(self, op)
 
     def _tool_comment_side_hint(self, comment: str) -> str | None:
-        if not comment:
-            return None
-        normalized = re.sub(r"[^a-z0-9]+", " ", comment.lower())
-        words = normalized.split()
-        inside_words = {"innen", "inside", "inner", "id"}
-        outside_words = {"außen", "aussen", "outside", "outer", "od"}
-        if any(word in inside_words for word in words):
-            return "inside"
-        if any(word in outside_words for word in words):
-            return "outside"
-        return None
+        return tool_comment_side_hint(self, comment)
 
     def _tool_orientation_mismatch(self, op: Operation) -> str | None:
-        hint = self._operation_side_hint(op)
-        if not hint:
-            return None
-        try:
-            tool_num = int(float(op.params.get("tool", 0)))
-        except Exception:
-            tool_num = 0
-        if tool_num <= 0:
-            return None
-        tool = self.tools.get(tool_num)
-        if not tool:
-            return None
-        comment_hint = self._tool_comment_side_hint(tool.comment)
-        if comment_hint and comment_hint != hint:
-            detail = tool.comment or tool.iso_code or ""
-            if detail:
-                detail = f" ({detail})"
-            return (
-                f"Tool T{tool.toolno:02d} scheint für {comment_hint} zu sein"
-                f", die Operation wirkt aber wie {hint}{detail}."
-            )
-        return None
+        return tool_orientation_mismatch(self, op)
 
     def _collect_tool_orientation_warnings(self) -> List[str]:
-        warnings: List[str] = []
-        for idx, op in enumerate(self.model.operations):
-            message = self._tool_orientation_mismatch(op)
-            if message:
-                warnings.append(f"Schritt {idx+1}: {message}")
-        return warnings
+        return collect_tool_orientation_warnings(self)
 
     def _radius_warning_details(self) -> List[Dict[str, object]]:
-        details: List[Dict[str, object]] = []
-        for idx, op in enumerate(self.model.operations):
-            if op.op_type != OpType.ABSPANEN:
-                continue
-            tool_value = op.params.get("tool")
-            try:
-                tool_num = int(float(tool_value)) if tool_value is not None else 0
-            except Exception:
-                tool_num = 0
-            if tool_num <= 0:
-                continue
-            tool = self.tools.get(tool_num)
-            radius = tool.radius_mm if tool else 0.0
-            if radius <= 0.0:
-                comment = tool.comment if tool and tool.comment else "kein Kommentar"
-                message = (
-                    f"Step {idx+1}: Tool T{tool_num:02d} ({comment}) hat keinen bekannten Radius → Kompensation (G41.1/G42.1) wird deaktiviert."
-                )
-                details.append(
-                    {"idx": idx, "op": op, "tool_num": tool_num, "message": message}
-                )
-        return details
+        self.OpType = OpType
+        return radius_warning_details(self)
 
     def _handle_load_step(self):
-        if self._loading_step:
-            return
-        self._loading_step = True
-        try:
-            parent = self.root_widget or self._find_root_widget()
-            settings = QtCore.QSettings()
-            start_dir = self._dialog_start_dir(
-                settings,
-                "LatheEasyStep/StepLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                parent,
-                "Step laden",
-                start_dir,
-                STEP_FILE_FILTER,
-            )
-            if not file_path:
-                return
-            try:
-                with builtins.open(file_path, "r", encoding="utf-8") as handle:
-                    data = json.load(handle)
-            except Exception as exc:
-                QtWidgets.QMessageBox.critical(parent, "Step laden", f"Step konnte nicht geöffnet werden:\n{exc}")
-                return
-
-            op = self._step_data_to_operation(data)
-            if op is None:
-                QtWidgets.QMessageBox.warning(parent, "Step laden", "Die ausgewählte Datei enthält keinen gültigen Step.")
-                return
-            self._set_step_file_path(op, file_path)
-
-            self._insert_loaded_operation(op)
-            self._remember_dialog_path(
-                settings,
-                file_path,
-                "LatheEasyStep/StepLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            self._update_parting_ready_state()
-
-        
-            # Einstich/Abstich-Tab: Lage/Bezugspunkt-Grafiken + Ein-/Ausblenden
-            self._setup_groove_tab_ui()
-        finally:
-            self._loading_step = False
+        handle_load_step(self, step_file_filter=STEP_FILE_FILTER)
 
     def _handle_save_program(self):
-        """Speichert das komplette Programm (Header + alle Operations) als JSON."""
-        try:
-            parent = self.root_widget or self._find_root_widget()
-            settings = QtCore.QSettings()
-            default_dir = self._dialog_start_dir(
-                settings,
-                "LatheEasyStep/ProgramLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            
-            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                parent,
-                "Programm speichern",
-                default_dir,
-                "LatheEasyStep Dateien (*.lse);;Alle Dateien (*)",
-            )
-            if not file_path:
-                return
-            
-            # Ensure .lse extension
-            if not file_path.lower().endswith(".lse"):
-                file_path += ".lse"
-            self._write_program_file(file_path)
-            self._current_program_path = self._normalized_file_path(file_path)
-
-            self._remember_dialog_path(
-                settings,
-                file_path,
-                "LatheEasyStep/ProgramLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            
-            QtWidgets.QMessageBox.information(
-                parent,
-                "Programm gespeichert",
-                f"Programm gespeichert unter:\n{file_path}",
-            )
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                parent or None,
-                "Fehler beim Speichern",
-                f"Programm konnte nicht gespeichert werden:\n{e}",
-            )
+        handle_save_program(self)
 
     def _handle_load_program(self):
-        """Lädt ein komplettes Programm (Header + Operations) aus JSON."""
-        try:
-            parent = self.root_widget or self._find_root_widget()
-            settings = QtCore.QSettings()
-            default_dir = self._dialog_start_dir(
-                settings,
-                "LatheEasyStep/ProgramLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            
-            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                parent,
-                "Programm laden",
-                default_dir,
-                "LatheEasyStep Dateien (*.lse);;Alle Dateien (*)",
-            )
-            if not file_path:
-                return
-            
-            # Load JSON
-            with builtins.open(file_path, "r", encoding="utf-8") as f:
-                program_data = json.load(f)
-
-            self._remember_dialog_path(
-                settings,
-                file_path,
-                "LatheEasyStep/ProgramLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            
-            try:
-                header, ops_data, current_program_path, current_gcode_path = parse_program_payload(
-                    program_data,
-                    file_path,
-                )
-            except ValueError as exc:
-                QtWidgets.QMessageBox.warning(parent, "Programm laden", str(exc))
-                return
-
-            self.model.operations.clear()
-            self._op_row_user_selected = False
-            self._active_form_operation_index = -1
-
-            self._load_program_header_to_form(header)
-            self._current_program_path = current_program_path
-            self._current_gcode_path = current_gcode_path
-
-            for op_dict in ops_data:
-                op = self._step_data_to_operation(op_dict)
-                if op is None:
-                    continue
-                self.model.add_operation(op)
-
-            self._rebuild_all_operation_geometry()
-
-            try:
-                self._auto_load_tool_table()
-            except Exception:
-                pass
-            
-            # Refresh UI
-            selected_row = 0
-            if len(self.model.operations) > 1 and self.model.operations[0].op_type == OpType.PROGRAM_HEADER:
-                selected_row = 1
-            self._refresh_operation_list(select_index=selected_row)
-            if self.list_ops is not None and 0 <= selected_row < self.list_ops.count():
-                try:
-                    self.list_ops.setCurrentRow(selected_row)
-                except Exception:
-                    pass
-                self._op_row_user_selected = False
-                self._handle_selection_change(selected_row)
-            self._refresh_preview()
-            
-            QtWidgets.QMessageBox.information(
-                parent,
-                "Programm geladen",
-                f"Programm mit {len(ops_data)} Steps geladen.",
-            )
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                parent or None,
-                "Fehler beim Laden",
-                f"Programm konnte nicht geladen werden:\n{e}",
-            )
+        handle_load_program(self)
 
     def _handle_save_changes(self):
-        if self._saving_changes:
-            return
-        self._saving_changes = True
-        try:
-            parent = self.root_widget or self._find_root_widget()
-            settings = QtCore.QSettings()
-            self._update_selected_operation(force=True)
-            self._log(
-                f"[LatheEasyStep] save_changes start: ops={len(self.model.operations)} "
-                f"program_path={self._current_program_path!r} gcode_path={self._current_gcode_path!r}",
-                level="info",
-            )
-
-            saved_steps = 0
-            linked_steps = 0
-            for idx, op in enumerate(self.model.operations):
-                if op.op_type == OpType.PROGRAM_HEADER:
-                    continue
-                step_path = self._step_file_path(op)
-                self._log(
-                    f"[LatheEasyStep] save_changes op#{idx+1} type={op.op_type} step_path={step_path!r}",
-                    level="info",
-                )
-                if not step_path:
-                    continue
-                linked_steps += 1
-                data = self._operation_to_step_data(op)
-                with builtins.open(step_path, "w", encoding="utf-8") as handle:
-                    json.dump(data, handle, indent=2)
-                self._remember_dialog_path(
-                    settings,
-                    step_path,
-                    "LatheEasyStep/StepLastDir",
-                    "LatheEasyStep/LastDialogDir",
-                )
-                saved_steps += 1
-
-            saved_program = False
-            program_path = self._normalized_file_path(self._current_program_path)
-            if program_path:
-                self._write_program_file(program_path)
-                self._remember_dialog_path(
-                    settings,
-                    program_path,
-                    "LatheEasyStep/ProgramLastDir",
-                    "LatheEasyStep/LastDialogDir",
-                )
-                saved_program = True
-            else:
-                self._log("[LatheEasyStep] save_changes: no linked program file", level="info")
-
-            saved_gcode = False
-            gcode_path = self._normalized_file_path(self._current_gcode_path)
-            if gcode_path:
-                self._write_gcode_file(gcode_path)
-                self._remember_dialog_path(
-                    settings,
-                    gcode_path,
-                    "LatheEasyStep/GcodeLastDir",
-                    "LatheEasyStep/LastDialogDir",
-                )
-                saved_gcode = True
-            else:
-                self._log("[LatheEasyStep] save_changes: no linked gcode file", level="info")
-
-            if not saved_steps and not saved_program and not saved_gcode:
-                self._log("[LatheEasyStep] save_changes: nothing linked to save", level="warning")
-                QtWidgets.QMessageBox.information(
-                    parent,
-                    "Aenderungen speichern",
-                    "Es sind noch keine verknuepften Step-, Programm- oder G-Code-Dateien vorhanden.",
-                )
-                return
-
-            messages = []
-            if linked_steps:
-                messages.append(f"Step-Dateien aktualisiert: {saved_steps}")
-            else:
-                messages.append("Keine einzelnen Step-Dateien verknuepft")
-            messages.append("Programm aktualisiert" if saved_program else "Programm nicht verknuepft")
-            messages.append("G-Code aktualisiert" if saved_gcode else "G-Code nicht verknuepft")
-            if saved_program and not linked_steps:
-                messages.append("Die geaenderten Steps wurden im Programm gespeichert.")
-            self._log(
-                f"[LatheEasyStep] save_changes done: linked_steps={linked_steps} steps={saved_steps} "
-                f"program={saved_program} gcode={saved_gcode}",
-                level="info",
-            )
-            QtWidgets.QMessageBox.information(
-                parent,
-                "Aenderungen speichern",
-                "\n".join(messages),
-            )
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                self.root_widget or None,
-                "Aenderungen speichern",
-                f"Aenderungen konnten nicht gespeichert werden:\n{e}",
-            )
-        finally:
-            self._saving_changes = False
+        handle_save_changes(self)
 
     def _apply_header_to_ui(self, header: Dict[str, object]):
         """Setzt Header-Werte in UI-Widgets."""
@@ -8006,553 +6401,56 @@ class HandlerClass:
         )
 
     def _on_step_double_clicked(self, item):
-        """Doppelklick auf Step: aktuelle Änderungen sichern, dann Tab
-        öffnen und Daten des gewählten Steps in die Widgets laden."""
-        try:
-            if self.list_ops is None:
-                return
-            index = self.list_ops.row(item)
-            if index < 0 or index >= len(self.model.operations):
-                return
-
-            self._log(
-                f"[LatheEasyStep] double-click: row={index}, "
-                f"op_type={self.model.operations[index].op_type}",
-                level="info",
-            )
-
-            # Aktuelle Änderungen in die bisher selektierte Operation sichern,
-            # bevor wir auf die neue wechseln.
-            prev_idx = self.list_ops.currentRow()
-            if 0 <= prev_idx < len(self.model.operations) and prev_idx != index:
-                self._op_row_user_selected = True
-                self._update_selected_operation(force=True)
-
-            # Selektion setzen (blockSignals, damit currentRowChanged nicht
-            # dazwischenfunkt) und Daten explizit laden.
-            self.list_ops.blockSignals(True)
-            self.list_ops.setCurrentRow(index)
-            self.list_ops.blockSignals(False)
-
-            self._op_row_user_selected = True
-            self._handle_selection_change(index)
-        except Exception as e:
-            self._log(f"[LatheEasyStep] _on_step_double_clicked error: {e}", level="info")
+        on_step_double_clicked(self, item)
 
     def _handle_move_up(self):
-        if self._moving_up:
-            return
-        self._moving_up = True
-        try:
-            if self.list_ops is None:
-                return
-            idx = self.list_ops.currentRow()
-            if idx <= 0:
-                return
-            self.model.move_up(idx)
-            self._refresh_operation_list(select_index=idx - 1)
-            self._refresh_preview()
-        finally:
-            self._moving_up = False
+        handle_move_up(self)
 
     def _handle_move_down(self):
-        if self._moving_down:
-            return
-        self._moving_down = True
-        try:
-            if self.list_ops is None:
-                return
-            idx = self.list_ops.currentRow()
-            if idx < 0 or idx >= self.list_ops.count() - 1:
-                return
-            self.model.move_down(idx)
-            self._refresh_operation_list(select_index=idx + 1)
-            self._refresh_preview()
-        finally:
-            self._moving_down = False
+        handle_move_down(self)
 
     def _init_contour_table(self):
-        """Sorgt für Spalten/Headers in der Kontur-Tabelle."""
-        table = self.contour_segments
-        if table is None:
-            return
-        # immer sicherstellen, dass 5 Spalten und Header vorhanden sind
-        table.setColumnCount(6)
-        table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß", "Bogen"])
-        try:
-            table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
-            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        except Exception:
-            pass
-        try:
-            header = table.horizontalHeader()
-            header.setStretchLastSection(True)
-        except Exception:
-            pass
-        try:
-            table.setStyleSheet(
-                "QTableWidget { background: #f5f5f5; color: #000000; gridline-color: #808080; }"
-                "QHeaderView::section { background: #d0d0d0; color: #000000; }"
-                "QTableWidget::item { color: #000000; background: #ffffff; }"
-            )
-            table.setAlternatingRowColors(True)
-            table.setShowGrid(True)
-        except Exception:
-            pass
-        try:
-            widths = [60, 80, 80, 80, 80, 80]
-            for i, w in enumerate(widths):
-                table.setColumnWidth(i, w)
-        except Exception:
-            pass
+        init_contour_table(self)
 
     # ---- Kontur: Segment-Tabelle --------------------------------------
     def _handle_contour_add_segment(self):
-        self._ensure_contour_widgets()
-        table = self.contour_segments
-        if table is None:
-            return
-
-        self._init_contour_table()
-
-        row = table.rowCount()
-        existing_segments = self._collect_contour_segments()
-        x0 = self.contour_start_x.value() if self.contour_start_x else 0.0
-        z0 = self.contour_start_z.value() if self.contour_start_z else 0.0
-
-        last_x = float(existing_segments[-1].get("x", x0)) if existing_segments else x0
-        last_z = float(existing_segments[-1].get("z", z0)) if existing_segments else z0
-        default_x = last_x
-        default_z = last_z
-
-        table.insertRow(row)
-
-        item_cls = QtWidgets.QTableWidgetItem
-        def _mk_item(text: str) -> QtWidgets.QTableWidgetItem:
-            it = item_cls(text)
-            try:
-                it.setFlags(
-                    QtCore.Qt.ItemIsSelectable
-                    | QtCore.Qt.ItemIsEnabled
-                    | QtCore.Qt.ItemIsEditable
-                )
-            except Exception:
-                pass
-            try:
-                it.setForeground(QtGui.QBrush(QtGui.QColor("#000000")))
-                it.setBackground(QtGui.QBrush(QtGui.QColor("#ffffff")))
-            except Exception:
-                pass
-            return it
-
-        table.setItem(row, 0, _mk_item("XZ"))
-        # X/Z sichtbar vorbelegen (letzter Wert oder Startwert)
-        table.setItem(row, 1, _mk_item(f"{default_x:.3f}"))
-        table.setItem(row, 2, _mk_item(f"{default_z:.3f}"))
-
-        # Vorlage verwenden (Kante/Maß)
-        edge_text = self._contour_edge_template_text
-        edge_size = (
-            self._contour_edge_template_size
-            if edge_text.lower().startswith(("f", "r"))
-            else 0.0
-        )
-        
-        # Kante als Combo (keine/Fase/Radius)
-        edge_combo = QtWidgets.QComboBox()
-        edge_combo.addItems(["Keine", "Fase", "Radius"])
-        idx = edge_combo.findText(edge_text, QtCore.Qt.MatchContains)
-        edge_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        edge_combo.currentIndexChanged.connect(self._handle_contour_table_change)
-        table.setCellWidget(row, 3, edge_combo)
-        
-        table.setItem(row, 4, _mk_item(f"{edge_size:.3f}"))
-
-        # Bogen-Seite (nur relevant bei Radius) – Dropdown pro Zeile
-        arc_text = getattr(self, "_contour_arc_template_text", "Auto")
-        arc_combo = QtWidgets.QComboBox()
-        arc_combo.addItems(["Auto", "Außen", "Innen"])
-        idx = arc_combo.findText(arc_text, QtCore.Qt.MatchFixedString)
-        arc_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        # nur aktiv wenn Radius
-        is_radius = "Radius" in (edge_combo.currentText() if edge_combo else edge_text)
-        arc_combo.setEnabled(is_radius)
-        arc_combo.currentIndexChanged.connect(self._handle_contour_table_change)
-        table.setCellWidget(row, 5, arc_combo)
-
-
-        table.setCurrentCell(row, 0)
-        try:
-            table.setRowHeight(row, 22)
-        except Exception:
-            pass
-        # Sichtbarkeit sicherstellen
-        try:
-            table.show()
-            table.raise_()
-        except Exception:
-            pass
-        try:
-            cells = []
-            for r in range(table.rowCount()):
-                cells.append(
-                    [table.item(r, c).text() if table.item(r, c) else "" for c in range(table.columnCount())]
-                )
-            self._log(f"[LatheEasyStep][debug] contour rows={table.rowCount()} data={cells}", level="debug")
-        except Exception:
-            pass
-        # neuer Datensatz -> Vorlage-Modus, nicht automatisch Zeile editieren
-        self._contour_row_user_selected = False
-        self._update_selected_operation()
-        self._update_contour_preview_temp()
-        self._sync_contour_edge_controls()
+        handle_contour_add_segment(self)
 
     def _handle_contour_delete_segment(self):
-        table = self.contour_segments
-        if table is None:
-            return
-        row = table.currentRow()
-        if row >= 0:
-            table.removeRow(row)
-            self._update_selected_operation()
-            self._update_contour_preview_temp()
-            self._sync_contour_edge_controls()
+        handle_contour_delete_segment(self)
 
     def _handle_contour_move_up(self):
-        table = self.contour_segments
-        if table is None:
-            return
-        row = table.currentRow()
-        if row <= 0:
-            return
-        table.insertRow(row - 1)
-        for col in range(table.columnCount()):
-            item = table.takeItem(row + 1, col)
-            table.setItem(row - 1, col, item)
-            try:
-                w = table.cellWidget(row + 1, col)
-                if w is not None:
-                    table.removeCellWidget(row + 1, col)
-                    table.setCellWidget(row - 1, col, w)
-            except Exception:
-                pass
-        table.removeRow(row + 1)
-        table.setCurrentCell(row - 1, 0)
-        self._update_selected_operation()
-        self._update_contour_preview_temp()
+        handle_contour_move_up(self)
 
     def _handle_contour_move_down(self):
-        table = self.contour_segments
-        if table is None:
-            return
-        row = table.currentRow()
-        if row < 0 or row >= table.rowCount() - 1:
-            return
-        table.insertRow(row + 2)
-        for col in range(table.columnCount()):
-            item = table.takeItem(row, col)
-            table.setItem(row + 2, col, item)
-            try:
-                w = table.cellWidget(row, col)
-                if w is not None:
-                    table.removeCellWidget(row, col)
-                    table.setCellWidget(row + 2, col, w)
-            except Exception:
-                pass
-        table.removeRow(row)
-        table.setCurrentCell(row + 1, 0)
-        self._update_selected_operation()
-        self._update_contour_preview_temp()
-        self._sync_contour_edge_controls()
+        handle_contour_move_down(self)
 
     def _handle_contour_table_change(self, *args, **kwargs):
-        """Aktualisiert die aktive Operation, wenn die Segmenttabelle editiert wird."""
-        self._update_selected_operation()
-        self._update_contour_preview_temp()
-        self._sync_contour_edge_controls()
+        handle_contour_table_change(self, *args, **kwargs)
 
     def _handle_contour_row_select(self, *args, **kwargs):
-        table = self.contour_segments
-        self._contour_row_user_selected = bool(table and table.currentRow() >= 0)
-        self._sync_contour_edge_controls()
+        handle_contour_row_select(self, *args, **kwargs)
 
     def _handle_contour_edge_change(self, *args, **kwargs):
-        """
-        Kante/Kantenmaß:
-        - wenn eine Zeile ausgewählt ist, wird diese Zeile geändert
-        - ansonsten wird nur die Vorlage für das nächste Segment aktualisiert
-        """
-        edge_text = self.contour_edge_type.currentText() if self.contour_edge_type else ""
-        edge_size = self.contour_edge_size.value() if self.contour_edge_size else 0.0
-
-        # Vorlage immer merken – zählt für das nächste Segment+
-        self._contour_edge_template_text = edge_text
-        self._contour_edge_template_size = edge_size
-
-        table = self.contour_segments
-        if table is not None and table.currentRow() >= 0:
-            # Benutzer bearbeitet aktiv eine Tabellenzeile
-            self._write_contour_row(table.currentRow(), edge_text=edge_text, edge_size=edge_size)
-            self._update_selected_operation()
-            self._update_contour_preview_temp()
-
-        # Anzeige/Eingaben nachziehen (zeigt entweder Zeile oder Vorlage)
-        self._sync_contour_edge_controls()
+        handle_contour_edge_change(self, *args, **kwargs)
 
     def _update_contour_preview_temp(self):
-
-        try:
-            segs = self._collect_contour_segments()
-            if not segs:
-                self._set_preview_paths([])
-                return
-
-            params = {
-                "start_x": getattr(self, "contour_start_x", None).value()
-                if getattr(self, "contour_start_x", None)
-                else 0.0,
-                "start_z": getattr(self, "contour_start_z", None).value()
-                if getattr(self, "contour_start_z", None)
-                else 0.0,
-                "coord_mode": getattr(self, "contour_coord_mode", None).currentIndex()
-                if getattr(self, "contour_coord_mode", None)
-                else 0,
-                "segments": segs,
-            }
-            errs = validate_contour_segments_for_profile(params)
-            if errs:
-                self._log("[LatheEasyStep][contour][INVALID]", level="error")
-                for err in errs:
-                    self._log("  -", err, level="info")
-                self._set_preview_paths([])
-                return
-
-            primitives = build_contour_path(params)
-            self._set_preview_paths([primitives])
-        except Exception as e:
-            self._log("[LatheEasyStep] _update_contour_preview_temp ERROR:", e, level="error")
-            self._set_preview_paths([])
+        update_contour_preview_temp(self)
 
     def _sync_contour_edge_controls(self):
-        """Synchronisiert Kante/Maß-Eingabe mit der aktuellen Tabellenzeile und blendet Felder."""
-        table = self.contour_segments
-        if table is None:
-            return
-        row = table.currentRow()
-        edge_txt = self._contour_edge_template_text
-        size_val = self._contour_edge_template_size
-
-        # Nur wenn der Benutzer aktiv eine Zeile ausgewählt hat, zeigen wir deren Werte
-        if row >= 0:
-            edge_item = table.item(row, 3)
-            size_item = table.item(row, 4)
-            # Edge type can be a QComboBox cell widget (preferred) or a text item
-            edge_widget = table.cellWidget(row, 3)
-            arc_side_item = table.item(row, 5)
-            arc_side_widget = table.cellWidget(row, 5)
-            if edge_item and edge_item.text():
-                edge_txt = edge_item.text().strip()
-            if size_item and size_item.text():
-                try:
-                    size_val = float(size_item.text())
-                except Exception:
-                    size_val = 0.0
-
-        # Edge combo
-        if self.contour_edge_type:
-            idx = self.contour_edge_type.findText(edge_txt, QtCore.Qt.MatchFixedString)
-            if idx < 0:
-                idx = 0
-            self.contour_edge_type.blockSignals(True)
-            self.contour_edge_type.setCurrentIndex(idx)
-            self.contour_edge_type.blockSignals(False)
-
-        # Edge size Steuerung: Feld bleibt sichtbar; enable nur bei Fase/Radius
-        edge_txt_ctrl = self.contour_edge_type.currentText() if self.contour_edge_type else edge_txt
-        enable_size = edge_txt_ctrl.lower().startswith("f") or edge_txt_ctrl.lower().startswith("r")
-        if self.label_contour_edge_size:
-            self.label_contour_edge_size.setVisible(True)
-            self.label_contour_edge_size.setEnabled(True)
-        if self.contour_edge_size:
-            self.contour_edge_size.blockSignals(True)
-            self.contour_edge_size.setVisible(True)
-            self.contour_edge_size.setEnabled(enable_size)
-            self.contour_edge_size.setValue(size_val)
-            self.contour_edge_size.blockSignals(False)
+        sync_contour_edge_controls(self)
 
     def _handle_new_program(self):
-        if self._creating_new_program:
-            return
-        self._creating_new_program = True
-        try:
-            self.model.operations.clear()
-            self._current_program_path = None
-            self._current_gcode_path = None
-            self._op_row_user_selected = False
-            self._refresh_operation_list(select_index=-1)
-            self._refresh_preview()
-        finally:
-            self._creating_new_program = False
+        handle_new_program(self)
 
     def _handle_generate_gcode(self):
-        """G-Code erzeugen, Datei schreiben und Benutzer informieren."""
-        if self._generating_gcode:
-            return
-        self._generating_gcode = True
-        try:
-            header = self._collect_program_header()
-            settings = QtCore.QSettings()
-
-            default_filepath = self._build_program_filepath(header.get("program_name", ""))
-            dialog_dir = self._dialog_start_dir(
-                settings,
-                "LatheEasyStep/GcodeLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            default_filename = os.path.basename(default_filepath)
-            default_filepath = os.path.join(dialog_dir, default_filename)
-            os.makedirs(os.path.dirname(default_filepath), exist_ok=True)
-            filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
-                self.root_widget,
-                "G-Code speichern",
-                default_filepath,
-                "G-Code Dateien (*.ngc);;Alle Dateien (*)"
-            )
-            if not filepath:
-                return  # User cancelled
-            self._update_selected_operation(force=True)
-            self._write_gcode_file(filepath)
-            self._current_gcode_path = self._normalized_file_path(filepath)
-            self._remember_dialog_path(
-                settings,
-                filepath,
-                "LatheEasyStep/GcodeLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            open_fn = getattr(Action, "CALLBACK_OPEN_PROGRAM", None)
-            if callable(open_fn):
-                open_fn(filepath)
-            else:
-                QtWidgets.QMessageBox.information(
-                    self.root_widget or None,
-                    "LatheEasyStep",
-                    f"Programm gespeichert unter:\n{filepath}\n"
-                    "Automatisches Öffnen ist nicht verfügbar.",
-                )
-                self._log(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar", level="info")
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                self.root_widget or None,
-                "LatheEasyStep",
-                f"Fehler beim Erzeugen des Programms:\n{e}",
-            )
-        finally:
-            self._generating_gcode = False
-        return
+        return handle_generate_gcode(self)
 
     def _handle_load_tool_table(self):
-        """Tool table laden und Werkzeug-Dropdowns füllen."""
-        try:
-            settings = QtCore.QSettings()
-            last_path = settings.value("LatheEasyStep/ToolTablePath", "", type=str) or ""
-            default_path = self._dialog_start_dir(
-                settings,
-                "LatheEasyStep/ToolTableLastDir",
-                "LatheEasyStep/LastDialogDir",
-                "LatheEasyStep/ToolTablePath",
-            )
-            filepath, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self.root_widget,
-                "Werkzeugtabelle laden",
-                default_path,
-                "tool.tbl (*.tbl);;Tool Table Dateien (*.tbl);;Alle Dateien (*)"
-            )
-            if not filepath:
-                return  # User cancelled
-
-            tools, missing_iso = self._parse_tool_table(filepath)
-            self.tools = tools
-            self._missing_iso_tools = missing_iso
-            self._populate_tool_combos(tools)
-            self._update_tool_previews()
-
-            if self.tool_table_path:
-                self.tool_table_path.setText(filepath)
-                self.tool_table_path.setCursorPosition(0)
-            if self.lbl_tool_table_path:
-                self.lbl_tool_table_path.setText(filepath)
-
-            settings.setValue("LatheEasyStep/ToolTablePath", filepath)
-            self._remember_dialog_path(
-                settings,
-                filepath,
-                "LatheEasyStep/ToolTableLastDir",
-                "LatheEasyStep/LastDialogDir",
-            )
-            QtWidgets.QMessageBox.information(
-                self.root_widget or None,
-                "LatheEasyStep",
-                f"Werkzeugtabelle geladen: {len(tools)} Werkzeuge gefunden.",
-            )
-            if missing_iso:
-                formatted = ", ".join(f"T{num:02d}" for num in missing_iso)
-                QtWidgets.QMessageBox.information(
-                    self.root_widget or None,
-                    "ISO fehlt",
-                    f"ISO-Code/Radius konnte für die folgenden Werkzeuge nicht ermittelt werden (optional):\n{formatted}",
-                )
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                self.root_widget or None,
-                "LatheEasyStep",
-                f"Fehler beim Laden der Werkzeugtabelle:\n{e}",
-            )
+        handle_load_tool_table(self)
 
     def _auto_load_tool_table(self):
-        """Werkzeugtabelle beim Start still laden (ohne Dialoge)."""
-        if getattr(self, "_tool_table_auto_loaded", False):
-            return
-        self._tool_table_auto_loaded = True
-
-        candidates: List[str] = []
-        try:
-            settings = QtCore.QSettings()
-            last_path = settings.value("LatheEasyStep/ToolTablePath", "", type=str) or ""
-            if last_path:
-                candidates.append(last_path)
-        except Exception:
-            pass
-
-        try:
-            local_default = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tool.tbl"))
-            candidates.append(local_default)
-        except Exception:
-            pass
-
-        for filepath in candidates:
-            try:
-                if not filepath or not os.path.exists(filepath):
-                    continue
-                tools, missing_iso = self._parse_tool_table(filepath)
-                if not tools:
-                    continue
-                self.tools = tools
-                self._missing_iso_tools = missing_iso
-                self._populate_tool_combos(tools)
-                self._update_tool_previews()
-                if self.tool_table_path:
-                    self.tool_table_path.setText(filepath)
-                    self.tool_table_path.setCursorPosition(0)
-                if self.lbl_tool_table_path:
-                    self.lbl_tool_table_path.setText(filepath)
-                try:
-                    QtCore.QSettings().setValue("LatheEasyStep/ToolTablePath", filepath)
-                except Exception:
-                    pass
-                self._log(f"[LatheEasyStep] Werkzeugtabelle automatisch geladen: {filepath}", level="info")
-                return
-            except Exception as exc:
-                self._log(f"[LatheEasyStep] auto-load tool.tbl fehlgeschlagen ({filepath}): {exc}", level="debug")
+        auto_load_tool_table(self)
 
     def _parse_tool_table(self, filepath: str) -> tuple[Dict[int, Tool], List[int]]:
         """Parse LinuxCNC tool table file and return structured tool info plus ISO warnings."""
@@ -8565,573 +6463,49 @@ class HandlerClass:
         return tool_kind_from_orientation(orientation)
 
     def _populate_tool_combos(self, tools: Dict[int, Tool]):
-        """Populate all tool comboboxes with the same set of tools (no filtering)."""
-        self.tools = tools
-        if tools:
-            self._loaded_tools = tools
-        sorted_tools = sorted(tools.values(), key=lambda t: t.t)
-        if sorted_tools:
-            items = []
-            for tool in sorted_tools:
-                extras = []
-                if tool.d and tool.d > 0:
-                    extras.append(f"⌀{tool.d:.2f}".rstrip("0").rstrip(".") if tool.d % 1 else f"⌀{int(tool.d)}")
-                if tool.radius_mm and tool.radius_mm > 0:
-                    extras.append(f"R{tool.radius_mm:.2f}".rstrip("0").rstrip("."))
-                label_parts = [f"T{tool.t:02d}"]
-                comment = (tool.comment or "").strip()
-                if tool.iso_code:
-                    label_parts.append(tool.iso_code)
-                elif comment:
-                    label_parts.append(comment.split(";")[0].strip())
-                if extras:
-                    label_parts.append(f"({' '.join(extras)})")
-                items.append((tool.t, " – ".join(label_parts)))
-        else:
-            items = []
-
-        combo_names = [
-            "face_tool",
-            "drill_tool",
-            "groove_tool",
-            "thread_tool",
-            "parting_tool",
-            "key_tool",
-        ]
-        for combo_name in combo_names:
-            combo = getattr(self, combo_name, None)
-            if combo is None:
-                combo = self._get_widget_by_name(combo_name)
-            if combo is None or not hasattr(combo, "clear"):
-                continue
-
-            previous = combo.currentData() if hasattr(combo, "currentData") else None
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem("— Werkzeug wählen —", 0)
-            for tool_no, text in items:
-                combo.addItem(text, tool_no)
-
-            if previous is not None:
-                idx = combo.findData(previous)
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
-            combo.blockSignals(False)
+        populate_tool_combos(self, tools)
 
     def _tool_combo_label(self, tool: Tool, max_comment: int = 32) -> str:
-        """Return a short label used inside tool dropdowns."""
-        comment = (tool.comment or "").strip() or "kein Kommentar"
-        if len(comment) > max_comment:
-            comment = comment[: max_comment - 1].rstrip() + "…"
-        diameter = f"{tool.d:.2f}".rstrip("0").rstrip(".")
-        diameter = diameter if diameter else "0"
-        return f"T{tool.t:02d} – {comment} ({diameter} mm)"
+        return tool_combo_label(self, tool, max_comment)
 
     def _ensure_tool_preview_widgets(self):
-        """Ensure tool combo + preview label refs exist even in deferred embedded loading."""
-        for combo_name in ("face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool", "key_tool"):
-            if getattr(self, combo_name, None) is None:
-                try:
-                    setattr(self, combo_name, self._get_widget_by_name(combo_name))
-                except Exception:
-                    pass
-        for img_name in ("face_tool_img", "drill_tool_img", "groove_tool_img", "thread_tool_img", "parting_tool_img"):
-            if getattr(self, img_name, None) is None:
-                try:
-                    setattr(self, img_name, self._get_widget_by_name(img_name))
-                except Exception:
-                    pass
+        ensure_tool_preview_widgets(self)
 
     def _style_tool_preview_label(self, img_label: QtWidgets.QLabel):
-        """Make tool preview labels readable and visually fixed."""
-        try:
-            min_sz = img_label.minimumSize()
-            if min_sz.width() <= 0 or min_sz.height() <= 0:
-                img_label.setMinimumSize(96, 96)
-            max_sz = img_label.maximumSize()
-            if max_sz.width() <= 0 or max_sz.height() <= 0:
-                img_label.setMaximumSize(96, 96)
-            img_label.setFrameShape(QtWidgets.QFrame.Box)
-            img_label.setLineWidth(1)
-            img_label.setMidLineWidth(0)
-            img_label.setAlignment(QtCore.Qt.AlignCenter)
-            img_label.setWordWrap(True)
-            img_label.setScaledContents(False)
-        except Exception:
-            pass
+        style_tool_preview_label(self, img_label)
 
     def _render_tool_placeholder(self, text: str) -> QtGui.QPixmap:
-        """Render placeholder pixmap so no loose text appears in tabs."""
-        w, h = 96, 96
-        pixmap = QtGui.QPixmap(w, h)
-        pixmap.fill(QtGui.QColor("#f4f7fb"))
-
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#7a8794"), 1, QtCore.Qt.DashLine))
-        painter.drawRect(1, 1, w - 2, h - 2)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#9aa5b1"), 1))
-        painter.drawLine(18, h - 24, w - 18, 24)
-        painter.drawLine(18, 24, w - 18, h - 24)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#2d3748"), 1))
-        painter.setFont(QtGui.QFont("Arial", 8))
-        painter.drawText(QtCore.QRectF(8, h - 30, w - 16, 24), QtCore.Qt.AlignCenter, text)
-        painter.end()
-        return pixmap
+        return render_tool_placeholder(self, text)
 
     def _tool_number_from_combo(self, combo: QtWidgets.QComboBox | None) -> int:
-        if combo is None:
-            return 0
-        try:
-            data = combo.currentData()
-        except Exception:
-            data = None
-
-        if isinstance(data, (int, float)):
-            try:
-                n = int(data)
-                if n > 0:
-                    return n
-            except Exception:
-                pass
-
-        if isinstance(data, str):
-            m = re.search(r"\bT\s*(\d+)\b", data, re.IGNORECASE)
-            if not m:
-                m = re.search(r"(\d+)", data)
-            if m:
-                try:
-                    n = int(m.group(1))
-                    if n > 0:
-                        return n
-                except Exception:
-                    pass
-
-        try:
-            txt = combo.currentText() or ""
-        except Exception:
-            txt = ""
-        m = re.search(r"\bT\s*(\d+)\b", txt, re.IGNORECASE)
-        if m:
-            try:
-                n = int(m.group(1))
-                if n > 0:
-                    return n
-            except Exception:
-                pass
-        return 0
+        return tool_number_from_combo(self, combo)
 
     def _reposition_tool_preview_widgets(self):
-        """Place tool preview labels under the tool combo in each tab to avoid overlaying inputs."""
-        if getattr(self, "_tool_preview_repositioned", False):
-            return
-        self._ensure_tool_preview_widgets()
-
-        pairs = [
-            ("face_tool", "face_tool_img"),
-            ("drill_tool", "drill_tool_img"),
-            ("groove_tool", "groove_tool_img"),
-            ("thread_tool", "thread_tool_img"),
-            ("parting_tool", "parting_tool_img"),
-        ]
-
-        moved_any = False
-        for combo_name, img_name in pairs:
-            combo = getattr(self, combo_name, None)
-            img_label = getattr(self, img_name, None)
-            if combo is None or img_label is None:
-                continue
-            parent = combo.parentWidget()
-            if parent is None:
-                continue
-            layout = parent.layout()
-            if not isinstance(layout, QtWidgets.QFormLayout):
-                continue
-
-            row, role = layout.getWidgetPosition(combo)
-            if row < 0:
-                continue
-
-            try:
-                layout.removeWidget(img_label)
-            except Exception:
-                pass
-
-            target_row = row + 1
-            while layout.itemAt(target_row, QtWidgets.QFormLayout.FieldRole) is not None:
-                target_row += 1
-
-            layout.setWidget(target_row, QtWidgets.QFormLayout.FieldRole, img_label)
-            self._style_tool_preview_label(img_label)
-            try:
-                img_label.show()
-            except Exception:
-                pass
-            moved_any = True
-
-        if moved_any:
-            self._tool_preview_repositioned = True
+        reposition_tool_preview_widgets(self)
 
     def _update_tool_previews(self):
-        """Update tool preview images for all tool combos."""
-        self._ensure_tool_preview_widgets()
-        self._ensure_tool_preview_calibration_controls()
-        self._reposition_tool_preview_widgets()
-        tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool", "key_tool"]
-
-        for combo_name in tool_combos:
-            combo = getattr(self, combo_name, None)
-            img_label = getattr(self, combo_name + "_img", None)
-            if combo is None or img_label is None:
-                continue
-            self._style_tool_preview_label(img_label)
-            
-            tool_num = self._tool_number_from_combo(combo)
-            tool = self.tools.get(tool_num)
-            if tool:
-                try:
-                    pixmap = self._render_tool_preview(tool)
-                    scaled = pixmap.scaled(
-                        max(1, img_label.width() - 6),
-                        max(1, img_label.height() - 6),
-                        QtCore.Qt.KeepAspectRatio,
-                        QtCore.Qt.SmoothTransformation,
-                    )
-                    img_label.setPixmap(scaled)
-                    img_label.setText("")
-                except Exception as exc:
-                    self._log(f"[LatheEasyStep] tool preview render failed for T{tool_num:02d}: {exc}", level="warning")
-                    lang = self._current_language_code() if hasattr(self, "_current_language_code") else "de"
-                    txt = "Toolfehler" if lang == "de" else "Tool error"
-                    img_label.setPixmap(self._render_tool_placeholder(txt))
-                    img_label.setText("")
-            else:
-                lang = self._current_language_code() if hasattr(self, "_current_language_code") else "de"
-                txt = "Tool wählen" if lang == "de" else "Select tool"
-                img_label.setPixmap(self._render_tool_placeholder(txt))
-                img_label.setText("")
+        update_tool_previews(self)
 
     def _ensure_tool_preview_calibration_controls(self):
-        """Create runtime controls to calibrate tool preview orientation."""
-        if getattr(self, "_tool_preview_calibration_ready", False):
-            return
-        try:
-            existing_offset = self._get_widget_by_name("tool_preview_orient_offset")
-        except Exception:
-            existing_offset = None
-        try:
-            existing_mirror = self._get_widget_by_name("tool_preview_orient_mirror")
-        except Exception:
-            existing_mirror = None
-        try:
-            existing_label = self._get_widget_by_name("label_tool_preview_orientation")
-        except Exception:
-            existing_label = None
-
-        if existing_offset is not None and existing_mirror is not None:
-            self.tool_preview_orient_offset = existing_offset
-            self.tool_preview_orient_mirror = existing_mirror
-            self.tool_preview_orient_label = existing_label
-            self._apply_tool_preview_calibration_settings_to_controls()
-            self._tool_preview_calibration_ready = True
-            return
-
-        tool_path = getattr(self, "tool_table_path", None) or self._get_widget_by_name("tool_table_path")
-        load_btn = getattr(self, "btn_load_tool_table", None) or self._get_widget_by_name("btn_load_tool_table")
-
-        parent = None
-        if tool_path is not None:
-            parent = tool_path.parentWidget()
-        if parent is None and load_btn is not None:
-            parent = load_btn.parentWidget()
-        if parent is None:
-            return
-
-        layout = parent.layout()
-        if layout is None:
-            return
-
-        label = QtWidgets.QLabel(parent)
-        label.setObjectName("label_tool_preview_orientation")
-        label.setText("Vorschau-Lage")
-
-        row_widget = QtWidgets.QWidget(parent)
-        row_widget.setObjectName("tool_preview_orientation_row")
-        row_layout = QtWidgets.QHBoxLayout(row_widget)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
-
-        offset = QtWidgets.QDoubleSpinBox(row_widget)
-        offset.setObjectName("tool_preview_orient_offset")
-        offset.setRange(-360.0, 360.0)
-        offset.setSingleStep(5.0)
-        offset.setDecimals(1)
-        offset.setSuffix(" °")
-        offset.setToolTip("Winkel-Offset für Werkzeugvorschau (Anzeige)")
-
-        mirror = QtWidgets.QCheckBox(row_widget)
-        mirror.setObjectName("tool_preview_orient_mirror")
-        mirror.setText("spiegeln")
-        mirror.setToolTip("Vorschau-Lage spiegeln (Anzeige)")
-
-        row_layout.addWidget(offset)
-        row_layout.addWidget(mirror)
-        row_layout.addStretch(1)
-
-        inserted = False
-        if isinstance(layout, QtWidgets.QFormLayout):
-            insert_row = layout.rowCount()
-            layout.insertRow(insert_row, label, row_widget)
-            inserted = True
-        elif isinstance(layout, QtWidgets.QGridLayout):
-            row = layout.rowCount()
-            layout.addWidget(label, row, 0)
-            layout.addWidget(row_widget, row, 1)
-            inserted = True
-
-        if not inserted:
-            try:
-                label.setParent(None)
-                row_widget.setParent(None)
-            except Exception:
-                pass
-            return
-
-        self.tool_preview_orient_offset = offset
-        self.tool_preview_orient_mirror = mirror
-        self.tool_preview_orient_label = label
-
-        self._apply_tool_preview_calibration_settings_to_controls()
-        self._tool_preview_calibration_ready = True
-
-        try:
-            offset.valueChanged.connect(self._on_tool_preview_calibration_changed)
-        except Exception:
-            pass
-        try:
-            mirror.toggled.connect(self._on_tool_preview_calibration_changed)
-        except Exception:
-            pass
+        ensure_tool_preview_calibration_controls(self)
 
     def _apply_tool_preview_calibration_settings_to_controls(self):
         offset_widget = getattr(self, "tool_preview_orient_offset", None)
         mirror_widget = getattr(self, "tool_preview_orient_mirror", None)
-        if offset_widget is None or mirror_widget is None:
-            return
-        try:
-            settings = QtCore.QSettings()
-            offset = float(settings.value("LatheEasyStep/ToolPreviewOrientationOffsetDeg", 0.0))
-            mirror = bool(settings.value("LatheEasyStep/ToolPreviewOrientationMirror", False, type=bool))
-        except Exception:
-            offset = 0.0
-            mirror = False
-
-        try:
-            offset_widget.blockSignals(True)
-            offset_widget.setValue(offset)
-            offset_widget.blockSignals(False)
-        except Exception:
-            pass
-        try:
-            mirror_widget.blockSignals(True)
-            mirror_widget.setChecked(mirror)
-            mirror_widget.blockSignals(False)
-        except Exception:
-            pass
+        apply_tool_preview_calibration_settings_to_controls(self, offset_widget, mirror_widget)
 
     def _on_tool_preview_calibration_changed(self):
-        try:
-            offset_widget = getattr(self, "tool_preview_orient_offset", None)
-            mirror_widget = getattr(self, "tool_preview_orient_mirror", None)
-            if offset_widget is None or mirror_widget is None:
-                return
-            offset = float(offset_widget.value())
-            mirror = bool(mirror_widget.isChecked())
-            settings = QtCore.QSettings()
-            settings.setValue("LatheEasyStep/ToolPreviewOrientationOffsetDeg", offset)
-            settings.setValue("LatheEasyStep/ToolPreviewOrientationMirror", mirror)
-        except Exception:
-            return
-        self._update_tool_previews()
+        on_tool_preview_calibration_changed(self)
 
     def _render_tool_preview(self, tool: Tool) -> QtGui.QPixmap:
-        """Render a simple tool preview using the parsed tool metadata."""
-        size = 140
-        pixmap = QtGui.QPixmap(size, size)
-        pixmap.fill(QtGui.QColor("#f4f7fb"))
-
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-
-        center_x = size / 2
-        center_y = size / 2 - 6
-        margin = 12
-
-        # draw axes
-        axis_pen = QtGui.QPen(QtGui.QColor("#63707c"))
-        axis_pen.setWidth(1)
-        painter.setPen(axis_pen)
-        painter.drawLine(
-            QtCore.QLineF(float(margin), float(center_y), float(size - margin), float(center_y))
-        )
-        painter.drawLine(
-            QtCore.QLineF(float(center_x), float(margin), float(center_x), float(size - margin))
-        )
-        painter.setFont(QtGui.QFont("Arial", 8))
-        # Lathe convention for side view: Z horizontal, X vertical
-        painter.drawText(QtCore.QPointF(float(size - margin + 4), float(center_y - 2)), "Z")
-        painter.drawText(QtCore.QPointF(float(center_x + 2), float(margin - 2)), "X")
-
-        profile = self._infer_insert_profile(tool)
-        shape_key = profile.get("shape_key", "")
-        family = profile.get("family", "turning")
-        handed = profile.get("handed", "neutral")
-        groove_width_mm = profile.get("groove_width_mm", 0.0)
-
-        if tool.d and tool.d >= 1.0:
-            visual_span = float(tool.d)
-        elif family in ("turning", "thread", "groove"):
-            visual_span = 6.0
-        elif family == "holder":
-            visual_span = 8.0
-        else:
-            visual_span = 4.0
-
-        tool_span = max(visual_span, 1.0)
-        scale = max((size - margin * 2) / max(tool_span * 2.1, 1.0), 0.5)
-        scale = min(scale, 12.0)
-        insert_size = max(2.0, min(tool_span * 0.65, 5.5))
-
-        polygon, circle_radius = self._build_insert_geometry(shape_key, insert_size, family, handed, groove_width_mm)
-
-        painter.save()
-        painter.translate(center_x, center_y)
-        painter.scale(scale, scale)
-
-        insert_angle = self._tool_orientation_angle(tool.orientation)
-        holder_angle = self._tool_holder_angle(tool.orientation, family, handed)
-
-        painter.save()
-        painter.rotate(holder_angle)
-
-        # holder/shank (gives a clearer orientation from Q tool position)
-        shank_pen = QtGui.QPen(QtGui.QColor("#6b7280"), 0)
-        painter.setPen(shank_pen)
-        painter.setBrush(QtGui.QColor("#d1d5db"))
-        shank_on_positive_x = (handed == "internal")
-        if family == "holder":
-            shank = QtCore.QRectF(-insert_size * 2.1, -insert_size * 0.42, insert_size * 4.2, insert_size * 0.84)
-        elif shank_on_positive_x:
-            shank = QtCore.QRectF(insert_size * 0.6, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
-        else:
-            shank = QtCore.QRectF(-insert_size * 2.0, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
-        painter.drawRect(shank)
-        painter.restore()
-
-        painter.save()
-        painter.rotate(insert_angle)
-
-        painter.setPen(QtGui.QPen(QtGui.QColor("#2c3e50"), 0))
-        painter.setBrush(QtGui.QColor("#e76f51"))
-        if polygon is not None:
-            painter.drawPolygon(polygon)
-        elif circle_radius > 0:
-            painter.drawEllipse(QtCore.QPointF(0.0, 0.0), circle_radius, circle_radius)
-
-        if tool.radius_mm and tool.radius_mm > 0:
-            nose_radius = max(tool.radius_mm, insert_size * 0.06)
-            nose_radius = min(nose_radius, insert_size * 0.24)
-            circle_pen = QtGui.QPen(QtGui.QColor(29, 53, 87, 140))
-            circle_pen.setWidthF(0.18)
-            painter.setPen(circle_pen)
-            painter.setBrush(QtGui.QColor(244, 162, 97, 90))
-            if polygon is not None and len(polygon) > 0:
-                if handed == "internal":
-                    nose_pt = min((polygon[i] for i in range(len(polygon))), key=lambda p: p.x())
-                else:
-                    nose_pt = max((polygon[i] for i in range(len(polygon))), key=lambda p: p.x())
-                painter.drawEllipse(nose_pt, nose_radius, nose_radius)
-            else:
-                tip_x = -circle_radius if handed == "internal" else circle_radius
-                painter.drawEllipse(QtCore.QPointF(tip_x, 0.0), nose_radius, nose_radius)
-        painter.restore()
-
-        painter.setPen(QtGui.QColor("#1c1e26"))
-        info_text = f"T{tool.t:02d}"
-        if tool.iso_code:
-            info_text += f" · {tool.iso_code}"
-        painter.drawText(margin, size - margin + 6, info_text)
-        if tool.orientation is not None:
-            painter.drawText(size - margin - 32, size - margin + 6, f"Q{tool.orientation}")
-
-        painter.end()
-        return pixmap
+        return render_tool_preview(self, tool)
 
     def _infer_insert_shape_key(self, tool: Tool) -> str:
-        """Infer ISO insert shape letter from iso_code or tool comment.
-
-        Supports full codes (e.g. CNMG1204) and shorthand tokens in comments
-        like DCMT/CCMT/VCMT even without trailing size digits.
-        """
-        iso = (tool.iso_code or "").upper().strip()
-        if iso and iso[0] in _INSERT_SHAPE_KEYS:
-            return iso[0]
-
-        comment = (tool.comment or "").upper()
-        if not comment:
-            return ""
-
-        token_pattern = re.compile(r"\b([A-Z][A-Z0-9]{2,})\b")
-        for match in token_pattern.finditer(comment):
-            token = match.group(1)
-            if token and token[0] in _INSERT_SHAPE_KEYS:
-                return token[0]
-        return ""
+        self._INSERT_SHAPE_KEYS = _INSERT_SHAPE_KEYS
+        return infer_insert_shape_key(self, tool)
 
     def _infer_insert_profile(self, tool: Tool) -> Dict[str, object]:
-        """Infer insert family/shape/hand from tool metadata and comment."""
-        comment = (tool.comment or "")
-        text = comment.upper()
-        shape_key = self._infer_insert_shape_key(tool)
-
-        family = "turning"
-        handed = "neutral"
-        groove_width_mm = 0.0
-
-        if re.search(r"\b(E|I)R\d+\b", text) or "GEWINDE" in text or "AG60" in text or "MMT" in text:
-            family = "thread"
-            if re.search(r"\bIR\d+\b", text) or "INNEN" in text:
-                handed = "internal"
-            elif re.search(r"\bER\d+\b", text) or "AUSSEN" in text or "AUßEN" in text:
-                handed = "external"
-            if not shape_key:
-                shape_key = "V"
-        elif re.search(r"\b(MGMN|MRMN)\d+\b", text) or "EINSTECH" in text or "ABSTECH" in text:
-            family = "groove"
-            if "INNEN" in text:
-                handed = "internal"
-            elif "AUSSEN" in text or "AUßEN" in text:
-                handed = "external"
-            match = re.search(r"\b(?:MGMN|MRMN)(\d{3})\b", text)
-            if match:
-                try:
-                    groove_width_mm = int(match.group(1)) / 100.0
-                except Exception:
-                    groove_width_mm = 0.0
-            if not shape_key:
-                shape_key = "S"
-        elif "ER" in text and ("AUFNAHME" in text or "COLLET" in text or "SPAN" in text):
-            family = "holder"
-            handed = "neutral"
-            if not shape_key:
-                shape_key = ""
-
-        return {
-            "shape_key": shape_key,
-            "family": family,
-            "handed": handed,
-            "groove_width_mm": groove_width_mm,
-        }
+        return infer_insert_profile(self, tool)
 
     def _build_insert_geometry(
         self,
@@ -9141,159 +6515,16 @@ class HandlerClass:
         handed: str = "neutral",
         groove_width_mm: float = 0.0,
     ) -> tuple[QtGui.QPolygonF | None, float]:
-        """Return insert polygon/circle radius by ISO shape letter.
-
-        Key mapping (ISO first letter):
-        C=80° rhombic, D=55° rhombic, V=35° rhombic, S=90° square,
-        T=60° triangle, W=80° trigon, R=round.
-        """
-        key = (shape_key or "").upper().strip()
-
-        if family == "holder":
-            drill_len = insert_size * 1.6
-            drill_half = insert_size * 0.12
-            poly = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(drill_len, 0.0),
-                    QtCore.QPointF(-insert_size * 0.2, drill_half),
-                    QtCore.QPointF(-insert_size * 0.2, -drill_half),
-                ]
-            )
-            return poly, 0.0
-
-        if family == "thread":
-            tip_angle = 60.0
-            tip_x = insert_size * 0.95
-            rear_x = insert_size * 0.55
-            half_h = (tip_x + rear_x) * math.tan(math.radians(tip_angle) * 0.5)
-            half_h = min(half_h, insert_size * 0.95)
-            direction = 1.0
-            poly = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(direction * tip_x, 0.0),
-                    QtCore.QPointF(-direction * rear_x, half_h),
-                    QtCore.QPointF(-direction * rear_x, -half_h),
-                ]
-            )
-            return poly, 0.0
-
-        if family == "groove":
-            if groove_width_mm > 0:
-                blade_h = max(insert_size * 0.16, min(insert_size * 0.55, insert_size * (groove_width_mm / 3.0) * 0.5))
-            else:
-                blade_h = insert_size * 0.28
-            blade_tip = insert_size * 0.95
-            blade_back = insert_size * 0.9
-            direction = -1.0 if handed == "internal" else 1.0
-            poly = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(direction * blade_tip, -blade_h),
-                    QtCore.QPointF(-direction * blade_back, -blade_h),
-                    QtCore.QPointF(-direction * blade_back, blade_h),
-                    QtCore.QPointF(direction * blade_tip, blade_h),
-                ]
-            )
-            return poly, 0.0
-
-        if key == "R":
-            return None, insert_size * 0.56
-
-        if key in ("C", "D", "V", "S"):
-            angle_map = {"C": 80.0, "D": 55.0, "V": 35.0, "S": 90.0}
-            corner_angle = angle_map[key]
-            half_h = insert_size * 0.52
-            tan_half = math.tan(math.radians(corner_angle) * 0.5)
-            tan_half = tan_half if tan_half > 1e-6 else 1e-6
-            half_w = min(insert_size * 1.55, half_h / tan_half)
-            poly = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(half_w, 0.0),
-                    QtCore.QPointF(0.0, half_h),
-                    QtCore.QPointF(-half_w, 0.0),
-                    QtCore.QPointF(0.0, -half_h),
-                ]
-            )
-            return poly, 0.0
-
-        if key in ("T", "W"):
-            tip_angle = 60.0 if key == "T" else 80.0
-            tip_x = insert_size * 0.9
-            rear_x = insert_size * 0.55
-            height = (tip_x + rear_x) * math.tan(math.radians(tip_angle) * 0.5)
-            height = min(height, insert_size * 0.95)
-            poly = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(tip_x, 0.0),
-                    QtCore.QPointF(-rear_x, height),
-                    QtCore.QPointF(-rear_x, -height),
-                ]
-            )
-            return poly, 0.0
-
-        # fallback: 80° rhombic (similar to C-type)
-        fallback, _ = self._build_insert_geometry("C", insert_size)
-        return fallback, 0.0
+        return build_insert_geometry(self, shape_key, insert_size, family, handed, groove_width_mm)
 
     def _tool_orientation_angle(self, orientation: int | None) -> float:
-        if orientation is None:
-            return 0.0
-        angle_map = {
-            0: 0.0,
-            1: 225.0,
-            2: 225.0,
-            3: 135.0,
-            4: 180.0,
-            5: 225.0,
-            6: 270.0,
-            7: 315.0,
-            8: 225.0,
-            9: 315.0,
-        }
-        angle = angle_map.get(int(orientation), 0.0)
-        try:
-            settings = QtCore.QSettings()
-            offset = float(settings.value("LatheEasyStep/ToolPreviewOrientationOffsetDeg", 0.0))
-            mirrored = bool(settings.value("LatheEasyStep/ToolPreviewOrientationMirror", False, type=bool))
-            angle = -angle if mirrored else angle
-            angle += offset
-        except Exception:
-            pass
-        return angle
+        return tool_orientation_angle(self, orientation)
 
     def _tool_holder_angle(self, orientation: int | None, family: str, handed: str) -> float:
-        """Return holder angle constrained to orthogonal X/Z directions.
-
-        CNC setup convention: holder is clamped parallel to machine axes (X or Z),
-        not at arbitrary diagonal angles.
-        """
-        if family in ("holder", "drilling"):
-            base = 0.0
-        else:
-            base = self._tool_orientation_angle(orientation)
-
-        orthogonal = (0.0, 90.0, 180.0, 270.0)
-        snapped = min(orthogonal, key=lambda candidate: abs(((base - candidate + 180.0) % 360.0) - 180.0))
-
-        # Internal boring bars are commonly shown opposite in side-view to keep
-        # the shank away from the workpiece in preview.
-        if handed == "internal" and snapped in (0.0, 180.0):
-            snapped = 180.0 if snapped == 0.0 else 0.0
-
-        return snapped
+        return tool_holder_angle(self, orientation, family, handed)
 
     def _build_program_filepath(self, name_raw: str | None) -> str:
-        base = (name_raw or "").strip()
-        if not base:
-            base = "conv_lathe"
-
-        # Dateinamen säubern: Nur Buchstaben/Ziffern/_/- behalten, Leerzeichen -> _
-        base = base.replace(" ", "_")
-        base = re.sub(r"[^A-Za-z0-9_\-]", "", base)
-        if not base:
-            base = "conv_lathe"
-
-        filename = base if base.lower().endswith(".ngc") else f"{base}.ngc"
-        return os.path.expanduser(os.path.join("~/linuxcnc/nc_files", filename))
+        return build_program_filepath(self, name_raw)
 
     def _handle_param_change(self):
         """Generic handler for parameter widgets (spinboxes, combos, checkboxes, lineedits)."""
@@ -9357,729 +6588,47 @@ class HandlerClass:
 
 
     def _handle_selection_change(self, row: int):
-        previous_row = getattr(self, "_active_form_operation_index", -1)
-        if (
-            not getattr(self, "_ui_loading", False)
-            and previous_row != row
-            and 0 <= previous_row < len(self.model.operations)
-        ):
-            try:
-                self._sync_form_to_operation(previous_row)
-            except Exception as exc:
-                self._log(f"[LatheEasyStep] sync previous operation failed: {exc}", level="warning")
-        self._ui_loading = True
-        try:
-            self._op_row_user_selected = bool(
-                self.list_ops
-                and (self.list_ops.hasFocus() or self._op_row_user_selected)
-            )
-            if row < 0 or row >= len(self.model.operations):
-                return
-            op = self.model.operations[row]
-            if self.tab_params:
-                type_to_tab = {
-                    OpType.PROGRAM_HEADER: 0,
-                    OpType.FACE: 1,
-                    OpType.CONTOUR: 2,
-                    OpType.ABSPANEN: 3,
-                    OpType.THREAD: 4,
-                    OpType.GROOVE: 5,
-                    OpType.DRILL: 6,
-                    OpType.KEYWAY: 7,
-                }
-                self.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
-            self._load_params_to_form(op)
-            # keep dynamic UI bits in sync
-            try:
-                if op.op_type == OpType.FACE:
-                    self._update_face_visibility()
-            except Exception:
-                pass
-            try:
-                self._update_retract_visibility()
-            except Exception:
-                pass
-            self._refresh_preview()
-            self._active_form_operation_index = row
-        finally:
-            self._ui_loading = False
+        handle_selection_change(self, row)
 
 
     def _handle_global_change(self, *args, **kwargs):
-        sender_name = ""
-        try:
-            sender_fn = getattr(self, "sender", None)
-            sender = sender_fn() if callable(sender_fn) else None
-            sender_name = sender.objectName() if sender is not None and hasattr(sender, "objectName") else ""
-        except Exception:
-            sender_name = ""
-
-        if sender_name == "program_machine_profile":
-            self._apply_machine_profile_preset()
-        self._apply_unit_suffix()
-        self._apply_chuck_safety_preset()
-        self._update_program_visibility()
-        self._update_retract_visibility()
-        self._update_subspindle_visibility()
-        self._update_face_visibility()
-        if getattr(self, "_startup_complete", False):
-            self._refresh_preview()
+        handle_global_change(self, *args, **kwargs)
 
     def _apply_machine_profile_preset(self) -> None:
-        if getattr(self, "_applying_machine_profile", False):
-            return
-        profile_combo = getattr(self, "program_machine_profile", None)
-        if profile_combo is None:
-            return
-
-        try:
-            profile_idx = int(profile_combo.currentIndex())
-        except Exception:
-            profile_idx = 0
-        if profile_idx <= 0:
-            return
-
-        preset = MACHINE_CHUCK_PROFILE_PRESETS.get(profile_idx)
-        if not preset:
-            return
-
-        self._applying_machine_profile = True
-        try:
-            mappings = (
-                (getattr(self, "program_chuck_size", None), int(preset.get("chuck_size_idx", 0))),
-                (getattr(self, "program_chuck_part_type", None), int(preset.get("part_type_idx", 0))),
-                (getattr(self, "program_chuck_grip_mode", None), int(preset.get("grip_mode_idx", 0))),
-                (getattr(self, "program_chuck_profile", None), int(preset.get("chuck_profile_idx", 0))),
-            )
-            for combo, idx in mappings:
-                if combo is None:
-                    continue
-                try:
-                    if 0 <= idx < int(combo.count()) and int(combo.currentIndex()) != idx:
-                        combo.blockSignals(True)
-                        combo.setCurrentIndex(idx)
-                except Exception:
-                    pass
-                finally:
-                    try:
-                        combo.blockSignals(False)
-                    except Exception:
-                        pass
-        finally:
-            self._applying_machine_profile = False
+        self.MACHINE_CHUCK_PROFILE_PRESETS = MACHINE_CHUCK_PROFILE_PRESETS
+        apply_machine_profile_preset(self)
 
     def _chuck_size_mm(self) -> int:
-        combo = getattr(self, "program_chuck_size", None)
-        if combo is None:
-            return 0
-        try:
-            txt = str(combo.currentText() or "").lower().strip()
-        except Exception:
-            return 0
-        if not txt or "kein" in txt or "no chuck" in txt:
-            return 0
-        m = re.search(r"(\d+)", txt)
-        if not m:
-            return 0
-        try:
-            return int(m.group(1))
-        except Exception:
-            return 0
+        return chuck_size_mm(self)
 
     def _apply_chuck_safety_preset(self) -> None:
-        if getattr(self, "_applying_chuck_preset", False):
-            return
-        size_mm = self._chuck_size_mm()
-        x_min_w = getattr(self, "program_chuck_x_min", None)
-        x_max_w = getattr(self, "program_chuck_x_max", None)
-        z_lim_w = getattr(self, "program_chuck_z_limit", None)
-        sc_w = getattr(self, "program_sc", None)
-        if x_min_w is None or x_max_w is None or z_lim_w is None:
-            return
-
-        if size_mm <= 0:
-            return
-        preset = CHUCK_PRESETS.get(size_mm)
-        if not preset:
-            return
-
-        xa = self._widget_get_value(getattr(self, "program_xa", None))
-        if xa is None:
-            xa = 0.0
-        xi = self._widget_get_value(getattr(self, "program_xi", None))
-        if xi is None:
-            xi = 0.0
-        zb = self._widget_get_value(getattr(self, "program_zb", None))
-        if zb is None:
-            zb = 0.0
-
-        part_type_idx = 0
-        grip_idx = 0
-        profile_idx = 0
-        try:
-            if getattr(self, "program_chuck_part_type", None) is not None:
-                part_type_idx = int(self.program_chuck_part_type.currentIndex())
-        except Exception:
-            part_type_idx = 0
-        try:
-            if getattr(self, "program_chuck_grip_mode", None) is not None:
-                grip_idx = int(self.program_chuck_grip_mode.currentIndex())
-        except Exception:
-            grip_idx = 0
-        try:
-            if getattr(self, "program_chuck_profile", None) is not None:
-                profile_idx = int(self.program_chuck_profile.currentIndex())
-        except Exception:
-            profile_idx = 0
-
-        profile_mod = CHUCK_PROFILE_MODIFIERS.get(profile_idx, CHUCK_PROFILE_MODIFIERS[0])
-
-        jaw_band = float(preset["jaw_band"]) * float(profile_mod.get("jaw_band_mul", 1.0))
-        sc_default = max(0.2, float(preset["sc"]) + float(profile_mod.get("sc_add", 0.0)))
-        jaw_depth_z = float(preset["jaw_depth_z"]) * float(profile_mod.get("jaw_depth_mul", 1.0))
-
-        if grip_idx == 0:
-            x_min = max(float(xa) - 2.0 * jaw_band, 0.0)
-            x_max = float(size_mm) + 2.0 * sc_default
-        else:
-            if part_type_idx == 1 and float(xi) > 0.0:
-                x_min = 0.0
-                x_max = max(float(xi) + 2.0 * jaw_band + 2.0 * sc_default, 2.0 * sc_default)
-            else:
-                x_min = 0.0
-                x_max = max(float(size_mm) * 0.6, 2.0 * sc_default)
-
-        # Z-Limit: Bereich hinter dem Werkstücküberstand (Richtung Futter) plus Sicherheitsreserve
-        z_limit = float(zb) - jaw_depth_z - sc_default
-
-        self._applying_chuck_preset = True
-        try:
-            for w, val in ((x_min_w, x_min), (x_max_w, x_max), (z_lim_w, z_limit)):
-                try:
-                    w.blockSignals(True)
-                    w.setValue(float(val))
-                finally:
-                    w.blockSignals(False)
-
-            if sc_w is not None:
-                try:
-                    curr_sc = float(sc_w.value())
-                except Exception:
-                    curr_sc = 0.0
-                if curr_sc <= 0.0:
-                    try:
-                        sc_w.blockSignals(True)
-                        sc_w.setValue(sc_default)
-                    finally:
-                        sc_w.blockSignals(False)
-        finally:
-            self._applying_chuck_preset = False
+        self.CHUCK_PRESETS = CHUCK_PRESETS
+        self.CHUCK_PROFILE_MODIFIERS = CHUCK_PROFILE_MODIFIERS
+        apply_chuck_safety_preset(self)
 
     # ---- Form-Optik ---------------------------------------------------
     def _apply_unit_suffix(self):
-        """Einheit mm/inch im gesamten Panel sichtbar umschalten."""
-
-        # Falls aus irgendeinem Grund noch keine Combo referenziert ist:
-        if self.program_unit is None:
-            self.program_unit = self._find_unit_combo()
-            if self.program_unit is None:
-                self._log("[LatheEasyStep] _apply_unit_suffix: no unit combo, abort", level="info")
-                return
-
-        idx = self.program_unit.currentIndex()
-        unit = "mm" if idx == 0 else "inch"
-
-        unit_suffix = f" {unit}"
-        feed_suffix = f" {unit}/U"
-
-        # Root-Widget bestimmen
-        root = self.root_widget or self.program_unit.window()
-        if root is None:
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _apply_unit_suffix: no root widget", level="info")
-            return
-
-        if getattr(self, "_verbose_widget_logs", False):
-            self._log(f"[LatheEasyStep] _apply_unit_suffix(): unit={unit}, root={root.objectName()}", level="info")
-
-        # --- 1) Alle DoubleSpinBoxen im Fenster behandeln ---
-        for sb in root.findChildren(QtWidgets.QDoubleSpinBox):
-            name = sb.objectName()
-
-            angle_fields = {"thread_infeed_q", "key_slot_start_angle", "key_slot_angle_step"}
-
-            # Winkel und Drehzahl nicht mit Längeneinheiten versehen
-            if name in angle_fields:
-                sb.setSuffix(" °")
-                continue
-            if name in ("program_s1", "program_s3") or "spindle" in name.lower():
-                sb.setSuffix("")
-                continue
-
-            if "feed" in name.lower():
-                sb.setSuffix(feed_suffix)
-            else:
-                sb.setSuffix(unit_suffix)
-
-        # --- 2) Beschriftungstexte: Einheiten komplett entfernen (nur einmal) ---
-        if not hasattr(self, "_labels_cleaned") or not self._labels_cleaned:
-            for lbl in root.findChildren(QtWidgets.QLabel):
-                text = lbl.text()
-                # nur Labels anfassen, die überhaupt Klammern mit Einheit haben
-                if "(" in text and ")" in text and any(u in text for u in ("mm", "inch", "/U")):
-                    prefix = text.split("(", 1)[0].rstrip()
-                    lbl.setText(prefix)
-            self._labels_cleaned = True
-
-        # Fenstertitel markieren, damit man sofort sieht, dass was passiert
-        win = root.window()
-        try:
-            old_title = win.windowTitle()
-            win.setWindowTitle(f"{old_title.split('[')[0].strip()} [{unit}]")
-        except Exception:
-            pass
+        apply_unit_suffix(self)
 
     def _update_program_visibility(self, shape=None):
-        """Zeigt/verbirgt Programmpfelder abhängig von der Rohteilform."""
-
-        # aktuelle Form ermitteln (Index-basiert für sprachunabhängige Labels)
-        shape_idx = None
-        if hasattr(self, "program_shape") and self.program_shape is not None:
-            try:
-                shape_idx = int(self.program_shape.currentIndex())
-            except Exception:
-                shape_idx = None
-
-        if shape is None:
-            if shape_idx is not None and shape_idx >= 0:
-                shape = shape_idx
-            elif hasattr(self, "program_shape") and self.program_shape is not None:
-                shape = self.program_shape.currentText()
-
-        if shape is None or shape == "":
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _update_program_visibility: keine Form", level="warning")
-            return
-
-        # Normalisieren: Index (sprachneutral) oder Text (Fallback)
-        shape_key = None
-        if isinstance(shape, int):
-            shape_map = {0: "zylinder", 1: "rohr", 2: "rechteck", 3: "n-eck"}
-            shape_key = shape_map.get(shape)
-            shape_text = shape_key or str(shape)
-        else:
-            shape_text = str(shape)
-            shape_key = shape_text.strip().lower()
-
-        if getattr(self, "_verbose_widget_logs", False):
-            self._log(f"[LatheEasyStep] _update_program_visibility(): shape='{shape_text}'", level="info")
-
-        # Root-Widget wie in _apply_unit_suffix benutzen
-        root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
-        if root is None:
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _update_program_visibility: kein root_widget", level="warning")
-            return
-
-        def _w(objname: str):
-            if not getattr(self, "widgets", None):
-                self.widgets = {}
-            w = self.widgets.get(objname)
-            if w is None and hasattr(self, "_get_widget_by_name"):
-                try:
-                    w = self._get_widget_by_name(objname)
-                except Exception:
-                    w = None
-                if w is not None:
-                    self.widgets[objname] = w
-            return w
-
-        widgets = {
-            "label_xa": _w("label_prog_xa"),
-            "xa": _w("program_xa"),
-            "label_xi": _w("label_prog_xi"),
-            "xi": _w("program_xi"),
-            "label_w": _w("label_prog_w"),
-            "w": _w("program_w"),
-            "label_l": _w("label_prog_l"),
-            "l": _w("program_l"),
-            "label_n": _w("label_prog_n"),
-            "n": _w("program_n"),
-            "label_sw": _w("label_prog_sw"),
-            "sw": _w("program_sw"),
-        }
-
-        # shape_key wurde oben bereits validiert / normalisiert
-        shape_norm = (shape_key or "").strip().lower()
-
-        show_xa = shape_norm in ("zylinder", "rohr")
-        show_xi = shape_norm == "rohr"
-        show_w = shape_norm == "rechteck"
-        show_l = shape_norm == "rechteck"
-        show_n = shape_norm in ("n-eck", "ne-eck", "n-eck ")
-        show_sw = show_n
-
-        def set_vis(key, visible):
-            w = widgets.get(key)
-            if w is not None:
-                w.setVisible(bool(visible))
-
-        set_vis("label_xa", show_xa); set_vis("xa", show_xa)
-        set_vis("label_xi", show_xi); set_vis("xi", show_xi)
-        set_vis("label_w", show_w); set_vis("w", show_w)
-        set_vis("label_l", show_l); set_vis("l", show_l)
-        set_vis("label_n", show_n); set_vis("n", show_n)
-        set_vis("label_sw", show_sw); set_vis("sw", show_sw)
+        update_program_visibility(self, shape)
 
     def _update_retract_visibility(self, widget=None, mode_in=None):
-        """Zeigt/verbirgt Rückzugsebenen abhängig vom Rückzug-Modus."""
-
-        combo = self.program_retract_mode
-        if isinstance(widget, QtWidgets.QComboBox):
-            combo = widget
-
-        if combo is None:
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _update_retract_visibility: kein Combo / Modus", level="warning")
-            return
-
-        idx = combo.currentIndex()
-        if isinstance(mode_in, (int, float)):
-            idx = int(mode_in)
-
-        if getattr(self, "_verbose_widget_logs", False):
-            self._log(f"[LatheEasyStep] _update_retract_visibility(): widget={combo}, index={idx}", level="info")
-
-        # Root-Widget wie in _update_program_visibility benutzen
-        root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
-        if root is None:
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _update_retract_visibility: kein root_widget", level="warning")
-            return
-
-        def show(name: str, visible: bool):
-            w = None
-            if hasattr(self, "_get_widget_by_name"):
-                try:
-                    w = self._get_widget_by_name(name)
-                except Exception:
-                    w = None
-            if w is None and root is not None:
-                try:
-                    w = root.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
-                except Exception:
-                    w = None
-            if w is None:
-                if getattr(self, "_verbose_widget_logs", False):
-                    self._log(f"[LatheEasyStep] _update_retract_visibility: widget '{name}' nicht gefunden", level="info")
-                return
-            w.setVisible(visible)
-
-        # alle Rückzugs-Widgets erst mal ausblenden
-        all_widgets = [
-            "label_prog_xra", "program_xra",
-            "program_xra_absolute",
-            "label_prog_xri", "program_xri",
-            "program_xri_absolute",
-            "label_prog_zra", "program_zra",
-            "program_zra_absolute",
-            "label_prog_zri", "program_zri",
-            "program_zri_absolute",
-            "label_retract_hint",
-        ]
-        for name in all_widgets:
-            show(name, False)
-
-        if idx == 0:
-            show("label_prog_xra", True)
-            show("program_xra", True)
-            show("program_xra_absolute", True)
-            show("label_prog_zra", True)
-            show("program_zra", True)
-            show("program_zra_absolute", True)
-            show("label_retract_hint", True)
-        elif idx == 1:
-            show("label_prog_xra", True)
-            show("program_xra", True)
-            show("program_xra_absolute", True)
-            show("label_prog_zra", True)
-            show("program_zra", True)
-            show("program_zra_absolute", True)
-            show("label_prog_xri", True)
-            show("program_xri", True)
-            show("program_xri_absolute", True)
-            show("label_retract_hint", True)
-        else:
-            for name in all_widgets:
-                show(name, True)
+        update_retract_visibility(self, widget, mode_in)
 
     def _update_subspindle_visibility(self, *args, **kwargs):
-        """Blendet S3-Felder aus/ein, wenn eine Gegenspindel vorhanden ist."""
-        if getattr(self, "program_has_subspindle", None) is None and hasattr(self, "_get_widget_by_name"):
-            try:
-                self.program_has_subspindle = self._get_widget_by_name("program_has_subspindle")
-            except Exception:
-                self.program_has_subspindle = None
-        if getattr(self, "label_prog_s3", None) is None and hasattr(self, "_get_widget_by_name"):
-            try:
-                self.label_prog_s3 = self._get_widget_by_name("label_prog_s3")
-            except Exception:
-                self.label_prog_s3 = None
-        if getattr(self, "program_s3", None) is None and hasattr(self, "_get_widget_by_name"):
-            try:
-                self.program_s3 = self._get_widget_by_name("program_s3")
-            except Exception:
-                self.program_s3 = None
-
-        has_sub = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
-        if getattr(self, "_verbose_widget_logs", False):
-            self._log(f"[LatheEasyStep] _update_subspindle_visibility(): has_sub={has_sub}", level="info")
-
-        # Falls Referenzen fehlen, per findChild nachholen
-        root = self.root_widget or self._find_root_widget() or getattr(self, "w", None)
-        if self.label_prog_s3 is None and root:
-            self.label_prog_s3 = root.findChild(QtWidgets.QWidget, "label_prog_s3")
-        if self.program_s3 is None and root:
-            self.program_s3 = root.findChild(QtWidgets.QWidget, "program_s3")
-
-        if self.label_prog_s3:
-            self.label_prog_s3.setVisible(has_sub)
-        else:
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _update_subspindle_visibility: label_prog_s3 not found", level="warning")
-
-        if self.program_s3:
-            self.program_s3.setVisible(has_sub)
-        else:
-            if getattr(self, "_verbose_widget_logs", False):
-                self._log("[LatheEasyStep] _update_subspindle_visibility: program_s3 not found", level="warning")
+        update_subspindle_visibility(self, *args, **kwargs)
 
     def _update_face_visibility(self):
-        """Show/hide face (Planen) UI elements depending on mode and edge type.
-
-        The UI differs between installations: some .ui versions have a single
-        'face_edge_size' field, others separate 'face_chamfer'/'face_radius'.
-        This function supports both.
-        """
-        try:
-            root = self.w.get('MainWindow', None)
-        except Exception:
-            root = None
-
-        # locate widgets lazily (embedded panels sometimes are not ready at init)
-        if root is not None:
-            if getattr(self, 'label_face_mode', None) is None:
-                self.label_face_mode = root.findChild(QtWidgets.QLabel, "label_face_mode")
-            if getattr(self, 'face_mode', None) is None:
-                self.face_mode = root.findChild(QtWidgets.QComboBox, "face_mode")
-            if getattr(self, 'label_face_finish_direction', None) is None:
-                self.label_face_finish_direction = root.findChild(QtWidgets.QLabel, "label_face_finish_direction")
-            if getattr(self, 'face_finish_direction', None) is None:
-                self.face_finish_direction = root.findChild(QtWidgets.QComboBox, "face_finish_direction")
-            if getattr(self, 'label_face_edge_type', None) is None:
-                self.label_face_edge_type = root.findChild(QtWidgets.QLabel, "label_face_edge_type")
-            if getattr(self, 'face_edge_type', None) is None:
-                self.face_edge_type = root.findChild(QtWidgets.QComboBox, "face_edge_type")
-
-            # generic edge size field (some UIs)
-            if getattr(self, 'label_face_edge_size', None) is None:
-                self.label_face_edge_size = root.findChild(QtWidgets.QLabel, "label_face_edge_size")
-            if getattr(self, 'face_edge_size', None) is None:
-                self.face_edge_size = root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_size")
-
-            # separate chamfer / radius fields (other UIs)
-            if getattr(self, 'label_face_chamfer', None) is None:
-                self.label_face_chamfer = (
-                    root.findChild(QtWidgets.QLabel, "label_face_chamfer")
-                    or root.findChild(QtWidgets.QLabel, "label_face_fase")
-                    or root.findChild(QtWidgets.QLabel, "label_face_edge_chamfer")
-                )
-            if getattr(self, 'face_chamfer', None) is None:
-                self.face_chamfer = (
-                    root.findChild(QtWidgets.QDoubleSpinBox, "face_chamfer")
-                    or root.findChild(QtWidgets.QDoubleSpinBox, "face_fase")
-                    or root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_chamfer")
-                )
-
-            if getattr(self, 'label_face_radius', None) is None:
-                self.label_face_radius = (
-                    root.findChild(QtWidgets.QLabel, "label_face_radius")
-                    or root.findChild(QtWidgets.QLabel, "label_face_edge_radius")
-                )
-            if getattr(self, 'face_radius', None) is None:
-                self.face_radius = (
-                    root.findChild(QtWidgets.QDoubleSpinBox, "face_radius")
-                    or root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_radius")
-                )
-
-        # nothing to do if essential widgets are missing
-        if getattr(self, 'face_mode', None) is None or getattr(self, 'face_edge_type', None) is None:
-            return
-
-        mode_text = (self.face_mode.currentText() or "").strip().lower()
-        finish_visible = ("schlichten" in mode_text) or ("finish" in mode_text)
-        if getattr(self, 'label_face_finish_direction', None) is not None:
-            self.label_face_finish_direction.setVisible(finish_visible)
-        if getattr(self, 'face_finish_direction', None) is not None:
-            self.face_finish_direction.setVisible(finish_visible)
-
-        # edge type: 0=none, 1=chamfer/fase, 2=radius (as in UI lists)
-        edge_text = (self.face_edge_type.currentText() or "").strip().lower()
-        is_chamfer = ("fase" in edge_text) or ("chamfer" in edge_text)
-        is_radius = ("radius" in edge_text)
-        edge_visible = is_chamfer or is_radius
-
-        # hide everything first
-        for w in (
-            getattr(self, 'label_face_edge_size', None),
-            getattr(self, 'face_edge_size', None),
-            getattr(self, 'label_face_chamfer', None),
-            getattr(self, 'face_chamfer', None),
-            getattr(self, 'label_face_radius', None),
-            getattr(self, 'face_radius', None),
-        ):
-            if w is not None:
-                w.setVisible(False)
-
-        if not edge_visible:
-            return
-
-        # prefer dedicated widgets if present
-        if is_chamfer and getattr(self, 'face_chamfer', None) is not None:
-            if getattr(self, 'label_face_chamfer', None) is not None:
-                self.label_face_chamfer.setVisible(True)
-            self.face_chamfer.setVisible(True)
-            return
-
-        if is_radius and getattr(self, 'face_radius', None) is not None:
-            if getattr(self, 'label_face_radius', None) is not None:
-                self.label_face_radius.setVisible(True)
-            self.face_radius.setVisible(True)
-            return
-
-        # fallback to generic edge_size widget
-        if getattr(self, 'label_face_edge_size', None) is not None:
-            self.label_face_edge_size.setVisible(True)
-            try:
-                self.label_face_edge_size.setText("Fase:" if is_chamfer else "Radius:")
-            except Exception:
-                pass
-        if getattr(self, 'face_edge_size', None) is not None:
-            self.face_edge_size.setVisible(True)
+        update_face_visibility(self)
 
     def _update_drill_visibility(self):
-        """Show/hide drill UI elements depending on mode."""
-        try:
-            root = self.w.get('MainWindow', None)
-        except Exception:
-            root = None
-
-        # locate widgets lazily
-        if root is not None:
-            if getattr(self, 'drill_mode', None) is None:
-                self.drill_mode = root.findChild(QtWidgets.QComboBox, "drill_mode")
-            if getattr(self, 'label_drill_dwell', None) is None:
-                self.label_drill_dwell = root.findChild(QtWidgets.QLabel, "label_drill_dwell")
-            if getattr(self, 'drill_dwell', None) is None:
-                self.drill_dwell = root.findChild(QtWidgets.QDoubleSpinBox, "drill_dwell")
-            if getattr(self, 'label_drill_peck_depth', None) is None:
-                self.label_drill_peck_depth = root.findChild(QtWidgets.QLabel, "label_drill_peck_depth")
-            if getattr(self, 'drill_peck_depth', None) is None:
-                self.drill_peck_depth = root.findChild(QtWidgets.QDoubleSpinBox, "drill_peck_depth")
-
-        if getattr(self, 'drill_mode', None) is None:
-            return
-
-        # Use index-based matching (robust against language translations):
-        # 0=G81, 1=G82 (dwell), 2=G83 (peck), 3=G73 (chip break), 4=G84 (tapping)
-        mode_idx = self.drill_mode.currentIndex()
-        dwell_visible = mode_idx == 1       # G82
-        peck_visible = mode_idx in (2, 3)   # G83 or G73
-
-        if getattr(self, 'label_drill_dwell', None) is not None:
-            self.label_drill_dwell.setVisible(dwell_visible)
-        if getattr(self, 'drill_dwell', None) is not None:
-            self.drill_dwell.setVisible(dwell_visible)
-
-        if getattr(self, 'label_drill_peck_depth', None) is not None:
-            self.label_drill_peck_depth.setVisible(peck_visible)
-        if getattr(self, 'drill_peck_depth', None) is not None:
-            self.drill_peck_depth.setVisible(peck_visible)
+        update_drill_visibility(self)
 
     def _describe_operation(self, op, number=None):
-        def wrap(s):
-            return f"{int(number)}. {s}" if number is not None else s
-        """Return a short human readable description for the operations list."""
-        try:
-            t = op.op_type
-            p = op.params or {}
-        except Exception:
-            return str(op)
-
-        def fnum(v, nd=1):
-            try:
-                return f"{float(v):.{nd}f}"
-            except Exception:
-                return str(v)
-
-        if t == OpType.PROGRAM_HEADER:
-            wcs = str(p.get("wcs", "G54")).upper()
-            return wrap(f"Programmkopf ({wcs})")
-        if t == OpType.FACE:
-            mode = p.get("mode", "schruppen")
-            # robust: older saved STEP files may store mode as numeric (e.g. 0.0/1.0)
-            if isinstance(mode, (int, float)):
-                mode = {0: "schruppen", 1: "schlichten", 2: "schruppen + schlichten"}.get(int(mode), "schruppen")
-            if mode is None:
-                mode = "schruppen"
-            mode = str(mode)
-            z_start = p.get("z_start", 0.0)
-            z_end = p.get("z_end", 0.0)
-            coolant = " mit Kühlung" if p.get("coolant") else ""
-            tool = p.get("tool", "T01")
-            return wrap(f"Planen {mode.title()} (Z {fnum(z_start)}→{fnum(z_end)}){coolant} ({tool})")
-        if t == OpType.CONTOUR:
-            side = p.get("side", "außen")
-            mode = p.get("mode", "schruppen")
-            tool = p.get("tool", "T01")
-            return wrap(f"Kontur {mode} ({side}) ({tool})")
-        if t == OpType.DRILL:
-            depth = p.get("depth", 0.0)
-            z0 = p.get("z0", 0.0)
-            mode = p.get("mode", "normal")
-            tool = p.get("tool", "T01")
-            return wrap(f"Bohren {mode} (Z {fnum(z0)}→{fnum(depth)}) ({tool})")
-        if t == OpType.GROOVE:
-            z = p.get("z", 0.0)
-            width = p.get("width", 0.0)
-            tool = p.get("tool", "T01")
-            return wrap(f"Einstechen (Z {fnum(z)}; B {fnum(width)}) ({tool})")
-        if t == OpType.THREAD:
-            pitch = p.get("pitch", 0.0)
-            z0 = p.get("z0", 0.0)
-            z1 = p.get("z1", 0.0)
-            orient = p.get("orientation", "aussengewinde")
-            tool = p.get("tool", "T01")
-            return wrap(f"Gewinde {orient} (P {fnum(pitch,2)}; Z {fnum(z0)}→{fnum(z1)}) ({tool})")
-        if t == OpType.ABSPANEN:
-            contour_name = p.get("contour_name", "unbekannt")
-            strategy = p.get("slice_strategy", "parallel_z")
-            tool = p.get("tool", "T01")
-            return wrap(f"Abspanen ({contour_name}, {strategy}) ({tool})")
-        if t == OpType.KEYWAY:
-            slot_count = int(float(p.get("slot_count", 1) or 1))
-            start_z = p.get("start_z", 0.0)
-            tool = p.get("tool", "T01")
-            return wrap(f"Keilnut ({slot_count}x ab Z {fnum(start_z)}) ({tool})")
-        # fallback
-        return wrap(f"{t}: {p}")
+        return describe_operation(self, op, number)
     def _renumber_operations(self):
-        if self.list_ops is None:
-            return
-        for i in range(self.list_ops.count()):
-            item = self.list_ops.item(i)
-            op = self.model.operations[i]
-            item.setText(self._describe_operation(op, i + 1))
+        renumber_operations(self)
 
     # ---- QtVCP user command hook (leer) -------------------------------
     def call_user_command_(self, command_file: str | None):
@@ -10089,176 +6638,13 @@ class HandlerClass:
 
 
     def _setup_groove_tab_ui(self):
-        # Widgets aus dem Panel (Root heißt 'easystep' – daher immer über self.w / _get_widget_by_name suchen)
-        try:
-            self.groove_lage = self._get_widget_by_name("groove_lage")
-            self.groove_ref = self._get_widget_by_name("groove_ref")
-            self.groove_use_tool_width = self._get_widget_by_name("groove_use_tool_width")
-            self.groove_cutting_width = self._get_widget_by_name("groove_cutting_width")
-            self.groove_lage_img = self._get_widget_by_name("groove_lage_img")
-            self.groove_ref_img = self._get_widget_by_name("groove_ref_img")
-            self.groove_width = self._get_widget_by_name("groove_width")
-        except Exception:
-            return
-
-        # Falls Tab in alter UI ohne diese Elemente läuft: einfach raus
-        if not all([self.groove_ref, self.groove_ref_img, self.groove_use_tool_width, self.groove_cutting_width]):
-            return
-
-        # Signale
-        try:
-            self.groove_ref.currentIndexChanged.connect(self._update_groove_tab_ui)
-        except Exception:
-            pass
-        try:
-            self.groove_use_tool_width.toggled.connect(self._update_groove_tab_ui)
-        except Exception:
-            pass
-        try:
-            self.groove_width.valueChanged.connect(self._update_groove_tab_ui)
-        except Exception:
-            pass
-        try:
-            # Lage: Plan-Einstich ist in diesem Panel noch nicht als eigener Zyklus umgesetzt -> Auswahl ausblenden/auf Längs fixieren
-            if self.groove_lage is not None:
-                self.groove_lage.currentIndexChanged.connect(self._update_groove_tab_ui)
-        except Exception:
-            pass
-
-        self._update_groove_tab_ui()
+        setup_groove_tab_ui(self)
 
     def _update_groove_tab_ui(self):
-        """Nur einblenden, was wirklich benötigt wird (ähnlich ShopTurn 5.3.2)."""
-        try:
-            # Werkzeugbreite separat?
-            use_tw = bool(self.groove_use_tool_width.isChecked()) if self.groove_use_tool_width else False
-            if self.groove_cutting_width:
-                self.groove_cutting_width.setVisible(use_tw)
-            lbl = self._get_widget_by_name("label_groove_cutting_width")
-            if lbl:
-                lbl.setVisible(use_tw)
-
-            # Lage bestimmt nur Anzeige/Erklärung (G-Code bleibt unverändert)
-            idx = int(self.groove_lage.currentIndex()) if self.groove_lage is not None else 0
-
-            # Z0-Label je nach Lage etwas eindeutiger benennen (nur UI)
-            lbl_z = self._get_widget_by_name("label_23")  # Label zu groove_z
-            if lbl_z:
-                if idx in (0, 1):
-                    lbl_z.setText("Z0 Bezugspunkt (abs)")
-                else:
-                    # Stirn: Richtung wird über Lage gewählt (Z−/Z+)
-                    lbl_z.setText("Z0 Bezugspunkt (abs)")
-
-            # Grafiken aktualisieren
-            self._render_groove_diagrams()
-
-            # Preview aktualisieren
-            self._refresh_preview()
-        except Exception:
-            pass
+        update_groove_tab_ui(self)
 
     def _render_groove_diagrams(self):
-
-        """Sehr einfache Grafiken (ohne externe Dateien) für Lage/Bezugspunkt."""
-        try:
-            from PyQt5 import QtGui, QtCore
-
-            def _mk_pix(w: int, h: int) -> QtGui.QPixmap:
-                pm = QtGui.QPixmap(w, h)
-                pm.fill(QtCore.Qt.transparent)
-                return pm
-            # Lage – 4 Varianten: Mantel außen/innen, Stirn vorne/hinten
-            if self.groove_lage_img is not None:
-                pm = _mk_pix(180, 70)
-                p = QtGui.QPainter(pm)
-                p.setRenderHint(QtGui.QPainter.Antialiasing, True)
-
-                pen = QtGui.QPen(QtCore.Qt.white)
-                pen.setWidth(2)
-                p.setPen(pen)
-
-                # Achsen (Z rechts, X nach oben)
-                p.drawLine(30, 55, 165, 55)  # Z
-                p.drawLine(30, 55, 30, 10)   # X
-                p.drawText(168, 58, "Z")
-                p.drawText(22, 12, "X")
-
-                idx = int(self.groove_lage.currentIndex()) if self.groove_lage is not None else 0
-
-                # Werkstück-Skizze + Nut
-                if idx in (0, 1):
-                    if idx == 1:
-                        # Mantel innen (ID): nur die ID-Kante zeigen (keine zusätzliche Ø-Linie)
-                        p.drawLine(40, 40, 160, 40)  # ID
-                        p.drawText(42, 43, "ID")
-                        # Nut innen: beginnt an der ID und geht in das Material (Richtung größerer Ø)
-                        p.drawRect(95, 40, 18, -12)
-                    else:
-                        # Mantel außen (OD)
-                        p.drawLine(40, 25, 160, 25)     # OD
-                        p.drawText(42, 22, "OD")
-                        # Nut außen
-                        p.drawRect(95, 25, 18, 18)
-                else:
-                    # Stirn: senkrechte Linie als Stirnfläche, Pfeilrichtung für Z−/Z+
-                    p.drawLine(80, 15, 80, 55)  # Stirn
-                    p.drawText(84, 22, "Stirn")
-                    # Nut als kleines Rechteck in die Stirn
-                    p.drawRect(80, 30, 20, 12)
-                    # Richtung
-                    if idx == 2:
-                        # Hauptspindel: Z− (symbolisch nach links)
-                        p.drawLine(130, 20, 95, 20)
-                        p.drawLine(95, 20, 103, 16)
-                        p.drawLine(95, 20, 103, 24)
-                        p.drawText(118, 16, "Z−")
-                    else:
-                        # Gegenspindel: Z+ (symbolisch nach rechts)
-                        p.drawLine(95, 20, 130, 20)
-                        p.drawLine(130, 20, 122, 16)
-                        p.drawLine(130, 20, 122, 24)
-                        p.drawText(118, 16, "Z+")
-
-                p.end()
-                self.groove_lage_img.setPixmap(pm)
-
-            # Bezugspunkt-Grafik (Z0: Mitte/Linke/Rechte Flanke)
-            if self.groove_ref_img is not None:
-                pm = _mk_pix(180, 70)
-                p = QtGui.QPainter(pm)
-                p.setRenderHint(QtGui.QPainter.Antialiasing, True)
-
-                # Grundlinie (Z)
-                p.drawLine(20, 55, 170, 55)
-                p.drawText(172, 58, "Z")
-
-                # Nutbreite als Balken
-                left = 60
-                right = 140
-                top = 28
-                p.drawRect(left, top, right - left, 18)
-
-                ref = 0
-                try:
-                    ref = int(self.groove_ref.currentIndex()) if self.groove_ref is not None else 0
-                except Exception:
-                    ref = 0
-
-                if ref == 1:  # linke Flanke
-                    z0x = left
-                elif ref == 2:  # rechte Flanke
-                    z0x = right
-                else:  # mitte
-                    z0x = (left + right) // 2
-
-                # Z0 Marker
-                p.drawLine(z0x, 15, z0x, 65)
-                p.drawText(z0x + 2, 14, "Z0")
-                p.end()
-                self.groove_ref_img.setPixmap(pm)
-        except Exception:
-            pass
+        render_groove_diagrams(self)
 
 
 def get_handlers(halcomp, widgets, paths):

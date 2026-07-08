@@ -1,7 +1,7 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.6`
+Current Version: `0.6.1`
 Status Date: `2026-07-08`
 Primary Test Branch: `DEV`
 
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.6, 8. Juli 2026
+Stand: Version 0.6.1, 8. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -36,9 +36,9 @@ weiter als ein reiner Prototyp:
 - Save/Load fuer einzelne Steps und komplette Programme ist vorhanden
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
-- Handler- und G-Code-Logik werden fuer Version 0.6 schrittweise modularisiert
+- Handler- und G-Code-Logik wurden fuer Version 0.6.1 deutlich weiter modularisiert
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.6`.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.6.1`.
 
 ## Branch-Status
 
@@ -253,8 +253,9 @@ Die naechsten sinnvollen Arbeiten im Projekt sind:
 
 ## Geplante Modulaufteilung
 
-Fuer den Stand `0.6` ist die Logik noch stark in `lathe_easystep_handler.py`
-und `slicer.py` konzentriert. Die sinnvolle Zielstruktur ist:
+Fuer den Stand `0.6.1` ist bereits ein grosser Teil der Logik aus
+`lathe_easystep_handler.py` und `slicer.py` in eigene Module ausgelagert
+worden. Die sinnvolle Zielstruktur ist:
 
 ```text
 lathe_easystep/
@@ -301,7 +302,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.6, July 8, 2026.
+Current documented state: Version 0.6.1, July 8, 2026.
 
 The project is still under active development, but it is no longer just an
 early prototype:
@@ -310,7 +311,7 @@ early prototype:
 - save/load for single steps and complete programs is available
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
-- handler and generator logic are being modularized step by step
+- handler and generator logic have been modularized substantially further for version 0.6.1
 
 ## Branch Status
 
