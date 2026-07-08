@@ -7,6 +7,12 @@ Ziel ist:
 - nachvollziehbare Geometrie
 - minimale Überraschungen an der Maschine
 
+## Release-Stand
+- `v0.7.0` markiert den abgeschlossenen Refactor-Stand fuer Vorschau-Geometrie,
+  Kontur-Logik, G-Code-Einstiegsmodule und die aktuelle Regressionstest-Basis.
+- Neue Umbauten werden wieder unter `Unreleased` im Changelog gesammelt und
+  zuerst auf `DEV` verifiziert.
+
 ---
 
 ## Architektur-Überblick

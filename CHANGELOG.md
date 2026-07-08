@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+
+- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+
+## [0.7.0] - 2026-07-08
+
 - Refactor: Vorschau-Geometrie-Helfer in `lathe_easystep/preview_geometry.py` gebuendelt und fuer Model/UI als neue Einstiegsschicht verdrahtet
 - Refactor: Kontur-Geometrie und Kontur-Validierung in `lathe_easystep/contour_logic.py` aus dem Handler herausgeloest
 - Refactor: Neue G-Code-Einstiegsmodule `gcode_program.py`, `gcode_roughing.py`, `gcode_safety.py` und `gcode_utils.py` als kompatible Zerlegung von `slicer.py` angelegt
