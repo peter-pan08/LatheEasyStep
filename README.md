@@ -1,7 +1,7 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.6.1`
+Current Version: `0.7.0`
 Status Date: `2026-07-08`
 Primary Test Branch: `DEV`
 
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.6.1, 8. Juli 2026
+Stand: Version 0.7.0, 8. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -36,9 +36,10 @@ weiter als ein reiner Prototyp:
 - Save/Load fuer einzelne Steps und komplette Programme ist vorhanden
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
-- Handler- und G-Code-Logik wurden fuer Version 0.6.1 deutlich weiter modularisiert
+- Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.7.0 deutlich weiter modularisiert
+- die aktuelle Refactor-Basis ist mit `171 passed` validiert
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.6.1`.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0`.
 
 ## Branch-Status
 
@@ -279,7 +280,7 @@ Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
 ## Geplante Modulaufteilung
 
-Fuer den Stand `0.6.1` ist bereits ein grosser Teil der Logik aus
+Fuer den Stand `0.7.0` ist bereits ein grosser Teil der Logik aus
 `lathe_easystep_handler.py` und `slicer.py` in eigene Module ausgelagert
 worden. Die sinnvolle Zielstruktur ist:
 
@@ -328,7 +329,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.6.1, July 8, 2026.
+Current documented state: Version 0.7.0, July 8, 2026.
 
 The project is still under active development, but it is no longer just an
 early prototype:
@@ -337,7 +338,8 @@ early prototype:
 - save/load for single steps and complete programs is available
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
-- handler and generator logic have been modularized substantially further for version 0.6.1
+- handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
+- the current refactor baseline is validated with `171 passed`
 
 ## Branch Status
 
