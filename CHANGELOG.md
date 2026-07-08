@@ -1,6 +1,17 @@
 # Changelog
 
 ## [Unreleased]
+- Refactor: `Operation`, `ProgramModel` and `OpType` moved out of `lathe_easystep_handler.py` into `lathe_easystep/model.py`
+- Refactor: Werkzeugtabellen- und ISO-Helfer in `lathe_easystep/tools.py` ausgelagert
+- Refactor: Step-/Programm-Payload-Helfer in `lathe_easystep/persistence.py` ausgelagert
+- Refactor: Dateiverknüpfung und Programm-Metadaten in `lathe_easystep/storage.py` ausgelagert
+- Refactor: Program-Header-UI-Logik in `lathe_easystep/ui_program.py` ausgelagert
+- Refactor: Formularbefüllung für Operationen in `lathe_easystep/ui_operations.py` ausgelagert
+- Refactor: Preview-Aufbereitung und Preview-Widget-Ansteuerung in `lathe_easystep/ui_preview.py` ausgelagert
+- Refactor: Bohr-, Plan-, Gewinde-, Einstich- und Keyway-G-Code in eigene Module unter `lathe_easystep/` aufgeteilt
+- Docs: README neu strukturiert, Versionsstand am Anfang sichtbar gemacht und um englische Betriebs-/Workflow-Informationen erweitert
+
+## [0.6.0] - 2026-07-08
 - Branching: Neue Änderungen werden zuerst auf `DEV` gesammelt und müssen dort getestet werden, bevor sie nach `main` migriert werden
 - Release-Policy: `main` bleibt als lauffähige Basis; neue Arbeit wird erst nach Test auf `DEV` übernommen
 - Preview: Aktive Kontur wird in der Seitenvorschau immer im Vordergrund gezeichnet
