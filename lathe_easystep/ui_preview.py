@@ -5,6 +5,95 @@ from typing import Callable, Dict, List, Tuple
 from .model import OpType, Operation
 
 
+def setup_slice_view(handler) -> None:
+    if getattr(handler, "_slice_view_setup_done", False):
+        return
+    handler._slice_view_setup_done = True
+
+    if handler.preview is None:
+        try:
+            handler.preview = handler._get_widget_by_name("previewWidget")
+        except Exception:
+            pass
+    if handler.preview_slice is None:
+        try:
+            handler.preview_slice = handler._get_widget_by_name("previewSliceWidget")
+        except Exception:
+            pass
+    if handler.btn_slice_view is None:
+        try:
+            handler.btn_slice_view = handler._get_widget_by_name("btn_slice_view")
+        except Exception:
+            pass
+
+    handler._log(
+        f"[LatheEasyStep] _setup_slice_view: preview={handler.preview!r} "
+        f"preview_slice={handler.preview_slice!r} btn_slice_view={handler.btn_slice_view!r}",
+        level="info",
+    )
+
+    if handler.preview is not None:
+        try:
+            handler.preview.set_view_mode("side")
+        except Exception:
+            pass
+
+    if handler.preview_slice is not None:
+        try:
+            handler.preview_slice.set_view_mode("front")
+            handler.preview_slice.setVisible(False)
+        except Exception:
+            pass
+
+    if handler.btn_slice_view is not None:
+        try:
+            handler.btn_slice_view.setChecked(False)
+            handler.btn_slice_view.setText("Schnittansicht")
+            handler.btn_slice_view.setToolTip(
+                "Blendet zusaetzlich zur Seitenansicht eine Schnittansicht ein. "
+                "In der Seitenansicht kann die Schnittlinie mit der Maus verschoben werden."
+            )
+            handler.btn_slice_view.toggled.connect(handler._on_toggle_slice_view)
+            handler._log("[LatheEasyStep] slice toggle connected", level="info")
+        except Exception:
+            handler._log("[LatheEasyStep] slice toggle connect failed", level="warning")
+    else:
+        handler._log("[LatheEasyStep] btn_slice_view not found during setup", level="warning")
+
+    if handler.preview is not None:
+        try:
+            handler.preview.sliceChanged.connect(handler._on_slice_changed)
+        except Exception:
+            pass
+
+
+def ensure_preview_widgets(handler, preview_widget_cls, qt_widget_cls) -> None:
+    root = handler.root_widget or handler._find_root_widget()
+    if not root:
+        return
+
+    def accept_as_preview(widget):
+        return widget is not None and (hasattr(widget, "set_primitives") or hasattr(widget, "set_paths"))
+
+    if handler.preview is None:
+        widget = root.findChild(preview_widget_cls, "previewWidget")
+        if accept_as_preview(widget):
+            handler.preview = widget
+    if handler.contour_preview is None:
+        widget = root.findChild(preview_widget_cls, "contourPreview")
+        if accept_as_preview(widget):
+            handler.contour_preview = widget
+
+    if handler.preview is None:
+        widget = root.findChild(qt_widget_cls, "previewWidget")
+        if accept_as_preview(widget):
+            handler.preview = widget
+    if handler.contour_preview is None:
+        widget = root.findChild(qt_widget_cls, "contourPreview")
+        if accept_as_preview(widget):
+            handler.contour_preview = widget
+
+
 def collect_preview_state(
     handler,
     *,
@@ -120,8 +209,6 @@ def apply_preview_paths(
     program_context: Dict[str, object] | None = None,
     active_operation: Operation | None = None,
 ) -> None:
-    handler._ensure_preview_widgets()
-
     if handler.preview:
         collision = _detect_preview_collision(paths)
         try:
@@ -166,6 +253,122 @@ def apply_preview_paths(
             handler.contour_preview.set_paths(paths, active_index)
         except TypeError:
             handler.contour_preview.set_paths(paths)
+
+
+def on_toggle_slice_view(handler, checked: bool) -> None:
+    if handler.preview is None:
+        handler._log("[LatheEasyStep] _on_toggle_slice_view ignored: preview is None", level="warning")
+        return
+    checked = bool(checked)
+    handler._log(
+        f"[LatheEasyStep] _on_toggle_slice_view checked={checked} "
+        f"current_mode={getattr(handler.preview, 'view_mode', None)} "
+        f"slice_enabled={getattr(handler.preview, 'slice_enabled', None)}",
+        level="info",
+    )
+    try:
+        handler.preview.set_slice_enabled(checked)
+    except Exception:
+        handler._log("[LatheEasyStep] set_slice_enabled failed", level="warning")
+    try:
+        handler.preview.set_view_mode("side")
+    except Exception:
+        handler._log("[LatheEasyStep] set_view_mode failed", level="warning")
+    if handler.preview_slice is not None:
+        try:
+            handler.preview_slice.setVisible(checked)
+        except Exception:
+            handler._log("[LatheEasyStep] preview_slice visibility change failed", level="warning")
+    if handler.btn_slice_view is not None:
+        try:
+            handler.btn_slice_view.setText("Schnittansicht aus" if checked else "Schnittansicht")
+        except Exception:
+            handler._log("[LatheEasyStep] btn_slice_view text update failed", level="warning")
+    if checked:
+        try:
+            suggested = handler._suggest_slice_z_for_preview()
+            handler.preview.set_slice_z(0.0 if suggested is None else suggested, emit=True)
+        except Exception:
+            handler._log("[LatheEasyStep] set_slice_z failed", level="warning")
+    handler._log(
+        f"[LatheEasyStep] slice view updated: mode={getattr(handler.preview, 'view_mode', None)} "
+        f"slice_enabled={getattr(handler.preview, 'slice_enabled', None)} "
+        f"slice_z={getattr(handler.preview, 'slice_z', None)} "
+        f"slice_widget_visible={getattr(handler.preview_slice, 'isVisible', lambda: None)() if handler.preview_slice else None}",
+        level="info",
+    )
+    handler._sync_slice_widget()
+
+
+def sync_slice_widget(handler) -> None:
+    if handler.preview is None or handler.preview_slice is None:
+        return
+    try:
+        if not handler.preview_slice.isVisible():
+            return
+    except Exception:
+        return
+    try:
+        handler.preview_slice.set_slice_z(getattr(handler.preview, "slice_z", 0.0))
+    except Exception:
+        pass
+    try:
+        handler.preview_slice.set_view_mode("front")
+    except Exception:
+        pass
+    try:
+        handler.preview_slice.set_paths(getattr(handler.preview, "paths", []), getattr(handler.preview, "active_index", None))
+    except Exception:
+        pass
+    try:
+        handler.preview_slice.set_front_context(
+            getattr(handler.preview, "front_program", {}),
+            getattr(handler.preview, "front_operation", None),
+        )
+    except Exception:
+        pass
+
+
+def refresh_preview(
+    handler,
+    *,
+    build_contour_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_face_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_thread_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_groove_preview_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_drill_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_keyway_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_abspanen_path: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_stock_outline: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_retract_primitives: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+    build_worklimit_primitives: Callable[[Dict[str, object], List[Tuple[float, float]]], List[Tuple[float, float]]],
+    build_chuck_nogo_primitives: Callable[[Dict[str, object]], List[Tuple[float, float]]],
+) -> None:
+    if handler.preview is None or handler.contour_preview is None:
+        handler._ensure_preview_widgets()
+    if handler.preview is None and handler.contour_preview is None:
+        return
+    paths, active, prog, active_operation = collect_preview_state(
+        handler,
+        build_contour_path=build_contour_path,
+        build_face_path=build_face_path,
+        build_thread_path=build_thread_path,
+        build_groove_preview_path=build_groove_preview_path,
+        build_drill_path=build_drill_path,
+        build_keyway_path=build_keyway_path,
+        build_abspanen_path=build_abspanen_path,
+        build_stock_outline=build_stock_outline,
+        build_retract_primitives=build_retract_primitives,
+        build_worklimit_primitives=build_worklimit_primitives,
+        build_chuck_nogo_primitives=build_chuck_nogo_primitives,
+    )
+    handler._set_preview_paths(
+        paths,
+        active,
+        include_contour_preview=True,
+        program_context=prog,
+        active_operation=active_operation,
+    )
 
 
 def _detect_preview_collision(paths) -> bool:
