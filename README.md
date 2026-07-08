@@ -251,6 +251,32 @@ Die naechsten sinnvollen Arbeiten im Projekt sind:
 4. Dokumentation und Statusdokumente konsistent halten
 5. reale Werkstattablaeufe und Maschinenprofile weiter verifizieren
 
+## Regressionstests und Smoke-Test
+
+Der aktuelle Refactor-Stand wird nicht nur mit Unit-Tests, sondern auch mit
+Referenzprogrammen abgesichert.
+
+- `pytest -q`
+- `python3 regenerate_all_ngc.py`
+
+Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
+
+- Planen
+- Bohren
+- Gewinde
+- Einstich
+- Abspanen aussen
+- Kontur mit Radius/Fase
+
+## Known Limitations
+
+Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
+
+- `slicer.py` dient jetzt weitgehend als Kompatibilitaetsschicht, enthaelt aber noch Altbestand und sollte langfristig weiter ausgeduennt werden
+- die neue Modulstruktur ist funktional, aber noch nicht in allen Bereichen in kleinere, fachlich scharf getrennte Teilmodule zerlegt
+- die Schnittansicht ist funktional, aber die visuelle Darstellung komplexer Endgeometrien ist noch nicht in allen Faellen endgueltig abgestimmt
+- reale Maschinen- und Kollisionsfaelle muessen weiterhin an Beispielteilen und Trockenlaeufen verifiziert werden
+
 ## Geplante Modulaufteilung
 
 Fuer den Stand `0.6.1` ist bereits ein grosser Teil der Logik aus
@@ -461,3 +487,29 @@ The next meaningful work areas are:
 3. keep embedded and standalone behaviour aligned
 4. keep documentation and status files in sync
 5. verify real machine workflows further
+
+## Regression and Smoke Test
+
+The current refactor state is protected by both unit tests and reference
+program snapshots.
+
+- `pytest -q`
+- `python3 regenerate_all_ngc.py`
+
+The checked-in reference programs under `ngc/` currently cover:
+
+- facing
+- drilling
+- threading
+- grooving
+- external roughing
+- contour with radius/chamfer
+
+## Known Limitations
+
+The current state is usable, but not yet the final technical structure.
+
+- `slicer.py` now acts largely as a compatibility layer, but it still contains legacy code and should be reduced further over time
+- the new module structure is functional, but not every area has been split into the smallest clean domain modules yet
+- the section view works, but the visual representation of complex final geometry is not yet fully finalized in every case
+- real machine clearance and collision behaviour still need verification on practical dry runs

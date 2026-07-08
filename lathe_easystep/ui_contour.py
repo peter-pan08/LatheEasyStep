@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import importlib
-
 from qtpy import QtCore, QtGui, QtWidgets
 
+from .contour_logic import validate_contour_segments_for_profile
 from .model import OpType
+from .preview_geometry import build_contour_path
 
 
 def available_contour_names(handler):
@@ -90,8 +90,7 @@ def resolve_contour_path(handler, contour_name: str):
             contour_idx += 1
     if getattr(handler, "contour_name", None) and getattr(handler, "contour_segments", None) and handler.contour_name.text().strip() == contour_name:
         try:
-            contour_builder = importlib.import_module("lathe_easystep_handler").build_contour_path
-            return contour_builder(
+            return build_contour_path(
                 {
                     "start_x": handler.contour_start_x.value() if getattr(handler, "contour_start_x", None) else 0.0,
                     "start_z": handler.contour_start_z.value() if getattr(handler, "contour_start_z", None) else 0.0,
@@ -369,7 +368,6 @@ def handle_contour_edge_change(handler, *args, **kwargs) -> None:
 
 def update_contour_preview_temp(handler) -> None:
     try:
-        module = importlib.import_module("lathe_easystep_handler")
         segs = handler._collect_contour_segments()
         if not segs:
             handler._set_preview_paths([])
@@ -380,14 +378,14 @@ def update_contour_preview_temp(handler) -> None:
             "coord_mode": getattr(handler, "contour_coord_mode", None).currentIndex() if getattr(handler, "contour_coord_mode", None) else 0,
             "segments": segs,
         }
-        _ok, errs = module.validate_contour_segments_for_profile(params)
+        _ok, errs = validate_contour_segments_for_profile(params)
         if errs:
             handler._log("[LatheEasyStep][contour][INVALID]", level="error")
             for err in errs:
                 handler._log("  -", err, level="info")
             handler._set_preview_paths([])
             return
-        primitives = module.build_contour_path(params)
+        primitives = build_contour_path(params)
         handler._set_preview_paths([primitives])
     except Exception as exc:
         handler._log("[LatheEasyStep] _update_contour_preview_temp ERROR:", exc, level="error")

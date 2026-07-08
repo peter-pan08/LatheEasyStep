@@ -1,6 +1,12 @@
 # Changelog
 
 ## [Unreleased]
+- Refactor: Vorschau-Geometrie-Helfer in `lathe_easystep/preview_geometry.py` gebuendelt und fuer Model/UI als neue Einstiegsschicht verdrahtet
+- Refactor: Kontur-Geometrie und Kontur-Validierung in `lathe_easystep/contour_logic.py` aus dem Handler herausgeloest
+- Refactor: Neue G-Code-Einstiegsmodule `gcode_program.py`, `gcode_roughing.py`, `gcode_safety.py` und `gcode_utils.py` als kompatible Zerlegung von `slicer.py` angelegt
+- Tests: Referenzprogramme und Vertrags-Regressionen fuer Snapshot-G-Code, Save/Load, `G20`, FACE/G72-Profil und Sicherheitsrueckzuege aufgebaut
+- Tests: `regenerate_all_ngc.py` regeneriert jetzt sechs Beispielprogramme als Smoke-Basis (`python3 regenerate_all_ngc.py`)
+- Tests: Gemeinsamer Smoke-Run in `smoke_test.py` ergaenzt; aktueller Stand validiert mit `171 passed`
 
 ## [0.6.1] - 2026-07-08
 - Refactor: `Operation`, `ProgramModel` and `OpType` moved out of `lathe_easystep_handler.py` into `lathe_easystep/model.py`

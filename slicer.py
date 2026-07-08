@@ -2405,3 +2405,92 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
 
     lines.append("%")
     return lines
+
+
+from lathe_easystep.gcode_program import (  # noqa: E402
+    gcode_for_operation as _gcode_for_operation_mod,
+    generate_program_gcode as _generate_program_gcode_mod,
+)
+from lathe_easystep.gcode_roughing import (  # noqa: E402
+    RetractCfg as _RetractCfg_mod,
+    Segment as _Segment_mod,
+    compute_pass_x_levels as _compute_pass_x_levels_mod,
+    contour_sub_from_points as _contour_sub_from_points_mod,
+    contour_sub_from_primitives as _contour_sub_from_primitives_mod,
+    generate_abspanen_gcode as _generate_abspanen_gcode_mod,
+    get_retract_cfg as _get_retract_cfg_mod,
+    intersect_segment_with_x_band as _intersect_segment_with_x_band_mod,
+    merge_intervals as _merge_intervals_mod,
+    rough_turn_parallel_x as _rough_turn_parallel_x_mod,
+    rough_turn_parallel_z as _rough_turn_parallel_z_mod,
+    segments_from_polyline as _segments_from_polyline_mod,
+    step_line_pause_sub_definition as _step_line_pause_sub_definition_mod,
+    step_x_pause_sub_definition as _step_x_pause_sub_definition_mod,
+)
+from lathe_easystep.gcode_safety import (  # noqa: E402
+    append_tool_and_spindle as _append_tool_and_spindle_mod,
+    emit_approach as _emit_approach_mod,
+    emit_safe_retract as _emit_safe_retract_mod,
+    emit_safe_retract_for_op as _emit_safe_retract_for_op_mod,
+    estimate_operation_end_pos as _estimate_operation_end_pos_mod,
+    get_safe_position as _get_safe_position_mod,
+    move_to_toolchange_pos as _move_to_toolchange_pos_mod,
+    nose_compensation_command as _nose_compensation_command_mod,
+)
+from lathe_easystep.gcode_utils import (  # noqa: E402
+    REQUIRED_KEYS as _REQUIRED_KEYS_mod,
+    clean_path as _clean_path_mod,
+    emit_coolant as _emit_coolant_mod,
+    float_or_none as _float_or_none_mod,
+    get_tool_number as _get_tool_number_mod,
+    is_monotonic_x as _is_monotonic_x_mod,
+    is_monotonic_x_decreasing as _is_monotonic_x_decreasing_mod,
+    is_monotonic_x_increasing as _is_monotonic_x_increasing_mod,
+    is_monotonic_z_decreasing as _is_monotonic_z_decreasing_mod,
+    primitives_to_points as _primitives_to_points_mod,
+    require as _require_mod,
+    require_positive as _require_positive_mod,
+    require_tool as _require_tool_mod,
+    sanitize_comment_text as _sanitize_comment_text_mod,
+    sanitize_gcode_text as _sanitize_gcode_text_mod,
+)
+
+RetractCfg = _RetractCfg_mod
+Segment = _Segment_mod
+REQUIRED_KEYS = _REQUIRED_KEYS_mod
+require = _require_mod
+require_positive = _require_positive_mod
+_get_tool_number = get_tool_number = _get_tool_number_mod
+require_tool = _require_tool_mod
+is_monotonic_z_decreasing = _is_monotonic_z_decreasing_mod
+is_monotonic_x_decreasing = _is_monotonic_x_decreasing_mod
+is_monotonic_x_increasing = _is_monotonic_x_increasing_mod
+is_monotonic_x = _is_monotonic_x_mod
+primitives_to_points = _primitives_to_points_mod
+segments_from_polyline = _segments_from_polyline_mod
+intersect_segment_with_x_band = _intersect_segment_with_x_band_mod
+merge_intervals = _merge_intervals_mod
+compute_pass_x_levels = _compute_pass_x_levels_mod
+rough_turn_parallel_x = _rough_turn_parallel_x_mod
+rough_turn_parallel_z = _rough_turn_parallel_z_mod
+generate_abspanen_gcode = _generate_abspanen_gcode_mod
+contour_sub_from_points = _contour_sub_from_points_mod
+contour_sub_from_primitives = _contour_sub_from_primitives_mod
+get_retract_cfg = _get_retract_cfg_mod
+_step_line_pause_sub_definition = _step_line_pause_sub_definition_mod
+_step_x_pause_sub_definition = _step_x_pause_sub_definition_mod
+_sanitize_gcode_text = _sanitize_gcode_text_mod
+_sanitize_comment_text = _sanitize_comment_text_mod
+_emit_coolant = _emit_coolant_mod
+_float_or_none = _float_or_none_mod
+_get_safe_position = _get_safe_position_mod
+_emit_safe_retract = _emit_safe_retract_mod
+_emit_safe_retract_for_op = _emit_safe_retract_for_op_mod
+_estimate_operation_end_pos = _estimate_operation_end_pos_mod
+_emit_approach = _emit_approach_mod
+_append_tool_and_spindle = _append_tool_and_spindle_mod
+_nose_compensation_command = _nose_compensation_command_mod
+move_to_toolchange_pos = _move_to_toolchange_pos_mod
+clean_path = _clean_path_mod
+gcode_for_operation = _gcode_for_operation_mod
+generate_program_gcode = _generate_program_gcode_mod
