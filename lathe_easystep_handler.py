@@ -341,9 +341,11 @@ TEXT_TRANSLATIONS = {
 
     "label_30": {"de": "Modus", "en": "Mode"},
     "label_31": {"de": "Radialseite", "en": "Radial Side"},
+    "label_key_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_key_coolant": {"de": "Kühlung", "en": "Coolant"},
     "label_32": {"de": "Nutanzahl", "en": "Slot Count"},
     "label_33": {"de": "Startwinkel (°)", "en": "Start Angle (°)"},
+    "label_key_slot_angle_step": {"de": "Winkelversatz (°)", "en": "Angle Offset (°)"},
     "label_34": {"de": "Startdurchmesser", "en": "Start Diameter"},
     "label_35": {"de": "Start Z", "en": "Start Z"},
     "label_36": {"de": "Nutlänge", "en": "Slot Length"},
@@ -362,6 +364,7 @@ TEXT_TRANSLATIONS = {
     "btnMoveDown": {"de": "Nach unten", "en": "Move Down"},
     "btnNewProgram": {"de": "Neues Programm", "en": "New Program"},
     "btnGenerate": {"de": "Programm erzeugen", "en": "Generate Program"},
+    "btnSaveChanges": {"de": "Aenderungen speichern", "en": "Save Changes"},
 }
 
 COMBO_OPTION_TRANSLATIONS = {
@@ -466,6 +469,9 @@ MACHINE_CHUCK_PROFILE_PRESETS: Dict[int, Dict[str, int]] = {
 }
 
 STEP_FILE_FILTER = "Lathe step files (*.step.json);;JSON (*.json)"
+STEP_FILE_PATH_KEY = "__step_file_path"
+PROGRAM_FILE_PATH_KEY = "__program_file_path"
+GCODE_FILE_PATH_KEY = "__gcode_file_path"
 
 def normalize_arc_side(value: object | None) -> str:
     s = str(value or "auto").strip().lower()
@@ -770,12 +776,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.front_operation = operation
         self.update()
 
-    def _front_active_diameters(self) -> List[float]:
-        if not self.paths:
-            return []
-        idx = self.active_index if self.active_index is not None else 0
-        idx = max(0, min(idx, len(self.paths) - 1))
-        path = self.paths[idx]
+    def _path_hits_at_slice(self, path) -> List[float]:
         if not path:
             return []
         if isinstance(path[0], dict):
@@ -785,74 +786,192 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 return []
         return self._interp_x_hits_at_z(path, self.slice_z)
 
-    def _draw_front_keyway_overlay(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float):
+    def _front_program_operations(self) -> List[Operation]:
+        ops = getattr(self, "front_program", {}).get("__operations")
+        if isinstance(ops, list):
+            return [op for op in ops if isinstance(op, Operation)]
         op = getattr(self, "front_operation", None)
-        if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
-            return
+        return [op] if isinstance(op, Operation) else []
+
+    def _front_operation_side(self, op: Operation) -> str | None:
         params = getattr(op, "params", {}) or {}
+        if op.op_type in (OpType.DRILL, OpType.BORE):
+            return "inside"
+        if op.op_type == OpType.GROOVE:
+            try:
+                return "inside" if int(float(params.get("lage", 0) or 0)) == 1 else "outside"
+            except Exception:
+                return "outside"
+        if op.op_type == OpType.THREAD:
+            try:
+                return "inside" if int(float(params.get("orientation", 0) or 0)) == 1 else "outside"
+            except Exception:
+                return "outside"
+        if op.op_type == OpType.ABSPANEN:
+            try:
+                return "inside" if int(float(params.get("side", 0) or 0)) == 1 else "outside"
+            except Exception:
+                return "outside"
+        if op.op_type == OpType.KEYWAY:
+            return None
+        return "outside"
+
+    def _front_active_diameters(self) -> List[float]:
+        prog = getattr(self, "front_program", {}) or {}
         try:
-            mode = int(float(params.get("mode", 0)))
+            stock_od = abs(float(prog.get("xa", 0.0) or 0.0))
         except Exception:
-            mode = 0
-        if mode != 0:
-            return
-
+            stock_od = 0.0
         try:
-            z_start = float(params.get("start_z", 0.0) or 0.0)
-            nut_length = abs(float(params.get("nut_length", 0.0) or 0.0))
-            start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
-            nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
-            slot_count = max(1, int(float(params.get("slot_count", 1) or 1)))
-            start_angle = math.radians(float(params.get("slot_start_angle", 0.0) or 0.0))
-            cutting_width = abs(float(params.get("cutting_width", 0.0) or 0.0))
-            radial_side = int(float(params.get("radial_side", 0) or 0))
+            stock_id = abs(float(prog.get("xi", 0.0) or 0.0))
         except Exception:
-            return
+            stock_id = 0.0
 
-        z_min = min(z_start, z_start - nut_length)
-        z_max = max(z_start, z_start - nut_length)
-        if self.slice_z < z_min - 1e-6 or self.slice_z > z_max + 1e-6 or start_dia <= 0.0:
-            return
+        outer_dia = stock_od if stock_od > 1e-6 else None
+        inner_dia = stock_id if stock_id > 1e-6 else None
 
-        base_radius = start_dia * 0.5
-        if radial_side == 0:
-            slot_outer_radius = base_radius
-            slot_inner_radius = max(0.0, base_radius - nut_depth)
-        else:
-            slot_inner_radius = base_radius
-            slot_outer_radius = base_radius + nut_depth
+        ops = self._front_program_operations()
+        if not ops and self.paths:
+            idx = self.active_index if self.active_index is not None else 0
+            idx = max(0, min(idx, len(self.paths) - 1))
+            return [abs(d) for d in self._path_hits_at_slice(self.paths[idx]) if abs(d) > 1e-6]
 
-        if slot_outer_radius <= 1e-9:
-            return
+        for op in ops:
+            if op is None or getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
+                continue
+            if getattr(op, "op_type", None) == OpType.KEYWAY:
+                continue
+            hits = [abs(d) for d in self._path_hits_at_slice(getattr(op, "path", []) or []) if abs(d) > 1e-6]
+            if not hits:
+                continue
+            side = self._front_operation_side(op)
+            if side == "inside":
+                cand = max(hits)
+                inner_dia = cand if inner_dia is None else max(inner_dia, cand)
+            else:
+                cand = min(hits)
+                outer_dia = cand if outer_dia is None else min(outer_dia, cand)
 
-        if cutting_width > 0.0:
-            half_opening = max(math.radians(2.0), min(math.radians(40.0), cutting_width / max(slot_outer_radius, 1e-6)))
-        else:
-            half_opening = math.radians(6.0)
+        result: List[float] = []
+        if outer_dia is not None and outer_dia > 1e-6:
+            result.append(outer_dia)
+        if inner_dia is not None and inner_dia > 1e-6 and (outer_dia is None or inner_dia < outer_dia + 1e-6):
+            result.append(inner_dia)
+        return result
 
+    def _front_reference_diameter(self) -> float:
+        prog = getattr(self, "front_program", {}) or {}
+        candidates: List[float] = []
+
+        for key in ("xa", "xi"):
+            try:
+                val = abs(float(prog.get(key, 0.0) or 0.0))
+            except Exception:
+                val = 0.0
+            if val > 1e-6:
+                candidates.append(val)
+
+        for op in self._front_program_operations():
+            if op is None or getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
+                continue
+            path = getattr(op, "path", None) or []
+            if not path:
+                continue
+            if isinstance(path[0], dict):
+                try:
+                    pts = self.primitives_to_points(path)
+                except Exception:
+                    pts = []
+            else:
+                pts = path
+            for pt in pts:
+                try:
+                    dia = abs(float(pt[0]))
+                except Exception:
+                    continue
+                if dia > 1e-6:
+                    candidates.append(dia)
+
+            if getattr(op, "op_type", None) == OpType.KEYWAY:
+                params = getattr(op, "params", {}) or {}
+                try:
+                    start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
+                    nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
+                    radial_side = int(float(params.get("radial_side", 0) or 0))
+                except Exception:
+                    continue
+                if start_dia > 1e-6:
+                    candidates.append(start_dia)
+                    if radial_side != 0 and nut_depth > 1e-6:
+                        candidates.append(start_dia + (2.0 * nut_depth))
+
+        return max(candidates, default=10.0)
+
+    def _draw_front_keyway_overlay(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float):
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 120, 120), 2))
         painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 80)))
-        step = (2.0 * math.pi) / max(slot_count, 1)
         samples = 14
-        for slot_idx in range(slot_count):
-            a_mid = start_angle + (slot_idx * step)
-            a0 = a_mid - half_opening
-            a1 = a_mid + half_opening
-            poly = QtGui.QPolygonF()
-            for i in range(samples + 1):
-                ang = a0 + ((a1 - a0) * i / samples)
-                poly.append(QtCore.QPointF(
-                    center.x() + math.cos(ang) * slot_outer_radius * scale,
-                    center.y() - math.sin(ang) * slot_outer_radius * scale,
-                ))
-            for i in range(samples, -1, -1):
-                ang = a0 + ((a1 - a0) * i / samples)
-                poly.append(QtCore.QPointF(
-                    center.x() + math.cos(ang) * slot_inner_radius * scale,
-                    center.y() - math.sin(ang) * slot_inner_radius * scale,
-                ))
-            painter.drawPolygon(poly)
+
+        for op in self._front_program_operations():
+            if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
+                continue
+            params = getattr(op, "params", {}) or {}
+            try:
+                mode = int(float(params.get("mode", 0)))
+            except Exception:
+                mode = 0
+            if mode != 0:
+                continue
+
+            try:
+                start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
+                nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
+                cutting_width = abs(float(params.get("cutting_width", 0.0) or 0.0))
+                radial_side = int(float(params.get("radial_side", 0) or 0))
+            except Exception:
+                continue
+
+            bounds = keyway_slice_bounds(params)
+            if bounds is None:
+                continue
+            z_min, z_max = bounds
+            if self.slice_z < z_min - 1e-6 or self.slice_z > z_max + 1e-6 or start_dia <= 0.0:
+                continue
+
+            base_radius = start_dia * 0.5
+            if radial_side == 0:
+                slot_outer_radius = base_radius
+                slot_inner_radius = max(0.0, base_radius - nut_depth)
+            else:
+                slot_inner_radius = base_radius
+                slot_outer_radius = base_radius + nut_depth
+
+            if slot_outer_radius <= 1e-9:
+                continue
+
+            if cutting_width > 0.0:
+                half_opening = max(math.radians(2.0), min(math.radians(40.0), cutting_width / max(slot_outer_radius, 1e-6)))
+            else:
+                half_opening = math.radians(6.0)
+
+            for a_mid in build_keyway_slot_angles(params):
+                a0 = a_mid - half_opening
+                a1 = a_mid + half_opening
+                poly = QtGui.QPolygonF()
+                for i in range(samples + 1):
+                    ang = a0 + ((a1 - a0) * i / samples)
+                    poly.append(QtCore.QPointF(
+                        center.x() + math.cos(ang) * slot_outer_radius * scale,
+                        center.y() - math.sin(ang) * slot_outer_radius * scale,
+                    ))
+                for i in range(samples, -1, -1):
+                    ang = a0 + ((a1 - a0) * i / samples)
+                    poly.append(QtCore.QPointF(
+                        center.x() + math.cos(ang) * slot_inner_radius * scale,
+                        center.y() - math.sin(ang) * slot_inner_radius * scale,
+                    ))
+                painter.drawPolygon(poly)
         painter.restore()
 
     def _paint_front_view(self, painter: QtGui.QPainter):
@@ -871,8 +990,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
         stock_od = abs(_float(prog.get("xa"), 0.0))
         stock_id = abs(_float(prog.get("xi"), 0.0))
         active_diams = [abs(d) for d in self._front_active_diameters() if abs(d) > 1e-6]
+        outer_dia = active_diams[0] if active_diams else 0.0
+        inner_dia = active_diams[1] if len(active_diams) > 1 else 0.0
 
-        max_diameter = max([d for d in [stock_od, stock_id, *active_diams] if d > 1e-6], default=10.0)
+        max_diameter = max(self._front_reference_diameter(), 10.0)
         r = self.rect().adjusted(20, 20, -20, -36)
         center = QtCore.QPointF(float(r.center().x()), float(r.center().y()))
         scale = min(r.width(), r.height()) / max(max_diameter * 1.15, 1e-6)
@@ -891,6 +1012,16 @@ class LathePreviewWidget(QtWidgets.QWidget):
             rad = (stock_id * 0.5) * scale
             painter.drawEllipse(center, rad, rad)
 
+        if outer_dia > 1e-6:
+            painter.save()
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 70)))
+            painter.drawEllipse(center, (outer_dia * 0.5) * scale, (outer_dia * 0.5) * scale)
+            if inner_dia > 1e-6 and inner_dia < outer_dia:
+                painter.setBrush(QtGui.QBrush(QtCore.Qt.black))
+                painter.drawEllipse(center, (inner_dia * 0.5) * scale, (inner_dia * 0.5) * scale)
+            painter.restore()
+
         self._draw_front_keyway_overlay(painter, center, scale)
 
         for idx, diameter in enumerate(active_diams):
@@ -902,7 +1033,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
         painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
         painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")
         if active_diams:
-            painter.drawText(10, 16, "D aktiv: " + ", ".join(f"{d:.3f}" for d in active_diams[:3]))
+            painter.drawText(10, 16, "D final: " + ", ".join(f"{d:.3f}" for d in active_diams[:3]))
+        painter.drawText(10, 32, f"D max: {max_diameter:.3f}")
 
     def mousePressEvent(self, event):  # type: ignore[override]
         # Click on legend to toggle
@@ -1168,9 +1300,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     zline = float(getattr(self, "slice_z", 0.0))
                     p1 = to_screen_display(min_x, zline)
                     p2 = to_screen_display(max_x, zline)
-                    pen = QtGui.QPen(QtCore.Qt.white, 1, QtCore.Qt.DashLine)
+                    pen = QtGui.QPen(QtGui.QColor(255, 180, 0), 2, QtCore.Qt.DashLine)
                     painter.setPen(pen)
                     painter.drawLine(p1, p2)
+                    label = f"Schnitt Z {zline:.3f}"
+                    text_pos = QtCore.QPointF(min(p1.x() + 8, rect.right() - 90), rect.top() + 16)
+                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 220, 120), 1))
+                    painter.drawText(text_pos, label)
                 except Exception:
                     pass
 
@@ -1974,6 +2110,68 @@ def build_keyway_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
         (inner_x, back_z),
         (top_x, back_z),
     ]
+
+
+def build_keyway_slot_angles(params: Dict[str, object]) -> List[float]:
+    """Return all slot center angles in radians for keyway front preview."""
+    try:
+        slot_count = max(1, int(float(params.get("slot_count", 1) or 1)))
+    except Exception:
+        slot_count = 1
+    try:
+        start_angle_deg = float(params.get("slot_start_angle", 0.0) or 0.0)
+    except Exception:
+        start_angle_deg = 0.0
+    try:
+        step_deg = float(params.get("slot_angle_step", 0.0) or 0.0)
+    except Exception:
+        step_deg = 0.0
+
+    if abs(step_deg) <= 1e-9:
+        step_deg = 360.0 / float(slot_count)
+
+    return [math.radians(start_angle_deg + (slot_idx * step_deg)) for slot_idx in range(slot_count)]
+
+
+def keyway_slice_bounds(params: Dict[str, object]) -> tuple[float, float] | None:
+    """Return the usable Z range for axial keyway front-view slices."""
+    try:
+        mode = int(float(params.get("mode", 0) or 0))
+    except Exception:
+        mode = 0
+    if mode != 0:
+        return None
+    try:
+        z_start = float(params.get("start_z", 0.0) or 0.0)
+        nut_length = abs(float(params.get("nut_length", 0.0) or 0.0))
+    except Exception:
+        return None
+    z_min = min(z_start, z_start - nut_length)
+    z_max = max(z_start, z_start - nut_length)
+    return (z_min, z_max)
+
+
+def default_slice_z_for_operation(op: Operation | None) -> float | None:
+    """Choose a meaningful default slice position for front preview widgets."""
+    if op is None:
+        return None
+    if getattr(op, "op_type", None) == OpType.KEYWAY:
+        bounds = keyway_slice_bounds(getattr(op, "params", {}) or {})
+        if bounds is not None:
+            return (bounds[0] + bounds[1]) * 0.5
+        try:
+            return float((getattr(op, "params", {}) or {}).get("start_z", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
+    path = getattr(op, "path", None) or []
+    if path and isinstance(path[0], tuple):
+        try:
+            z_vals = [float(z) for _, z in path]
+            return (min(z_vals) + max(z_vals)) * 0.5
+        except Exception:
+            return None
+    return None
 
 
 def build_groove_preview_path(params: Dict[str, float]) -> List[Tuple[float, float]]:
@@ -3007,9 +3205,13 @@ class HandlerClass:
         self._startup_epoch = time.monotonic()
         self._startup_heartbeat_scheduled = False
         self._step_last_dir: str | None = None
+        self._last_dialog_dir: str | None = None
+        self._current_program_path: str | None = None
+        self._current_gcode_path: str | None = None
         self._loading_step = False
         self._deleting = False
         self._saving_step = False
+        self._saving_changes = False
         self._moving_up = False
         self._moving_down = False
         self._generating_gcode = False
@@ -3017,9 +3219,281 @@ class HandlerClass:
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
+        self.preview_slice = getattr(self.w, "previewSliceWidget", None)
+        self.btn_slice_view = getattr(self.w, "btn_slice_view", None)
+        self.contour_preview = getattr(self.w, "contourPreview", None)
         # Queue für nachträgliche Widget-Suchen, bis das Panel vollständig geladen ist
         self._deferred_lookup_queue: List[Tuple[str, str, object, bool]] = []
         self._verbose_widget_logs = False
+        self._bootstrap_widget_refs()
+
+    def _dialog_start_dir(self, settings: QtCore.QSettings, *keys: str) -> str:
+        """Return the most relevant start directory for file dialogs."""
+        candidates: List[str | None] = []
+        for key in keys:
+            if key:
+                try:
+                    candidates.append(settings.value(key, "", type=str) or "")
+                except Exception:
+                    candidates.append("")
+        candidates.append(getattr(self, "_step_last_dir", None))
+        candidates.append(getattr(self, "_last_dialog_dir", None))
+        candidates.append(QtCore.QDir.homePath())
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            candidate = os.path.expanduser(str(candidate))
+            if os.path.isdir(candidate):
+                return candidate
+            parent = os.path.dirname(candidate)
+            if parent and os.path.isdir(parent):
+                return parent
+        return QtCore.QDir.homePath()
+
+    def _remember_dialog_path(self, settings: QtCore.QSettings, file_path: str, *keys: str) -> None:
+        """Persist the last used directory for subsequent open/save dialogs."""
+        if not file_path:
+            return
+        directory = os.path.dirname(os.path.abspath(os.path.expanduser(file_path)))
+        self._last_dialog_dir = directory
+        self._step_last_dir = directory
+        for key in keys:
+            if key:
+                try:
+                    settings.setValue(key, directory)
+                except Exception:
+                    pass
+        return
+
+    def _normalized_file_path(self, file_path: str | None) -> str | None:
+        if not file_path:
+            return None
+        try:
+            return os.path.abspath(os.path.expanduser(str(file_path)))
+        except Exception:
+            return str(file_path)
+
+    def _step_file_path(self, op: Operation) -> str | None:
+        params = getattr(op, "params", {}) or {}
+        return self._normalized_file_path(params.get(STEP_FILE_PATH_KEY))
+
+    def _set_step_file_path(self, op: Operation, file_path: str) -> None:
+        op.params[STEP_FILE_PATH_KEY] = self._normalized_file_path(file_path)
+
+    def _step_filename_stem(self, op: Operation, index_hint: int | None = None) -> str:
+        params = getattr(op, "params", {}) or {}
+        base = str(params.get("name") or params.get("contour_name") or op.op_type or "step").strip()
+        if not base:
+            base = "step"
+        base = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("._") or "step"
+        if index_hint is not None:
+            return f"{index_hint:02d}_{base}"
+        return base
+
+    def _write_step_file(self, op: Operation, file_path: str) -> str:
+        normalized = self._normalized_file_path(file_path) or file_path
+        self._set_step_file_path(op, normalized)
+        data = self._operation_to_step_data(op)
+        with builtins.open(normalized, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+        return normalized
+
+    def _ensure_step_file_link(
+        self,
+        op: Operation,
+        *,
+        index_hint: int | None = None,
+        parent=None,
+        settings=None,
+        base_dir: str | None = None,
+        force_create: bool = False,
+    ) -> bool:
+        current = self._step_file_path(op)
+        if current and not force_create:
+            return True
+
+        if settings is None:
+            settings = QtCore.QSettings()
+        start_dir = base_dir or self._dialog_start_dir(
+            settings,
+            "LatheEasyStep/StepLastDir",
+            "LatheEasyStep/LastDialogDir",
+        )
+        default_name = self._step_filename_stem(op, index_hint=index_hint) + ".step.json"
+        default_path = os.path.join(start_dir, default_name)
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            parent,
+            "Step-Datei anlegen",
+            default_path,
+            STEP_FILE_FILTER,
+        )
+        if not file_path:
+            return False
+        if not file_path.lower().endswith(".step.json"):
+            file_path += ".step.json"
+        normalized = self._write_step_file(op, file_path)
+        self._remember_dialog_path(
+            settings,
+            normalized,
+            "LatheEasyStep/StepLastDir",
+            "LatheEasyStep/LastDialogDir",
+        )
+        return True
+
+    def _program_file_meta(self) -> Dict[str, object]:
+        meta: Dict[str, object] = {}
+        program_path = self._normalized_file_path(self._current_program_path)
+        gcode_path = self._normalized_file_path(self._current_gcode_path)
+        if program_path:
+            meta[PROGRAM_FILE_PATH_KEY] = program_path
+        if gcode_path:
+            meta[GCODE_FILE_PATH_KEY] = gcode_path
+        step_files = []
+        for idx, op in enumerate(getattr(self.model, "operations", []) or []):
+            if getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
+                continue
+            step_path = self._step_file_path(op)
+            step_files.append({
+                "index": idx,
+                "op_type": getattr(op, "op_type", ""),
+                "path": step_path,
+            })
+        if step_files:
+            meta["step_files"] = step_files
+        return meta
+
+    def _bootstrap_widget_refs(self) -> None:
+        """Initialize widget reference attributes early so startup code can safely probe them."""
+        panel_root = getattr(self.w, "easystep", None) or self.w
+
+        def _find(name, cls=None):
+            w = getattr(self.w, name, None)
+            if w is not None:
+                return w
+            try:
+                if cls is None:
+                    return panel_root.findChild(QtCore.QObject, name)
+                return panel_root.findChild(cls, name)
+            except Exception:
+                return None
+
+        self.preview_slice = _find("previewSliceWidget", QtWidgets.QWidget)
+        self.btn_slice_view = _find("btn_slice_view", QtWidgets.QAbstractButton)
+        if self.btn_slice_view is None:
+            try:
+                for b in panel_root.findChildren(QtWidgets.QAbstractButton):
+                    t = (b.text() or "").lower()
+                    if getattr(b, "isCheckable", lambda: False)() and ("schnitt" in t or "seiten" in t):
+                        self.btn_slice_view = b
+                        break
+            except Exception:
+                pass
+        self.contour_preview = getattr(self.w, "contourPreview", None)
+        self.list_ops = getattr(self.w, "listOperations", None)
+        self.tab_params = getattr(self.w, "tabParams", None)
+        if self.tab_params is not None:
+            try:
+                self.tab_params.setCurrentIndex(1)
+            except Exception:
+                pass
+
+        def _resolve_widget(name: str):
+            w = getattr(self.w, name, None)
+            if w is not None:
+                return w
+            w = self._find_any_widget(name)
+            if w is not None:
+                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
+            return w
+
+        def _resolve_or_defer_local(attr_name: str, name: str, cls=None, debug_context: bool = False):
+            try:
+                ui_ready = getattr(self.w, "ui_ready", False)
+            except Exception:
+                ui_ready = False
+            if not ui_ready:
+                self._deferred_lookup_queue.append((attr_name, name, cls, debug_context))
+                return None
+            w = getattr(self.w, name, None)
+            if w is not None:
+                setattr(self, attr_name, w)
+                return w
+            try:
+                w = self._find_any_widget(name)
+            except Exception:
+                w = None
+            if w is not None and debug_context:
+                self._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
+            setattr(self, attr_name, w)
+            return w
+
+        self.btn_add = _resolve_or_defer_local("btn_add", "btnAdd")
+        self.btn_delete = _resolve_or_defer_local("btn_delete", "btnDelete")
+        self.btn_move_up = _resolve_or_defer_local("btn_move_up", "btnMoveUp")
+        self.btn_move_down = _resolve_or_defer_local("btn_move_down", "btnMoveDown")
+        self.btn_new_program = _resolve_or_defer_local("btn_new_program", "btnNewProgram")
+        self.btn_generate = _resolve_or_defer_local("btn_generate", "btnGenerate")
+        self.btn_save_changes = _resolve_or_defer_local("btn_save_changes", "btnSaveChanges")
+
+        self.tab_program = _resolve_widget("tabProgram")
+        self.program_unit = _resolve_widget("program_unit")
+        self.program_shape = _resolve_widget("program_shape")
+        self.program_retract_mode = _resolve_widget("program_retract_mode")
+        self.program_has_subspindle = _resolve_widget("program_has_subspindle")
+
+        for attr_name in (
+            "program_xa", "program_xi", "label_prog_xi", "program_za", "program_zi", "program_zb",
+            "program_w", "label_prog_w", "program_l", "label_prog_l", "program_n", "label_prog_n",
+            "program_sw", "label_prog_sw", "program_xt", "program_zt", "program_sc",
+            "program_machine_profile", "program_chuck_size", "program_chuck_part_type",
+            "program_chuck_grip_mode", "program_chuck_profile", "program_chuck_x_min",
+            "program_chuck_x_max", "program_chuck_z_limit", "program_name", "program_xra",
+            "label_prog_xra", "program_xri", "label_prog_xri", "program_zra", "label_prog_zra",
+            "program_zri", "label_prog_zri", "program_xra_absolute", "program_xri_absolute",
+            "program_zra_absolute", "program_zri_absolute", "program_xt_absolute",
+            "program_zt_absolute", "program_s1", "label_prog_s1", "program_s3", "label_prog_s3",
+            "program_spindle", "program_tool", "program_npv", "face_mode", "face_edge_type",
+            "label_face_edge_size", "face_edge_size", "label_face_finish_allow_x",
+            "face_finish_allow_x", "label_face_finish_allow_z", "face_finish_allow_z",
+            "label_face_depth_max", "face_depth_max", "label_face_pause", "face_pause_enabled",
+            "label_face_pause_distance", "face_pause_distance", "contour_start_x",
+            "contour_start_z", "contour_name", "contour_segments", "contour_add_segment",
+            "contour_delete_segment", "contour_move_up", "contour_move_down", "contour_edge_type",
+            "label_contour_edge_size", "contour_edge_size", "parting_contour", "parting_side",
+            "parting_tool", "parting_spindle", "parting_feed", "parting_depth_per_pass",
+            "parting_mode", "parting_pause_enabled", "parting_pause_distance",
+            "label_parting_slice_strategy", "parting_slice_strategy", "label_parting_slice_step",
+            "parting_slice_step", "label_parting_allow_undercut", "parting_allow_undercut",
+            "label_parting_depth", "label_parting_pause", "label_parting_pause_distance",
+            "thread_standard", "thread_orientation", "thread_tool", "thread_spindle",
+            "thread_major_diameter", "thread_pitch", "thread_length", "thread_passes",
+            "thread_safe_z", "thread_depth", "thread_peak_offset", "thread_first_depth",
+            "thread_retract_r", "thread_infeed_q", "thread_spring_passes", "thread_e",
+            "thread_l", "btn_thread_preset",
+        ):
+            setattr(self, attr_name, getattr(self.w, attr_name, None))
+
+        self._contour_edge_template_text = "Keine"
+        self._contour_edge_template_size = 0.0
+        self._contour_arc_template_text = "Auto"
+        self._contour_row_user_selected = False
+        self._op_row_user_selected = False
+        self._setup_parting_slice_strategy_items()
+        if self.label_parting_slice_step is not None:
+            try:
+                self.label_parting_slice_step.setVisible(False)
+            except Exception:
+                pass
+        if self.parting_slice_step is not None:
+            try:
+                self.parting_slice_step.setVisible(False)
+            except Exception:
+                pass
+
+        self.root_widget = self._find_root_widget()
+        self._setup_resolver()
+        self._unit_last_index = -1
 
         # Slice view widgets live inside the embedded panel (objectName: easystep).
         # Depending on how QTVCP instantiates the panel, they may not be direct attributes on self.w.
@@ -3323,6 +3797,7 @@ class HandlerClass:
             ("btn_move_down", "btnMoveDown", QtWidgets.QPushButton),
             ("btn_new_program", "btnNewProgram", QtWidgets.QPushButton),
             ("btn_generate", "btnGenerate", QtWidgets.QPushButton),
+            ("btn_save_changes", "btnSaveChanges", QtWidgets.QPushButton),
             ("btn_save_step", "btnSaveStep", QtWidgets.QPushButton),
             ("btn_load_step", "btnLoadStep", QtWidgets.QPushButton),
             ("btn_save_program", "btnSaveProgram", QtWidgets.QPushButton),
@@ -3549,9 +4024,11 @@ class HandlerClass:
             ("groove_ref_img", "groove_ref_img", QtWidgets.QLabel),
             ("key_mode", "key_mode", QtWidgets.QComboBox),
             ("key_radial_side", "key_radial_side", QtWidgets.QComboBox),
+            ("key_tool", "key_tool", QtWidgets.QComboBox),
             ("key_coolant", "key_coolant", QtWidgets.QComboBox),
             ("key_slot_count", "key_slot_count", QtWidgets.QSpinBox),
             ("key_slot_start_angle", "key_slot_start_angle", QtWidgets.QDoubleSpinBox),
+            ("key_slot_angle_step", "key_slot_angle_step", QtWidgets.QDoubleSpinBox),
             ("key_start_diameter", "key_start_diameter", QtWidgets.QDoubleSpinBox),
             ("key_start_z", "key_start_z", QtWidgets.QDoubleSpinBox),
             ("key_nut_length", "key_nut_length", QtWidgets.QDoubleSpinBox),
@@ -3566,6 +4043,8 @@ class HandlerClass:
             ("label_groove_tool", "label_groove_tool", QtWidgets.QLabel),
             ("label_groove_spindle", "label_groove_spindle", QtWidgets.QLabel),
             ("label_groove_coolant", "label_groove_coolant", QtWidgets.QLabel),
+            ("label_key_tool", "label_key_tool", QtWidgets.QLabel),
+            ("label_key_slot_angle_step", "label_key_slot_angle_step", QtWidgets.QLabel),
             ("label_20", "label_20", QtWidgets.QLabel),
             ("label_21", "label_21", QtWidgets.QLabel),
             ("label_22", "label_22", QtWidgets.QLabel),
@@ -4157,6 +4636,8 @@ class HandlerClass:
             handler = self._handle_new_program
         elif name == "btnGenerate":
             handler = self._handle_generate_gcode
+        elif name == "btnSaveChanges":
+            handler = self._handle_save_changes
         elif name == "btn_save_step":
             handler = self._handle_save_step
         elif name == "btn_load_step":
@@ -4198,7 +4679,7 @@ class HandlerClass:
             elif name == "program_shape":
                 self._update_program_visibility()
             if self._loaded_tools and name in {
-                'face_tool', 'thread_tool', 'groove_tool', 'drill_tool', 'parting_tool',
+                'face_tool', 'thread_tool', 'groove_tool', 'drill_tool', 'parting_tool', 'key_tool',
                 'contour_tool', 'taper_tool', 'boring_tool'
             }:
                 self._populate_tool_combos(self._loaded_tools)
@@ -4247,6 +4728,28 @@ class HandlerClass:
             return
         self._slice_view_setup_done = True
 
+        if self.preview is None:
+            try:
+                self.preview = self._get_widget_by_name("previewWidget")
+            except Exception:
+                pass
+        if self.preview_slice is None:
+            try:
+                self.preview_slice = self._get_widget_by_name("previewSliceWidget")
+            except Exception:
+                pass
+        if self.btn_slice_view is None:
+            try:
+                self.btn_slice_view = self._get_widget_by_name("btn_slice_view")
+            except Exception:
+                pass
+
+        self._log(
+            f"[LatheEasyStep] _setup_slice_view: preview={self.preview!r} "
+            f"preview_slice={self.preview_slice!r} btn_slice_view={self.btn_slice_view!r}",
+            level="info",
+        )
+
         if self.preview is not None:
             try:
                 self.preview.set_view_mode("side")
@@ -4263,14 +4766,17 @@ class HandlerClass:
         if self.btn_slice_view is not None:
             try:
                 self.btn_slice_view.setChecked(False)
-                self.btn_slice_view.setText("Vorderansicht")
+                self.btn_slice_view.setText("Schnittansicht")
                 self.btn_slice_view.setToolTip(
-                    "Zeigt zusaetzlich eine Vorderansicht im aktuellen Z-Schnitt. "
-                    "In der Seitenansicht die Schnittlinie mit der Maus verschieben."
+                    "Blendet zusaetzlich zur Seitenansicht eine Schnittansicht ein. "
+                    "In der Seitenansicht kann die Schnittlinie mit der Maus verschoben werden."
                 )
                 self.btn_slice_view.toggled.connect(self._on_toggle_slice_view)
+                self._log("[LatheEasyStep] slice toggle connected", level="info")
             except Exception:
-                pass
+                self._log("[LatheEasyStep] slice toggle connect failed", level="warning")
+        else:
+            self._log("[LatheEasyStep] btn_slice_view not found during setup", level="warning")
 
         if self.preview is not None:
             try:
@@ -4278,33 +4784,75 @@ class HandlerClass:
             except Exception:
                 pass
 
+    def _suggest_slice_z_for_preview(self, op: Operation | None = None) -> float | None:
+        if op is None and self.preview is not None:
+            op = getattr(self.preview, "front_operation", None)
+        return default_slice_z_for_operation(op)
+
+    def _ensure_slice_z_matches_operation(self, op: Operation | None) -> None:
+        if self.preview is None or op is None:
+            return
+        suggested = self._suggest_slice_z_for_preview(op)
+        if suggested is None:
+            return
+        if getattr(op, "op_type", None) == OpType.KEYWAY:
+            bounds = keyway_slice_bounds(getattr(op, "params", {}) or {})
+            if bounds is not None:
+                current = float(getattr(self.preview, "slice_z", 0.0) or 0.0)
+                if bounds[0] - 1e-6 <= current <= bounds[1] + 1e-6:
+                    return
+        try:
+            self.preview.set_slice_z(suggested, emit=True)
+        except Exception:
+            pass
+
     def _on_toggle_slice_view(self, checked: bool):
         if self.preview is None:
+            self._log("[LatheEasyStep] _on_toggle_slice_view ignored: preview is None", level="warning")
             return
         checked = bool(checked)
+        self._log(
+            f"[LatheEasyStep] _on_toggle_slice_view checked={checked} "
+            f"current_mode={getattr(self.preview, 'view_mode', None)} "
+            f"slice_enabled={getattr(self.preview, 'slice_enabled', None)}",
+            level="info",
+        )
         # enable/disable slice mode in main preview
         try:
             self.preview.set_slice_enabled(checked)
         except Exception:
-            pass
+            self._log("[LatheEasyStep] set_slice_enabled failed", level="warning")
+        # Keep the main preview in side view; the slice is shown in the extra preview.
+        try:
+            self.preview.set_view_mode("side")
+        except Exception:
+            self._log("[LatheEasyStep] set_view_mode failed", level="warning")
         # show/hide slice preview widget
         if self.preview_slice is not None:
             try:
                 self.preview_slice.setVisible(checked)
             except Exception:
-                pass
+                self._log("[LatheEasyStep] preview_slice visibility change failed", level="warning")
         # update toggle button text
         if self.btn_slice_view is not None:
             try:
-                self.btn_slice_view.setText("Vorderansicht aus" if checked else "Vorderansicht")
+                self.btn_slice_view.setText("Schnittansicht aus" if checked else "Schnittansicht")
             except Exception:
-                pass
+                self._log("[LatheEasyStep] btn_slice_view text update failed", level="warning")
         # default slice at Z0 when enabling
         if checked:
             try:
-                self.preview.set_slice_z(0.0, emit=True)
+                suggested = self._suggest_slice_z_for_preview()
+                self.preview.set_slice_z(0.0 if suggested is None else suggested, emit=True)
             except Exception:
-                pass
+                self._log("[LatheEasyStep] set_slice_z failed", level="warning")
+        self._log(
+            f"[LatheEasyStep] slice view updated: mode={getattr(self.preview, 'view_mode', None)} "
+            f"slice_enabled={getattr(self.preview, 'slice_enabled', None)} "
+            f"slice_z={getattr(self.preview, 'slice_z', None)} "
+            f"slice_widget_visible={getattr(self.preview_slice, 'isVisible', lambda: None)() if self.preview_slice else None}",
+            level="info",
+        )
         self._sync_slice_widget()
 
     def _on_slice_changed(self, z_val: float):
@@ -4572,6 +5120,7 @@ class HandlerClass:
         QtCore.QTimer.singleShot(0, self._update_retract_visibility)
         QtCore.QTimer.singleShot(0, self._update_subspindle_visibility)
         QtCore.QTimer.singleShot(0, self._update_face_visibility)
+        QtCore.QTimer.singleShot(0, self._auto_load_tool_table)
         # Kontur-Tab initial vorbereiten (Spalten/Leerzeile optional)
         QtCore.QTimer.singleShot(0, self._init_contour_table)
         QtCore.QTimer.singleShot(0, self._sync_contour_edge_controls)
@@ -5210,6 +5759,7 @@ class HandlerClass:
                 "btnMoveUp" if name == "btn_move_up" else
                 "btnMoveDown" if name == "btn_move_down" else
                 "btnNewProgram" if name == "btn_new_program" else
+                "btnSaveChanges" if name == "btn_save_changes" else
                 "btnGenerate" if name == "btn_generate" else name
             )
             obj = root.findChild(cls, obj_name, QtCore.Qt.FindChildrenRecursively)
@@ -5233,6 +5783,7 @@ class HandlerClass:
         self.btn_move_down = _find("btn_move_down", QtWidgets.QPushButton)
         self.btn_new_program = _find("btn_new_program", QtWidgets.QPushButton)
         self.btn_generate = _find("btn_generate", QtWidgets.QPushButton)
+        self.btn_save_changes = _find("btn_save_changes", QtWidgets.QPushButton)
         self.btn_save_step = _find("btn_save_step", QtWidgets.QPushButton)
         self.btn_load_step = _find("btn_load_step", QtWidgets.QPushButton)
         self.btn_save_program = _find("btn_save_program", QtWidgets.QPushButton)
@@ -5247,6 +5798,7 @@ class HandlerClass:
         self.groove_tool = _find("groove_tool", QtWidgets.QComboBox)
         self.thread_tool = _find("thread_tool", QtWidgets.QComboBox)
         self.parting_tool = _find("parting_tool", QtWidgets.QComboBox)
+        self.key_tool = _find("key_tool", QtWidgets.QComboBox)
         self.face_tool_img = _find("face_tool_img", QtWidgets.QLabel)
         self.drill_tool_img = _find("drill_tool_img", QtWidgets.QLabel)
         self.groove_tool_img = _find("groove_tool_img", QtWidgets.QLabel)
@@ -5272,6 +5824,7 @@ class HandlerClass:
         self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
         self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
         self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+        self._connect_button_once(self.btn_save_changes, self._handle_save_changes, "_btn_save_changes_connected")
         self._connect_button_once(self.btn_save_step, self._handle_save_step, "_btn_save_step_connected")
         self._connect_button_once(self.btn_load_step, self._handle_load_step, "_btn_load_step_connected")
         # Preset-Button: hartes Anwenden per Klick
@@ -5416,11 +5969,14 @@ class HandlerClass:
                 "peck_depth": self._get_widget_by_name("drill_peck_depth"),
             },
             OpType.KEYWAY: {
+                "tool": self._get_widget_by_name("key_tool"),
+                "feed": self._get_widget_by_name("key_plunge_feed"),
                 "mode": self._get_widget_by_name("key_mode"),
                 "radial_side": self._get_widget_by_name("key_radial_side"),
                 "coolant": self._get_widget_by_name("key_coolant"),
                 "slot_count": self._get_widget_by_name("key_slot_count"),
                 "slot_start_angle": self._get_widget_by_name("key_slot_start_angle"),
+                "slot_angle_step": self._get_widget_by_name("key_slot_angle_step"),
                 "start_x_dia": self._get_widget_by_name("key_start_diameter"),
                 "start_z": self._get_widget_by_name("key_start_z"),
                 "nut_length": self._get_widget_by_name("key_nut_length"),
@@ -5559,7 +6115,7 @@ class HandlerClass:
             )
 
     def _connect_tool_preview_signals(self):
-            tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
+            tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool", "key_tool"]
             for combo_name in tool_combos:
                 combo = getattr(self, combo_name, None)
                 if combo and not getattr(self, f"_{combo_name}_connected", False):
@@ -5701,6 +6257,7 @@ class HandlerClass:
             self._connect_button_once(self.btn_move_down, self._handle_move_down, "_btn_move_down_connected")
             self._connect_button_once(self.btn_new_program, self._handle_new_program, "_btn_new_program_connected")
             self._connect_button_once(self.btn_generate, self._handle_generate_gcode, "_btn_generate_connected")
+            self._connect_button_once(self.btn_save_changes, self._handle_save_changes, "_btn_save_changes_connected")
             self._connect_button_once(self.btn_load_tool_table, self._handle_load_tool_table, "_btn_load_tool_table_connected")
             self._connect_button_once(self.btn_save_program, self._handle_save_program, "_btn_save_program_connected")
             self._connect_button_once(self.btn_load_program, self._handle_load_program, "_btn_load_program_connected")
@@ -6304,6 +6861,23 @@ class HandlerClass:
                 "end_x": -1.0,
                 "end_z": 0.0,
                 "coolant": False,
+            }
+            for key, default in defaults.items():
+                if key not in params or params[key] is None or params[key] == "":
+                    params[key] = default
+        elif op_type == OpType.KEYWAY:
+            defaults = {
+                "tool": 1,
+                "feed": 200.0,
+                "plunge_feed": 200.0,
+                "slot_count": 1,
+                "slot_start_angle": 0.0,
+                "slot_angle_step": 0.0,
+                "top_clearance": 1.0,
+                "depth_per_pass": 0.1,
+                "mode": 0,
+                "radial_side": 0,
+                "coolant": 0,
             }
             for key, default in defaults.items():
                 if key not in params or params[key] is None or params[key] == "":
@@ -6964,6 +7538,11 @@ class HandlerClass:
                 self.preview.set_front_context(program_context, active_operation)
             except Exception:
                 pass
+            try:
+                if getattr(self.preview, "slice_enabled", False):
+                    self._ensure_slice_z_matches_operation(active_operation)
+            except Exception:
+                pass
 
         # slice preview (if enabled)
         if self.preview_slice and getattr(self.preview_slice, "isVisible", lambda: False)():
@@ -7063,6 +7642,7 @@ class HandlerClass:
 
         # Raw stock outline + retract planes as thin references (program header only).
         prog = self._collect_program_header() or {}
+        prog["__operations"] = list(self.model.operations)
         try:
             inserts = 0
             stock_primitives = build_stock_outline(prog)
@@ -7223,10 +7803,14 @@ class HandlerClass:
         if idx < 0 or idx >= len(self.model.operations):
             return
         op = self.model.operations[idx]
+        previous_params = dict(op.params or {})
         if op.op_type == OpType.PROGRAM_HEADER:
             op.params = self._collect_program_header()
         else:
             op.params = self._collect_params(op.op_type)
+        for key, value in previous_params.items():
+            if isinstance(key, str) and key.startswith("__") and key not in op.params:
+                op.params[key] = value
         self.model.update_geometry(op)
         description = self._describe_operation(op, idx + 1)
         if self.list_ops:
@@ -7295,6 +7879,19 @@ class HandlerClass:
                     params["source_path"] = contour_path
                 op = Operation(op_type, params)
                 self.model.update_geometry(op)
+                parent = self.root_widget or self._find_root_widget()
+                settings = QtCore.QSettings()
+                next_index = len(self.model.operations)
+                if any(existing.op_type == OpType.PROGRAM_HEADER for existing in self.model.operations):
+                    next_index += 1
+                if not self._ensure_step_file_link(
+                    op,
+                    index_hint=next_index,
+                    parent=parent,
+                    settings=settings,
+                ):
+                    self._log("[LatheEasyStep] add operation cancelled: no step file selected", level="info")
+                    return
                 self.model.add_operation(op)
                 try:
                     debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
@@ -7345,7 +7942,7 @@ class HandlerClass:
     def _operation_to_step_data(self, op: Operation) -> Dict[str, object]:
         data = {
             "op_type": op.op_type,
-            "params": op.params,
+            "params": dict(op.params or {}),
         }
         # Support both legacy point paths and new primitive paths
         if op.path and isinstance(op.path[0], dict):
@@ -7414,6 +8011,87 @@ class HandlerClass:
         self._refresh_preview()
         self._handle_selection_change(idx)
 
+    def _build_program_data(self) -> Dict[str, object]:
+        self._update_selected_operation(force=True)
+        header = self._collect_program_header()
+        ops_data = []
+        for op in self.model.operations:
+            op_dict = self._operation_to_step_data(op)
+            op_dict["title"] = op.params.get("title", "")
+            ops_data.append(op_dict)
+        return {
+            "version": 1,
+            "header": header,
+            "operations": ops_data,
+            "meta": self._program_file_meta(),
+        }
+
+    def _write_program_file(self, file_path: str) -> None:
+        program_path = self._normalized_file_path(file_path) or file_path
+        previous_program_path = self._current_program_path
+        self._current_program_path = program_path
+        parent = self.root_widget or self._find_root_widget()
+        settings = QtCore.QSettings()
+        base_dir = os.path.dirname(program_path)
+        for idx, op in enumerate(self.model.operations):
+            if op.op_type == OpType.PROGRAM_HEADER:
+                continue
+            if not self._ensure_step_file_link(
+                op,
+                index_hint=idx,
+                parent=parent,
+                settings=settings,
+                base_dir=base_dir,
+            ):
+                raise ValueError("Programmspeichern abgebrochen: fuer mindestens einen Step fehlt eine Step-Datei.")
+        program_data = self._build_program_data()
+        with builtins.open(program_path, "w", encoding="utf-8") as f:
+            json.dump(program_data, f, indent=2, default=str)
+        self._current_program_path = program_path if program_path else previous_program_path
+
+    def _build_gcode_lines(self) -> List[str]:
+        if not self.tools:
+            try:
+                self._auto_load_tool_table()
+            except Exception:
+                pass
+        header = self._collect_program_header()
+        self.model.program_settings = header
+        self.model.program_settings["tools"] = self.tools
+        self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
+
+        unique_tools = set()
+        for op in self.model.operations:
+            if op.op_type == OpType.PROGRAM_HEADER:
+                continue
+            try:
+                val = op.params.get("tool")
+                tool_val = int(float(val)) if val is not None else 0
+            except Exception:
+                tool_val = 0
+            if tool_val > 0:
+                unique_tools.add(tool_val)
+        if len(unique_tools) >= 2:
+            xt = header.get("xt")
+            zt = header.get("zt")
+            if xt is None or zt is None:
+                raise ValueError(
+                    "Bitte XT und ZT im Programm-Tab eintragen, da mehrere Werkzeuge verwendet werden."
+                )
+
+        header_lines = self._tool_change_position_lines(header)
+        footer_lines = self._tool_change_position_lines(header)
+        self.model.program_settings["header_lines"] = header_lines
+        self.model.program_settings["footer_lines"] = footer_lines
+        return self.model.generate_gcode()
+
+    def _write_gcode_file(self, file_path: str) -> None:
+        gcode_path = self._normalized_file_path(file_path) or file_path
+        lines = self._build_gcode_lines()
+        with builtins.open(gcode_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        self._current_gcode_path = gcode_path
+
     def _handle_save_step(self):
         if self._saving_step:
             return
@@ -7426,8 +8104,11 @@ class HandlerClass:
                 return
             parent = self.root_widget or self._find_root_widget()
             settings = QtCore.QSettings()
-            last_path = settings.value("LatheEasyStep/StepLastDir", "", type=str) or ""
-            start_dir = last_path or self._step_last_dir or QtCore.QDir.homePath()
+            start_dir = self._dialog_start_dir(
+                settings,
+                "LatheEasyStep/StepLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             default_name = os.path.join(start_dir, "lathe_step.step.json")
             file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 parent,
@@ -7445,14 +8126,19 @@ class HandlerClass:
                 warning = self._tool_orientation_mismatch(op)
                 if warning:
                     QtWidgets.QMessageBox.warning(parent, "Werkzeuglage prüfen", warning)
+                self._set_step_file_path(op, file_path)
                 data = self._operation_to_step_data(op)
                 with builtins.open(file_path, "w", encoding="utf-8") as handle:
                     json.dump(data, handle, indent=2)
             except Exception as exc:
                 QtWidgets.QMessageBox.critical(parent, "Step speichern", f"Step konnte nicht gespeichert werden:\n{exc}")
                 return
-            self._step_last_dir = os.path.dirname(file_path)
-            settings.setValue("LatheEasyStep/StepLastDir", self._step_last_dir)
+            self._remember_dialog_path(
+                settings,
+                file_path,
+                "LatheEasyStep/StepLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
         finally:
             self._saving_step = False
@@ -7565,8 +8251,11 @@ class HandlerClass:
         try:
             parent = self.root_widget or self._find_root_widget()
             settings = QtCore.QSettings()
-            last_path = settings.value("LatheEasyStep/StepLastDir", "", type=str) or ""
-            start_dir = last_path or self._step_last_dir or QtCore.QDir.homePath()
+            start_dir = self._dialog_start_dir(
+                settings,
+                "LatheEasyStep/StepLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent,
                 "Step laden",
@@ -7586,10 +8275,15 @@ class HandlerClass:
             if op is None:
                 QtWidgets.QMessageBox.warning(parent, "Step laden", "Die ausgewählte Datei enthält keinen gültigen Step.")
                 return
+            self._set_step_file_path(op, file_path)
 
             self._insert_loaded_operation(op)
-            self._step_last_dir = os.path.dirname(file_path)
-            settings.setValue("LatheEasyStep/StepLastDir", self._step_last_dir)
+            self._remember_dialog_path(
+                settings,
+                file_path,
+                "LatheEasyStep/StepLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             self._update_parting_ready_state()
 
         
@@ -7602,7 +8296,12 @@ class HandlerClass:
         """Speichert das komplette Programm (Header + alle Operations) als JSON."""
         try:
             parent = self.root_widget or self._find_root_widget()
-            default_dir = QtCore.QDir.homePath()
+            settings = QtCore.QSettings()
+            default_dir = self._dialog_start_dir(
+                settings,
+                "LatheEasyStep/ProgramLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             
             file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 parent,
@@ -7616,30 +8315,15 @@ class HandlerClass:
             # Ensure .lse extension
             if not file_path.lower().endswith(".lse"):
                 file_path += ".lse"
-            
-            # Flush current widget values into the selected operation
-            self._update_selected_operation(force=True)
-            
-            # Collect header
-            header = self._collect_program_header()
-            
-            # Collect all operations as dicts
-            ops_data = []
-            for op in self.model.operations:
-                op_dict = self._operation_to_step_data(op)
-                op_dict["title"] = op.params.get("title", "")
-                ops_data.append(op_dict)
-            
-            # Build complete program structure
-            program_data = {
-                "version": 1,
-                "header": header,
-                "operations": ops_data,
-            }
-            
-            # Write JSON
-            with builtins.open(file_path, "w", encoding="utf-8") as f:
-                json.dump(program_data, f, indent=2, default=str)
+            self._write_program_file(file_path)
+            self._current_program_path = self._normalized_file_path(file_path)
+
+            self._remember_dialog_path(
+                settings,
+                file_path,
+                "LatheEasyStep/ProgramLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             
             QtWidgets.QMessageBox.information(
                 parent,
@@ -7657,7 +8341,12 @@ class HandlerClass:
         """Lädt ein komplettes Programm (Header + Operations) aus JSON."""
         try:
             parent = self.root_widget or self._find_root_widget()
-            default_dir = QtCore.QDir.homePath()
+            settings = QtCore.QSettings()
+            default_dir = self._dialog_start_dir(
+                settings,
+                "LatheEasyStep/ProgramLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             
             file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent,
@@ -7671,6 +8360,13 @@ class HandlerClass:
             # Load JSON
             with builtins.open(file_path, "r", encoding="utf-8") as f:
                 program_data = json.load(f)
+
+            self._remember_dialog_path(
+                settings,
+                file_path,
+                "LatheEasyStep/ProgramLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             
             if program_data.get("version") != 1:
                 QtWidgets.QMessageBox.warning(
@@ -7687,6 +8383,11 @@ class HandlerClass:
             # Load header values into UI
             header = program_data.get("header", {})
             self._apply_header_to_ui(header)
+            meta = program_data.get("meta", {}) if isinstance(program_data.get("meta"), dict) else {}
+            self._current_program_path = self._normalized_file_path(
+                meta.get(PROGRAM_FILE_PATH_KEY) or file_path
+            )
+            self._current_gcode_path = self._normalized_file_path(meta.get(GCODE_FILE_PATH_KEY))
             
             # Load operations (use _step_data_to_operation for correct path/primitives handling)
             ops_data = program_data.get("operations", [])
@@ -7713,6 +8414,109 @@ class HandlerClass:
                 "Fehler beim Laden",
                 f"Programm konnte nicht geladen werden:\n{e}",
             )
+
+    def _handle_save_changes(self):
+        if self._saving_changes:
+            return
+        self._saving_changes = True
+        try:
+            parent = self.root_widget or self._find_root_widget()
+            settings = QtCore.QSettings()
+            self._update_selected_operation(force=True)
+            self._log(
+                f"[LatheEasyStep] save_changes start: ops={len(self.model.operations)} "
+                f"program_path={self._current_program_path!r} gcode_path={self._current_gcode_path!r}",
+                level="info",
+            )
+
+            saved_steps = 0
+            linked_steps = 0
+            for idx, op in enumerate(self.model.operations):
+                if op.op_type == OpType.PROGRAM_HEADER:
+                    continue
+                step_path = self._step_file_path(op)
+                self._log(
+                    f"[LatheEasyStep] save_changes op#{idx+1} type={op.op_type} step_path={step_path!r}",
+                    level="info",
+                )
+                if not step_path:
+                    continue
+                linked_steps += 1
+                data = self._operation_to_step_data(op)
+                with builtins.open(step_path, "w", encoding="utf-8") as handle:
+                    json.dump(data, handle, indent=2)
+                self._remember_dialog_path(
+                    settings,
+                    step_path,
+                    "LatheEasyStep/StepLastDir",
+                    "LatheEasyStep/LastDialogDir",
+                )
+                saved_steps += 1
+
+            saved_program = False
+            program_path = self._normalized_file_path(self._current_program_path)
+            if program_path:
+                self._write_program_file(program_path)
+                self._remember_dialog_path(
+                    settings,
+                    program_path,
+                    "LatheEasyStep/ProgramLastDir",
+                    "LatheEasyStep/LastDialogDir",
+                )
+                saved_program = True
+            else:
+                self._log("[LatheEasyStep] save_changes: no linked program file", level="info")
+
+            saved_gcode = False
+            gcode_path = self._normalized_file_path(self._current_gcode_path)
+            if gcode_path:
+                self._write_gcode_file(gcode_path)
+                self._remember_dialog_path(
+                    settings,
+                    gcode_path,
+                    "LatheEasyStep/GcodeLastDir",
+                    "LatheEasyStep/LastDialogDir",
+                )
+                saved_gcode = True
+            else:
+                self._log("[LatheEasyStep] save_changes: no linked gcode file", level="info")
+
+            if not saved_steps and not saved_program and not saved_gcode:
+                self._log("[LatheEasyStep] save_changes: nothing linked to save", level="warning")
+                QtWidgets.QMessageBox.information(
+                    parent,
+                    "Aenderungen speichern",
+                    "Es sind noch keine verknuepften Step-, Programm- oder G-Code-Dateien vorhanden.",
+                )
+                return
+
+            messages = []
+            if linked_steps:
+                messages.append(f"Step-Dateien aktualisiert: {saved_steps}")
+            else:
+                messages.append("Keine einzelnen Step-Dateien verknuepft")
+            messages.append("Programm aktualisiert" if saved_program else "Programm nicht verknuepft")
+            messages.append("G-Code aktualisiert" if saved_gcode else "G-Code nicht verknuepft")
+            if saved_program and not linked_steps:
+                messages.append("Die geaenderten Steps wurden im Programm gespeichert.")
+            self._log(
+                f"[LatheEasyStep] save_changes done: linked_steps={linked_steps} steps={saved_steps} "
+                f"program={saved_program} gcode={saved_gcode}",
+                level="info",
+            )
+            QtWidgets.QMessageBox.information(
+                parent,
+                "Aenderungen speichern",
+                "\n".join(messages),
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self.root_widget or None,
+                "Aenderungen speichern",
+                f"Aenderungen konnten nicht gespeichert werden:\n{e}",
+            )
+        finally:
+            self._saving_changes = False
 
     def _apply_header_to_ui(self, header: Dict[str, object]):
         """Setzt Header-Werte in UI-Widgets."""
@@ -8195,6 +8999,8 @@ class HandlerClass:
         self._creating_new_program = True
         try:
             self.model.operations.clear()
+            self._current_program_path = None
+            self._current_gcode_path = None
             self._op_row_user_selected = False
             self._refresh_operation_list(select_index=-1)
             self._refresh_preview()
@@ -8207,14 +9013,17 @@ class HandlerClass:
             return
         self._generating_gcode = True
         try:
-            if not self.tools:
-                try:
-                    self._auto_load_tool_table()
-                except Exception:
-                    pass
             header = self._collect_program_header()
+            settings = QtCore.QSettings()
 
             default_filepath = self._build_program_filepath(header.get("program_name", ""))
+            dialog_dir = self._dialog_start_dir(
+                settings,
+                "LatheEasyStep/GcodeLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
+            default_filename = os.path.basename(default_filepath)
+            default_filepath = os.path.join(dialog_dir, default_filename)
             os.makedirs(os.path.dirname(default_filepath), exist_ok=True)
             filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self.root_widget,
@@ -8224,78 +9033,15 @@ class HandlerClass:
             )
             if not filepath:
                 return  # User cancelled
-
-            self.model.program_settings = header
-            self.model.program_settings["tools"] = self.tools
-            self.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
-
-            unique_tools = set()
-            for op in self.model.operations:
-                if op.op_type == OpType.PROGRAM_HEADER:
-                    continue
-                try:
-                    val = op.params.get("tool")
-                    tool_val = int(float(val)) if val is not None else 0
-                except Exception:
-                    tool_val = 0
-                if tool_val > 0:
-                    unique_tools.add(tool_val)
-            if len(unique_tools) >= 2:
-                xt = header.get("xt")
-                zt = header.get("zt")
-                if xt is None or zt is None:
-                    QtWidgets.QMessageBox.warning(
-                        self.root_widget or None,
-                        "Werkzeugwechselposition fehlt",
-                        "Bitte XT und ZT im Programm-Tab eintragen, da mehrere Werkzeuge verwendet werden.",
-                    )
-                    if self.program_xt:
-                        try:
-                            self.program_xt.setFocus()
-                        except Exception:
-                            pass
-                    return
-
-            warnings = self._collect_tool_orientation_warnings()
-            if warnings:
-                preview = "\n".join(warnings[:5])
-                if len(warnings) > 5:
-                    preview += f"\n... und {len(warnings) - 5} weitere Schritte"
-                QtWidgets.QMessageBox.warning(
-                    self.root_widget or None,
-                    "Werkzeuglage prüfen",
-                    f"Bitte prüfen Sie die Werkzeugauswahl:\n{preview}",
-                )
-            radius_details = self._radius_warning_details()
-            if radius_details:
-                preview = "\n".join(detail["message"] for detail in radius_details[:5])
-                if len(radius_details) > 5:
-                    preview += f"\n... und {len(radius_details) - 5} weitere Schritte"
-                resp = QtWidgets.QMessageBox.warning(
-                    self.root_widget or None,
-                    "Nasenradius fehlt",
-                    f"{preview}\n\nTrotzdem ohne Nose Compensation fortfahren?",
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                    QtWidgets.QMessageBox.No,
-                )
-                nose_disabled = resp != QtWidgets.QMessageBox.Yes
-                for detail in radius_details:
-                    op = detail["op"]
-                    op.params["nose_comp_disabled"] = nose_disabled
-                    if nose_disabled:
-                        op.params["nose_comp_reason"] = detail["message"]
-                    else:
-                        op.params.pop("nose_comp_reason", None)
-            
-            # Build header + footer lines with toolchange positions
-            header_lines = self._tool_change_position_lines(header)
-            footer_lines = self._tool_change_position_lines(header)
-            self.model.program_settings["header_lines"] = header_lines
-            self.model.program_settings["footer_lines"] = footer_lines
-            
-            lines = self.model.generate_gcode()
-            with builtins.open(filepath, "w") as f:
-                f.write("\n".join(lines))
+            self._update_selected_operation(force=True)
+            self._write_gcode_file(filepath)
+            self._current_gcode_path = self._normalized_file_path(filepath)
+            self._remember_dialog_path(
+                settings,
+                filepath,
+                "LatheEasyStep/GcodeLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             open_fn = getattr(Action, "CALLBACK_OPEN_PROGRAM", None)
             if callable(open_fn):
                 open_fn(filepath)
@@ -8322,7 +9068,12 @@ class HandlerClass:
         try:
             settings = QtCore.QSettings()
             last_path = settings.value("LatheEasyStep/ToolTablePath", "", type=str) or ""
-            default_path = last_path or os.path.expanduser("~/linuxcnc/configs")
+            default_path = self._dialog_start_dir(
+                settings,
+                "LatheEasyStep/ToolTableLastDir",
+                "LatheEasyStep/LastDialogDir",
+                "LatheEasyStep/ToolTablePath",
+            )
             filepath, _ = QtWidgets.QFileDialog.getOpenFileName(
                 self.root_widget,
                 "Werkzeugtabelle laden",
@@ -8345,6 +9096,12 @@ class HandlerClass:
                 self.lbl_tool_table_path.setText(filepath)
 
             settings.setValue("LatheEasyStep/ToolTablePath", filepath)
+            self._remember_dialog_path(
+                settings,
+                filepath,
+                "LatheEasyStep/ToolTableLastDir",
+                "LatheEasyStep/LastDialogDir",
+            )
             QtWidgets.QMessageBox.information(
                 self.root_widget or None,
                 "LatheEasyStep",
@@ -8553,6 +9310,7 @@ class HandlerClass:
             "groove_tool",
             "thread_tool",
             "parting_tool",
+            "key_tool",
         ]
         for combo_name in combo_names:
             combo = getattr(self, combo_name, None)
@@ -8585,7 +9343,7 @@ class HandlerClass:
 
     def _ensure_tool_preview_widgets(self):
         """Ensure tool combo + preview label refs exist even in deferred embedded loading."""
-        for combo_name in ("face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"):
+        for combo_name in ("face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool", "key_tool"):
             if getattr(self, combo_name, None) is None:
                 try:
                     setattr(self, combo_name, self._get_widget_by_name(combo_name))
@@ -8733,7 +9491,7 @@ class HandlerClass:
         self._ensure_tool_preview_widgets()
         self._ensure_tool_preview_calibration_controls()
         self._reposition_tool_preview_widgets()
-        tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool"]
+        tool_combos = ["face_tool", "drill_tool", "groove_tool", "thread_tool", "parting_tool", "key_tool"]
 
         for combo_name in tool_combos:
             combo = getattr(self, combo_name, None)
@@ -9551,8 +10309,14 @@ class HandlerClass:
         for sb in root.findChildren(QtWidgets.QDoubleSpinBox):
             name = sb.objectName()
 
-            # Drehzahlfelder S1/S3 nicht anfassen
+            angle_fields = {"thread_infeed_q", "key_slot_start_angle", "key_slot_angle_step"}
+
+            # Winkel und Drehzahl nicht mit Längeneinheiten versehen
+            if name in angle_fields:
+                sb.setSuffix(" °")
+                continue
             if name in ("program_s1", "program_s3") or "spindle" in name.lower():
+                sb.setSuffix("")
                 continue
 
             if "feed" in name.lower():
@@ -10005,6 +10769,11 @@ class HandlerClass:
             strategy = p.get("slice_strategy", "parallel_z")
             tool = p.get("tool", "T01")
             return wrap(f"Abspanen ({contour_name}, {strategy}) ({tool})")
+        if t == OpType.KEYWAY:
+            slot_count = int(float(p.get("slot_count", 1) or 1))
+            start_z = p.get("start_z", 0.0)
+            tool = p.get("tool", "T01")
+            return wrap(f"Keilnut ({slot_count}x ab Z {fnum(start_z)}) ({tool})")
         # fallback
         return wrap(f"{t}: {p}")
     def _renumber_operations(self):

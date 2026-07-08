@@ -22,7 +22,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: 5. Juli 2026
+Stand: 8. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -66,6 +66,54 @@ der realen Maschine sollte:
 
 Die Nutzung erfolgt auf eigene Verantwortung.
 
+## Einbindung in LinuxCNC / Standalone-Start
+
+Lathe EasyStep ist als QTVCP-Panel aufgebaut. Die zugehoerigen Dateien in
+diesem Verzeichnis sind:
+
+- `lathe_easystep.ui`
+- `lathe_easystep_handler.py`
+
+### Einbau als eingebettetes Panel in die LinuxCNC-INI
+
+In der LinuxCNC-INI kann das Panel als zusaetzlicher Tab eingebunden werden.
+Ein funktionierendes Beispiel aus der vorhandenen Konfiguration ist:
+
+```ini
+EMBED_TAB_NAME=Macros
+EMBED_TAB_COMMAND=qtvcp -x {XID} -c easystep ~/linuxcnc/configs/Drehbank/macros/LatheEasyStep/lathe_easystep
+EMBED_TAB_LOCATION=tabWidget_utilities
+```
+
+Wichtig dabei:
+
+- `-x {XID}` bettet das QTVCP-Fenster in den LinuxCNC-Tab ein
+- `-c easystep` setzt den Komponentennamen
+- der Pfad zeigt auf das Panel `lathe_easystep`
+- `EMBED_TAB_LOCATION` muss zu dem Tab-Container deiner LinuxCNC-Oberflaeche passen
+
+Wenn du eine andere Konfiguration nutzt, musst du in der Regel nur den Pfad
+und gegebenenfalls `EMBED_TAB_LOCATION` anpassen.
+
+### Standalone starten
+
+Zum direkten Testen ausserhalb von LinuxCNC kann das Panel auch separat mit
+`qtvcp` gestartet werden:
+
+```bash
+cd ~/linuxcnc/configs/Drehbank/macros/LatheEasyStep
+qtvcp -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui
+```
+
+Nuetzlich fuer Debugging:
+
+```bash
+qtvcp -d -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui
+```
+
+Voraussetzung ist eine LinuxCNC-/QTVCP-Installation, in der `qtvcp` im `PATH`
+liegt.
+
 ## Grundsaetzlicher Workflow
 
 Die Bedienung folgt einem festen Ablauf ueber die Reiter. Alle Eingaben wirken
@@ -106,6 +154,14 @@ Moeglich sind:
 - einzelne Steps speichern und wieder laden
 - komplette Programme speichern und wieder laden
 - bestehende Programme gezielt aendern
+- verknuepfte Steps und Programme ueber `Aenderungen speichern` direkt aktualisieren
+
+Wichtig fuer den aktuellen Workflow:
+
+- jeder Bearbeitungsschritt soll eine eigene Step-Datei besitzen
+- beim Programmspeichern werden die verknuepften Step-Dateien im Programm mit abgelegt
+- bestehende Programme koennen dadurch spaeter geladen und gezielt in ihre Einzel-Steps zurueckgeschrieben werden
+- Dateidialoge starten immer im zuletzt verwendeten Ordner, damit Step-, Programm- und G-Code-Dateien schneller wiedergefunden werden
 
 Im Embedded-Betrieb wird die sichtbare Step-Liste bewusst strikt ueber die
 Operationsliste gefuehrt, damit geladene Steps und Programme konsistent in der
@@ -177,9 +233,37 @@ vorgesehen.
 
 Aktueller Stand:
 
-- funktional vorbereitet
-- noch kein fertig ausgearbeiteter Werkstatt-Workflow
-- perspektivisch fuer C-Achsen-nahe Erweiterungen gedacht
+- Werkzeugauswahl vorhanden
+- Startwinkel und Winkelversatz fuer Wiederholungen vorhanden
+- zusaetzliche Bearbeitungsparameter fuer wiederholte Nuten erweitert
+- Winkeleingaben werden in Grad gefuehrt
+- keine unnoetige Drehzahl-Eingabe fuer stillstehendes Werkstueck beim Nutenstossen
+- Vorschau fuer Nuten und Teilung ist weiter in Arbeit, aber die Schnittansicht greift bereits auf die Gesamtgeometrie des Programms zu
+
+## Vorschau und Schnittansicht
+
+Die Vorschau besteht derzeit aus einer Seitenansicht des Werkstuecks und einer
+zusaetzlichen Vorderansicht fuer einen frei waehlbaren Z-Schnitt.
+
+Aktueller Stand:
+
+- die Seitenansicht bleibt sichtbar
+- die Schnittlage wird in der Seitenansicht farblich markiert
+- die Schnittlage kann direkt in der Seitenansicht verschoben werden
+- die Vorderansicht wird aus dem gesamten Programm berechnet, nicht nur aus dem aktuell markierten Step
+- die Vorderansicht nutzt den groessten Werkstueckdurchmesser als feste Referenz, damit Konen und Durchmesserwechsel optisch nachvollziehbar bleiben
+- die aktuelle Endgeometrie wird in der Vorderansicht zusaetzlich flaechig hervorgehoben
+
+Das ist wichtig bei Konen oder abgestuften Durchmessern: Wenn die
+Schnittposition entlang Z verschoben wird, aendert sich die dargestellte
+Geometrie jetzt nicht nur numerisch, sondern auch sichtbar in ihrer Groesse.
+
+## Werkzeugtabelle
+
+Die Werkzeugtabelle wird wie bisher manuell geladen, der zuletzt verwendete
+Pfad wird aber gespeichert und beim naechsten Start des Panels automatisch
+wieder verwendet. Fuer den ueblichen Werkstattfall mit nur einer aktiven
+`tool.tbl` entfaellt damit das erneute Auswaehlen nach jedem Panelstart.
 
 ## Aktuelle Prioritaeten
 
