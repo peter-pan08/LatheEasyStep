@@ -10,6 +10,7 @@ Verifies that:
 """
 import os
 import sys
+from weakref import WeakSet
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType, ProgramModel
@@ -19,9 +20,18 @@ from lathe_easystep_handler import HandlerClass, Operation, OpType, ProgramModel
 # Minimal mocks
 # ---------------------------------------------------------------------------
 
+class _Signal:
+    def __init__(self):
+        self.calls = []
+
+    def connect(self, fn, *args, **kwargs):
+        self.calls.append(fn)
+
+
 class _SpinBox:
     def __init__(self, val=0.0):
         self._val = val
+        self.valueChanged = _Signal()
     def value(self):
         return self._val
     def setValue(self, v):
@@ -32,6 +42,7 @@ class _SpinBox:
 class _CheckBox:
     def __init__(self, checked=False):
         self._checked = checked
+        self.toggled = _Signal()
     def isChecked(self):
         return self._checked
     def setChecked(self, v):
@@ -43,6 +54,7 @@ class _ComboBox:
     def __init__(self, items=None, index=0):
         self._items = list(items or [])
         self._index = index
+        self.currentIndexChanged = _Signal()
     def currentText(self):
         if 0 <= self._index < len(self._items):
             return self._items[self._index]
@@ -146,6 +158,8 @@ def _make_handler():
     h.list_ops = _ListWidget()
     h.tab_params = _TabWidget()
     h.param_widgets = {}
+    h._connected_param_widgets = WeakSet()
+    h._connected_global_widgets = WeakSet()
     # Stub methods that touch deeper UI
     h._refresh_preview = lambda: None
     h._update_face_visibility = lambda: None
@@ -214,7 +228,9 @@ def test_double_click_loads_params_into_widgets():
     # Set up a FACE spinbox widget for 'tool'
     tool_spin = _SpinBox(0.0)
     feed_spin = _SpinBox(0.0)
-    h.param_widgets[OpType.FACE] = {"tool": tool_spin, "feed": feed_spin}
+    widget_map = {"face_tool": tool_spin, "face_feed": feed_spin}
+    h._get_widget_by_name = lambda name: widget_map.get(name)
+    h._setup_param_maps()
 
     op = Operation(OpType.FACE, {"tool": 5.0, "feed": 0.22}, path=[])
     h.model.add_operation(op)
@@ -226,6 +242,161 @@ def test_double_click_loads_params_into_widgets():
 
     assert tool_spin.value() == 5.0
     assert feed_spin.value() == 0.22
+
+
+def test_keyway_param_map_prefers_bound_widgets_over_name_lookup():
+    """KEYWAY param mapping must use bound widgets even when generic name lookup is unavailable."""
+    h = _make_handler()
+
+    h.key_mode = _ComboBox(["Axial (Z)", "Face (X)"], 1)
+    h.key_radial_side = _ComboBox(["Außen (Welle)", "Innen (Bohrung)"], 0)
+    h.key_coolant = _ComboBox(["Aus", "Ein"], 0)
+    h.key_slot_count = _SpinBox(0.0)
+    h.key_slot_start_angle = _SpinBox(0.0)
+    h.key_slot_angle_step = _SpinBox(0.0)
+    h.key_start_diameter = _SpinBox(0.0)
+    h.key_start_z = _SpinBox(0.0)
+    h.key_nut_length = _SpinBox(0.0)
+    h.key_nut_depth = _SpinBox(0.0)
+    h.key_slot_width = _SpinBox(0.0)
+    h.key_cutting_width = _SpinBox(0.0)
+    h.key_top_clearance = _SpinBox(0.0)
+    h.key_depth_per_pass = _SpinBox(0.0)
+    h.key_plunge_feed = _SpinBox(0.0)
+    h.key_use_c_axis = _CheckBox(False)
+    h.key_use_c_axis_switch = _CheckBox(False)
+    h.key_c_axis_switch_p = _SpinBox(0.0)
+    h.key_tool = _ComboBox(["T0", "T1", "T2", "T3"], 0)
+    h._get_widget_by_name = lambda name: None
+
+    h._setup_param_maps()
+
+    params = h.param_widgets[OpType.KEYWAY]
+
+    assert params["tool"] is h.key_tool
+    assert params["mode"] is h.key_mode
+    assert params["radial_side"] is h.key_radial_side
+    assert params["coolant"] is h.key_coolant
+    assert params["slot_count"] is h.key_slot_count
+    assert params["slot_start_angle"] is h.key_slot_start_angle
+    assert params["slot_angle_step"] is h.key_slot_angle_step
+    assert params["start_x_dia"] is h.key_start_diameter
+    assert params["start_z"] is h.key_start_z
+    assert params["nut_length"] is h.key_nut_length
+    assert params["nut_depth"] is h.key_nut_depth
+    assert params["slot_width"] is h.key_slot_width
+    assert params["cutting_width"] is h.key_cutting_width
+    assert params["top_clearance"] is h.key_top_clearance
+    assert params["depth_per_pass"] is h.key_depth_per_pass
+    assert params["plunge_feed"] is h.key_plunge_feed
+    assert params["use_c_axis"] is h.key_use_c_axis
+    assert params["use_c_axis_switch"] is h.key_use_c_axis_switch
+    assert params["c_axis_switch_p"] is h.key_c_axis_switch_p
+
+
+def test_selection_change_flushes_previous_keyway_form_values():
+    """Switching away from KEYWAY writes the current form values back into the model first."""
+    h = _make_handler()
+
+    keyway = Operation(
+        OpType.KEYWAY,
+        {"slot_count": 1.0, "slot_start_angle": 0.0, "slot_angle_step": 0.0},
+        path=[],
+    )
+    face = Operation(OpType.FACE, {"tool": 1.0}, path=[])
+    h.model.add_operation(keyway)
+    h.model.add_operation(face)
+    h.list_ops.addItem("1: Keilnut")
+    h.list_ops.addItem("2: Planen")
+    h._active_form_operation_index = 0
+    h._collect_params = lambda op_type: {
+        "slot_count": 5.0,
+        "slot_start_angle": 0.0,
+        "slot_angle_step": 35.0,
+    } if op_type == OpType.KEYWAY else {}
+
+    h._handle_selection_change(1)
+
+    assert keyway.params["slot_count"] == 5.0
+    assert keyway.params["slot_start_angle"] == 0.0
+    assert keyway.params["slot_angle_step"] == 35.0
+
+
+def test_connect_param_change_signals_connects_keyway_widgets():
+    h = _make_handler()
+    widget_map = {
+        "key_slot_count": _SpinBox(3.0),
+        "key_slot_start_angle": _SpinBox(10.0),
+        "key_slot_angle_step": _SpinBox(35.0),
+    }
+    h._get_widget_by_name = lambda name: widget_map.get(name)
+
+    h._connect_param_change_signals()
+
+    assert h.param_widgets[OpType.KEYWAY]["slot_count"] is widget_map["key_slot_count"]
+    assert h.param_widgets[OpType.KEYWAY]["slot_start_angle"] is widget_map["key_slot_start_angle"]
+    assert h.param_widgets[OpType.KEYWAY]["slot_angle_step"] is widget_map["key_slot_angle_step"]
+    assert h._handle_param_change in widget_map["key_slot_count"].valueChanged.calls
+    assert h._handle_param_change in widget_map["key_slot_start_angle"].valueChanged.calls
+    assert h._handle_param_change in widget_map["key_slot_angle_step"].valueChanged.calls
+
+
+def test_tab_change_selects_matching_keyway_operation():
+    h = _make_handler()
+    tool_spin = _SpinBox(0.0)
+    count_spin = _SpinBox(0.0)
+    angle_spin = _SpinBox(0.0)
+    widget_map = {
+        "key_tool": tool_spin,
+        "key_slot_count": count_spin,
+        "key_slot_angle_step": angle_spin,
+    }
+    h._get_widget_by_name = lambda name: widget_map.get(name)
+    h._setup_param_maps()
+
+    h.model.add_operation(Operation(OpType.FACE, {"tool": 1.0}, path=[]))
+    h.model.add_operation(Operation(OpType.KEYWAY, {"tool": 9.0, "slot_count": 6.0, "slot_angle_step": 35.0}, path=[]))
+    h.list_ops.addItem("1: Planen")
+    h.list_ops.addItem("2: Keilnut")
+    h.list_ops.setCurrentRow(0)
+    h.tab_params.setCurrentIndex(7)
+
+    h._handle_tab_changed()
+
+    assert h.list_ops.currentRow() == 1
+    assert tool_spin.value() == 9.0
+    assert count_spin.value() == 6.0
+    assert angle_spin.value() == 35.0
+
+
+def test_sync_form_to_operation_preserves_unmapped_keyway_values():
+    """Transiently missing Keyway widgets must not wipe loaded geometry values."""
+    h = _make_handler()
+
+    keyway = Operation(
+        OpType.KEYWAY,
+        {
+            "slot_count": 4.0,
+            "slot_start_angle": 15.0,
+            "slot_angle_step": 45.0,
+            "start_x_dia": 30.0,
+            "nut_length": 20.0,
+        },
+        path=[],
+    )
+    h.model.add_operation(keyway)
+    h.list_ops.addItem("1: Keilnut")
+    h.list_ops.setCurrentRow(0)
+
+    h._collect_params = lambda op_type: {"slot_count": 6.0} if op_type == OpType.KEYWAY else {}
+    h._describe_operation = lambda op, idx: f"{idx}: Keilnut"
+
+    h._sync_form_to_operation(0)
+
+    assert keyway.params["slot_count"] == 6.0
+    assert keyway.params["slot_start_angle"] == 15.0
+    assert keyway.params["slot_angle_step"] == 45.0
+    assert keyway.params["start_x_dia"] == 30.0
 
 
 def test_double_click_flushes_current_operation():

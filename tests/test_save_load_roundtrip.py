@@ -697,6 +697,39 @@ def test_full_program_json_roundtrip(tmp_path):
     assert loaded_ops[2].path == []
 
 
+def test_keyway_program_roundtrip_preserves_angle_offset_values():
+    h = _make_handler()
+
+    op = Operation(
+        OpType.KEYWAY,
+        {
+            "tool": 7.0,
+            "slot_count": 5.0,
+            "slot_start_angle": 0.0,
+            "slot_angle_step": 35.0,
+            "start_x_dia": 20.0,
+            "start_z": 0.0,
+            "nut_length": 12.0,
+            "nut_depth": 1.5,
+            "slot_width": 8.0,
+            "cutting_width": 4.0,
+        },
+        path=[],
+    )
+
+    data = h._operation_to_step_data(op)
+    loaded = h._step_data_to_operation(data)
+
+    assert loaded is not None
+    assert loaded.op_type == OpType.KEYWAY
+    assert loaded.params["tool"] == 7.0
+    assert loaded.params["slot_count"] == 5.0
+    assert loaded.params["slot_start_angle"] == 0.0
+    assert loaded.params["slot_angle_step"] == 35.0
+    assert loaded.params["slot_width"] == 8.0
+    assert loaded.params["cutting_width"] == 4.0
+
+
 # ---------------------------------------------------------------------------
 # 11. _load_program_header_to_form calls _apply_unit_suffix etc.
 # ---------------------------------------------------------------------------

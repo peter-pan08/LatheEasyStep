@@ -15,13 +15,18 @@
 - Keyway: Reiter um Werkzeugauswahl, Winkelversatz für Wiederholungen und zusätzliche Bearbeitungsparameter erweitert
 - Keyway: Winkelfelder korrekt auf Grad umgestellt; irreführende mm-Einheit entfernt
 - Keyway: Nutenstossen ohne unnötige Drehzahl-Eingabe bereinigt, da das Werkstück zwischen den Positionen stillsteht
+- Keyway: Winkelversatz der Nutmitten wird jetzt konsistent in Vorschau und Step-Daten verwendet
+- Keyway: Reiterwechsel selektiert jetzt den zugehörigen Keilnut-Step in der Liste, damit Laden, Bearbeiten und Speichern auf dieselbe Operation wirken
+- Keyway: Parametereingaben werden nach dem UI-Aufbau jetzt zuverlässig mit dem Handler verdrahtet; Änderungen wirken dadurch auf Vorschau, Step-Liste und Dateispeicherung
 - Workflow: Dateidialoge merken sich den zuletzt verwendeten Ordner für Step-, Programm-, G-Code- und Werkzeugdateien
 - Workflow: Zuletzt geladene Werkzeugtabelle wird beim Start des Panels automatisch wieder geladen
 - Workflow: Neuer Button `Änderungen speichern` aktualisiert verknüpfte Steps, Programme und vorhandene G-Code-Dateien direkt aus der aktuellen Maske
 - Workflow: Programme speichern jetzt Metadaten zu verknüpften Step- und Programmdateien, damit Änderungen später gezielt zurückgeschrieben werden können
 - Workflow: Jeder neue Bearbeitungsschritt erhält eine eigene Step-Datei; Programmspeichern stellt diese Verknüpfung ebenfalls sicher
+- Workflow: Programmkopf wird beim Laden und beim Wechsel auf den Program-Tab jetzt konsistent in die Eingabemaske zurückgeschrieben
 - Fix: Interne Dateimetadaten (`__step_file_path`, `__program_file_path`, `__gcode_file_path`) bleiben bei Parameteränderungen erhalten
 - Fix: Startfehler in der Initialisierung durch fehlende Preview-/Combo-Attribute behoben
+- Fix: Auto-Load der Werkzeugtabelle scheitert nicht mehr an fehlenden `tool_table_path`-Referenzen im Frühstart
 - Performance-Fix: LinuxCNC-Embedded-Start massiv verkürzt; GUI und Panel sind wieder nach rund 11 Sekunden benutzbar
 - Refactor: Widget-Auflösung strikt auf den Panel-Baum begrenzt, keine globalen `allWidgets()`-Scans mehr
 - Refactor: Root-Erkennung für Embedded-Panel stabilisiert, Host-`MainWindow` wird nicht mehr fälschlich als Panel benutzt
