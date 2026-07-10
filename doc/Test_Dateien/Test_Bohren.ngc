@@ -1,0 +1,77 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test_Bohren)
+(Masseinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X60.000 Z90.000 Maschinenkoordinaten G53)
+(Rueckzugsebenen: XRA=2.000 XRI=0.000)
+(               ZRA=5.000 ZRI=0.000)
+(Rohteil Aussendurchmesser: 50.000 mm)
+(Rohteil Z-Bereich: 1.000 bis -100.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+
+
+(=== Subroutine Definitions ===)
+o100 sub
+G1 X50.000 Z0.000
+G1 X0.000 Z0.000
+o100 endsub
+(=== End Subroutines ===)
+
+
+(Werkzeug T01)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+T01 M6
+G0 X52.000 Z6.000
+
+(Step 1: face | T1: DCMT Aussendrehen)
+(STEP: 2. Planen Schruppen Z 0.0?0.0 mit Kuehlung 1)
+G97 S1200 M3
+M8
+F0.200
+(Anfahren vor Zyklus)
+(WARN: Startpunkt X50.000 Z1.000 liegt im Rohteil)
+G0 X50.000 Z1.000
+G72 Q100 X50.000 Z1.000 D0.030 I0.400 R0.500
+G0 X52.000
+G0 Z6.000
+(Werkzeug T10)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G53 G0 X60.000 Z90.000
+T10 M6
+G0 X52.000 Z6.000
+
+(Step 2: drill | T10: ER25 Aufnahme)
+(STEP: 3. Bohren 2.0 Z 0.0?-30.0 10)
+G97 S1000 M3
+M9
+(Anfahren vor Zyklus)
+G0 X0.000 Z2.000
+(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
+G17
+F0.120
+G83 X0.000 Z-30.000 R2.000 Q3.000 F0.120
+G80
+G0 Z2.000
+G18
+G0 Z6.000
+G0 X52.000
+
+G53 G0 X60.000 Z90.000
+M5
+M9
+M30
+%

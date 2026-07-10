@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from qtpy import QtCore, QtWidgets
+from .ui_advanced import ensure_advanced_widgets
 
 
 def bootstrap_widget_refs(handler) -> None:
@@ -93,7 +94,11 @@ def bootstrap_widget_refs(handler) -> None:
         "program_zri", "label_prog_zri", "program_xra_absolute", "program_xri_absolute",
         "program_zra_absolute", "program_zri_absolute", "program_xt_absolute",
         "program_zt_absolute", "program_s1", "label_prog_s1", "program_s3", "label_prog_s3",
-        "program_spindle", "program_tool", "program_npv", "face_mode", "face_edge_type",
+        "program_spindle", "program_tool", "program_npv", "program_spindle_mode",
+        "program_spindle_max_rpm", "program_park_mode", "program_toolchange_coords",
+        "program_park_coords", "program_park_x", "program_park_z",
+        "program_park_sequential", "program_optional_stop_toolchange", "program_preview_warnings",
+        "face_mode", "face_edge_type",
         "label_face_edge_size", "face_edge_size", "label_face_finish_allow_x",
         "face_finish_allow_x", "label_face_finish_allow_z", "face_finish_allow_z",
         "label_face_depth_max", "face_depth_max", "label_face_pause", "face_pause_enabled",
@@ -106,11 +111,15 @@ def bootstrap_widget_refs(handler) -> None:
         "label_parting_slice_strategy", "parting_slice_strategy", "label_parting_slice_step",
         "parting_slice_step", "label_parting_allow_undercut", "parting_allow_undercut",
         "label_parting_depth", "label_parting_pause", "label_parting_pause_distance",
-        "thread_standard", "thread_orientation", "thread_tool", "thread_spindle",
-        "thread_major_diameter", "thread_pitch", "thread_length", "thread_passes",
+        "parting_undercut_mode", "parting_output_preference", "parting_undercut_tool",
+        "parting_undercut_spindle", "parting_undercut_feed", "parting_optional_stop_before_undercut",
+        "thread_standard", "thread_orientation", "thread_hand", "thread_tool", "thread_spindle",
+        "thread_major_diameter", "thread_pitch", "thread_length", "thread_start_z", "thread_passes",
         "thread_safe_z", "thread_depth", "thread_peak_offset", "thread_first_depth",
         "thread_retract_r", "thread_infeed_q", "thread_spring_passes", "thread_e",
+        "thread_relief_mode", "thread_relief_norm", "thread_optional_stop_before",
         "thread_l", "btn_thread_preset", "tool_table_path", "lbl_tool_table_path",
+        "groove_process_type", "label_groove_process_type", "label_dirty_status",
         "key_mode", "key_radial_side", "key_tool", "key_coolant", "key_slot_count",
         "key_slot_start_angle", "key_slot_angle_step", "key_start_diameter", "key_start_z",
         "key_nut_length", "key_nut_depth", "key_cutting_width", "key_top_clearance",
@@ -160,6 +169,21 @@ def finalize_ui_ready(handler) -> None:
         pass
 
     handler._ensure_core_widgets()
+    ensure_advanced_widgets(handler)
+    try:
+        if handler.root_widget is not None:
+            handler.root_widget.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
+            # WA_AlwaysShowToolTips muss auch am tatsächlichen Fenster-Widget
+            # gesetzt sein, damit Qt Tooltips in eingebetteten Panels anzeigt.
+            top = handler.root_widget.window()
+            if top is not None and top is not handler.root_widget:
+                top.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
+    except Exception:
+        pass
+    try:
+        _dock_preview_below_scroll(handler)
+    except Exception:
+        pass
     if handler.tab_params is not None and handler.tab_params.currentIndex() == 0:
         try:
             handler.tab_params.setCurrentIndex(1)
@@ -212,6 +236,17 @@ def finalize_ui_ready(handler) -> None:
     except Exception:
         pass
     try:
+        handler._apply_language_texts()
+    except Exception as exc:
+        handler._log(f"[LatheEasyStep] _apply_language_texts in finalize failed: {exc}", level="warning")
+    for name in ("program_xt_absolute", "program_zt_absolute"):
+        widget = handler._get_widget_by_name(name)
+        if widget is not None:
+            try:
+                widget.setVisible(False)
+            except Exception:
+                pass
+    try:
         if getattr(handler, "w", None) is not None:
             try:
                 setattr(handler.w, "ui_ready", True)
@@ -250,3 +285,41 @@ def finalize_ui_ready(handler) -> None:
             f'still missing: {missing}, will retry on next timer',
             level="info",
         )
+
+
+def _dock_preview_below_scroll(handler) -> None:
+    if getattr(handler, "_preview_docked", False):
+        return
+    root = getattr(handler, "root_widget", None) or handler._find_root_widget()
+    if root is None:
+        return
+    scroll = root.findChild(QtWidgets.QScrollArea, "scrollParams", QtCore.Qt.FindChildrenRecursively)
+    preview = root.findChild(QtWidgets.QWidget, "previewWidget", QtCore.Qt.FindChildrenRecursively)
+    preview_slice = root.findChild(QtWidgets.QWidget, "previewSliceWidget", QtCore.Qt.FindChildrenRecursively)
+    button = root.findChild(QtWidgets.QAbstractButton, "btn_slice_view", QtCore.Qt.FindChildrenRecursively)
+    if scroll is None or preview is None or preview_slice is None:
+        return
+    right_layout = scroll.parentWidget().layout() if scroll.parentWidget() is not None else None
+    if right_layout is None or right_layout.indexOf(preview) >= 0:
+        return
+    container = root.findChild(QtWidgets.QWidget, "previewDockContainer", QtCore.Qt.FindChildrenRecursively)
+    if container is None:
+        container = QtWidgets.QWidget(scroll.parentWidget())
+        container.setObjectName("previewDockContainer")
+        dock_layout = QtWidgets.QVBoxLayout(container)
+        dock_layout.setContentsMargins(0, 0, 0, 0)
+        dock_layout.setSpacing(6)
+        if button is not None:
+            controls = QtWidgets.QHBoxLayout()
+            controls.addStretch(1)
+            controls.addWidget(button)
+            dock_layout.addLayout(controls)
+        dock_layout.addWidget(preview)
+        dock_layout.addWidget(preview_slice)
+        try:
+            preview.setMinimumHeight(220)
+            preview_slice.setMinimumHeight(140)
+        except Exception:
+            pass
+        right_layout.insertWidget(1, container, 1)
+    handler._preview_docked = True

@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+from .contour_features import primitive_to_points, segment_feature
+
 
 def normalize_arc_side(value: object | None) -> str:
     text = str(value or "").strip().lower()
@@ -14,6 +16,11 @@ def normalize_arc_side(value: object | None) -> str:
 
 
 def build_contour_path(params) -> list:
+    variants = build_contour_variants(params)
+    return variants["finish_primitives"]
+
+
+def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
     if isinstance(params, dict):
         segments = params.get("segments") or []
     else:
@@ -108,6 +115,7 @@ def build_contour_path(params) -> list:
         return a[0] * b[1] - a[1] * b[0]
 
     prim = []
+    reliefs: List[List[Dict[str, object]]] = []
     cur = pts[0]
 
     def _emit_line(p1, p2):
@@ -217,7 +225,99 @@ def build_contour_path(params) -> list:
         _emit_line(cur, p_next)
         cur = p_next
 
-    return prim
+    for idx, seg in enumerate(segments):
+        feature = segment_feature(seg if isinstance(seg, dict) else {})
+        if feature.get("feature_type") != "din_relief":
+            continue
+        anchor_mode = str(feature.get("orientation") or "end").strip().lower()
+        if anchor_mode not in ("start", "end"):
+            anchor_mode = "end"
+        if anchor_mode == "start" and idx != 0:
+            continue
+        if anchor_mode == "end" and idx != len(segments) - 1:
+            continue
+        if anchor_mode == "start":
+            p_anchor = pts[0]
+            p_next = pts[1] if len(pts) > 1 else pts[0]
+            relief = _build_relief_primitives(p_anchor, p_next, feature, prepend=True)
+            if relief:
+                prim = relief + prim
+                reliefs.append(relief)
+        else:
+            p_prev = pts[-2] if len(pts) > 1 else pts[-1]
+            p_anchor = pts[-1]
+            relief = _build_relief_primitives(p_prev, p_anchor, feature, prepend=False)
+            if relief:
+                prim.extend(relief)
+                reliefs.append(relief)
+
+    feature_primitives = [item for relief in reliefs for item in relief]
+    return {
+        "finish_primitives": prim,
+        "rough_primitives": _primitives_without_relief(prim),
+        "feature_primitives": feature_primitives,
+        "finish_points": primitive_to_points(prim),
+        "rough_points": primitive_to_points(_primitives_without_relief(prim)),
+        "feature_points": primitive_to_points(feature_primitives),
+    }
+
+
+def _build_relief_primitives(
+    p_prev: Tuple[float, float],
+    p_anchor: Tuple[float, float],
+    feature: Dict[str, object],
+    *,
+    prepend: bool,
+) -> List[Dict[str, object]]:
+    try:
+        width = abs(float(feature.get("width", 0.0) or 0.0))
+        depth = abs(float(feature.get("depth", 0.0) or 0.0))
+    except Exception:
+        return []
+    if width <= 1e-9 or depth <= 1e-9:
+        return []
+
+    x_anchor, z_anchor = float(p_anchor[0]), float(p_anchor[1])
+    dx = float(p_anchor[0]) - float(p_prev[0])
+    dz = float(p_anchor[1]) - float(p_prev[1])
+    if abs(dx) < 1e-9 and abs(dz) < 1e-9:
+        dz = -1.0
+    z_dir = -1.0 if dz <= 0.0 else 1.0
+    if prepend:
+        z_dir *= -1.0
+    internal = bool(feature.get("internal"))
+    x_relief = x_anchor + (2.0 * depth if internal else -2.0 * depth)
+    z_far = z_anchor + (z_dir * width)
+    transition = str(feature.get("transition") or "radius").strip().lower()
+    transition_size = min(width * 0.5, abs(float(feature.get("transition_size", 0.0) or 0.0)))
+
+    points: List[Tuple[float, float]] = [(x_anchor, z_anchor)]
+    if transition == "chamfer" and transition_size > 1e-9:
+        z_mid = z_anchor + (z_dir * transition_size)
+        x_mid = x_anchor + ((x_relief - x_anchor) * 0.5)
+        points.extend([(x_mid, z_mid), (x_relief, z_mid)])
+    else:
+        points.append((x_relief, z_anchor))
+    points.extend([(x_relief, z_far), (x_anchor, z_far)])
+
+    primitives: List[Dict[str, object]] = []
+    for p1, p2 in zip(points, points[1:]):
+        if abs(p2[0] - p1[0]) <= 1e-9 and abs(p2[1] - p1[1]) <= 1e-9:
+            continue
+        primitives.append(
+            {
+                "type": "line",
+                "role": "feature",
+                "feature_type": "din_relief",
+                "p1": [float(p1[0]), float(p1[1])],
+                "p2": [float(p2[0]), float(p2[1])],
+            }
+        )
+    return primitives
+
+
+def _primitives_without_relief(primitives: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    return [dict(pr) for pr in primitives or [] if str(pr.get("feature_type") or "").strip().lower() != "din_relief"]
 
 
 def validate_contour_segments_for_profile(params: Dict[str, Any]) -> Tuple[bool, List[str]]:

@@ -1,8 +1,51 @@
 # Changelog
 
 ## [Unreleased]
-
-- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+- Gewinde: Gewinde-Reiter um `Gewindestart Z` sowie separate Rechts-/Linksgewinde-Auswahl erweitert; Werte laufen jetzt durch UI, Save/Load, Vorschau und Generator
+- Gewinde: Vorschau und G-Code unterscheiden jetzt alle vier Kombinationen aus Innen/Aussen und Rechts/Links; Start-Z und Gewinderichtung steuern Anfahrpunkt, Endpunkt und Z-Laufrichtung
+- Gewinde: Zusaetzliche Plausibilitaetswarnungen fuer identische Start-/Endpunkte sowie Start-/Endlagen ausserhalb des Werkstueck-Z-Bereichs
+- Kontur: Step-Liste benennt Konturen jetzt fachlich neutral als `Kontur: <Name>`
+- UI: Tooltip-Anzeige um einen erzwungenen Hover-/ToolTip-Relay erweitert, damit Tooltips auch im eingebetteten QtVCP-Pfad robuster erscheinen
+- Tests: Gewinde-Regressionen fuer Rechts-/Linksgewinde, Innen-/Aussengewinde und variable Start-Z-Positionen ergaenzt
+- G-Code: Hauptprogrammfluss wird jetzt vor den O-Subroutinen ausgegeben, damit LinuxCNC nicht mehr in die Einstich-/Abstich-Bibliothek hineinfaellt und Groove-Zyklen nicht endlos neu starten
+- Toolchange: Werkzeugwechsel- und Parkposition haben jetzt eine explizite Auswahl fuer `Werkstueckkoordinaten` oder `Maschinenkoordinaten (G53)` statt der fachlich missverstaendlichen Altlogik ueber `absolut / inkrementell`
+- Toolchange: Legacy-Dateien mit gemischter XT/ZT-Logik bleiben kompatibel; neue Programme erzeugen koordinatensystemsauberen Werkzeugwechsel- und Park-G-Code
+- Toolchange: Regressionspruefung gegen reales Testprogramm `Test.ngc` nachgezogen; der Generator emittiert nach `T.. M6` kein zusaetzliches `G0 X0 Z0`, der anschliessende manuelle Wechselpfad kommt aus der LinuxCNC-Konfiguration (`TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange`)
+- UI: Tooltips werden jetzt tief auf Ziel-Widget, Label, Editor und Combo-View propagiert und fuer Embedded-/Standalone-Betrieb explizit aktiviert
+- Validierung: Fehlermeldungs-Mapping ist jetzt pro Operationstyp gehaertet und verweist nur noch auf tatsaechlich vorhandene UI-Felder
+- Presets: Gewinde- und DIN-Freistich-Presets in `lathe_easystep/presets/` zentralisiert und fuer metrische Groessen bis `M30` erweitert
+- Gewinde: DIN-Freistich-Helfer und Gewindevorschlaege greifen jetzt ueber zentrale Preset-Helper zu statt auf verstreute Tabellen
+- Tests: Neue Regressionen fuer Groove-Subroutine-Reihenfolge, explizite Toolchange-/Park-Koordinatensysteme, Keyway-Validierung und generatorseitig fehlende `X0/Z0`-Zusatzfahrt
+- Workflow: Sichtbarer Dirty-State fuer Programm und Steps eingebaut; `Aenderungen speichern` markiert offene Aenderungen jetzt direkt im UI
+- Workflow: Reiter- und Stepwechsel warnen jetzt bei ungespeicherten Aenderungen und speichern weiterhin keine Dateien automatisch
+- UI: Groove-Reiter um klare Betriebsart `Einstich` / `Abstich` erweitert; partingspezifische Reduktionsfelder werden kontextabhaengig ein-/ausgeblendet
+- UI: Vorschau wird beim finalen Layout jetzt ausserhalb des Scrollbereichs angedockt und bleibt als fester Kontrollbereich sichtbar
+- UI: Zentrale Tooltips fuer Rueckzugsebenen, Futtergrenzen, CSS/G96, Parklogik, Freistich-/Hinterschnitt-Optionen und Groove/Abstich komplettiert
+- UX: Generator- und Speichermeldungen werden fuer Anwender jetzt auf Reiter/Feld-Ebene benutzerverstaendlicher formatiert
+- Uebersetzungen: Restliche Mischtexte in Drill-/Groove-/Advanced-Widgets und relevanten Groove-Makrokommentaren bereinigt
+- Kontur: Datenmodell fuer Konturfeatures um DIN-Freistich/Hinterschnitt erweitert; Segment-Features koennen jetzt als Teil der Konturgeometrie beschrieben werden
+- Kontur: Neue DIN-Freistich-Tabelle `M3` bis `M30` mit Aussen-/Innen-Varianten sowie Breite, Tiefe und Uebergangsform angelegt
+- Kontur: Generator leitet jetzt drei Geometrievarianten aus derselben Kontur ab: Fertigkontur, Schruppkontur ohne Hinterschnitt und Feature-Teilkontur
+- Abspanen: Bearbeitungsmodi fuer Hinterschnitt/Freistich umgesetzt (`ignore`, `finish_only`, `separate`, `full`)
+- Abspanen: Generator dokumentiert Strategie, Ausgabe-Praeferenz, Aufmass und Hinterschnitt-Modus jetzt explizit im G-Code
+- Abspanen: Fallback-Gruende fuer Move-based Roughing werden systematisch ausgegeben statt nur punktuell
+- Abspanen: Expertenoption fuer Ausgabeart (`auto`, Zyklus bevorzugen, ausgeschriebener Code bevorzugen) in der Generatorlogik verdrahtet
+- UI: Expertenoptionen fuer Hinterschnitt-Modus, Ausgabe-Praeferenz, CSS/G97, Parklogik und optionale Stops in das Panel eingebunden
+- UI: Kontursegment-Editor um DIN-Freistich-Felder fuer Feature, Gewindegroesse, Norm, Innen/Aussen und Start/Ende erweitert
+- Workflow: Save/Load und Formularbindung fuer die neuen Experten- und Konturfeature-Parameter vervollstaendigt
+- Safety: Vor jedem `T.. M6` wird jetzt `M5` erzwungen; Werkzeugwechsel fahren weiterhin mit Sicherheitsrueckzug und Toolchange-Position
+- Safety: Anfahrt und Rueckzug pruefen jetzt Startpunkt im Rohteil, Startpunkt in der Futter-Sperrzone und kritische Rueckzugsebenen und markieren diese als Warnung
+- Safety: Plausibilitaetswarnungen fuer `XT/ZT`, `XRA/XRI`, `ZRA/ZRI` ausserhalb sinnvoller Rohteil-/Maschinenbereiche ergaenzt
+- Safety: Optionale Haltepunkte vor separatem Hinterschnitt sowie CSS/Festdrehzahl-Ausgabe (`G96`/`G97`) mit Max-RPM-Fallback eingebaut
+- Workflow: Endparklogik um konfigurierbare Parkposition und sequentielle Endbewegung erweitert
+- Validierung: Zusaetzliche Pruefungen fuer `G76`, DIN-Freistich-Parameter, separates Hinterschnitt-Schruppen und Werkzeugbreite eingebaut
+- Validierung: Werkzeug-/Operations-Plausibilitaet um Innen/Aussen-Hinweise und Spezialwerkzeug-Checks erweitert
+- Gewinde: DIN-Freistich kann fuer Gewinde jetzt als Vorschlag kommentiert werden, ohne blind erzeugt zu werden
+- Preview: Roughing- und Freistich-Geometrie werden fuer `ABSPANEN` unterscheidbar ueberlagert; Warnungen koennen im Preview eingeblendet werden
+- Tests: Neue Regressionen fuer Freistich-Varianten, Sicherheitswarnungen und `M5` vor jedem Werkzeugwechsel hinzugefuegt
+- Tests: Save/Load, CSS/Parklogik, Gewinde-Freistich-Vorschlag und optionale Stops zusaetzlich abgesichert
+- Tests: Dirty-State, Groove/Abstich-Sichtbarkeit, benutzerfreundliche Fehlermeldungen und Snapshot-Normalisierung zusaetzlich abgesichert
+- Tests: Referenzprogramme regeneriert; aktueller Stand mit `194 passed` verifiziert
 
 ## [0.7.0] - 2026-07-08
 

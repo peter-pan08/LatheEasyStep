@@ -1,0 +1,137 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test_Gewinde)
+(Masseinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X60.000 Z90.000 Werkstueckkoordinaten)
+(Rueckzugsebenen: XRA=2.000 XRI=0.000)
+(               ZRA=5.000 ZRI=0.000)
+(Rohteil Aussendurchmesser: 50.000 mm)
+(Rohteil Z-Bereich: 1.000 bis -100.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+
+
+(=== Subroutine Definitions ===)
+o100 sub
+G1 X0.000 Z0.000
+G1 X9.000 Z0.000
+G1 X10.000 Z-1.000
+G1 X10.000 Z-30.000
+G1 X16.000 Z-30.000
+G3 X20.000 Z-32.000 I0.000 K-2.000
+G1 X20.000 Z-40.000
+G1 X50.000 Z-60.000
+o100 endsub
+o101 sub
+G1 X50.000 Z0.000
+G1 X0.000 Z0.000
+o101 endsub
+(=== End Subroutines ===)
+
+
+
+(Werkzeug T01)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+T01 M6
+G0 X52.000 Z6.000
+
+(Step 2: face | T1: DCMT Aussendrehen)
+(STEP: 3. Planen Schruppen Z 0.0?0.0 mit Kuehlung 1)
+G97 S1200 M3
+M8
+F0.200
+(Anfahren vor Zyklus)
+(WARN: Startpunkt X50.000 Z1.000 liegt im Rohteil)
+G0 X50.000 Z1.000
+G72 Q101 X50.000 Z1.000 D0.030 I0.400 R0.500
+G0 X52.000
+G0 Z6.000
+
+(Step 3: abspanen | T1: DCMT Aussendrehen)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.200/0.100 mm)
+G97 S1200 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(Aufmass X/Z: 0.200/0.100)
+(ABSPANEN Rough - parallel Z)
+G0 X50.000 Z5.000
+G71 Q100 X50.000 Z5.000 D1.000
+G0 X52.000
+G0 Z6.000
+(Werkzeug T02)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G0 X60.000 Z90.000
+T02 M6
+G0 X52.000 Z6.000
+
+(Step 4: abspanen | T2: CCMT Aussendrehen)
+(STEP: 5. Abspanen Abdrehen, 2, 3.0 2)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.200/0.100 mm)
+G97 S1200 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(Aufmass X/Z: 0.200/0.100)
+(ABSPANEN Rough - parallel Z)
+G0 X50.000 Z5.000
+G71 Q100 X50.000 Z5.000 D1.000
+(Schlichtschnitt Kontur)
+G0 X0.000 Z5.000
+G42.1 D0.8000 L2
+G1 X0.000 Z0.000 F0.150
+G1 X9.000 Z0.000 F0.150
+G1 X10.000 Z-1.000 F0.150
+G1 X10.000 Z-30.000 F0.150
+G1 X16.000 Z-30.000 F0.150
+G1 X20.000 Z-32.000 F0.150
+G1 X20.000 Z-40.000 F0.150
+G1 X50.000 Z-60.000 F0.150
+G0 Z5.000
+G40
+G0 X52.000
+G0 Z6.000
+(Werkzeug T08)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G0 X60.000 Z90.000
+T08 M6
+G0 X52.000 Z6.000
+
+(Step 5: thread | T8: Aussengewinde MMT11er AG60)
+(STEP: 6. Gewinde 0.0 P 1.50; Z 0.0?0.0 8)
+G97 S500 M3
+M9
+(Normgewinde: M10 x 1.5)
+(Gewindetyp: Aussen)
+(Anfahren vor Gewinde)
+G0 X10.000 Z5.000
+G76 P1.5000 Z-29.000 I-0.4600 J0.0900 R1.5000 K0.9200 Q29.5000 H1 E0.0000 L0
+G0 Z6.000
+G0 X52.000
+
+G0 X60.000 Z90.000
+M5
+M9
+M30
+%

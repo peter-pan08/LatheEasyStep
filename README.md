@@ -1,8 +1,8 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.7.0`
-Status Date: `2026-07-08`
+Current Version: `0.7.0+unreleased`
+Status Date: `2026-07-10`
 Primary Test Branch: `DEV`
 
 Deutsch
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.7.0, 8. Juli 2026
+Stand: Version 0.7.0 + Unreleased, 10. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -37,9 +37,9 @@ weiter als ein reiner Prototyp:
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
 - Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.7.0 deutlich weiter modularisiert
-- die aktuelle Refactor-Basis ist mit `171 passed` validiert
+- die aktuelle Refactor-Basis inkl. Freistich-/Sicherheitsausbau, Dirty-State, Preview-Docking, Groove-Fix, expliziter Toolchange-Koordinatenlogik, erweiterter Gewindelogik und UI-Anbindung ist mit `194 passed` validiert
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0`.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
 
 ## Branch-Status
 
@@ -117,11 +117,13 @@ sich direkt auf Vorschau und Step-Verwaltung aus.
 Hier werden die globalen Programmeinstellungen festgelegt:
 
 - Sicherheitsabstaende und Rueckzugsebenen
+- Sicherheitsabstand / Rueckzugsebene Z als Pflichtwert fuer sichere Anfahrten und Generatorvalidierung
 - Rohteilgeometrie
 - Nullpunkt und Bezug
 - maximale Drehzahlen
 - Werkzeugdatenbank
 - Maschinenprofil, Spannfutter und Spannart
+- explizite Koordinatensystemwahl fuer Werkzeugwechsel- und Parkpositionen (`Werkstueckkoordinaten` oder `Maschinenkoordinaten / G53`)
 
 ## Reiter "Planen"
 
@@ -149,6 +151,7 @@ Wichtig fuer den aktuellen Workflow:
 - beim Programmspeichern werden die verknuepften Step-Dateien im Programm mit abgelegt
 - bestehende Programme koennen dadurch spaeter geladen und gezielt in ihre Einzel-Steps zurueckgeschrieben werden
 - Dateidialoge starten immer im zuletzt verwendeten Ordner
+- offene Aenderungen werden im UI sichtbar markiert; Reiter- und Stepwechsel warnen, speichern aber weiterhin nichts automatisch
 
 ## Reiter "Kontur"
 
@@ -161,6 +164,14 @@ Unterstuetzt werden:
 - X und Z kombiniert
 - Kanten als Fase oder Radius
 - Innen-/Aussenseite pro Radius
+- Konturfeatures fuer DIN-Freistich / Hinterschnitt am Konturanfang oder -ende
+
+Aktueller Generatorstand fuer Konturfeatures:
+
+- eine Kontur kann intern als Fertigkontur, Schruppkontur ohne Hinterschnitt und reine Feature-Teilkontur ausgewertet werden
+- dieselbe Geometrie wird fuer Vorschau und G-Code wiederverwendet
+- fuer DIN-Freistiche sind Standarddaten von `M3` bis `M30` hinterlegt
+- die Segmentbearbeitung im Panel fuehrt jetzt auch Feature-Felder fuer `DIN-Freistich`, `Gewindegroesse`, `Norm`, `Innen/Aussen` und `Start/Ende`
 
 ## Reiter "Abspanen"
 
@@ -172,6 +183,28 @@ Hier wird eine zuvor definierte Kontur bearbeitet:
 - Werkzeug
 - Zustellung, Vorschub und Drehzahl
 
+Der aktuelle Stand unterstuetzt fuer Hinterschnitt/Freistich vier Bearbeitungsarten:
+
+- ignorieren
+- nur beim Schlichten fahren
+- separat schruppen
+- voll in der Kontur mitschruppen
+
+Die Generatorausgabe dokumentiert zusaetzlich:
+
+- verwendete Strategie (`G71`, `G72`, move-based)
+- Ausgabe-Praeferenz (`auto`, Zyklus bevorzugt, ausgeschrieben bevorzugt)
+- Aufmass X/Z
+- Fallback-Gruende bei nicht zyklustauglicher Kontur oder Expertenoptionen
+
+Die UI bietet dafuer jetzt auch direkte Bedienfelder fuer:
+
+- Hinterschnitt-Modus
+- Ausgabe-Praeferenz
+- separates Hinterschnitt-Werkzeug samt Vorschub und Drehzahl
+- Optionalstop vor separatem Hinterschnitt
+- alle sicherheitsrelevanten Expertenfelder sind ueber zentrale Tooltips dokumentiert
+
 ## Reiter "Gewinde"
 
 Dieser Reiter dient zum Gewindeschneiden:
@@ -181,13 +214,35 @@ Dieser Reiter dient zum Gewindeschneiden:
 - vollstaendige G76-Parameter
 - Presets fuer metrische Gewinde und Trapezgewinde
 
+Der Generator prueft jetzt zusaetzlich auf fachlich unplausible `G76`-Parameter und kann bei kuenftigen Gewinde-Workflows an DIN-Freistiche gekoppelt werden.
+Optional kann fuer Gewinde jetzt direkt ein DIN-Freistich als Vorschlag kommentiert werden, ohne dass automatisch Geometrie erzeugt wird.
+
+Preset-Stand:
+
+- metrische Gewinde-Presets zentral verfuegbar bis `M30`
+- Trapezgewinde-Presets zentral verfuegbar
+- DIN-Freistich-/Hinterschnitt-Daten zentral verfuegbar bis `M30`
+
+Gewinde-Stand:
+
+- separates Feld `Gewindestart Z`
+- separate Auswahl fuer Rechts- und Linksgewinde
+- Vorschau und Generator fuer:
+  - Aussengewinde rechts
+  - Aussengewinde links
+  - Innengewinde rechts
+  - Innengewinde links
+
 ## Reiter "Einstich / Abstich"
 
 Hier werden Einstiche und Abstiche definiert:
 
+- klare Betriebsart `Einstich` oder `Abstich`
 - innen oder aussen
-- reduzierter Vorschub
+- partingspezifische Reduktionswerte nur im Abstich-Modus sichtbar
 - reduzierte Drehzahl ab definierter Position
+
+Der Groove-/Abstich-Zyklus wird generatorseitig jetzt so ausgegeben, dass LinuxCNC erst das Hauptprogramm ausfuehrt und die O-Subroutinen erst spaeter definiert werden. Damit laeuft der Zyklus nicht mehr versehentlich in die Makrobibliothek hinein.
 
 ## Reiter "Bohren"
 
@@ -202,6 +257,22 @@ Der Bohr-Reiter ist bewusst einfach gehalten:
 
 Dieser Reiter ist fuer Nutenstossen und spaetere Verzahnungsfunktionen
 vorgesehen.
+
+## Werkzeugwechsel und LinuxCNC
+
+Lathe EasyStep trennt jetzt sauber zwischen Generatorverhalten und Maschinenlogik:
+
+- `Werkstueckkoordinaten` erzeugen normale `G0 X.. Z..`-Bewegungen
+- `Maschinenkoordinaten` erzeugen explizit `G53 G0 X.. Z..`
+- der Generator fuegt nach `T.. M6` kein zusaetzliches `G0 X0 Z0` ein
+
+Der mit dem realen Testprogramm gepruefte Stand (`/home/adm1n/linuxcnc/nc_files/Test.ngc`) zeigt:
+
+- der definierte Werkzeugwechselpunkt wird korrekt generiert
+- die beobachtete Zusatzbewegung zum manuellen Wechsel kommt aus der LinuxCNC-Konfiguration
+- in der getesteten Konfiguration ist `TOOL_CHANGE_MODE = MANUAL` aktiv und `iocontrol.0.tool-change` ist auf `hal_manualtoolchange` verdrahtet
+
+Vor dem Einsatz an einer realen Maschine muss deshalb immer sowohl der erzeugte G-Code als auch die konkrete `M6`-/Toolchange-Konfiguration der LinuxCNC-Installation geprueft werden.
 
 Aktueller Stand:
 
@@ -221,11 +292,15 @@ zusaetzlichen Vorderansicht fuer einen frei waehlbaren Z-Schnitt.
 Aktueller Stand:
 
 - die Seitenansicht bleibt sichtbar
+- die Vorschau ist aus dem Scrollbereich geloest und bleibt beim Bearbeiten dauerhaft im unteren Panel-Bereich sichtbar
 - die Schnittlage wird in der Seitenansicht farblich markiert
 - die Schnittlage kann direkt in der Seitenansicht verschoben werden
 - die Vorderansicht wird aus dem gesamten Programm berechnet
 - die Vorderansicht nutzt den groessten Werkstueckdurchmesser als feste Referenz
 - die aktuelle Endgeometrie wird in der Vorderansicht zusaetzlich flaechig hervorgehoben
+- Start-, Rueckzug- und Futter-Sperrzonenwarnungen werden im erzeugten G-Code dokumentiert; die Vorschau bleibt weiterhin auf Geometrie und Sicherheitsflaechen fokussiert
+- fuer Abspanoperationen koennen Schruppkontur und Freistichbereich jetzt getrennt in der Vorschau hervorgehoben werden
+- Sicherheitswarnungen lassen sich optional direkt in der Vorschau einblenden
 
 ## Werkzeugtabelle
 
@@ -246,11 +321,11 @@ editiert werden koennen.
 
 Die naechsten sinnvollen Arbeiten im Projekt sind:
 
-1. Handler-Logik weiter modularisieren
-2. Preview robuster machen
-3. Embedded- und Standalone-Verhalten weiter angleichen
-4. Dokumentation und Statusdokumente konsistent halten
-5. reale Werkstattablaeufe und Maschinenprofile weiter verifizieren
+1. reale Werkstattablaeufe und Maschinenprofile an echter Maschine weiter verifizieren
+2. Werkzeug-/Operations-Plausibilitaet ueber tiefere Tooldaten weiter schaerfen
+3. Preview- und Roughing-Geometrie weiter an echte Arc-Schnitte annaehern
+4. Embedded- und Standalone-Verhalten weiter angleichen
+5. Dokumentation und Referenzprogramme bei kuenftigen Erweiterungen synchron halten
 
 ## Regressionstests und Smoke-Test
 

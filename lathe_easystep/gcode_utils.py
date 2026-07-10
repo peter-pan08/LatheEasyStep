@@ -85,7 +85,7 @@ REQUIRED_KEYS = {
     OpType.THREAD: ["pitch", "length", "major_diameter", "spindle", "tool"],
     OpType.GROOVE: ["feed", "safe_z", "tool"],
     OpType.DRILL: ["feed", "safe_z", "tool"],
-    OpType.KEYWAY: ["depth_per_pass", "feed", "safe_z", "tool"],
+    OpType.KEYWAY: ["depth_per_pass"],
     OpType.ABSPANEN: ["depth_per_pass", "tool"],
 }
 

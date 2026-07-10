@@ -135,6 +135,19 @@ from lathe_easystep.ui_tools import (
 )
 from lathe_easystep.ui_widgets import ensure_core_widgets
 from lathe_easystep.ui_lifecycle import bootstrap_widget_refs, finalize_ui_ready
+from lathe_easystep.ui_advanced import ensure_advanced_widgets
+from lathe_easystep.ui_dirty import (
+    clear_dirty_operation,
+    clear_dirty_state,
+    current_operation_is_dirty,
+    has_unsaved_changes,
+    init_dirty_state,
+    mark_all_operations_dirty,
+    mark_dirty,
+    tab_label as dirty_tab_label,
+    update_dirty_status,
+    warn_if_dirty,
+)
 from lathe_easystep.ui_signals import (
     connect_core_signals,
     connect_global_form_signals,
@@ -146,63 +159,13 @@ from lathe_easystep.ui_signals import (
     connect_tool_preview_signals,
     prepare_signal_connection_context,
 )
+from lathe_easystep.presets import metric_thread_presets, trapezoidal_thread_presets
 
 # Module logger for non-instantiated contexts
 _LOGGER = logging.getLogger(__name__)
 
 
 _INSERT_SHAPE_KEYS = {"C", "D", "V", "S", "T", "W", "R"}
-
-
-STANDARD_METRIC_THREAD_SPECS: List[Tuple[str, float, float]] = [
-    ("M2", 2.0, 0.4),
-    ("M2.5", 2.5, 0.45),
-    ("M3", 3.0, 0.5),
-    ("M3.5", 3.5, 0.6),
-    ("M4", 4.0, 0.7),
-    ("M5", 5.0, 0.8),
-    ("M6", 6.0, 1.0),
-    ("M7", 7.0, 1.0),
-    ("M8", 8.0, 1.25),
-    ("M9", 9.0, 1.25),
-    ("M10", 10.0, 1.5),
-    ("M11", 11.0, 1.5),
-    ("M12", 12.0, 1.75),
-    ("M13", 13.0, 1.75),
-    ("M14", 14.0, 2.0),
-    ("M15", 15.0, 2.0),
-    ("M16", 16.0, 2.0),
-    ("M17", 17.0, 2.0),
-    ("M18", 18.0, 2.5),
-    ("M19", 19.0, 2.5),
-    ("M20", 20.0, 2.5),
-    ("M21", 21.0, 2.5),
-    ("M22", 22.0, 2.5),
-    ("M23", 23.0, 3.0),
-    ("M24", 24.0, 3.0),
-    ("M25", 25.0, 3.0),
-]
-STANDARD_TR_THREAD_SPECS: List[Tuple[str, float, float]] = [
-    ("Tr 10", 10.0, 2.0),
-    ("Tr 12", 12.0, 3.0),
-    ("Tr 14", 14.0, 3.0),
-    ("Tr 16", 16.0, 4.0),
-    ("Tr 18", 18.0, 4.0),
-    ("Tr 20", 20.0, 4.0),
-    ("Tr 22", 22.0, 5.0),
-    ("Tr 24", 24.0, 5.0),
-    ("Tr 26", 26.0, 5.0),
-    ("Tr 28", 28.0, 5.0),
-    ("Tr 30", 30.0, 6.0),
-    ("Tr 32", 32.0, 6.0),
-    ("Tr 36", 36.0, 6.0),
-    ("Tr 40", 40.0, 7.0),
-    # Zusätzliche TR-Größen (erweiterte Auswahl)
-    ("Tr 45", 45.0, 7.0),
-    ("Tr 50", 50.0, 8.0),
-    ("Tr 55", 55.0, 8.0),
-    ("Tr 60", 60.0, 10.0),
-]
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
 DRILL_MODE_LABELS: Tuple[str, str, str, str, str] = (
     "G81 Bohren",
@@ -296,6 +259,20 @@ TEXT_TRANSLATIONS = {
     "program_has_subspindle": {"de": "Gegenspindel vorhanden", "en": "Subspindle available"},
     "label_prog_name": {"de": "Programmname", "en": "Program Name"},
     "label_language": {"de": "Sprache", "en": "Language"},
+    "label_program_spindle_mode": {"de": "Spindelmodus", "en": "Spindle Mode"},
+    "label_program_spindle_max_rpm": {"de": "CSS Max-RPM", "en": "CSS max RPM"},
+    "label_program_park_mode": {"de": "Parkmodus", "en": "Park Mode"},
+    "label_program_toolchange_coords": {"de": "Werkzeugwechsel-Koordinaten", "en": "Tool Change Coordinates"},
+    "label_program_park_coords": {"de": "Park-Koordinaten", "en": "Park Coordinates"},
+    "label_program_park_x": {"de": "Park X", "en": "Park X"},
+    "label_program_park_z": {"de": "Park Z", "en": "Park Z"},
+    "label_program_park_sequential": {"de": "Parkbewegung", "en": "Park Move"},
+    "program_park_sequential": {"de": "achsenweise fahren", "en": "move axis by axis"},
+    "label_program_optional_stop_toolchange": {"de": "Optionalstop Werkzeugwechsel", "en": "Optional stop tool change"},
+    "program_optional_stop_toolchange": {"de": "M1 vor Werkzeugwechsel", "en": "M1 before tool change"},
+    "label_program_preview_warnings": {"de": "Sicherheitswarnungen in Vorschau", "en": "Safety warnings in preview"},
+    "program_preview_warnings": {"de": "im Preview markieren", "en": "show in preview"},
+    "label_dirty_status": {"de": "Keine offenen Aenderungen", "en": "No pending changes"},
 
     "label_face_start_x": {"de": "Start-X (Roh-Ø)", "en": "Start X (Raw ø)"},
     "label_face_start_z": {"de": "Start-Z", "en": "Start Z"},
@@ -344,8 +321,16 @@ TEXT_TRANSLATIONS = {
     "parting_allow_undercut": {"de": "erlauben", "en": "allow"},
     "label_parting_finish_allow_x": {"de": "Schlichtaufmaß X", "en": "Finish Allow. X"},
     "label_parting_finish_allow_z": {"de": "Schlichtaufmaß Z", "en": "Finish Allow. Z"},
+    "label_parting_undercut_mode": {"de": "Hinterschnitt-Modus", "en": "Undercut Mode"},
+    "label_parting_output_preference": {"de": "Ausgabe bevorzugen", "en": "Output Preference"},
+    "label_parting_undercut_tool": {"de": "Hinterschnitt-Werkzeug", "en": "Undercut Tool"},
+    "label_parting_undercut_spindle": {"de": "Hinterschnitt-Drehzahl", "en": "Undercut Spindle"},
+    "label_parting_undercut_feed": {"de": "Hinterschnitt-Vorschub", "en": "Undercut Feed"},
+    "label_parting_optional_stop_before_undercut": {"de": "Optionalstop Hinterschnitt", "en": "Optional stop undercut"},
+    "parting_optional_stop_before_undercut": {"de": "M1 vor separatem Hinterschnitt", "en": "M1 before separate undercut"},
 
     "label_thread_orientation": {"de": "Gewindetyp", "en": "Thread Type"},
+    "label_thread_hand": {"de": "Gewinderichtung", "en": "Thread Direction"},
     "label_thread_standard": {"de": "Standardgewinde", "en": "Thread Standard"},
     "label_thread_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_thread_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
@@ -353,6 +338,7 @@ TEXT_TRANSLATIONS = {
     "label_thread_major_diameter": {"de": "Major-Durchmesser (mm)", "en": "Major Diameter (mm)"},
     "label_thread_pitch": {"de": "Steigung (mm)", "en": "Pitch (mm)"},
     "label_thread_length": {"de": "Gewindelänge Z1 (mm)", "en": "Thread length Z1 (mm)"},
+    "label_thread_start_z": {"de": "Gewindestart Z (mm)", "en": "Thread start Z (mm)"},
     "label_thread_passes": {"de": "Schruppschnitte (Anzahl)", "en": "Rough passes (count)"},
     "label_thread_safe_z": {"de": "Sicherheits-Z (mm)", "en": "Safe Z (mm)"},
     "label_thread_depth": {"de": "Gewindetiefe K (mm)", "en": "Thread depth K (mm)"},
@@ -363,6 +349,10 @@ TEXT_TRANSLATIONS = {
     "label_thread_spring_passes": {"de": "Leerschnitte H (Anzahl)", "en": "Spring passes H (count)"},
     "label_thread_e": {"de": "G76-E (Fein/Option)", "en": "G76-E (finish/option)"},
     "label_thread_l": {"de": "G76-L (Option / Mehrstart)", "en": "G76-L (option / multi-start)"},
+    "label_thread_relief_mode": {"de": "Freistich-Vorschlag", "en": "Relief Suggestion"},
+    "label_thread_relief_norm": {"de": "Freistich-Norm", "en": "Relief Standard"},
+    "label_thread_optional_stop_before": {"de": "Optionalstop Gewinde", "en": "Optional stop thread"},
+    "thread_optional_stop_before": {"de": "M1 vor Gewinde", "en": "M1 before threading"},
 
     "label_groove_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_groove_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
@@ -384,14 +374,18 @@ TEXT_TRANSLATIONS = {
     "label_groove_sweep_feed": {"de": "Spanbruch-Vorschub", "en": "Chip break feed"},
     "label_groove_chip_amp": {"de": "Spanbruch-Amplitude", "en": "Chip break amplitude"},
     "label_groove_chip_n": {"de": "Spanbruch-Zyklen", "en": "Chip break cycles"},
+    "label_groove_process_type": {"de": "Betriebsart", "en": "Mode"},
+    "label_groove_lage": {"de": "Lage", "en": "Position"},
+    "label_groove_ref": {"de": "Bezugspunkt Z0", "en": "Reference Z0"},
+    "groove_use_tool_width": {"de": "Werkzeugbreite separat angeben", "en": "Specify tool width separately"},
 
     "label_drill_tool": {"de": "Werkzeug", "en": "Tool"},
     "label_drill_spindle": {"de": "Drehzahl", "en": "Spindle Speed"},
     "label_drill_coolant": {"de": "Kühlung", "en": "Coolant"},
     "label_drill_mode": {"de": "Bohren Art", "en": "Drilling Mode"},
-    "label_26": {"de": "Hole Diameter", "en": "Hole Diameter"},
+    "label_26": {"de": "Bohrungsdurchmesser", "en": "Hole Diameter"},
     "label_27": {"de": "Tiefe", "en": "Depth"},
-    "label_28": {"de": "Feed", "en": "Feed"},
+    "label_28": {"de": "Vorschub", "en": "Feed"},
     "label_29": {"de": "Sicherheits-Z", "en": "Safety Z"},
 
     "label_30": {"de": "Modus", "en": "Mode"},
@@ -452,6 +446,22 @@ COMBO_OPTION_TRANSLATIONS = {
         "de": ["3-Backen Standard", "Softjaws", "Innenausdrehen"],
         "en": ["3-jaw standard", "Soft jaws", "Boring setup"],
     },
+    "program_spindle_mode": {
+        "de": ["Festdrehzahl (G97)", "CSS (G96)"],
+        "en": ["Fixed RPM (G97)", "CSS (G96)"],
+    },
+    "program_park_mode": {
+        "de": ["Werkzeugwechselpunkt", "Freie Parkposition"],
+        "en": ["Tool change point", "Free park position"],
+    },
+    "program_toolchange_coords": {
+        "de": ["Werkstueckkoordinaten", "Maschinenkoordinaten (G53)"],
+        "en": ["Work coordinates", "Machine coordinates (G53)"],
+    },
+    "program_park_coords": {
+        "de": ["Werkstueckkoordinaten", "Maschinenkoordinaten (G53)"],
+        "en": ["Work coordinates", "Machine coordinates (G53)"],
+    },
     "face_mode": {
         "de": ["Schruppen", "Schlichten", "Schruppen + Schlichten"],
         "en": ["Rough", "Finish", "Rough + Finish"],
@@ -473,8 +483,23 @@ COMBO_OPTION_TRANSLATIONS = {
     "parting_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "parting_mode": {"de": ["Schruppen", "Schlichten"], "en": ["Rough", "Finish"]},
     "parting_slice_strategy": {"de": ["Parallel X", "Parallel Z"], "en": ["Parallel X", "Parallel Z"]},
+    "parting_undercut_mode": {
+        "de": ["Ignorieren", "Nur Schlichten", "Separat schruppen", "Voll in Kontur"],
+        "en": ["Ignore", "Finish only", "Rough separately", "Full contour"],
+    },
+    "parting_output_preference": {
+        "de": ["Automatisch", "Zyklus bevorzugen", "Ausgeschrieben bevorzugen"],
+        "en": ["Automatic", "Prefer cycle", "Prefer explicit"],
+    },
     "thread_orientation": {"de": ["Aussengewinde", "Innengewinde"], "en": ["External", "Internal"]},
+    "thread_hand": {"de": ["Rechtsgewinde", "Linksgewinde"], "en": ["Right-hand thread", "Left-hand thread"]},
+    "thread_relief_mode": {"de": ["Aus", "DIN-Freistich vorschlagen"], "en": ["Off", "Suggest DIN relief"]},
+    "thread_relief_norm": {
+        "de": ["DIN 76 Form A", "DIN 76 Form B", "DIN 76 Form C"],
+        "en": ["DIN 76 form A", "DIN 76 form B", "DIN 76 form C"],
+    },
     "thread_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
+    "groove_process_type": {"de": ["Einstich", "Abstich"], "en": ["Groove", "Parting"]},
     "groove_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "drill_coolant": {"de": ["Aus", "Ein"], "en": ["Off", "On"]},
     "drill_mode": {
@@ -526,6 +551,39 @@ MACHINE_CHUCK_PROFILE_PRESETS: Dict[int, Dict[str, int]] = {
 
 STEP_FILE_FILTER = "Lathe step files (*.step.json);;JSON (*.json)"
 
+
+class _TooltipRelay(QtCore.QObject):
+    """Force tooltip display on hover for embedded/hosted QtVCP widgets."""
+
+    def __init__(self, parent=None, text: str = ""):
+        super().__init__(parent)
+        self.text = text
+
+    def eventFilter(self, obj, event):
+        etype = event.type() if event is not None else None
+        if etype not in (QtCore.QEvent.Enter, QtCore.QEvent.ToolTip):
+            return False
+        text = ""
+        try:
+            text = str(obj.toolTip() or "").strip()
+        except Exception:
+            text = ""
+        if not text:
+            text = self.text
+        if not text:
+            return False
+        try:
+            if etype == QtCore.QEvent.ToolTip and hasattr(event, "globalPos"):
+                global_pos = event.globalPos()
+            elif hasattr(obj, "rect") and hasattr(obj, "mapToGlobal"):
+                global_pos = obj.mapToGlobal(obj.rect().center())
+            else:
+                global_pos = QtGui.QCursor.pos()
+            QtWidgets.QToolTip.showText(global_pos, text, obj)
+        except Exception:
+            return False
+        return etype == QtCore.QEvent.ToolTip
+
 def normalize_arc_side(value: object | None) -> str:
     s = str(value or "auto").strip().lower()
     if s in {"inner", "innen", "in"}:
@@ -536,6 +594,10 @@ def normalize_arc_side(value: object | None) -> str:
 
 # Tooltips für Gewinde-Widgets (de / en)
 THREAD_TOOLTIP_TRANSLATIONS = {
+    "thread_start_z": {
+        "de": "Z-Startpunkt des Gewindes. Rechtsgewinde laufen standardmaessig nach minus Z, Linksgewinde nach plus Z.",
+        "en": "Z start position of the thread. Right-hand threads usually run toward negative Z, left-hand threads toward positive Z.",
+    },
     "thread_length": {
         "de": "Z-Ende relativ/absolut – je nach Modell",
         "en": "Z end relative/absolute – depends on model",
@@ -550,6 +612,81 @@ THREAD_TOOLTIP_TRANSLATIONS = {
     "thread_spring_passes": {"de": "Leerschnitte (Anzahl)", "en": "Spring passes (count)"},
     "thread_e": {"de": "G76-E (Fein/Option)", "en": "G76-E (finish/option)"},
     "thread_l": {"de": "G76-L (Option / Mehrstart)", "en": "G76-L (option / multi-start)"},
+}
+
+GENERAL_TOOLTIP_TRANSLATIONS = {
+    "program_xra": {
+        "de": "Aeussere Rueckzugsebene in X fuer sichere Verfahrwege ausserhalb des Werkstuecks.",
+        "en": "Outer X retract plane for safe moves outside the part.",
+    },
+    "program_xri": {
+        "de": "Innere Rueckzugsebene in X fuer Innenbearbeitung und Bohrungen.",
+        "en": "Inner X retract plane for internal machining and bores.",
+    },
+    "program_zra": {
+        "de": "Aeussere Rueckzugsebene in Z fuer sichere An- und Abfahrbewegungen.",
+        "en": "Outer Z retract plane for safe approach and retract moves.",
+    },
+    "program_zri": {
+        "de": "Innere Rueckzugsebene in Z fuer Rueckzuege bei Innenbearbeitung.",
+        "en": "Inner Z retract plane for retracts during internal machining.",
+    },
+    "program_chuck_x_min": {
+        "de": "Kleinster zulaessiger X-Durchmesser ausserhalb des Futter-Sperrbereichs.",
+        "en": "Minimum allowed X diameter outside the chuck no-go area.",
+    },
+    "program_chuck_x_max": {
+        "de": "Groesster zulaessiger X-Durchmesser ausserhalb des Futter-Sperrbereichs.",
+        "en": "Maximum allowed X diameter outside the chuck no-go area.",
+    },
+    "program_chuck_z_limit": {
+        "de": "Z-Grenze des Futter-Sperrbereichs. Bewegungen davor werden gewarnt.",
+        "en": "Z limit of the chuck no-go area. Moves crossing it are warned.",
+    },
+    "program_spindle_mode": {
+        "de": "Waehlt Festdrehzahl G97 oder konstante Schnittgeschwindigkeit G96.",
+        "en": "Select fixed RPM G97 or constant surface speed G96.",
+    },
+    "program_spindle_max_rpm": {
+        "de": "Maximaldrehzahl fuer CSS/G96. Verhindert Ueberdrehzahl an kleinen Durchmessern.",
+        "en": "Maximum RPM for CSS/G96 to avoid overspeed on small diameters.",
+    },
+    "program_park_mode": {
+        "de": "Bestimmt, ob am Ende zum Werkzeugwechselpunkt oder zu freier Parkposition gefahren wird.",
+        "en": "Choose whether the program ends at the tool change point or a custom park position.",
+    },
+    "program_toolchange_coords": {
+        "de": "Legt fest, ob XT/ZT als Werkstueckkoordinaten oder als Maschinenkoordinaten mit G53 ausgegeben werden.",
+        "en": "Choose whether XT/ZT are emitted as work coordinates or machine coordinates using G53.",
+    },
+    "program_park_coords": {
+        "de": "Legt fest, ob Park X/Z als Werkstueckkoordinaten oder als Maschinenkoordinaten mit G53 ausgegeben werden.",
+        "en": "Choose whether park X/Z are emitted as work coordinates or machine coordinates using G53.",
+    },
+    "program_park_x": {
+        "de": "X-Position fuer freie Parkfahrt am Programmende.",
+        "en": "X position for a custom park move at program end.",
+    },
+    "program_park_z": {
+        "de": "Z-Position fuer freie Parkfahrt am Programmende.",
+        "en": "Z position for a custom park move at program end.",
+    },
+    "program_park_sequential": {
+        "de": "Faehre X und Z nacheinander statt diagonal, wenn die Endparkfahrt enger gefuehrt werden soll.",
+        "en": "Move X and Z sequentially instead of diagonally for a tighter final park move.",
+    },
+    "program_optional_stop_toolchange": {
+        "de": "Fuegt vor jedem Werkzeugwechsel ein optionales M1 ein.",
+        "en": "Insert an optional M1 stop before every tool change.",
+    },
+    "program_preview_warnings": {
+        "de": "Zeigt Sicherheits- und Plausibilitaetswarnungen direkt im Preview an.",
+        "en": "Show safety and plausibility warnings directly in the preview.",
+    },
+    "groove_process_type": {
+        "de": "Einstich blendet nur Nut-Parameter ein, Abstich zeigt zusaetzliche Abstech-Parameter.",
+        "en": "Groove shows only groove parameters, Parting reveals extra parting parameters.",
+    },
 }
 
 PARTING_TOOLTIP_TRANSLATIONS = {
@@ -573,6 +710,30 @@ PARTING_TOOLTIP_TRANSLATIONS = {
         "de": "Axialer Schlichtzuschlag beim Schruppen",
         "en": "Axial finish allowance during roughing",
     },
+    "parting_undercut_mode": {
+        "de": "Legt fest, ob Freistiche ignoriert, nur geschlichtet, separat oder voll in die Kontur integriert werden.",
+        "en": "Choose whether reliefs are ignored, finished only, roughed separately, or fully included in the contour.",
+    },
+    "parting_output_preference": {
+        "de": "Bevorzugt Zyklusausgabe oder ausgeschriebene Bahn, falls beides moeglich ist.",
+        "en": "Prefer canned cycle output or explicit toolpath output when both are possible.",
+    },
+    "parting_undercut_tool": {
+        "de": "Separates Werkzeug fuer Freistich/Hinterschnitt bei Modus 'Separat schruppen'.",
+        "en": "Separate tool for relief/undercut when 'Rough separately' is selected.",
+    },
+    "parting_undercut_spindle": {
+        "de": "Spezielle Drehzahl fuer den separaten Freistich/Hinterschnitt.",
+        "en": "Dedicated spindle speed for the separate relief/undercut pass.",
+    },
+    "parting_undercut_feed": {
+        "de": "Spezialvorschub fuer den separaten Freistich/Hinterschnitt.",
+        "en": "Dedicated feed for the separate relief/undercut pass.",
+    },
+    "parting_optional_stop_before_undercut": {
+        "de": "Fuegt vor dem separaten Hinterschnitt ein optionales M1 ein.",
+        "en": "Insert an optional M1 stop before the separate relief/undercut pass.",
+    },
 }
 
 GROOVE_TOOLTIP_TRANSLATIONS = {
@@ -591,6 +752,18 @@ GROOVE_TOOLTIP_TRANSLATIONS = {
     "groove_finish": {
         "de": "Schlichtaufmass radial; X ist Durchmesser (G7).",
         "en": "Finish allowance is radial; X is diameter (G7).",
+    },
+    "groove_reduced_feed_start_x": {
+        "de": "Ab diesem X-Durchmesser auf reduzierten Vorschub fuer den Abstich wechseln.",
+        "en": "Switch to reduced parting feed from this X diameter onward.",
+    },
+    "groove_reduced_feed": {
+        "de": "Reduzierter Vorschub fuer den letzten Abstichbereich.",
+        "en": "Reduced feed for the final parting zone.",
+    },
+    "groove_reduced_rpm": {
+        "de": "Reduzierte Drehzahl fuer den letzten Abstichbereich.",
+        "en": "Reduced spindle speed for the final parting zone.",
     },
 }
 # ----------------------------------------------------------------------
@@ -624,6 +797,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self._view_scale = None
         self.front_program: Dict[str, object] = {}
         self.front_operation: Operation | None = None
+        self.status_messages: List[str] = []
         self._blink_timer.timeout.connect(self._on_blink_timer)
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
@@ -657,6 +831,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 self._blink_timer.stop()
             self._blink_state = False
             self.update()
+
+    def set_status_messages(self, messages):
+        self.status_messages = [str(msg) for msg in (messages or []) if str(msg).strip()]
+        self.update()
 
     def toggle_legend(self):
         # keep a small header visible, toggle between collapsed/expanded
@@ -1386,6 +1564,18 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     color = QtGui.QColor(200, 60, 220)
                     width = 1
                     style = QtCore.Qt.DashDotLine
+                elif role == "contour_rough":
+                    color = QtGui.QColor(240, 180, 0)
+                    width = 2
+                    style = QtCore.Qt.DashLine
+                elif role == "feature":
+                    color = QtGui.QColor(0, 190, 255)
+                    width = 2
+                    style = QtCore.Qt.SolidLine
+                elif role == "feature_separate":
+                    color = QtGui.QColor(0, 190, 255)
+                    width = 2
+                    style = QtCore.Qt.DashDotLine
                 else:
                     color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("red")
                     width = 2 if idx != self.active_index else 3
@@ -1493,6 +1683,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                         ("Aktiv", QtGui.QPen(QtGui.QColor(255, 0, 0), 2, QtCore.Qt.SolidLine)),
                         ("Rohteil", QtGui.QPen(QtGui.QColor(180, 180, 180), 1, QtCore.Qt.SolidLine)),
                         ("Rückzug", QtGui.QPen(QtGui.QColor(0, 255, 255), 1, QtCore.Qt.DashLine)),
+                        ("Schruppkontur", QtGui.QPen(QtGui.QColor(240, 180, 0), 2, QtCore.Qt.DashLine)),
+                        ("Freistich", QtGui.QPen(QtGui.QColor(0, 190, 255), 2, QtCore.Qt.SolidLine)),
                         ("Bearbeitungslinie", QtGui.QPen(QtGui.QColor(255, 0, 0), 1, QtCore.Qt.DashLine)),
                         ("Futter-Sperrzone", QtGui.QPen(QtGui.QColor(200, 60, 220), 1, QtCore.Qt.DashDotLine)),
                     ]
@@ -1535,6 +1727,23 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
                 except Exception:
                     self._legend_click_rect = None
+
+            if getattr(self, "status_messages", None):
+                try:
+                    messages = list(self.status_messages)[:4]
+                    box_h = 12 + (len(messages) * 16)
+                    box_w = min(self.width() - 20, 540)
+                    x0 = self.width() - box_w - 8
+                    y0 = 8
+                    painter.setPen(QtGui.QPen(QtGui.QColor(180, 80, 20), 1))
+                    painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 240, 210, 220)))
+                    painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
+                    painter.setPen(QtGui.QPen(QtGui.QColor(90, 40, 0), 1))
+                    painter.drawText(QtCore.QPointF(x0 + 8, y0 + 14), "Warnungen")
+                    for idx, msg in enumerate(messages):
+                        painter.drawText(QtCore.QPointF(x0 + 8, y0 + 30 + idx * 15), f"- {msg[:80]}")
+                except Exception:
+                    pass
 
         except Exception:
             self._legend_click_rect = None
@@ -3083,10 +3292,12 @@ class HandlerClass:
             "thread_spindle",
             "thread_coolant",
             "thread_orientation",
+            "thread_hand",
             "thread_standard",
             "thread_major_diameter",
             "thread_pitch",
             "thread_length",
+            "thread_start_z",
             "thread_passes",
             "thread_safe_z",
             "thread_depth",
@@ -3248,6 +3459,9 @@ class HandlerClass:
         self._moving_down = False
         self._generating_gcode = False
         self._creating_new_program = False
+        self._program_dirty = False
+        self._dirty_operation_indices = set()
+        self._dirty_warning_suppressed = False
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
@@ -3258,6 +3472,7 @@ class HandlerClass:
         self._deferred_lookup_queue: List[Tuple[str, str, object, bool]] = []
         self._verbose_widget_logs = False
         self._bootstrap_widget_refs()
+        self._init_dirty_state()
 
     def _dialog_start_dir(self, settings: QtCore.QSettings, *keys: str) -> str:
         """Return the most relevant start directory for file dialogs."""
@@ -3369,6 +3584,36 @@ class HandlerClass:
 
     def _bootstrap_widget_refs(self) -> None:
         bootstrap_widget_refs(self)
+
+    def _init_dirty_state(self) -> None:
+        init_dirty_state(self)
+
+    def _mark_dirty(self, *, operation_index: int | None = None, program: bool = False) -> None:
+        mark_dirty(self, operation_index=operation_index, program=program)
+
+    def _mark_all_operations_dirty(self) -> None:
+        mark_all_operations_dirty(self)
+
+    def _clear_dirty_state(self) -> None:
+        clear_dirty_state(self)
+
+    def _clear_dirty_operation(self, operation_index: int) -> None:
+        clear_dirty_operation(self, operation_index)
+
+    def _update_dirty_status(self) -> None:
+        update_dirty_status(self)
+
+    def _has_unsaved_changes(self) -> bool:
+        return has_unsaved_changes(self)
+
+    def _current_operation_is_dirty(self, row: int | None = None) -> bool:
+        return current_operation_is_dirty(self, row=row)
+
+    def _warn_if_dirty(self, context: str, *, row: int | None = None) -> None:
+        warn_if_dirty(self, context, row=row)
+
+    def _tab_label_for_dirty_state(self, op_type: str | None) -> str:
+        return dirty_tab_label(self, op_type)
 
     def _startup_mark(self, label: str):
         try:
@@ -3491,6 +3736,7 @@ class HandlerClass:
             ("label_prog_s3", "label_prog_s3", QtWidgets.QLabel),
             ("thread_standard", "thread_standard", QtWidgets.QComboBox),
             ("thread_orientation", "thread_orientation", QtWidgets.QComboBox),
+            ("thread_hand", "thread_hand", QtWidgets.QComboBox),
             ("thread_spindle", "thread_spindle", QtWidgets.QDoubleSpinBox),
             ("thread_depth", "thread_depth", QtWidgets.QDoubleSpinBox),
             ("thread_first_depth", "thread_first_depth", QtWidgets.QDoubleSpinBox),
@@ -3558,6 +3804,7 @@ class HandlerClass:
             ("thread_major_diameter", "thread_major_diameter", QtWidgets.QDoubleSpinBox),
             ("thread_pitch", "thread_pitch", QtWidgets.QDoubleSpinBox),
             ("thread_length", "thread_length", QtWidgets.QDoubleSpinBox),
+            ("thread_start_z", "thread_start_z", QtWidgets.QDoubleSpinBox),
             ("label_prog_npv", "label_prog_npv", QtWidgets.QLabel),
             ("label_prog_unit", "label_prog_unit", QtWidgets.QLabel),
             ("label_prog_shape", "label_prog_shape", QtWidgets.QLabel),
@@ -3604,6 +3851,7 @@ class HandlerClass:
             ("label_parting_feed", "label_parting_feed", QtWidgets.QLabel),
             ("label_parting_mode", "label_parting_mode", QtWidgets.QLabel),
             ("label_thread_orientation", "label_thread_orientation", QtWidgets.QLabel),
+            ("label_thread_hand", "label_thread_hand", QtWidgets.QLabel),
             ("label_thread_standard", "label_thread_standard", QtWidgets.QLabel),
             ("label_thread_tool", "label_thread_tool", QtWidgets.QLabel),
             ("label_thread_spindle", "label_thread_spindle", QtWidgets.QLabel),
@@ -3611,6 +3859,7 @@ class HandlerClass:
             ("label_thread_major_diameter", "label_thread_major_diameter", QtWidgets.QLabel),
             ("label_thread_pitch", "label_thread_pitch", QtWidgets.QLabel),
             ("label_thread_length", "label_thread_length", QtWidgets.QLabel),
+            ("label_thread_start_z", "label_thread_start_z", QtWidgets.QLabel),
             ("label_thread_passes", "label_thread_passes", QtWidgets.QLabel),
             ("label_thread_safe_z", "label_thread_safe_z", QtWidgets.QLabel),
             ("label_thread_depth", "label_thread_depth", QtWidgets.QLabel),
@@ -4836,6 +5085,8 @@ class HandlerClass:
             self.thread_standard = self._get_widget_by_name("thread_standard")
         if self.thread_orientation is None:
             self.thread_orientation = self._get_widget_by_name("thread_orientation")
+        if getattr(self, "thread_hand", None) is None:
+            self.thread_hand = self._get_widget_by_name("thread_hand")
         if self.thread_tool is None:
             self.thread_tool = self._get_widget_by_name("thread_tool")
         if self.thread_spindle is None:
@@ -4846,6 +5097,8 @@ class HandlerClass:
             self.thread_pitch = self._get_widget_by_name("thread_pitch")
         if self.thread_length is None:
             self.thread_length = self._get_widget_by_name("thread_length")
+        if getattr(self, "thread_start_z", None) is None:
+            self.thread_start_z = self._get_widget_by_name("thread_start_z")
         if self.thread_passes is None:
             self.thread_passes = self._get_widget_by_name("thread_passes")
         if self.thread_safe_z is None:
@@ -4891,7 +5144,7 @@ class HandlerClass:
         combo.clear()
         combo.addItem(custom, {"label": custom})
         # Metric threads (ISO 60°) -> profile "metric"
-        for name, diameter, pitch in STANDARD_METRIC_THREAD_SPECS:
+        for name, diameter, pitch in metric_thread_presets():
             pitch_text = _compact(pitch)
             label = f"{name} x {pitch_text}"
             combo.addItem(
@@ -4899,7 +5152,7 @@ class HandlerClass:
                 {"label": label, "major": diameter, "pitch": pitch, "profile": "metric"},
             )
         # Trapezoidal threads -> profile "tr"
-        for name, diameter, pitch in STANDARD_TR_THREAD_SPECS:
+        for name, diameter, pitch in trapezoidal_thread_presets():
             pitch_text = _compact(pitch)
             label = f"{name} x {pitch_text}"
             combo.addItem(
@@ -5329,6 +5582,10 @@ class HandlerClass:
         self._handle_global_change()
         self._apply_tab_titles(lang)
         self._apply_button_translations(lang)
+        try:
+            self._apply_general_tooltips(lang)
+        except Exception:
+            pass
         # Thread tooltips (localized)
         try:
             self._apply_thread_tooltips(lang)
@@ -5340,6 +5597,10 @@ class HandlerClass:
             pass
         try:
             self._apply_groove_tooltips(lang)
+        except Exception:
+            pass
+        try:
+            self._update_dirty_status()
         except Exception:
             pass
 
@@ -5418,6 +5679,69 @@ class HandlerClass:
         """Verbindet alle Kontur-Widgets nur einmal."""
         self._ensure_contour_widgets()
 
+    def _set_tooltip_deep(self, widget, text: str):
+        if widget is None or not text:
+            return
+        if not hasattr(self, "_tooltip_relays"):
+            self._tooltip_relays = {}
+        targets = [widget]
+        label_name = f"label_{widget.objectName()}" if hasattr(widget, "objectName") else ""
+        if label_name:
+            label = self._get_widget_by_name(label_name)
+            if label is not None:
+                targets.append(label)
+        try:
+            line_edit = widget.lineEdit() if hasattr(widget, "lineEdit") else None
+        except Exception:
+            line_edit = None
+        if line_edit is not None:
+            targets.append(line_edit)
+        try:
+            view = widget.view() if hasattr(widget, "view") else None
+        except Exception:
+            view = None
+        if view is not None:
+            targets.append(view)
+        try:
+            targets.extend(widget.findChildren(QtWidgets.QWidget))
+        except Exception:
+            pass
+        for target in targets:
+            try:
+                target.setToolTip(text)
+            except Exception:
+                pass
+            try:
+                target.setWhatsThis(text)
+            except Exception:
+                pass
+            try:
+                target.setStatusTip(text)
+            except Exception:
+                pass
+            try:
+                target.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
+            except Exception:
+                pass
+            try:
+                target.setMouseTracking(True)
+            except Exception:
+                pass
+            try:
+                target.setToolTipDuration(20000)
+            except Exception:
+                pass
+            try:
+                relay = self._tooltip_relays.get(id(target))
+                if relay is None:
+                    relay = _TooltipRelay(target, text)
+                    target.installEventFilter(relay)
+                    self._tooltip_relays[id(target)] = relay
+                else:
+                    relay.text = text
+            except Exception:
+                pass
+
     def _apply_thread_tooltips(self, lang: str):
         """Setzt Tooltips für bekannte Thread-Widgets gemäß Sprache."""
         for name, translations in THREAD_TOOLTIP_TRANSLATIONS.items():
@@ -5425,10 +5749,7 @@ class HandlerClass:
             if widget is None:
                 continue
             text = translations.get(lang) or translations.get("de")
-            try:
-                widget.setToolTip(text)
-            except Exception:
-                pass
+            self._set_tooltip_deep(widget, text)
         for btn_attr, handler, flag in (
             ("contour_add_segment", self._handle_contour_add_segment, "_contour_add_connected"),
             ("contour_delete_segment", self._handle_contour_delete_segment, "_contour_delete_connected"),
@@ -5454,6 +5775,14 @@ class HandlerClass:
             self.contour_segments.currentCellChanged.connect(self._handle_contour_row_select)
             self._contour_table_connected = True
 
+    def _apply_general_tooltips(self, lang: str):
+        for name, translations in GENERAL_TOOLTIP_TRANSLATIONS.items():
+            widget = self._get_widget_by_name(name)
+            if widget is None:
+                continue
+            text = translations.get(lang) or translations.get("de")
+            self._set_tooltip_deep(widget, text)
+
     def _apply_parting_tooltips(self, lang: str):
         """Setzt Tooltips für bekannte Abspanen-Widgets gemäß Sprache."""
         for name, translations in PARTING_TOOLTIP_TRANSLATIONS.items():
@@ -5461,16 +5790,7 @@ class HandlerClass:
             if widget is None:
                 continue
             text = translations.get(lang) or translations.get("de")
-            try:
-                widget.setToolTip(text)
-                try:
-                    widget.setWhatsThis(text)
-                except Exception:
-                    # some widgets may not implement setWhatsThis
-                    pass
-            except Exception:
-                pass
-            self._contour_table_connected = True
+            self._set_tooltip_deep(widget, text)
 
     def _apply_groove_tooltips(self, lang: str):
         """Setzt Tooltips für bekannte Nut-Widgets gemäß Sprache."""
@@ -5479,14 +5799,7 @@ class HandlerClass:
             if widget is None:
                 continue
             text = translations.get(lang) or translations.get("de")
-            try:
-                widget.setToolTip(text)
-                try:
-                    widget.setWhatsThis(text)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+            self._set_tooltip_deep(widget, text)
 
         if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
             self.contour_start_x.valueChanged.connect(self._update_contour_preview_temp)
@@ -5740,6 +6053,27 @@ class HandlerClass:
             for key, default in defaults.items():
                 if key not in params or params[key] is None or params[key] == "":
                     params[key] = default
+        elif op_type == OpType.ABSPANEN:
+            defaults = {
+                "undercut_mode": "finish_only",
+                "output_preference": "auto",
+                "undercut_tool": 0,
+                "undercut_spindle": 0.0,
+                "undercut_feed": 0.0,
+                "optional_stop_before_undercut": False,
+            }
+            for key, default in defaults.items():
+                if key not in params or params[key] is None or params[key] == "":
+                    params[key] = default
+        elif op_type == OpType.THREAD:
+            defaults = {
+                "relief_mode": "off",
+                "relief_norm": "DIN 76-A",
+                "optional_stop_before": False,
+            }
+            for key, default in defaults.items():
+                if key not in params or params[key] is None or params[key] == "":
+                    params[key] = default
         return params
     def _collect_program_header(self) -> Dict[str, object]:
         """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
@@ -5783,6 +6117,20 @@ class HandlerClass:
             self.program_chuck_z_limit = self._get_widget_by_name("program_chuck_z_limit")
         if self.program_name is None:
             self.program_name = self._get_widget_by_name("program_name")
+        for attr in (
+            "program_spindle_mode",
+            "program_spindle_max_rpm",
+            "program_park_mode",
+            "program_toolchange_coords",
+            "program_park_coords",
+            "program_park_x",
+            "program_park_z",
+            "program_park_sequential",
+            "program_optional_stop_toolchange",
+            "program_preview_warnings",
+        ):
+            if getattr(self, attr, None) is None:
+                setattr(self, attr, self._get_widget_by_name(attr))
         if self.program_xa is None:
             self.program_xa = self._get_widget_by_name("program_xa")
         if self.program_xi is None:
@@ -5866,9 +6214,8 @@ class HandlerClass:
         header["zra"] = _val(self.program_zra)
         header["zri"] = _val(self.program_zri)
 
-        # Absolute vs incremental flags for the retract/tool positions. If the
-        # checkbox widget is missing, default to False (incremental) as per
-        # new default UX (user prefers entering incremental deltas).
+        # Absolute flags for retract planes stay available because roughing and
+        # safety moves still distinguish between work and machine references.
         header["xra_absolute"] = bool(self.program_xra_absolute.isChecked()) if self.program_xra_absolute else False
         header["xri_absolute"] = bool(self.program_xri_absolute.isChecked()) if self.program_xri_absolute else False
         header["zra_absolute"] = bool(self.program_zra_absolute.isChecked()) if self.program_zra_absolute else False
@@ -5893,6 +6240,32 @@ class HandlerClass:
         header["chuck_no_go_x_min"] = _val(getattr(self, "program_chuck_x_min", None))
         header["chuck_no_go_x_max"] = _val(getattr(self, "program_chuck_x_max", None))
         header["chuck_no_go_z_limit"] = _val(getattr(self, "program_chuck_z_limit", None))
+        if getattr(self, "program_spindle_mode", None):
+            data = self.program_spindle_mode.currentData()
+            header["spindle_mode"] = data if data is not None else self.program_spindle_mode.currentText().strip()
+        header["spindle_max_rpm"] = _val(getattr(self, "program_spindle_max_rpm", None))
+        if getattr(self, "program_park_mode", None):
+            data = self.program_park_mode.currentData()
+            header["park_mode"] = data if data is not None else self.program_park_mode.currentText().strip()
+        if getattr(self, "program_toolchange_coords", None):
+            data = self.program_toolchange_coords.currentData()
+            header["toolchange_coords"] = data if data is not None else self.program_toolchange_coords.currentText().strip()
+            toolchange_coords = str(header.get("toolchange_coords", "work") or "work").strip().lower()
+            header["xt_absolute"] = toolchange_coords != "machine"
+            header["zt_absolute"] = toolchange_coords != "machine"
+        if getattr(self, "program_park_coords", None):
+            data = self.program_park_coords.currentData()
+            header["park_coords"] = data if data is not None else self.program_park_coords.currentText().strip()
+        else:
+            xt_abs = bool(header.get("xt_absolute", True))
+            zt_abs = bool(header.get("zt_absolute", True))
+            header["toolchange_coords"] = "work" if xt_abs and zt_abs else "machine"
+            header["park_coords"] = header.get("toolchange_coords", "work")
+        header["park_x"] = _val(getattr(self, "program_park_x", None))
+        header["park_z"] = _val(getattr(self, "program_park_z", None))
+        header["park_sequential"] = bool(getattr(self, "program_park_sequential", None).isChecked()) if getattr(self, "program_park_sequential", None) else False
+        header["optional_stop_toolchange"] = bool(getattr(self, "program_optional_stop_toolchange", None).isChecked()) if getattr(self, "program_optional_stop_toolchange", None) else False
+        header["preview_warnings"] = bool(getattr(self, "program_preview_warnings", None).isChecked()) if getattr(self, "program_preview_warnings", None) else False
 
         if self.program_name:
             header["program_name"] = self.program_name.text().strip()
@@ -5920,48 +6293,39 @@ class HandlerClass:
         return header
 
     def _tool_change_position_lines(self, header: Dict[str, object]) -> List[str]:
-        """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT).
-        
-        Berücksichtigt absolute/inkrementale Flags:
-        - absolute: WCS (Normal Peek Value) verwenden
-        - inkremental: Maschinenkoordinaten (G53) verwenden
-        """
+        """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT)."""
         xt = float(header.get("xt", 0.0))
         zt = float(header.get("zt", 0.0))
-        xt_abs = bool(header.get("xt_absolute", False))
-        zt_abs = bool(header.get("zt_absolute", False))
+        coord_mode = str(header.get("toolchange_coords", "") or "").strip().lower()
+        if coord_mode not in ("work", "machine"):
+            xt_abs = bool(header.get("xt_absolute", True))
+            zt_abs = bool(header.get("zt_absolute", True))
+            if xt_abs != zt_abs:
+                coord_mode = "mixed"
+            else:
+                coord_mode = "work" if xt_abs and zt_abs else "machine"
 
         lines: List[str] = []
-        
-        # Wenn beide absolut: komplett im WCS
-        if xt_abs and zt_abs:
+
+        if coord_mode == "work":
             lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
             return lines
-        
-        # Wenn beide inkremental: G53 verwenden
-        if not xt_abs and not zt_abs:
-            lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
+        if coord_mode == "mixed":
+            xt_abs = bool(header.get("xt_absolute", True))
+            zt_abs = bool(header.get("zt_absolute", True))
+            if not xt_abs:
+                lines.append(f"G53 G0 X{xt:.3f}")
+            if not zt_abs:
+                lines.append(f"G53 G0 Z{zt:.3f}")
+            work_parts = []
+            if xt_abs:
+                work_parts.append(f"X{xt:.3f}")
+            if zt_abs:
+                work_parts.append(f"Z{zt:.3f}")
+            if work_parts:
+                lines.append(f"G0 {' '.join(work_parts)}")
             return lines
-        
-        # Mischfall: X absolut, Z inkremental (oder umgekehrt)
-        # Erst G53 für inkrementale Achsen
-        g53_parts = []
-        if not xt_abs:
-            g53_parts.append(f"X{xt:.3f}")
-        if not zt_abs:
-            g53_parts.append(f"Z{zt:.3f}")
-        if g53_parts:
-            lines.append(f"G53 G0 {' '.join(g53_parts)}")
-        
-        # Dann WCS für absolute Achsen
-        wcs_parts = []
-        if xt_abs:
-            wcs_parts.append(f"X{xt:.3f}")
-        if zt_abs:
-            wcs_parts.append(f"Z{zt:.3f}")
-        if wcs_parts:
-            lines.append(f"G0 {' '.join(wcs_parts)}")
-        
+        lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
         return lines
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
@@ -5980,6 +6344,11 @@ class HandlerClass:
             edge_widget = table.cellWidget(row, 3)
             arc_side_item = table.item(row, 5)
             arc_side_widget = table.cellWidget(row, 5)
+            feature_widget = table.cellWidget(row, 6)
+            thread_widget = table.cellWidget(row, 7)
+            norm_widget = table.cellWidget(row, 8)
+            side_widget = table.cellWidget(row, 9)
+            orient_widget = table.cellWidget(row, 10)
 
             mode_raw = mode_item.text().strip().lower() if mode_item else "xz"
             if mode_raw.startswith("xz"):
@@ -6024,6 +6393,32 @@ class HandlerClass:
 
             arc_side = normalize_arc_side(arc_txt)
 
+            feature_type = "none"
+            try:
+                feature_txt = str(feature_widget.currentText()).strip().lower() if feature_widget is not None and hasattr(feature_widget, "currentText") else ""
+            except Exception:
+                feature_txt = ""
+            if "freistich" in feature_txt or "hinterschnitt" in feature_txt:
+                feature_type = "din_relief"
+
+            thread_size = ""
+            norm = ""
+            side = "external"
+            orientation = "end"
+            try:
+                if thread_widget is not None and hasattr(thread_widget, "currentText"):
+                    thread_size = str(thread_widget.currentText()).strip().upper()
+                if norm_widget is not None and hasattr(norm_widget, "currentText"):
+                    norm = str(norm_widget.currentText()).strip()
+                if side_widget is not None and hasattr(side_widget, "currentText"):
+                    side_txt = str(side_widget.currentText()).strip().lower()
+                    side = "internal" if side_txt.startswith("in") else "external"
+                if orient_widget is not None and hasattr(orient_widget, "currentText"):
+                    orient_txt = str(orient_widget.currentText()).strip().lower()
+                    orientation = "start" if orient_txt.startswith("start") else "end"
+            except Exception:
+                pass
+
             def _to_float(item):
                 try:
                     txt = item.text().replace(",", ".")
@@ -6034,19 +6429,27 @@ class HandlerClass:
             x_text = x_item.text().strip() if x_item and x_item.text() else ""
             z_text = z_item.text().strip() if z_item and z_item.text() else ""
 
-            segments.append(
-                {
-                    "mode": mode,
-                    "x": _to_float(x_item) if x_item else 0.0,
-                    "z": _to_float(z_item) if z_item else 0.0,
-                    "x_empty": x_text == "",
-                    "z_empty": z_text == "",
-                    "edge": edge,
-                    "edge_size": _to_float(size_item) if size_item else 0.0,
-                    "arc_side": arc_side,
-                    "arc_side_raw": arc_txt,
+            seg = {
+                "mode": mode,
+                "x": _to_float(x_item) if x_item else 0.0,
+                "z": _to_float(z_item) if z_item else 0.0,
+                "x_empty": x_text == "",
+                "z_empty": z_text == "",
+                "edge": edge,
+                "edge_size": _to_float(size_item) if size_item else 0.0,
+                "arc_side": arc_side,
+                "arc_side_raw": arc_txt,
+            }
+            if feature_type != "none":
+                seg["feature"] = {
+                    "feature_type": feature_type,
+                    "thread_size": thread_size,
+                    "norm": norm,
+                    "side": side,
+                    "internal": side == "internal",
+                    "orientation": orientation,
                 }
-            )
+            segments.append(seg)
 
         return segments
 
@@ -6298,6 +6701,10 @@ class HandlerClass:
                     return
                 self.model.add_operation(op)
                 try:
+                    self._mark_all_operations_dirty()
+                except Exception:
+                    pass
+                try:
                     debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
                     self._log(f"[LatheEasyStep][debug] operations now: {debug_ops}", level="debug")
                 except Exception:
@@ -6329,6 +6736,10 @@ class HandlerClass:
                 QtWidgets.QMessageBox.warning(parent, "Löschen", "Der Programmkopf kann nicht gelöscht werden.")
                 return
             self.model.remove_operation(idx)
+            try:
+                self._mark_all_operations_dirty()
+            except Exception:
+                pass
             new_idx = min(idx, len(self.model.operations) - 1)
             self._refresh_operation_list(select_index=new_idx)
             self._refresh_preview()
@@ -6374,6 +6785,10 @@ class HandlerClass:
     def _insert_loaded_operation(self, op: Operation):
         self.model.update_geometry(op)
         self.model.add_operation(op)
+        try:
+            self._clear_dirty_operation(len(self.model.operations) - 1)
+        except Exception:
+            pass
         idx = len(self.model.operations) - 1
         self._refresh_operation_list(select_index=idx)
         if self.list_ops:
@@ -6620,6 +7035,13 @@ class HandlerClass:
         # so we rebuild the selected operation from the UI and refresh geometry/preview.
         try:
             self._update_selected_operation(force=True)
+        except Exception:
+            pass
+        try:
+            if op.op_type == OpType.PROGRAM_HEADER:
+                self._mark_dirty(program=True)
+            else:
+                self._mark_dirty(operation_index=idx)
         except Exception:
             pass
         return

@@ -66,6 +66,13 @@ class TestExternalThreadGCode:
         lines = gcode_for_thread(op)
         assert any("Aussen" in l for l in lines)
 
+    def test_right_hand_thread_runs_towards_negative_z_from_start_z(self):
+        op = _make_thread_op(orientation=0, hand=0, thread_start_z=-2.0, length=18.0, safe_z=3.0)
+        lines = gcode_for_thread(op)
+        assert "G0 Z-2.000" in lines
+        g76_line = [l for l in lines if l.startswith("G76")][0]
+        assert "Z-20.000" in g76_line
+
 
 class TestInternalThreadGCode:
     """Internal threading (orientation=1): boring bar cuts outward."""
@@ -114,6 +121,14 @@ class TestInternalThreadGCode:
         op = _make_thread_op(orientation=1)
         lines = gcode_for_thread(op)
         assert any("Innen" in l for l in lines)
+
+    def test_left_hand_thread_runs_towards_positive_z_from_start_z(self):
+        op = _make_thread_op(orientation=1, hand=1, thread_start_z=-30.0, length=30.0, safe_z=2.0)
+        lines = gcode_for_thread(op)
+        assert "G0 Z-30.000" in lines
+        g76_line = [l for l in lines if l.startswith("G76")][0]
+        assert "Z0.000" in g76_line
+        assert any("Linksgewinde" in l for l in lines)
 
     def test_K_is_always_positive(self):
         """K (thread depth) is always positive for both internal and external.
@@ -181,6 +196,19 @@ class TestExternalThreadPreview:
         assert any(abs(x - minor_dia) < 0.01 for x in x_values)
         assert any(abs(x - 20.0) < 0.01 for x in x_values)
 
+    def test_left_hand_preview_runs_towards_positive_z(self):
+        params = {
+            "major_diameter": 20.0,
+            "pitch": 2.0,
+            "length": 10.0,
+            "thread_start_z": -10.0,
+            "hand": 1,
+            "orientation": 0,
+        }
+        path = build_thread_path(params)
+        assert path[0] == (20.0, -10.0)
+        assert path[-1][1] >= 0.0 - 0.01
+
 
 class TestInternalThreadPreview:
     """Internal thread preview: show a single zig-zag contour."""
@@ -221,3 +249,15 @@ class TestInternalThreadPreview:
         assert max(x_values) <= 20.0 + 0.01
         assert any(abs(x - bore_dia) < 0.01 for x in x_values)
         assert any(abs(x - 20.0) < 0.01 for x in x_values)
+
+    def test_internal_preview_respects_thread_start_z(self):
+        params = {
+            "major_diameter": 20.0,
+            "pitch": 2.0,
+            "length": 12.0,
+            "thread_start_z": -4.0,
+            "orientation": 1,
+        }
+        path = build_thread_path(params)
+        assert abs(path[0][1] - (-4.0)) < 0.01
+        assert abs(path[-1][1] - (-16.0)) < 0.01

@@ -66,36 +66,77 @@ def connect_param_change_signals(handler) -> None:
 
 
 def connect_global_form_signals(handler) -> None:
-    if handler.program_unit and handler.program_unit not in handler._connected_global_widgets:
-        handler.program_unit.currentIndexChanged.connect(handler._handle_global_change)
-        handler._connected_global_widgets.add(handler.program_unit)
-    if handler.program_shape and handler.program_shape not in handler._connected_global_widgets:
-        handler.program_shape.currentIndexChanged.connect(handler._handle_global_change)
-        handler._connected_global_widgets.add(handler.program_shape)
-    if handler.program_retract_mode and handler.program_retract_mode not in handler._connected_global_widgets:
-        handler.program_retract_mode.currentIndexChanged.connect(handler._handle_global_change)
-        handler._connected_global_widgets.add(handler.program_retract_mode)
-    if handler.program_has_subspindle and handler.program_has_subspindle not in handler._connected_global_widgets:
-        handler.program_has_subspindle.toggled.connect(handler._update_subspindle_visibility)
-        handler._connected_global_widgets.add(handler.program_has_subspindle)
-    for chuck_combo in (
+    for widget in (
+        getattr(handler, "program_npv", None),
+        getattr(handler, "program_shape", None),
+        getattr(handler, "program_retract_mode", None),
         getattr(handler, "program_machine_profile", None),
         getattr(handler, "program_chuck_size", None),
         getattr(handler, "program_chuck_part_type", None),
         getattr(handler, "program_chuck_grip_mode", None),
         getattr(handler, "program_chuck_profile", None),
+        getattr(handler, "program_spindle_mode", None),
+        getattr(handler, "program_toolchange_coords", None),
+        getattr(handler, "program_park_mode", None),
+        getattr(handler, "program_park_coords", None),
     ):
-        if chuck_combo and chuck_combo not in handler._connected_global_widgets:
-            chuck_combo.currentIndexChanged.connect(handler._handle_global_change)
-            handler._connected_global_widgets.add(chuck_combo)
-    for chuck_spin in (
+        if widget and widget not in handler._connected_global_widgets:
+            widget.currentIndexChanged.connect(handler._handle_global_change)
+            handler._connected_global_widgets.add(widget)
+    for widget in (
+        getattr(handler, "program_xa", None),
+        getattr(handler, "program_xi", None),
+        getattr(handler, "program_za", None),
+        getattr(handler, "program_zi", None),
+        getattr(handler, "program_zb", None),
+        getattr(handler, "program_xra", None),
+        getattr(handler, "program_xri", None),
+        getattr(handler, "program_zra", None),
+        getattr(handler, "program_zri", None),
+        getattr(handler, "program_w", None),
+        getattr(handler, "program_l", None),
+        getattr(handler, "program_n", None),
+        getattr(handler, "program_sw", None),
+        getattr(handler, "program_xt", None),
+        getattr(handler, "program_zt", None),
+        getattr(handler, "program_sc", None),
         getattr(handler, "program_chuck_x_min", None),
         getattr(handler, "program_chuck_x_max", None),
         getattr(handler, "program_chuck_z_limit", None),
+        getattr(handler, "program_spindle_max_rpm", None),
+        getattr(handler, "program_park_x", None),
+        getattr(handler, "program_park_z", None),
+        getattr(handler, "program_s1", None),
+        getattr(handler, "program_s3", None),
     ):
-        if chuck_spin and chuck_spin not in handler._connected_global_widgets and hasattr(chuck_spin, "valueChanged"):
-            chuck_spin.valueChanged.connect(handler._handle_global_change)
-            handler._connected_global_widgets.add(chuck_spin)
+        if widget and widget not in handler._connected_global_widgets and hasattr(widget, "valueChanged"):
+            widget.valueChanged.connect(handler._handle_global_change)
+            handler._connected_global_widgets.add(widget)
+    for widget in (
+        getattr(handler, "program_xra_absolute", None),
+        getattr(handler, "program_xri_absolute", None),
+        getattr(handler, "program_zra_absolute", None),
+        getattr(handler, "program_zri_absolute", None),
+        getattr(handler, "program_xt_absolute", None),
+        getattr(handler, "program_zt_absolute", None),
+        getattr(handler, "program_has_subspindle", None),
+        getattr(handler, "program_park_sequential", None),
+        getattr(handler, "program_optional_stop_toolchange", None),
+        getattr(handler, "program_preview_warnings", None),
+    ):
+        if widget and widget not in handler._connected_global_widgets:
+            widget.toggled.connect(handler._handle_global_change)
+            handler._connected_global_widgets.add(widget)
+    line_edit = getattr(handler, "program_name", None)
+    if line_edit and line_edit not in handler._connected_global_widgets and hasattr(line_edit, "textChanged"):
+        line_edit.textChanged.connect(handler._handle_global_change)
+        handler._connected_global_widgets.add(line_edit)
+    if handler.program_unit and handler.program_unit not in handler._connected_global_widgets:
+        handler.program_unit.currentIndexChanged.connect(handler._handle_global_change)
+        handler._connected_global_widgets.add(handler.program_unit)
+    if handler.program_has_subspindle and handler.program_has_subspindle not in handler._connected_global_widgets:
+        handler.program_has_subspindle.toggled.connect(handler._update_subspindle_visibility)
+        handler._connected_global_widgets.add(handler.program_has_subspindle)
 
 
 def connect_language_signal(handler) -> None:
@@ -181,3 +222,9 @@ def connect_core_signals(handler) -> None:
     if handler.parting_mode and not getattr(handler, "_parting_mode_connected", False):
         handler.parting_mode.currentIndexChanged.connect(handler._update_parting_mode_visibility)
         handler._parting_mode_connected = True
+    if getattr(handler, "parting_undercut_mode", None) and not getattr(handler, "_parting_undercut_mode_connected", False):
+        handler.parting_undercut_mode.currentIndexChanged.connect(handler._update_parting_mode_visibility)
+        handler._parting_undercut_mode_connected = True
+    if getattr(handler, "groove_process_type", None) and not getattr(handler, "_groove_process_type_connected", False):
+        handler.groove_process_type.currentIndexChanged.connect(handler._update_groove_tab_ui)
+        handler._groove_process_type_connected = True

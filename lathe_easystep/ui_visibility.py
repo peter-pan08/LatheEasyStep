@@ -21,6 +21,11 @@ def handle_global_change(handler, *args, **kwargs):
     handler._update_retract_visibility()
     handler._update_subspindle_visibility()
     handler._update_face_visibility()
+    if sender_name and not getattr(handler, "_ui_loading", False):
+        try:
+            handler._mark_dirty(program=True)
+        except Exception:
+            pass
     if getattr(handler, "_startup_complete", False):
         handler._refresh_preview()
 

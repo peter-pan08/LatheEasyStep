@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
+from .checks import validate_program_setup
 from .gcode_drill import generate_drill_gcode
 from .gcode_face import generate_face_gcode
 from .gcode_groove import generate_groove_gcode, groove_sub_definition
@@ -14,7 +15,14 @@ from .gcode_roughing import (
     step_line_pause_sub_definition,
     step_x_pause_sub_definition,
 )
-from .gcode_safety import append_tool_and_spindle, emit_approach, emit_safe_retract_for_op, estimate_operation_end_pos
+from .gcode_safety import (
+    append_tool_and_spindle,
+    emit_approach,
+    emit_safe_retract_for_op,
+    estimate_operation_end_pos,
+    get_end_park_lines,
+    get_machine_limit_warnings,
+)
 from .gcode_thread import generate_thread_gcode
 from .gcode_utils import (
     REQUIRED_KEYS,
@@ -163,6 +171,7 @@ def gcode_for_operation(op: Operation, settings: Dict[str, object] | None = None
 
 def generate_program_gcode(operations: List[Operation], program_settings: Dict[str, object]) -> List[str]:
     settings = dict(program_settings or {})
+    validation_warnings = validate_program_setup(operations, settings)
     for i, op in enumerate(operations):
         if op.op_type in REQUIRED_KEYS:
             require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
@@ -194,11 +203,22 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     header_lines.append("(=== SICHERHEITSPARAMETER ===)")
     xt = settings.get("xt")
     zt = settings.get("zt")
-    xt_abs = settings.get("xt_absolute", True)
-    zt_abs = settings.get("zt_absolute", True)
+    toolchange_coords = str(settings.get("toolchange_coords", "") or "").strip().lower()
+    if toolchange_coords not in ("work", "machine"):
+        xt_abs = settings.get("xt_absolute", True)
+        zt_abs = settings.get("zt_absolute", True)
+        if bool(xt_abs) != bool(zt_abs):
+            toolchange_coords = "mixed"
+        else:
+            toolchange_coords = "work" if xt_abs and zt_abs else "machine"
     if xt is not None and zt is not None:
         try:
-            coord_note = " Maschinenkoordinaten G53" if (not xt_abs or not zt_abs) else ""
+            if toolchange_coords == "machine":
+                coord_note = " Maschinenkoordinaten G53"
+            elif toolchange_coords == "mixed":
+                coord_note = " gemischt legacy"
+            else:
+                coord_note = " Werkstueckkoordinaten"
             header_lines.append(f"(Werkzeugwechselpunkt: X{float(xt):.3f} Z{float(zt):.3f}{coord_note})")
         except (TypeError, ValueError):
             pass
@@ -222,6 +242,11 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         except (TypeError, ValueError):
             pass
     header_lines.extend(["(=== END SICHERHEITSPARAMETER ===)", ""])
+    for warning in get_machine_limit_warnings(settings):
+        header_lines.append(f"(WARN: {warning})")
+    for warning in validation_warnings:
+        header_lines.append(f"(WARN: {warning})")
+    header_lines.append("")
 
     all_subs: List[List[str]] = []
 
@@ -339,6 +364,8 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             if contour_name:
                 contour_op = next((o for o in operations if o.op_type == OpType.CONTOUR and o.params.get("name") == contour_name), None)
                 if contour_op and contour_op.path:
+                    if isinstance(contour_op.params, dict):
+                        op.params["_contour_params"] = dict(contour_op.params)
                     if isinstance(contour_op.path[0], dict):
                         op.params["_primitives"] = contour_op.path
                         op.path = primitives_to_points(contour_op.path)
@@ -373,14 +400,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     lines.extend(main_flow_lines)
     if not footer_lines_from_settings:
         lines.append("")
-        xt_end = float_or_none(settings.get("xt"))
-        zt_end = float_or_none(settings.get("zt"))
-        if xt_end is not None and zt_end is not None:
-            lines.append("(Werkzeugwechselpunkt am Ende)")
-            if not bool(settings.get("xt_absolute", True)) or not bool(settings.get("zt_absolute", True)):
-                lines.append(f"G53 G0 X{xt_end:.3f} Z{zt_end:.3f}")
-            else:
-                lines.append(f"G0 X{xt_end:.3f} Z{zt_end:.3f}")
+        lines.extend(get_end_park_lines(settings))
     lines.append("")
     lines.extend(footer_lines_from_settings)
     lines.extend(["M5", "M9", "M30", "%"])

@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from .contour_features import normalize_relief_mode, primitive_to_points
+from .contour_logic import build_contour_variants
 from .gcode_safety import append_tool_and_spindle, emit_approach, nose_compensation_command
 from .gcode_utils import (
     Point,
@@ -34,6 +36,44 @@ class Segment:
 
 
 LEADOUT_LENGTH_DEFAULT = 2.0
+
+
+def _normalize_output_preference(value: object | None) -> str:
+    text = str(value or "").strip().lower()
+    if text in ("cycle", "prefer_cycle", "standardzyklus", "1"):
+        return "prefer_cycle"
+    if text in ("explicit", "prefer_explicit", "ausgeschrieben", "2"):
+        return "prefer_explicit"
+    return "auto"
+
+
+def _emit_relief_pass(
+    lines: List[str],
+    feature_points: List[Point],
+    feed: float,
+    safe_z: float,
+    settings: Dict[str, object],
+    tool_num: int,
+    spindle: float,
+    op_params: Dict[str, object],
+) -> None:
+    if len(feature_points) < 2:
+        return
+    relief_tool = int(float(op_params.get("undercut_tool", tool_num) or tool_num))
+    relief_spindle = float(op_params.get("undercut_spindle", spindle) or spindle)
+    relief_feed = float(op_params.get("undercut_feed", feed) or feed)
+    if bool(op_params.get("optional_stop_before_undercut", settings.get("optional_stop_before_undercut", False))):
+        lines.append("M1")
+    append_tool_and_spindle(lines, relief_tool, relief_spindle, settings)
+    lines.append("(Hinterschnitt separat)")
+    emit_approach(lines, feature_points[0][0], safe_z, settings)
+    for idx, (x, z) in enumerate(feature_points):
+        code = "G1"
+        if idx == 0:
+            lines.append(f"{code} X{x:.3f} Z{z:.3f} F{relief_feed:.3f}")
+        else:
+            lines.append(f"{code} X{x:.3f} Z{z:.3f} F{relief_feed:.3f}")
+    lines.append(f"G0 Z{safe_z:.3f}")
 
 
 def segments_from_polyline(path: List[Point]) -> List[Segment]:
@@ -319,8 +359,6 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
 
 def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: Dict[str, object]) -> List[str]:
     lines: List[str] = ["(ABSPANEN)"]
-    if not path:
-        return lines
     require(p, ["depth_per_pass"], "ABSPANEN")
     require_positive(p, ["depth_per_pass"], "ABSPANEN")
     side_idx = int(p.get("side", 0))
@@ -340,11 +378,34 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     spindle = float(p.get("spindle", 0.0))
     append_tool_and_spindle(lines, tool_num, spindle, settings)
     lines.append(f"F{feed:.3f}")
+    contour_variants = None
+    contour_params = p.get("_contour_params")
+    if isinstance(contour_params, dict) and contour_params.get("segments"):
+        contour_variants = build_contour_variants(contour_params)
+    finish_path = path
+    rough_path = path
+    feature_path: List[Point] = []
+    relief_mode = normalize_relief_mode(p.get("undercut_mode"))
+    if contour_variants:
+        finish_path = contour_variants["finish_points"] or finish_path
+        rough_path = contour_variants["rough_points"] or finish_path
+        feature_path = contour_variants["feature_points"] or []
+    elif path and isinstance(path[0], dict):
+        finish_path = primitive_to_points(path) or []
+        rough_path = finish_path
+    if not finish_path and not rough_path:
+        return lines
+    if not rough_path:
+        rough_path = finish_path
+    if not finish_path:
+        finish_path = rough_path
+
+    path = finish_path
     stock_hint = settings.get("xa") if side_idx == 0 else settings.get("xi")
     try:
-        stock_x = float(stock_hint) if stock_hint is not None else max(point[0] for point in path)
+        stock_x = float(stock_hint) if stock_hint is not None else max(point[0] for point in rough_path)
     except Exception:
-        stock_x = max(point[0] for point in path)
+        stock_x = max(point[0] for point in rough_path)
     cfg = get_retract_cfg(settings, side_idx)
     if cfg.z_value is None:
         raise ValueError("ZRA/ZRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")
@@ -354,6 +415,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     compensation_command = nose_compensation_command(tool_info, external)
     nose_disabled = bool(p.get("nose_comp_disabled", False))
     slice_strategy = p.get("slice_strategy")
+    output_preference = _normalize_output_preference(p.get("output_preference", settings.get("output_preference")))
     strategy_code = None
     if isinstance(slice_strategy, (int, float)):
         strategy_code = "parallel_x" if int(slice_strategy) == 1 else "parallel_z" if int(slice_strategy) == 2 else None
@@ -363,12 +425,30 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     contour_subs = settings.get("contour_subs", {}) if settings else {}
     contour_sub_num = contour_subs.get(contour_name) if contour_name else None
     primitives = p.get("_primitives")
+    if contour_variants:
+        primitives = contour_variants["finish_primitives"]
+
+    lines.append(f"(Strategie: {strategy_code or 'manuell'})")
+    lines.append(f"(Ausgabe bevorzugen: {output_preference})")
+    lines.append(f"(Hinterschnitt-Modus: {relief_mode})")
+    if finish_allow_x > 0.0 or finish_allow_z > 0.0:
+        lines.append(f"(Aufmass X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f})")
 
     def _build_cycle_sub(sub_num: int) -> List[str]:
-        return contour_sub_from_primitives(primitives, sub_num) if primitives else contour_sub_from_points(path, sub_num)
+        active_primitives = primitives
+        active_points = finish_path
+        if relief_mode in ("ignore", "finish_only", "separate") and contour_variants:
+            active_primitives = contour_variants["rough_primitives"]
+            active_points = rough_path
+        return contour_sub_from_primitives(active_primitives, sub_num) if active_primitives else contour_sub_from_points(active_points, sub_num)
+
+    rough_cycle_path = finish_path if relief_mode == "full" else rough_path
+    can_use_cycles = output_preference != "prefer_explicit"
+    rough_done = False
+    cycle_finish_done = False
 
     if strategy_code == "parallel_x":
-        if is_monotonic_x_decreasing(path):
+        if can_use_cycles and is_monotonic_x_decreasing(rough_cycle_path):
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
             lines.append("(ABSPANEN Rough - parallel X)")
@@ -379,17 +459,23 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             stock_x_adj = max(stock_x_adj, 0.0)
             emit_approach(lines, stock_x_adj, safe_z, settings)
             lines.append(f"G72 Q{sub_num} X{stock_x_adj:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
-            if mode_idx in (1, 2):
+            if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
-            return lines
-        z_vals = [pp[1] for pp in path] if path else [0.0]
-        rough_lines = rough_turn_parallel_z(path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
-        if rough_lines:
-            rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
-        lines.extend(rough_lines)
+            rough_done = True
+            cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
+        if not rough_done:
+            if output_preference == "prefer_cycle":
+                lines.append("(Fallback-Grund: Kontur nicht G72-zyklustauglich)")
+            elif output_preference == "prefer_explicit":
+                lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
+            z_vals = [pp[1] for pp in rough_path] if rough_path else [0.0]
+            rough_lines = rough_turn_parallel_z(rough_path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
+            if rough_lines:
+                rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
+            lines.extend(rough_lines)
     elif strategy_code == "parallel_z":
-        can_use_g71 = is_monotonic_z_decreasing(path) and is_monotonic_x(path)
-        if can_use_g71:
+        can_use_g71 = is_monotonic_z_decreasing(rough_cycle_path) and is_monotonic_x(rough_cycle_path)
+        if can_use_cycles and can_use_g71:
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
             lines.append("(ABSPANEN Rough - parallel Z)")
@@ -397,22 +483,36 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 lines.extend(_build_cycle_sub(sub_num))
             emit_approach(lines, stock_x, safe_z, settings)
             lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
-            if mode_idx in (1, 2):
+            if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
-            return lines
-        lines.append("(Info: G71 deaktiviert - Kontur nicht zyklustauglich, nutze Move-based Roughing)")
-        xs = [pp[0] for pp in path] if path else [stock_x]
-        rough_lines = rough_turn_parallel_x(path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
-        if rough_lines:
-            rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
-        lines.extend(rough_lines)
-    if mode_idx in (1, 2):
+            rough_done = True
+            cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
+        if not rough_done:
+            if output_preference == "prefer_cycle":
+                lines.append("(Fallback-Grund: Kontur nicht G71-zyklustauglich)")
+            elif relief_mode == "separate":
+                lines.append("(Fallback-Grund: Hinterschnitt separat)")
+            elif pause_enabled and pause_distance > 0.0:
+                lines.append("(Fallback-Grund: Spanbruch/Pausen aktiv)")
+            elif output_preference == "prefer_explicit":
+                lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
+            else:
+                lines.append("(Fallback-Grund: automatische Entscheidung -> Move-based)")
+            xs = [pp[0] for pp in rough_path] if rough_path else [stock_x]
+            rough_lines = rough_turn_parallel_x(rough_path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
+            if rough_lines:
+                rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
+            lines.extend(rough_lines)
+    if relief_mode == "separate" and feature_path:
+        _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
+    if mode_idx in (1, 2) and not cycle_finish_done:
         lines.append("(Schlichtschnitt Kontur)")
-        lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+        finish_points = rough_path if relief_mode == "ignore" else finish_path
+        lines.append(f"G0 X{finish_points[0][0]:.3f} Z{safe_z:.3f}")
         if compensation_command and not nose_disabled:
             lines.append(compensation_command)
         prev_point = None
-        for (x, z) in path:
+        for (x, z) in finish_points:
             current_point = (x, z)
             if current_point != prev_point:
                 lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
