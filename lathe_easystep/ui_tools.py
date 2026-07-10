@@ -143,6 +143,7 @@ def populate_tool_combos(handler, tools) -> None:
         "groove_tool",
         "thread_tool",
         "parting_tool",
+        "parting_undercut_tool",
         "key_tool",
     ]
     for combo_name in combo_names:

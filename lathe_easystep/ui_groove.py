@@ -5,6 +5,7 @@ from qtpy import QtCore, QtGui
 
 def setup_groove_tab_ui(handler) -> None:
     try:
+        handler.groove_process_type = handler._get_widget_by_name("groove_process_type")
         handler.groove_lage = handler._get_widget_by_name("groove_lage")
         handler.groove_ref = handler._get_widget_by_name("groove_ref")
         handler.groove_use_tool_width = handler._get_widget_by_name("groove_use_tool_width")
@@ -16,6 +17,11 @@ def setup_groove_tab_ui(handler) -> None:
         return
     if not all([handler.groove_ref, handler.groove_ref_img, handler.groove_use_tool_width, handler.groove_cutting_width]):
         return
+    try:
+        if handler.groove_process_type is not None:
+            handler.groove_process_type.currentIndexChanged.connect(handler._update_groove_tab_ui)
+    except Exception:
+        pass
     try:
         handler.groove_ref.currentIndexChanged.connect(handler._update_groove_tab_ui)
     except Exception:
@@ -38,6 +44,13 @@ def setup_groove_tab_ui(handler) -> None:
 
 def update_groove_tab_ui(handler) -> None:
     try:
+        process_type = "groove"
+        try:
+            if getattr(handler, "groove_process_type", None) is not None:
+                process_type = str(handler.groove_process_type.currentData() or "groove")
+        except Exception:
+            process_type = "groove"
+        is_parting = process_type == "parting"
         use_tw = bool(handler.groove_use_tool_width.isChecked()) if handler.groove_use_tool_width else False
         if handler.groove_cutting_width:
             handler.groove_cutting_width.setVisible(use_tw)
@@ -47,10 +60,18 @@ def update_groove_tab_ui(handler) -> None:
         idx = int(handler.groove_lage.currentIndex()) if handler.groove_lage is not None else 0
         lbl_z = handler._get_widget_by_name("label_23")
         if lbl_z:
-            if idx in (0, 1):
-                lbl_z.setText("Z0 Bezugspunkt (abs)")
-            else:
-                lbl_z.setText("Z0 Bezugspunkt (abs)")
+            lbl_z.setText("Z0 Bezugspunkt (abs)" if not is_parting else "Abstichposition Z0 (abs)")
+        for label_name, widget_name in (
+            ("label_groove_reduced_feed_start_x", "groove_reduced_feed_start_x"),
+            ("label_groove_reduced_feed", "groove_reduced_feed"),
+            ("label_groove_reduced_rpm", "groove_reduced_rpm"),
+        ):
+            label = handler._get_widget_by_name(label_name)
+            widget = handler._get_widget_by_name(widget_name)
+            if label is not None:
+                label.setVisible(is_parting)
+            if widget is not None:
+                widget.setVisible(is_parting)
         handler._render_groove_diagrams()
         handler._refresh_preview()
     except Exception:

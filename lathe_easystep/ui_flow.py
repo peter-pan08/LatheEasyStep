@@ -6,6 +6,7 @@ from qtvcp.core import Action
 from qtpy import QtCore, QtWidgets
 
 from .model import OpType
+from .ui_messages import format_user_error
 
 
 def build_gcode_lines(handler):
@@ -52,6 +53,10 @@ def handle_move_up(handler):
         if idx <= 0:
             return
         handler.model.move_up(idx)
+        try:
+            handler._mark_all_operations_dirty()
+        except Exception:
+            pass
         handler._refresh_operation_list(select_index=idx - 1)
         handler._refresh_preview()
     finally:
@@ -69,6 +74,10 @@ def handle_move_down(handler):
         if idx < 0 or idx >= handler.list_ops.count() - 1:
             return
         handler.model.move_down(idx)
+        try:
+            handler._mark_all_operations_dirty()
+        except Exception:
+            pass
         handler._refresh_operation_list(select_index=idx + 1)
         handler._refresh_preview()
     finally:
@@ -84,6 +93,10 @@ def handle_new_program(handler):
         handler._current_program_path = None
         handler._current_gcode_path = None
         handler._op_row_user_selected = False
+        try:
+            handler._clear_dirty_state()
+        except Exception:
+            pass
         handler._refresh_operation_list(select_index=-1)
         handler._refresh_preview()
     finally:
@@ -137,7 +150,7 @@ def handle_generate_gcode(handler):
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
             "LatheEasyStep",
-            f"Fehler beim Erzeugen des Programms:\n{exc}",
+            format_user_error(handler, exc, fallback_title="Fehler beim Erzeugen des Programms"),
         )
     finally:
         handler._generating_gcode = False
@@ -172,15 +185,26 @@ def describe_operation(handler, op, number=None):
         tool = p.get("tool", "T01")
         return wrap(f"Planen {mode.title()} (Z {fnum(z_start)}→{fnum(z_end)}){coolant} ({tool})")
     if t == OpType.CONTOUR:
-        return wrap(f"Kontur {p.get('mode', 'schruppen')} ({p.get('side', 'außen')}) ({p.get('tool', 'T01')})")
+        name = str(p.get("name") or "unbenannt").strip()
+        return wrap(f"Kontur: {name}")
     if t == OpType.DRILL:
         return wrap(f"Bohren {p.get('mode', 'normal')} (Z {fnum(p.get('z0', 0.0))}→{fnum(p.get('depth', 0.0))}) ({p.get('tool', 'T01')})")
     if t == OpType.GROOVE:
-        return wrap(f"Einstechen (Z {fnum(p.get('z', 0.0))}; B {fnum(p.get('width', 0.0))}) ({p.get('tool', 'T01')})")
+        process_label = "Abstich" if str(p.get("process_type", "groove")).strip().lower() == "parting" else "Einstich"
+        return wrap(f"{process_label} (Z {fnum(p.get('z', 0.0))}; B {fnum(p.get('width', 0.0))}) ({p.get('tool', 'T01')})")
     if t == OpType.THREAD:
-        return wrap(f"Gewinde {p.get('orientation', 'aussengewinde')} (P {fnum(p.get('pitch', 0.0),2)}; Z {fnum(p.get('z0', 0.0))}→{fnum(p.get('z1', 0.0))}) ({p.get('tool', 'T01')})")
+        relief = ""
+        if str(p.get("relief_mode", "off")).strip().lower() == "suggest":
+            relief = " + Freistich-Vorschlag"
+        thread_type = "Innengewinde" if int(float(p.get("orientation", 0) or 0)) == 1 else "Aussengewinde"
+        hand = "Links" if int(float(p.get("hand", 0) or 0)) == 1 else "Rechts"
+        start_z = float(p.get("thread_start_z", 0.0) or 0.0)
+        length = abs(float(p.get("length", 0.0) or 0.0))
+        end_z = start_z + ((1.0 if int(float(p.get("hand", 0) or 0)) == 1 else -1.0) * length)
+        return wrap(f"Gewinde {thread_type} {hand} (P {fnum(p.get('pitch', 0.0),2)}; Z {fnum(start_z)}→{fnum(end_z)}){relief} ({p.get('tool', 'T01')})")
     if t == OpType.ABSPANEN:
-        return wrap(f"Abspanen ({p.get('contour_name', 'unbekannt')}, {p.get('slice_strategy', 'parallel_z')}) ({p.get('tool', 'T01')})")
+        relief = str(p.get("undercut_mode", "finish_only"))
+        return wrap(f"Abspanen ({p.get('contour_name', 'unbekannt')}, {p.get('slice_strategy', 'parallel_z')}, {relief}) ({p.get('tool', 'T01')})")
     if t == OpType.KEYWAY:
         slot_count = int(float(p.get("slot_count", 1) or 1))
         return wrap(f"Keilnut ({slot_count}x ab Z {fnum(p.get('start_z', 0.0))}) ({p.get('tool', 'T01')})")

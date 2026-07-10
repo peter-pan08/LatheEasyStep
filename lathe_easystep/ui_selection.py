@@ -5,6 +5,15 @@ from .model import OpType
 
 def handle_tab_changed(handler, *_args, **_kwargs) -> None:
     """Keep list selection and tab-specific helpers in sync."""
+    if (
+        not getattr(handler, "_ui_loading", False)
+        and not getattr(handler, "_dirty_warning_suppressed", False)
+        and getattr(handler, "_startup_complete", False)
+    ):
+        try:
+            handler._warn_if_dirty("Tabwechsel")
+        except Exception:
+            pass
     current_type = handler._current_op_type()
     if current_type != OpType.PROGRAM_HEADER:
         try:
@@ -63,6 +72,17 @@ def handle_selection_change(handler, row: int) -> None:
         not getattr(handler, "_ui_loading", False)
         and previous_row != row
         and 0 <= previous_row < len(handler.model.operations)
+        and not getattr(handler, "_dirty_warning_suppressed", False)
+        and getattr(handler, "_startup_complete", False)
+    ):
+        try:
+            handler._warn_if_dirty("Stepwechsel", row=previous_row)
+        except Exception:
+            pass
+    if (
+        not getattr(handler, "_ui_loading", False)
+        and previous_row != row
+        and 0 <= previous_row < len(handler.model.operations)
     ):
         try:
             handler._sync_form_to_operation(previous_row)
@@ -89,7 +109,11 @@ def handle_selection_change(handler, row: int) -> None:
                 OpType.DRILL: 6,
                 OpType.KEYWAY: 7,
             }
-            handler.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
+            handler._dirty_warning_suppressed = True
+            try:
+                handler.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
+            finally:
+                handler._dirty_warning_suppressed = False
         handler._load_params_to_form(op)
         try:
             if op.op_type == OpType.FACE:

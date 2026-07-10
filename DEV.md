@@ -12,6 +12,12 @@ Ziel ist:
   Kontur-Logik, G-Code-Einstiegsmodule und die aktuelle Regressionstest-Basis.
 - Neue Umbauten werden wieder unter `Unreleased` im Changelog gesammelt und
   zuerst auf `DEV` verifiziert.
+- Stand `2026-07-10` auf `DEV`: Freistich-/Hinterschnitt-Backend, Generator-Transparenz,
+  Dirty-State/Warnlogik, Preview-Docking, Groove/Abstich-Split, explizite
+  Toolchange-/Park-Koordinatensysteme, erweiterte Gewinde-UI/-Generatorlogik,
+  robustere Tooltip-Erzwingung, erweiterte Sicherheitslogik und
+  zusaetzliche Validierungen sind implementiert und mit `194 passed`
+  abgesichert.
 
 ---
 
@@ -36,14 +42,40 @@ Konturen bestehen aus Segmenten mit:
 - Kantenmaß
 - bei Radius zusätzlich:
   - `arc_side`: auto / inner / outer
+- optionalem Konturfeature:
+  - `feature_type`: none / din_relief
+  - `thread_size`
+  - `orientation`: start / end
+  - `internal` bzw. side
 
 Die Kontur ist die **Quelle der Wahrheit** für:
 - Vorschau
 - Abspanlogik
 - spätere G2/G3-Ausgabe
+- Freistich-/Hinterschnitt-Ableitungen fuer Finish, Roughing und Feature-only
 
 - `start_x`/`start_z` werden jetzt als erster Punkt übernommen, sodass die erste Segmentzeile tatsächlich eine Ecke erzeugt.
 - `validate_contour_segments_for_profile` überprüft jede Zeile auf Nullsegmente, Winkel und erreichbare Kantenlängen; bei Fehlern wird die Vorschau geleert und der Benutzer sieht die Details im Log (die Funktion ist der Eingang zu G71/G70).
+- `build_contour_variants()` liefert jetzt getrennt:
+  - `finish_primitives`
+  - `rough_primitives`
+  - `feature_primitives`
+  - passende Punktlisten fuer Generator und Tests
+
+## DIN-Freistich / Hinterschnitt
+- Standarddaten liegen zentral in `lathe_easystep/presets/din_relief_presets.py`.
+- Ausbaustufe Stand `2026-07-09`: `M3` bis `M30`.
+- Die Logik behandelt Freistich als Konturfeature der Fertiggeometrie, nicht als eigene Nut-Operation.
+- Bearbeitungsstrategie in `ABSPANEN` ist davon getrennt.
+- Der Kontur-Editor speichert diese Daten jetzt direkt in den Segmentparametern und fuehrt sie durch Save/Load wieder in die UI zurueck.
+
+## Preset-Architektur
+- Gewinde-Presets liegen zentral in `lathe_easystep/presets/thread_presets.py`.
+- DIN-Freistich-/Hinterschnitt-Presets liegen zentral in `lathe_easystep/presets/din_relief_presets.py`.
+- UI, Generator und Validierung greifen nur noch ueber Helper zu, z. B.:
+  - `get_thread_preset("M20")`
+  - `get_din_relief_preset("M20", internal=False)`
+  - `get_thread_with_relief("M20", internal=False)`
 
 ---
 
@@ -72,6 +104,72 @@ Geplante Erweiterung:
 - Kontur wird entlang X-Linien ausgewertet
 - Sichere Anfahrt, Lead-in, Lead-out und Retract werden explizit erzeugt
 - Rückzug X/Z erfolgt simultan (kein sequentielles „hochziehen“)
+- Generator unterstuetzt jetzt fuer Hinterschnitt/Freistich:
+  - `ignore`
+  - `finish_only`
+  - `separate`
+  - `full`
+- Generator dokumentiert jetzt explizit:
+  - Strategie
+  - Ausgabe-Praeferenz
+  - Aufmass X/Z
+  - Hinterschnitt-Modus
+  - Fallback-Gruende
+- `output_preference` wird generatorseitig ausgewertet als:
+  - `auto`
+  - `prefer_cycle`
+  - `prefer_explicit`
+- Die zugehoerigen UI-Felder existieren jetzt direkt im Panel, zusammen mit separatem Hinterschnitt-Werkzeug, Vorschub, Drehzahl und Optionalstop.
+
+## Sicherheitslogik
+- Vor jedem Werkzeugwechsel wird `M5` vor `M9` und `T.. M6` ausgegeben.
+- `emit_approach()` schreibt Warnungen in den G-Code, wenn:
+  - der Startpunkt im Rohteil liegt
+  - der Startpunkt in der Chuck-No-Go-Zone liegt
+  - die Rueckzugsebene den Futterbereich schneidet
+- `get_machine_limit_warnings()` meldet unplausible Werte fuer `XT/ZT`, `XRA/XRI`, `ZRA/ZRI`.
+- Endparklogik ist jetzt als eigene Funktion gekapselt und unterstuetzt:
+  - Werkzeugwechselpunkt
+  - freie Parkposition
+  - sequentielle Endbewegung
+- Werkzeugwechsel- und Parkpositionen koennen explizit als Werkstueck- oder Maschinenkoordinaten erzeugt werden; fuer Maschinenkoordinaten wird `G53` direkt an der Bewegung ausgegeben
+- Spindelmodus kann generatorseitig zwischen `G97` und `G96` unterscheiden; fuer `G96` ist ein Max-RPM-Wert vorgesehen.
+- Werkzeugwechsel kann jetzt optional einen `M1` vor dem Wechsel ausgeben; Gewinde und separater Hinterschnitt koennen ebenfalls optional gestoppt werden.
+- Legacy-Dateien mit gemischter XT-/ZT-Altlogik bleiben weiterhin les- und generierbar.
+
+## Gewindelogik
+- Gewinde unterstuetzen jetzt getrennt:
+  - Innen/Aussen
+  - Rechts/Links
+  - expliziten `thread_start_z`
+- Vorschau und Generator leiten daraus konsistent Anfahrpunkt, Startpunkt, Endpunkt und Z-Laufrichtung ab.
+- Die Step-Beschreibung zeigt Gewindetyp, Hand und den tatsaechlichen Z-Verlauf jetzt korrekt an.
+
+## Validierung und Tests
+- `validate_program_setup()` prueft jetzt zusaetzlich:
+  - `G76` ohne sinnvolle Werte
+  - DIN-Freistich ohne Gewindegroesse
+  - DIN-Freistich ohne Innen/Aussen-Angabe
+  - separates Hinterschnitt-Schruppen ohne Werkzeug
+  - Werkzeugbreite groesser als Freistichbreite
+- Neue Tests:
+  - Gewinde fuer Innen/Aussen + Rechts/Links + variable Start-Z
+  - Groove-Subroutinen liegen hinter dem Hauptprogrammfluss
+  - explizite Toolchange-/Park-Koordinatensysteme
+  - generatorseitig keine zusaetzliche `X0/Z0`-Fahrt nach `T.. M6`
+  - Keyway-Validierung ohne irrefuehrendes `safe_z`-Pflichtfeld
+  - Freistich-Geometrievarianten
+  - separater Hinterschnitt-Pfad
+  - `M5` vor jedem `M6`
+  - Startwarnung im Rohteil
+- Zusaetzlich abgesichert:
+  - CSS + Parkposition
+  - Gewinde-Freistich-Vorschlag
+  - Optionalstop vor Werkzeugwechsel
+  - Persistenz der neuen Expertenoptionen
+- Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
+- Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
+- Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 
 ---
 
@@ -80,6 +178,7 @@ Geplante Erweiterung:
 - Deutsch als Primärsprache
 - qtpy als Abstraktionsschicht (Fallback möglich)
 - Vorschau zeichnet X weiterhin als Durchmesser (für die Beschriftung), nutzt intern aber immer halbierte X-Werte, damit Kreise wirklich rund und in Radiusmaßstab dargestellt werden.
+- Unsaved-State wird bewusst nicht ueber Dateisystem-Events, sondern ueber Form-/Struktur-Aenderungen im Handler gefuehrt; Warnungen beim Reiter-/Stepwechsel sind nur Hinweis, kein implizites Speichern.
 
 ---
 
@@ -93,16 +192,13 @@ Geplante Erweiterung:
 ---
 
 ## Bekannte technische Baustellen
-- Handler-Robustheit in Testdoubles und Embedded-Startpfaden (`self.w`, `_startup_complete`)
-- Klare Trennung zwischen Generator-Fertigstellung und noch offenen UI-/Bindings-Themen
 - Preview-Pipeline trennt aktuell Werkstueckkontur, Bearbeitungsbild und Hilfsgeometrie nicht strikt genug
 - Preview soll im Zweifel zu wenig statt zu viel zeigen; keine impliziten Verbindungen oder Fantasie-Hilfslinien
-- Programmkopf-Vorschau ist noch nicht frueh genug initialisiert; Rohteil/Sicherheitslagen erscheinen aktuell erst nach expliziter Header-Selektion stabil
 - Gewinde-Vorschau ist derzeit nur symbolisch und muss spaeter aus den realen Gewindeparametern geometrisch abgeleitet werden
-- Native Arc-Intersections (statt Sampling)
-- G2/G3-Ausgabe
-- Werkzeuggeometrie (Nasenradius, Lage, Schneidenlänge)
-- Tooltable-Integration mit Plausibilitätsprüfungen
+- Native Arc-Intersections in Move-based Roughing sind noch nicht vollstaendig fachlich ausgereizt
+- G2/G3-Ausgabe kann fuer weitere Roughing-/Preview-Pfade noch vertieft werden
+- Werkzeuggeometrie (Nasenradius, Lage, Schneidenlaenge)
+- Tooltable-Integration mit tieferen Plausibilitaetspruefungen fuer Innen/Aussen-Werkzeuge
 
 ---
 

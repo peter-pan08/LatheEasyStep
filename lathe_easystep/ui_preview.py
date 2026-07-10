@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
+from .checks import validate_program_setup
+from .contour_features import normalize_relief_mode
+from .contour_logic import build_contour_variants
+from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
 
 
@@ -171,6 +175,13 @@ def collect_preview_state(
     prog = handler._collect_program_header() or {}
     prog["__operations"] = list(handler.model.operations)
     try:
+        prog["__warnings"] = (
+            get_machine_limit_warnings(prog)
+            + validate_program_setup(handler.model.operations, {**prog, "tools": getattr(handler, "tools", {})})
+        )
+    except Exception:
+        prog["__warnings"] = []
+    try:
         inserts = 0
         stock_primitives = build_stock_outline(prog)
         if stock_primitives:
@@ -197,6 +208,26 @@ def collect_preview_state(
     except Exception as exc:
         handler._log("[LatheEasyStep] stock/retract preview ERROR:", exc, level="error")
 
+    if active_operation and active_operation.op_type == OpType.ABSPANEN:
+        params = dict(active_operation.params or {})
+        contour_name = str(params.get("contour_name") or "").strip()
+        contour_op = next(
+            (
+                op
+                for op in handler.model.operations
+                if op.op_type == OpType.CONTOUR and str((op.params or {}).get("name") or "").strip() == contour_name
+            ),
+            None,
+        )
+        if contour_op is not None and isinstance(contour_op.params, dict) and contour_op.params.get("segments"):
+            variants = build_contour_variants(contour_op.params)
+            relief_mode = normalize_relief_mode(params.get("undercut_mode"))
+            if variants.get("rough_primitives") and relief_mode in ("ignore", "finish_only", "separate"):
+                paths.append([dict(pr, role="contour_rough") for pr in variants["rough_primitives"]])
+            if variants.get("feature_primitives") and relief_mode != "ignore":
+                feature_role = "feature_separate" if relief_mode == "separate" else "feature"
+                paths.append([dict(pr, role=feature_role) for pr in variants["feature_primitives"]])
+
     return paths, active, prog, active_operation
 
 
@@ -214,6 +245,8 @@ def apply_preview_paths(
         try:
             if hasattr(handler.preview, "set_collision"):
                 handler.preview.set_collision(collision)
+            if hasattr(handler.preview, "set_status_messages"):
+                handler.preview.set_status_messages((program_context or {}).get("__warnings", []) if (program_context or {}).get("preview_warnings") else [])
             handler.preview.set_paths(paths, active_index)
         except TypeError:
             handler.preview.set_paths(paths)
@@ -240,6 +273,8 @@ def apply_preview_paths(
         except Exception:
             pass
         try:
+            if hasattr(handler.preview_slice, "set_status_messages"):
+                handler.preview_slice.set_status_messages((program_context or {}).get("__warnings", []) if (program_context or {}).get("preview_warnings") else [])
             handler.preview_slice.set_paths(paths, active_index)
         except TypeError:
             handler.preview_slice.set_paths(paths)

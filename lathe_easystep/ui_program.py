@@ -19,10 +19,16 @@ def apply_program_header_to_handler(
     def set_combo(widget, value):
         if widget is None or value is None:
             return
+        idx = -1
         try:
-            idx = widget.findText(str(value))
+            idx = widget.findData(value)
         except Exception:
-            return
+            idx = -1
+        if idx < 0:
+            try:
+                idx = widget.findText(str(value))
+            except Exception:
+                return
         if idx >= 0:
             widget.blockSignals(True)
             widget.setCurrentIndex(idx)
@@ -61,6 +67,16 @@ def apply_program_header_to_handler(
     set_combo(getattr(handler, "program_chuck_part_type", None), header.get("chuck_part_type"))
     set_combo(getattr(handler, "program_chuck_grip_mode", None), header.get("chuck_grip_mode"))
     set_combo(getattr(handler, "program_chuck_profile", None), header.get("chuck_profile"))
+    set_combo(getattr(handler, "program_spindle_mode", None), header.get("spindle_mode"))
+    set_combo(getattr(handler, "program_park_mode", None), header.get("park_mode"))
+    toolchange_coords = header.get("toolchange_coords")
+    if toolchange_coords is None:
+        toolchange_coords = "work" if bool(header.get("xt_absolute", True)) and bool(header.get("zt_absolute", True)) else "machine"
+    set_combo(getattr(handler, "program_toolchange_coords", None), toolchange_coords)
+    park_coords = header.get("park_coords")
+    if park_coords is None:
+        park_coords = toolchange_coords
+    set_combo(getattr(handler, "program_park_coords", None), park_coords)
 
     set_value(handler.program_xa, header.get("xa"))
     set_value(handler.program_xi, header.get("xi"))
@@ -81,6 +97,9 @@ def apply_program_header_to_handler(
     set_value(getattr(handler, "program_chuck_x_min", None), header.get("chuck_no_go_x_min"))
     set_value(getattr(handler, "program_chuck_x_max", None), header.get("chuck_no_go_x_max"))
     set_value(getattr(handler, "program_chuck_z_limit", None), header.get("chuck_no_go_z_limit"))
+    set_value(getattr(handler, "program_spindle_max_rpm", None), header.get("spindle_max_rpm"))
+    set_value(getattr(handler, "program_park_x", None), header.get("park_x"))
+    set_value(getattr(handler, "program_park_z", None), header.get("park_z"))
     set_value(handler.program_s1, header.get("s1_max"))
     set_value(handler.program_s3, header.get("s3_max"))
 
@@ -91,6 +110,9 @@ def apply_program_header_to_handler(
     set_checked(handler.program_xt_absolute, header.get("xt_absolute"))
     set_checked(handler.program_zt_absolute, header.get("zt_absolute"))
     set_checked(handler.program_has_subspindle, header.get("has_subspindle"))
+    set_checked(getattr(handler, "program_park_sequential", None), header.get("park_sequential"))
+    set_checked(getattr(handler, "program_optional_stop_toolchange", None), header.get("optional_stop_toolchange"))
+    set_checked(getattr(handler, "program_preview_warnings", None), header.get("preview_warnings"))
 
     if handler.program_name is not None:
         handler.program_name.blockSignals(True)

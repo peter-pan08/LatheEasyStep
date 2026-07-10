@@ -9,6 +9,7 @@ from qtpy import QtCore, QtWidgets
 from .model import OpType
 from .persistence import build_program_data as build_program_data_payload
 from .storage import parse_program_payload
+from .ui_messages import format_user_error
 
 
 def build_program_data(handler):
@@ -92,7 +93,7 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
             with builtins.open(file_path, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, indent=2)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(parent, "Step speichern", f"Step konnte nicht gespeichert werden:\n{exc}")
+            QtWidgets.QMessageBox.critical(parent, "Step speichern", format_user_error(handler, exc, fallback_title="Step konnte nicht gespeichert werden"))
             return
         handler._remember_dialog_path(
             settings,
@@ -101,6 +102,10 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
             "LatheEasyStep/LastDialogDir",
         )
         QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
+        try:
+            handler._clear_dirty_operation(idx)
+        except Exception:
+            pass
     finally:
         handler._saving_step = False
 
@@ -146,6 +151,10 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
         )
         handler._update_parting_ready_state()
         handler._setup_groove_tab_ui()
+        try:
+            handler._clear_dirty_state()
+        except Exception:
+            pass
     finally:
         handler._loading_step = False
 
@@ -182,11 +191,16 @@ def handle_save_program(handler) -> None:
             "Programm gespeichert",
             f"Programm gespeichert unter:\n{file_path}",
         )
+        try:
+            handler._program_dirty = False
+            handler._update_dirty_status()
+        except Exception:
+            pass
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             parent or None,
             "Fehler beim Speichern",
-            f"Programm konnte nicht gespeichert werden:\n{exc}",
+            format_user_error(handler, exc, fallback_title="Programm konnte nicht gespeichert werden"),
         )
 
 
@@ -256,6 +270,10 @@ def handle_load_program(handler) -> None:
             handler._op_row_user_selected = False
             handler._handle_selection_change(selected_row)
         handler._refresh_preview()
+        try:
+            handler._clear_dirty_state()
+        except Exception:
+            pass
         QtWidgets.QMessageBox.information(
             parent,
             "Programm geladen",
@@ -265,7 +283,7 @@ def handle_load_program(handler) -> None:
         QtWidgets.QMessageBox.critical(
             parent or None,
             "Fehler beim Laden",
-            f"Programm konnte nicht geladen werden:\n{exc}",
+            format_user_error(handler, exc, fallback_title="Programm konnte nicht geladen werden"),
         )
 
 
@@ -363,11 +381,15 @@ def handle_save_changes(handler) -> None:
             "Aenderungen speichern",
             "\n".join(messages),
         )
+        try:
+            handler._clear_dirty_state()
+        except Exception:
+            pass
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
             "Aenderungen speichern",
-            f"Aenderungen konnten nicht gespeichert werden:\n{exc}",
+            format_user_error(handler, exc, fallback_title="Aenderungen konnten nicht gespeichert werden"),
         )
     finally:
         handler._saving_changes = False

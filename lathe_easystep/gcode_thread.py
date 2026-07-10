@@ -2,10 +2,23 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
+from .presets import get_din_relief_preset
 from .model import Operation
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
+THREAD_HAND_LABELS: Tuple[str, str] = ("Rechtsgewinde", "Linksgewinde")
+THREAD_RELIEF_SIZE_BY_MAJOR = {
+    3.0: "M3",
+    4.0: "M4",
+    5.0: "M5",
+    6.0: "M6",
+    8.0: "M8",
+    10.0: "M10",
+    12.0: "M12",
+    14.0: "M14",
+    16.0: "M16",
+}
 
 
 def generate_thread_gcode(
@@ -29,6 +42,14 @@ def generate_thread_gcode(
         pitch_warning = "(WARN: Ungueltige Steigung; P=1.0 fallback)"
         pitch = 1.0
     length = float(op.params.get("length", 0.0))
+    start_z = float(op.params.get("thread_start_z", 0.0) or 0.0)
+    hand_raw = op.params.get("hand", 0)
+    hand_idx = 0
+    if isinstance(hand_raw, (int, float)):
+        hand_idx = max(0, min(int(hand_raw), len(THREAD_HAND_LABELS) - 1))
+    hand_label = THREAD_HAND_LABELS[hand_idx]
+    z_dir = -1.0 if hand_idx == 0 else 1.0
+    end_z = start_z + (z_dir * abs(length))
 
     raw_thread_depth = op.params.get("thread_depth")
     if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
@@ -82,8 +103,27 @@ def generate_thread_gcode(
     if standard_label and standard_label != "Benutzerdefiniert":
         comments.append(f"(Normgewinde: {sanitize_comment_text(standard_label)})")
     comments.append(f"(Gewindetyp: {orientation_label})")
+    comments.append(f"(Gewinderichtung: {hand_label})")
+    comments.append(f"(Gewindestart/-ende Z: {start_z:.3f} -> {end_z:.3f})")
     if pitch_warning:
         comments.append(pitch_warning)
+    relief_mode = str(op.params.get("relief_mode", "off") or "off").strip().lower()
+    relief_norm = str(op.params.get("relief_norm", "DIN 76-A") or "DIN 76-A").strip()
+    if relief_mode == "suggest":
+        relief_size = None
+        for dia, size_name in THREAD_RELIEF_SIZE_BY_MAJOR.items():
+            if abs(major_diameter - dia) <= 0.2:
+                relief_size = size_name
+                break
+        if relief_size:
+            side_key = "internal" if internal else "external"
+            relief_data = get_din_relief_preset(relief_size, internal=(side_key == "internal")) or {}
+            if relief_data:
+                comments.append(
+                    f"(Vorschlag Freistich: {relief_norm} {relief_size} {orientation_label} B={float(relief_data.get('width', 0.0)):.3f} T={float(relief_data.get('depth', 0.0)):.3f})"
+                )
+        else:
+            comments.append("(Hinweis: Kein DIN-Freistich-Vorschlag fuer dieses Gewinde gefunden)")
 
     lines: List[str] = []
     append_tool_and_spindle(
@@ -95,13 +135,17 @@ def generate_thread_gcode(
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     lines.extend(comments)
 
+    if bool(op.params.get("optional_stop_before", False)):
+        lines.append("M1")
     lines.append("(Anfahren vor Gewinde)")
     emit_approach(lines, approach_x, safe_z, settings)
+    if abs(start_z - safe_z) > 1e-9:
+        lines.append(f"G0 Z{start_z:.3f}")
     lines.append(
         (
             "G76 "
             f"P{pitch:.4f} "
-            f"Z{-abs(length):.3f} "
+            f"Z{end_z:.3f} "
             f"I{peak_offset:.4f} "
             f"J{first_depth:.4f} "
             f"R{retract_r:.4f} "

@@ -91,7 +91,9 @@ def build_thread_path(params: Dict[str, float]) -> List[Point]:
     pitch = max(0.1, float(params.get("pitch", 1.5) or 1.5))
     length = abs(float(params.get("length", 0.0) or 0.0))
     orientation = int(params.get("orientation", 0))
+    hand = int(params.get("hand", 0) or 0)
     internal = orientation == 1
+    start_z = float(params.get("thread_start_z", 0.0) or 0.0)
     raw_td = params.get("thread_depth")
     if isinstance(raw_td, (int, float)) and raw_td > 0:
         thread_depth = float(raw_td)
@@ -109,22 +111,31 @@ def build_thread_path(params: Dict[str, float]) -> List[Point]:
         crest_dia = max(0.0, major)
         root_dia = max(0.0, major - 2.0 * thread_depth)
 
-    if abs(root_dia - crest_dia) <= 1e-9:
-        return [(crest_dia, 0.0), (crest_dia, -length)]
+    z_dir = -1.0 if hand == 0 else 1.0
+    end_z = start_z + (z_dir * length)
 
-    path: List[Point] = [(crest_dia, 0.0)]
+    if abs(root_dia - crest_dia) <= 1e-9:
+        return [(crest_dia, start_z), (crest_dia, end_z)]
+
+    path: List[Point] = [(crest_dia, start_z)]
     teeth = max(1, int(math.ceil(length / pitch)))
-    z = 0.0
+    z = start_z
     for _ in range(teeth):
-        z_mid = max(-length, z - (pitch * 0.5))
-        z_next = max(-length, z - pitch)
+        z_mid = z + (z_dir * pitch * 0.5)
+        z_next = z + (z_dir * pitch)
+        if z_dir < 0.0:
+            z_mid = max(end_z, z_mid)
+            z_next = max(end_z, z_next)
+        else:
+            z_mid = min(end_z, z_mid)
+            z_next = min(end_z, z_next)
         path.append((root_dia, z_mid))
         path.append((crest_dia, z_next))
         z = z_next
-        if z <= -length + 1e-9:
+        if (z_dir < 0.0 and z <= end_z + 1e-9) or (z_dir > 0.0 and z >= end_z - 1e-9):
             break
-    if path[-1][1] > -length:
-        path.append((root_dia, -length))
+    if (z_dir < 0.0 and path[-1][1] > end_z) or (z_dir > 0.0 and path[-1][1] < end_z):
+        path.append((root_dia, end_z))
     return path
 
 
