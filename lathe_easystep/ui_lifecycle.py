@@ -78,6 +78,7 @@ def bootstrap_widget_refs(handler) -> None:
     handler.btn_save_changes = resolve_or_defer_local("btn_save_changes", "btnSaveChanges")
 
     handler.tab_program = resolve_widget("tabProgram")
+    handler.program_language = resolve_widget("program_language")
     handler.program_unit = resolve_widget("program_unit")
     handler.program_shape = resolve_widget("program_shape")
     handler.program_retract_mode = resolve_widget("program_retract_mode")
@@ -128,9 +129,9 @@ def bootstrap_widget_refs(handler) -> None:
     ):
         setattr(handler, attr_name, getattr(handler.w, attr_name, None))
 
-    handler._contour_edge_template_text = "Keine"
+    handler._contour_edge_template_data = "none"
     handler._contour_edge_template_size = 0.0
-    handler._contour_arc_template_text = "Auto"
+    handler._contour_arc_template_data = "auto"
     handler._contour_row_user_selected = False
     handler._op_row_user_selected = False
     handler._setup_parting_slice_strategy_items()
@@ -159,132 +160,136 @@ def finalize_ui_ready(handler) -> None:
 
     if getattr(handler, "_ui_finalized", False):
         return
+    if getattr(handler, "_finalize_ui_ready_running", False):
+        return
+    handler._finalize_ui_ready_running = True
     handler._finalize_pass = getattr(handler, "_finalize_pass", 0) + 1
     handler._log(f"[LatheEasyStep] _finalize_ui_ready pass {handler._finalize_pass}", level="info")
-
     try:
-        handler._register_known_widgets()
-        handler._rebuild_widget_name_cache()
-    except Exception:
-        pass
-
-    handler._ensure_core_widgets()
-    ensure_advanced_widgets(handler)
-    try:
-        if handler.root_widget is not None:
-            handler.root_widget.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
-            # WA_AlwaysShowToolTips muss auch am tatsächlichen Fenster-Widget
-            # gesetzt sein, damit Qt Tooltips in eingebetteten Panels anzeigt.
-            top = handler.root_widget.window()
-            if top is not None and top is not handler.root_widget:
-                top.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
-    except Exception:
-        pass
-    try:
-        _dock_preview_below_scroll(handler)
-    except Exception:
-        pass
-    if handler.tab_params is not None and handler.tab_params.currentIndex() == 0:
         try:
-            handler.tab_params.setCurrentIndex(1)
+            handler._register_known_widgets()
+            handler._rebuild_widget_name_cache()
         except Exception:
             pass
-    handler._force_attach_core_widgets()
-    handler.list_ops = handler.list_ops or handler._find_any_widget("listOperations")
-    handler.tab_params = handler.tab_params or handler._find_any_widget("tabParams")
-    handler.btn_add = handler.btn_add or handler._find_any_widget("id:34721") or handler._find_any_widget("btnAdd")
-    handler.btn_delete = handler.btn_delete or handler._find_any_widget("btnDelete")
-    handler.btn_move_up = handler.btn_move_up or handler._find_any_widget("btnMoveUp")
-    handler.btn_move_down = handler.btn_move_down or handler._find_any_widget("btnMoveDown")
-    handler.btn_new_program = handler.btn_new_program or handler._find_any_widget("btnNewProgram")
-    handler.btn_generate = handler.btn_generate or handler._find_any_widget("id:34722") or handler._find_any_widget("btnGenerate")
-    if handler.btn_add is None:
-        handler.btn_add = handler._get_widget_by_name("btnAdd")
-    if handler.btn_generate is None:
-        handler.btn_generate = handler._get_widget_by_name("btnGenerate")
-    if getattr(handler, "btn_save_program", None) is None:
-        handler.btn_save_program = getattr(handler, "btn_save_program", None) or handler._find_any_widget("id:34724") or handler._find_any_widget("btnSaveProgram")
-    if handler.btn_save_step is None:
-        handler.btn_save_step = handler._get_widget_by_name("btn_save_step")
-    if handler.btn_load_step is None:
-        handler.btn_load_step = handler._get_widget_by_name("btn_load_step")
-    handler.contour_add_segment = handler.contour_add_segment or handler._find_any_widget("contour_add_segment")
-    handler.contour_delete_segment = handler.contour_delete_segment or handler._find_any_widget("contour_delete_segment")
-    handler.contour_move_up = handler.contour_move_up or handler._find_any_widget("contour_move_up")
-    handler.contour_move_down = handler.contour_move_down or handler._find_any_widget("contour_move_down")
-    handler._ensure_contour_widgets()
-    handler._init_contour_table()
-    try:
-        handler._log(f"[LatheEasyStep] core widgets FIX: add={handler.btn_add} del={handler.btn_delete} list={handler.list_ops}", level="info")
-    except Exception:
-        pass
-    handler._ensure_preview_widgets()
-    handler._connect_core_signals()
-    try:
-        handler._connect_param_change_signals()
-        handler._connect_global_form_signals()
-        handler._connect_tool_preview_signals()
-        handler._connect_mode_visibility_signals()
-    except Exception as exc:
-        handler._log(f"[LatheEasyStep] finalize signal setup failed: {exc}", level="warning")
-    handler._ensure_core_widgets()
-    handler._update_parting_contour_choices()
-    handler._update_parting_ready_state()
-    try:
-        handler._apply_tab_titles(handler._current_language_code())
-        handler._handle_global_change()
-    except Exception:
-        pass
-    try:
-        handler._apply_language_texts()
-    except Exception as exc:
-        handler._log(f"[LatheEasyStep] _apply_language_texts in finalize failed: {exc}", level="warning")
-    for name in ("program_xt_absolute", "program_zt_absolute"):
-        widget = handler._get_widget_by_name(name)
-        if widget is not None:
+
+        handler._ensure_core_widgets()
+        ensure_advanced_widgets(handler)
+        try:
+            if handler.root_widget is not None:
+                handler.root_widget.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
+                top = handler.root_widget.window()
+                if top is not None and top is not handler.root_widget:
+                    top.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
+        except Exception:
+            pass
+        try:
+            _dock_preview_below_scroll(handler)
+        except Exception:
+            pass
+        if handler.tab_params is not None and handler.tab_params.currentIndex() == 0:
             try:
-                widget.setVisible(False)
+                handler.tab_params.setCurrentIndex(1)
             except Exception:
                 pass
-    try:
-        if getattr(handler, "w", None) is not None:
-            try:
-                setattr(handler.w, "ui_ready", True)
-            except Exception:
+        handler._force_attach_core_widgets()
+        handler.list_ops = handler.list_ops or handler._find_any_widget("listOperations")
+        handler.tab_params = handler.tab_params or handler._find_any_widget("tabParams")
+        handler.btn_add = handler.btn_add or handler._find_any_widget("id:34721") or handler._find_any_widget("btnAdd")
+        handler.btn_delete = handler.btn_delete or handler._find_any_widget("btnDelete")
+        handler.btn_move_up = handler.btn_move_up or handler._find_any_widget("btnMoveUp")
+        handler.btn_move_down = handler.btn_move_down or handler._find_any_widget("btnMoveDown")
+        handler.btn_new_program = handler.btn_new_program or handler._find_any_widget("btnNewProgram")
+        handler.btn_generate = handler.btn_generate or handler._find_any_widget("id:34722") or handler._find_any_widget("btnGenerate")
+        if handler.btn_add is None:
+            handler.btn_add = handler._get_widget_by_name("btnAdd")
+        if handler.btn_generate is None:
+            handler.btn_generate = handler._get_widget_by_name("btnGenerate")
+        if getattr(handler, "btn_save_program", None) is None:
+            handler.btn_save_program = getattr(handler, "btn_save_program", None) or handler._find_any_widget("id:34724") or handler._find_any_widget("btnSaveProgram")
+        if handler.btn_save_step is None:
+            handler.btn_save_step = handler._get_widget_by_name("btn_save_step")
+        if handler.btn_load_step is None:
+            handler.btn_load_step = handler._get_widget_by_name("btn_load_step")
+        handler.contour_add_segment = handler.contour_add_segment or handler._find_any_widget("contour_add_segment")
+        handler.contour_delete_segment = handler.contour_delete_segment or handler._find_any_widget("contour_delete_segment")
+        handler.contour_move_up = handler.contour_move_up or handler._find_any_widget("contour_move_up")
+        handler.contour_move_down = handler.contour_move_down or handler._find_any_widget("contour_move_down")
+        handler._ensure_contour_widgets()
+        handler._init_contour_table()
+        try:
+            handler._log(f"[LatheEasyStep] core widgets FIX: add={handler.btn_add} del={handler.btn_delete} list={handler.list_ops}", level="info")
+        except Exception:
+            pass
+        handler._ensure_preview_widgets()
+        handler._connect_core_signals()
+        try:
+            handler._connect_param_change_signals()
+            handler._connect_global_form_signals()
+            handler._connect_language_signal()
+            handler._connect_tool_preview_signals()
+            handler._connect_mode_visibility_signals()
+        except Exception as exc:
+            handler._log(f"[LatheEasyStep] finalize signal setup failed: {exc}", level="warning")
+        handler._ensure_core_widgets()
+        handler._update_parting_contour_choices()
+        handler._update_parting_ready_state()
+        try:
+            handler._apply_tab_titles(handler._current_language_code())
+            handler._handle_global_change()
+        except Exception:
+            pass
+        try:
+            handler._apply_language_texts()
+        except Exception as exc:
+            handler._log(f"[LatheEasyStep] _apply_language_texts in finalize failed: {exc}", level="warning")
+        for name in ("program_xt_absolute", "program_zt_absolute"):
+            widget = handler._get_widget_by_name(name)
+            if widget is not None:
                 try:
-                    handler.w.setProperty("ui_ready", True)
+                    widget.setVisible(False)
                 except Exception:
                     pass
-    except Exception:
-        pass
+        try:
+            if getattr(handler, "w", None) is not None:
+                try:
+                    setattr(handler.w, "ui_ready", True)
+                except Exception:
+                    try:
+                        handler.w.setProperty("ui_ready", True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
-    critical_ok = all([
-        handler.list_ops is not None,
-        handler.btn_add is not None,
-        handler.btn_generate is not None,
-        handler.tab_params is not None,
-    ])
-    if critical_ok:
-        handler._ui_finalized = True
-        handler._startup_complete = True
-        handler._startup_in_progress = False
-        handler._log(
-            f'[LatheEasyStep] _finalize_ui_ready DONE after pass {getattr(handler, "_finalize_pass", "?")} — '
-            f'all critical widgets found, skipping further passes',
-            level="info",
-        )
-        handler._startup_mark("_finalize_ui_ready critical done")
-        handler._schedule_post_start_init()
-    else:
-        missing = [name for name, widget in [
-            ("list_ops", handler.list_ops), ("btn_add", handler.btn_add),
-            ("btn_generate", handler.btn_generate), ("tab_params", handler.tab_params),
-        ] if widget is None]
-        handler._log(
-            f'[LatheEasyStep] _finalize_ui_ready pass {getattr(handler, "_finalize_pass", "?")} — '
-            f'still missing: {missing}, will retry on next timer',
-            level="info",
-        )
+        critical_ok = all([
+            handler.list_ops is not None,
+            handler.btn_add is not None,
+            handler.btn_generate is not None,
+            handler.tab_params is not None,
+        ])
+        if critical_ok:
+            handler._ui_finalized = True
+            handler._startup_complete = True
+            handler._startup_in_progress = False
+            handler._log(
+                f'[LatheEasyStep] _finalize_ui_ready DONE after pass {getattr(handler, "_finalize_pass", "?")} — '
+                f'all critical widgets found, skipping further passes',
+                level="info",
+            )
+            handler._startup_mark("_finalize_ui_ready critical done")
+            handler._schedule_post_start_init()
+        else:
+            missing = [name for name, widget in [
+                ("list_ops", handler.list_ops), ("btn_add", handler.btn_add),
+                ("btn_generate", handler.btn_generate), ("tab_params", handler.tab_params),
+            ] if widget is None]
+            handler._log(
+                f'[LatheEasyStep] _finalize_ui_ready pass {getattr(handler, "_finalize_pass", "?")} — '
+                f'still missing: {missing}, will retry on next timer',
+                level="info",
+            )
+    finally:
+        handler._finalize_ui_ready_running = False
 
 
 def _dock_preview_below_scroll(handler) -> None:

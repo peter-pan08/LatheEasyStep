@@ -49,6 +49,18 @@ Neue Aenderungen sollen zuerst auf dem Branch `DEV` getestet werden. Erst wenn
 die Anpassungen dort fachlich und technisch verifiziert wurden, werden sie in
 den Hauptbranch migriert.
 
+## Strikte UI-/Spracharchitektur (ID-only)
+
+Fuer die UI gilt jetzt verbindlich eine strikte Trennung von Anzeige und Logik:
+
+- sichtbare Texte kommen ausschliesslich aus Sprachdateien (`.lng`)
+- Programmlogik arbeitet nur mit technischen IDs/Werten (`currentData`)
+- es gibt keinen Fallback auf Python- oder `.ui`-Texte
+- fehlt ein Sprachschluessel, wird absichtlich der Schluessel/ID angezeigt
+
+Das macht unvollstaendige Sprachdateien sofort sichtbar und verhindert, dass
+Logik von lokalisierten Anzeige-Texten abhaengt.
+
 ## Wichtiger Hinweis
 
 Es gibt keine Garantie auf vollstaendige oder fehlerfreie Funktion.

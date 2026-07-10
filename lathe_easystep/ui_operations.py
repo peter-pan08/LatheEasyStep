@@ -4,6 +4,49 @@ from qtpy import QtCore, QtWidgets
 
 from .ui_contour import RELIEF_NORMS, RELIEF_THREAD_SIZES
 from .model import OpType, Operation
+from .translations import TRANSLATIONS
+
+
+def _lang(handler) -> str:
+    return handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
+
+
+def _populate_combo(combo, options, lang: str, current_value=None, *, allow_empty: bool = False) -> None:
+    combo.blockSignals(True)
+    combo.clear()
+    if allow_empty:
+        combo.addItem("", "")
+    target_idx = -1
+    for idx, (value, key) in enumerate(options):
+        combo.addItem(TRANSLATIONS.tr(key, lang), value)
+        if current_value is not None and str(current_value).strip().lower() == str(value).strip().lower():
+            target_idx = idx + (1 if allow_empty else 0)
+    combo.setCurrentIndex(target_idx if target_idx >= 0 else (1 if allow_empty and options else 0))
+    combo.blockSignals(False)
+
+
+CONTOUR_EDGE_OPTIONS = [
+    ("none", "combo.contour_edge_type.none"),
+    ("chamfer", "combo.contour_edge_type.chamfer"),
+    ("radius", "combo.contour_edge_type.radius"),
+]
+CONTOUR_ARC_OPTIONS = [
+    ("auto", "runtime.contour.arc.auto"),
+    ("outer", "runtime.contour.arc.outer"),
+    ("inner", "runtime.contour.arc.inner"),
+]
+CONTOUR_FEATURE_OPTIONS = [
+    ("none", "runtime.contour.feature.none"),
+    ("din_relief", "runtime.contour.feature.din_relief"),
+]
+CONTOUR_SIDE_OPTIONS = [
+    ("external", "runtime.contour.side.external"),
+    ("internal", "runtime.contour.side.internal"),
+]
+CONTOUR_ORIENTATION_OPTIONS = [
+    ("end", "runtime.contour.orientation.end"),
+    ("start", "runtime.contour.orientation.start"),
+]
 
 
 def load_operation_params_to_form(handler, op: Operation) -> None:
@@ -65,7 +108,11 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
     if op.op_type == OpType.ABSPANEN and getattr(handler, "parting_contour", None):
         name = str(op.params.get("contour_name") or "")
         handler.parting_contour.blockSignals(True)
-        handler.parting_contour.setCurrentText(name)
+        idx = handler.parting_contour.findData(name, QtCore.Qt.UserRole)
+        if idx >= 0:
+            handler.parting_contour.setCurrentIndex(idx)
+        else:
+            handler.parting_contour.setCurrentText(name)
         handler.parting_contour.blockSignals(False)
         handler._update_parting_ready_state()
         handler._update_parting_mode_visibility()
@@ -101,13 +148,13 @@ def _load_contour_operation_to_form(handler, op: Operation) -> None:
                 return "Z"
             return "XZ"
 
-        def edge_to_text(edge: str) -> str:
+        def edge_to_data(edge: str) -> str:
             edge = (edge or "none").lower()
             if edge in ("chamfer", "fase"):
-                return "Fase"
+                return "chamfer"
             if edge == "radius":
-                return "Radius"
-            return "Keine"
+                return "radius"
+            return "none"
 
         def make_item(text: str) -> QtWidgets.QTableWidgetItem:
             item = QtWidgets.QTableWidgetItem(text)
@@ -128,70 +175,69 @@ def _load_contour_operation_to_form(handler, op: Operation) -> None:
             z_empty = bool(seg.get("z_empty", False))
             x_val = "" if x_empty else f"{float(seg.get('x', 0.0)):.3f}"
             z_val = "" if z_empty else f"{float(seg.get('z', 0.0)):.3f}"
-            edge_txt = edge_to_text(seg.get("edge"))
+            edge_data = edge_to_data(seg.get("edge"))
             size_val = f"{float(seg.get('edge_size', 0.0) or 0.0):.3f}"
             arc_txt = seg.get("arc_side", "auto")
             feature = seg.get("feature") if isinstance(seg.get("feature"), dict) else {}
             feature_type = str(feature.get("feature_type") or "none").strip().lower()
-            feature_type_txt = "DIN-Freistich" if feature_type == "din_relief" else "Keine"
             thread_size_txt = str(feature.get("thread_size") or "").strip().upper()
             norm_txt = str(feature.get("norm") or "").strip()
-            side_txt = "Innen" if bool(feature.get("internal")) or str(feature.get("side") or "").strip().lower() in ("innen", "internal", "inner") else "Außen"
-            orient_txt = "Start" if str(feature.get("orientation") or "end").strip().lower() == "start" else "Ende"
+            side_data = "internal" if bool(feature.get("internal")) or str(feature.get("side") or "").strip().lower() in ("internal", "inner") else "external"
+            orient_data = "start" if str(feature.get("orientation") or "end").strip().lower() == "start" else "end"
+            lang = _lang(handler)
 
             table.setItem(row, 0, make_item(mode_txt))
             table.setItem(row, 1, make_item(x_val))
             table.setItem(row, 2, make_item(z_val))
 
             edge_combo = QtWidgets.QComboBox()
-            edge_combo.addItems(["Keine", "Fase", "Radius"])
-            edge_idx = edge_combo.findText(edge_txt, QtCore.Qt.MatchFixedString)
-            edge_combo.setCurrentIndex(edge_idx if edge_idx >= 0 else 0)
+            _populate_combo(edge_combo, CONTOUR_EDGE_OPTIONS, lang, current_value=edge_data)
             edge_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 3, edge_combo)
 
             table.setItem(row, 4, make_item(size_val))
 
             arc_combo = QtWidgets.QComboBox()
-            arc_combo.addItems(["Auto", "Außen", "Innen"])
-            arc_idx = arc_combo.findText(str(arc_txt).capitalize(), QtCore.Qt.MatchFixedString)
-            arc_combo.setCurrentIndex(arc_idx if arc_idx >= 0 else 0)
-            arc_combo.setEnabled(edge_txt == "Radius")
+            _populate_combo(arc_combo, CONTOUR_ARC_OPTIONS, lang, current_value=arc_txt)
+            arc_combo.setEnabled(edge_data == "radius")
             arc_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 5, arc_combo)
 
             feature_combo = QtWidgets.QComboBox()
-            feature_combo.addItems(["Keine", "DIN-Freistich"])
-            feature_combo.setCurrentIndex(1 if feature_type_txt == "DIN-Freistich" else 0)
+            _populate_combo(feature_combo, CONTOUR_FEATURE_OPTIONS, lang, current_value=feature_type)
             feature_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 6, feature_combo)
 
             thread_combo = QtWidgets.QComboBox()
-            thread_combo.addItems([""] + RELIEF_THREAD_SIZES)
+            thread_combo.addItem("", "")
+            for value in RELIEF_THREAD_SIZES:
+                thread_combo.addItem(value, value)
             if thread_size_txt:
-                idx = thread_combo.findText(thread_size_txt, QtCore.Qt.MatchFixedString)
+                idx = thread_combo.findData(thread_size_txt, QtCore.Qt.UserRole)
                 thread_combo.setCurrentIndex(idx if idx >= 0 else 0)
             thread_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 7, thread_combo)
 
             norm_combo = QtWidgets.QComboBox()
-            norm_combo.addItems([""] + RELIEF_NORMS)
+            norm_combo.addItem("", "")
+            for value in RELIEF_NORMS:
+                norm_combo.addItem(value, value)
             if norm_txt:
-                idx = norm_combo.findText(norm_txt, QtCore.Qt.MatchFixedString)
+                idx = norm_combo.findData(norm_txt, QtCore.Qt.UserRole)
                 norm_combo.setCurrentIndex(idx if idx >= 0 else 0)
             norm_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 8, norm_combo)
 
             side_combo = QtWidgets.QComboBox()
-            side_combo.addItems(["Außen", "Innen"])
-            idx = side_combo.findText(side_txt, QtCore.Qt.MatchFixedString)
+            _populate_combo(side_combo, CONTOUR_SIDE_OPTIONS, lang, current_value=side_data)
+            idx = side_combo.findData(side_data, QtCore.Qt.UserRole)
             side_combo.setCurrentIndex(idx if idx >= 0 else 0)
             side_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 9, side_combo)
 
             orient_combo = QtWidgets.QComboBox()
-            orient_combo.addItems(["Ende", "Start"])
-            idx = orient_combo.findText(orient_txt, QtCore.Qt.MatchFixedString)
+            _populate_combo(orient_combo, CONTOUR_ORIENTATION_OPTIONS, lang, current_value=orient_data)
+            idx = orient_combo.findData(orient_data, QtCore.Qt.UserRole)
             orient_combo.setCurrentIndex(idx if idx >= 0 else 0)
             orient_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 10, orient_combo)

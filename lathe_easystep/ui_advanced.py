@@ -3,9 +3,42 @@ from __future__ import annotations
 from qtpy import QtCore, QtWidgets
 
 from .presets import relief_thread_sizes
+from .ui_registry import COMBO_ITEM_REGISTRY, UI_TEXT_KEYS, UI_TOOLTIP_KEYS
 
 
 RELIEF_THREAD_SIZES = relief_thread_sizes()
+
+
+def _attach_translation_properties(widget) -> None:
+    if widget is None or not hasattr(widget, "objectName"):
+        return
+    try:
+        name = widget.objectName() or ""
+    except Exception:
+        name = ""
+    if not name:
+        return
+    text_key = UI_TEXT_KEYS.get(name)
+    if text_key:
+        try:
+            widget.setProperty("text_key", text_key)
+        except Exception:
+            pass
+    tooltip_key = UI_TOOLTIP_KEYS.get(name)
+    if tooltip_key:
+        try:
+            widget.setProperty("tooltip_key", tooltip_key)
+        except Exception:
+            pass
+    if isinstance(widget, QtWidgets.QAbstractButton):
+        try:
+            widget.setProperty("setting_key", name)
+        except Exception:
+            pass
+
+
+def _seed_text_from_key(name: str) -> str:
+    return UI_TEXT_KEYS.get(name, name)
 
 
 def ensure_advanced_widgets(handler) -> None:
@@ -30,30 +63,72 @@ def _form_layout(root, tab_name: str, layout_name: str):
     return layout if isinstance(layout, QtWidgets.QFormLayout) else None
 
 
-def _ensure_row(handler, layout: QtWidgets.QFormLayout, label_name: str, label_text: str, widget):
+def _ensure_row(handler, layout: QtWidgets.QFormLayout, label_name: str, _label_text: str, widget):
     existing_widget = getattr(handler, widget.objectName(), None)
+    if existing_widget is not None and getattr(existing_widget, "objectName", lambda: "")() != widget.objectName():
+        existing_widget = None
     if existing_widget is None:
         existing_widget = handler._get_widget_by_name(widget.objectName())
+    if existing_widget is None:
+        try:
+            existing_widget = layout.parentWidget().findChild(type(widget), widget.objectName(), QtCore.Qt.FindChildrenRecursively)
+        except Exception:
+            existing_widget = None
     if existing_widget is not None:
         setattr(handler, widget.objectName(), existing_widget)
-        existing_label = getattr(handler, label_name, None) or handler._get_widget_by_name(label_name)
+        _attach_translation_properties(existing_widget)
+        existing_label = getattr(handler, label_name, None)
+        if existing_label is not None and getattr(existing_label, "objectName", lambda: "")() != label_name:
+            existing_label = None
+        if existing_label is None:
+            existing_label = handler._get_widget_by_name(label_name)
+        if existing_label is None:
+            try:
+                existing_label = layout.parentWidget().findChild(QtWidgets.QLabel, label_name, QtCore.Qt.FindChildrenRecursively)
+            except Exception:
+                existing_label = None
         if existing_label is not None:
             setattr(handler, label_name, existing_label)
+            _attach_translation_properties(existing_label)
         return existing_widget
 
-    label = QtWidgets.QLabel(label_text)
+    try:
+        for row in range(layout.rowCount()):
+            field_item = layout.itemAt(row, QtWidgets.QFormLayout.FieldRole)
+            if field_item is not None:
+                field_widget = field_item.widget()
+                if field_widget is not None and getattr(field_widget, "objectName", lambda: "")() == widget.objectName():
+                    setattr(handler, widget.objectName(), field_widget)
+                    _attach_translation_properties(field_widget)
+                    label_item = layout.itemAt(row, QtWidgets.QFormLayout.LabelRole)
+                    label_widget = label_item.widget() if label_item is not None else None
+                    if label_widget is not None:
+                        setattr(handler, label_name, label_widget)
+                        _attach_translation_properties(label_widget)
+                    return field_widget
+    except Exception:
+        pass
+
+    label = QtWidgets.QLabel(_seed_text_from_key(label_name))
     label.setObjectName(label_name)
     layout.addRow(label, widget)
     setattr(handler, label_name, label)
     setattr(handler, widget.objectName(), widget)
+    _attach_translation_properties(label)
+    _attach_translation_properties(widget)
     return widget
 
 
 def _combo(items: list[tuple[str, object]], name: str) -> QtWidgets.QComboBox:
     widget = QtWidgets.QComboBox()
     widget.setObjectName(name)
-    for text, data in items:
-        widget.addItem(text, data)
+    registry_items = COMBO_ITEM_REGISTRY.get(name)
+    if registry_items:
+        for data, text_key in registry_items:
+            widget.addItem(text_key, data)
+    else:
+        for _text, data in items:
+            widget.addItem(str(data), data)
     return widget
 
 
@@ -69,14 +144,14 @@ def _double_spin(name: str, suffix: str = "", minimum: float = -100000.0, maximu
     return widget
 
 
-def _check(name: str, text: str) -> QtWidgets.QCheckBox:
-    widget = QtWidgets.QCheckBox(text)
+def _check(name: str, _text: str) -> QtWidgets.QCheckBox:
+    widget = QtWidgets.QCheckBox(_seed_text_from_key(name))
     widget.setObjectName(name)
     return widget
 
 
-def _label(name: str, text: str) -> QtWidgets.QLabel:
-    widget = QtWidgets.QLabel(text)
+def _label(name: str, _text: str) -> QtWidgets.QLabel:
+    widget = QtWidgets.QLabel(_seed_text_from_key(name))
     widget.setObjectName(name)
     return widget
 

@@ -7,6 +7,7 @@ from .contour_features import normalize_relief_mode
 from .contour_logic import build_contour_variants
 from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
+from .translations import TRANSLATIONS
 
 
 def setup_slice_view(handler) -> None:
@@ -51,12 +52,10 @@ def setup_slice_view(handler) -> None:
 
     if handler.btn_slice_view is not None:
         try:
+            lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
             handler.btn_slice_view.setChecked(False)
-            handler.btn_slice_view.setText("Schnittansicht")
-            handler.btn_slice_view.setToolTip(
-                "Blendet zusaetzlich zur Seitenansicht eine Schnittansicht ein. "
-                "In der Seitenansicht kann die Schnittlinie mit der Maus verschoben werden."
-            )
+            handler.btn_slice_view.setText(TRANSLATIONS.tr("runtime.preview.slice_view.on", lang))
+            handler.btn_slice_view.setToolTip(TRANSLATIONS.tr("runtime.preview.slice_view.tooltip", lang))
             handler.btn_slice_view.toggled.connect(handler._on_toggle_slice_view)
             handler._log("[LatheEasyStep] slice toggle connected", level="info")
         except Exception:
@@ -69,6 +68,25 @@ def setup_slice_view(handler) -> None:
             handler.preview.sliceChanged.connect(handler._on_slice_changed)
         except Exception:
             pass
+
+
+def update_slice_view_button(handler, checked: bool) -> None:
+    button = getattr(handler, "btn_slice_view", None)
+    if button is None:
+        return
+    try:
+        lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
+    except Exception:
+        lang = "de"
+    text_key = "runtime.preview.slice_view.off" if checked else "runtime.preview.slice_view.on"
+    try:
+        button.setText(TRANSLATIONS.tr(text_key, lang))
+    except Exception:
+        pass
+    try:
+        button.setToolTip(TRANSLATIONS.tr("runtime.preview.slice_view.tooltip", lang))
+    except Exception:
+        pass
 
 
 def ensure_preview_widgets(handler, preview_widget_cls, qt_widget_cls) -> None:
@@ -316,7 +334,7 @@ def on_toggle_slice_view(handler, checked: bool) -> None:
             handler._log("[LatheEasyStep] preview_slice visibility change failed", level="warning")
     if handler.btn_slice_view is not None:
         try:
-            handler.btn_slice_view.setText("Schnittansicht aus" if checked else "Schnittansicht")
+            update_slice_view_button(handler, checked)
         except Exception:
             handler._log("[LatheEasyStep] btn_slice_view text update failed", level="warning")
     if checked:

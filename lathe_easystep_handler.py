@@ -46,6 +46,7 @@ from lathe_easystep.ui_preview import (
     refresh_preview,
     setup_slice_view,
     sync_slice_widget,
+    update_slice_view_button,
 )
 from lathe_easystep.ui_params import setup_param_maps
 from lathe_easystep.ui_selection import (
@@ -138,12 +139,14 @@ from lathe_easystep.ui_lifecycle import bootstrap_widget_refs, finalize_ui_ready
 from lathe_easystep.ui_advanced import ensure_advanced_widgets
 from lathe_easystep.ui_dirty import (
     clear_dirty_operation,
+    clear_program_dirty,
     clear_dirty_state,
     current_operation_is_dirty,
     has_unsaved_changes,
     init_dirty_state,
     mark_all_operations_dirty,
     mark_dirty,
+    mark_program_structure_dirty,
     tab_label as dirty_tab_label,
     update_dirty_status,
     warn_if_dirty,
@@ -159,7 +162,14 @@ from lathe_easystep.ui_signals import (
     connect_tool_preview_signals,
     prepare_signal_connection_context,
 )
-from lathe_easystep.presets import metric_thread_presets, trapezoidal_thread_presets
+from lathe_easystep.presets import (
+    metric_thread_presets,
+    trapezoidal_thread_presets,
+    validate_thread_preset_data,
+)
+from lathe_easystep.translations import TRANSLATIONS
+from lathe_easystep.ui_registry import COMBO_ITEM_REGISTRY, TAB_TITLE_KEYS, UI_TEXT_KEYS, UI_TOOLTIP_KEYS
+from lathe_easystep.ui_static import apply_ui_static_translations
 
 # Module logger for non-instantiated contexts
 _LOGGER = logging.getLogger(__name__)
@@ -615,6 +625,62 @@ THREAD_TOOLTIP_TRANSLATIONS = {
 }
 
 GENERAL_TOOLTIP_TRANSLATIONS = {
+    "program_language": {
+        "de": "Waehlt die Sprache fuer Beschriftungen und Tooltips im Panel.",
+        "en": "Select the panel language for labels and tooltips.",
+    },
+    "program_npv": {
+        "de": "Nullpunktverschiebung beziehungsweise Werkstueckkoordinatensystem fuer das Programm, zum Beispiel G54 bis G59.3.",
+        "en": "Work offset / work coordinate system used by the program, for example G54 to G59.3.",
+    },
+    "program_unit": {
+        "de": "Bestimmt, ob die Programmdaten in Millimeter oder Inch gepflegt und ausgegeben werden.",
+        "en": "Choose whether program data is entered and emitted in millimeters or inches.",
+    },
+    "program_shape": {
+        "de": "Rohteilgrundform. Davon haengen sichtbare Eingabefelder und Teile der Vorschau ab.",
+        "en": "Base stock shape. This affects visible input fields and parts of the preview.",
+    },
+    "program_xa": {
+        "de": "Aussendurchmesser des Rohteils am Start. Bei G7 als Durchmesserwert eingeben.",
+        "en": "Outer stock diameter at the start. Enter as a diameter value in G7 mode.",
+    },
+    "program_xi": {
+        "de": "Innendurchmesser des Rohteils, falls mit Rohr oder Innenbearbeitung gearbeitet wird.",
+        "en": "Inner stock diameter when using tube stock or internal machining.",
+    },
+    "program_za": {
+        "de": "Vorderes Anfangsmass in Z. Von hier aus beginnt die axiale Rohteilgeometrie.",
+        "en": "Front start dimension in Z. This defines the axial stock start position.",
+    },
+    "program_zi": {
+        "de": "Hinteres Endmass in Z. Zusammen mit ZA ergibt sich die axiale Rohteillaenge.",
+        "en": "Rear end dimension in Z. Together with ZA this defines the stock length.",
+    },
+    "program_zb": {
+        "de": "Bearbeitungsgrenze in Z. Dient unter anderem als Bezug fuer Futter- und Sicherheitslogik.",
+        "en": "Machining Z limit. Used as a reference for chuck and safety logic.",
+    },
+    "program_w": {
+        "de": "Breite W fuer nicht-zylindrische Rohteilformen wie Rechteck oder N-Eck.",
+        "en": "Width W for non-cylindrical stock shapes such as rectangle or polygon.",
+    },
+    "program_l": {
+        "de": "Laenge L fuer Rohteilformen, die zusaetzliche Laengenangaben benoetigen.",
+        "en": "Length L for stock shapes that require an additional length value.",
+    },
+    "program_n": {
+        "de": "Kantenanzahl N fuer polygonale Rohteilformen.",
+        "en": "Number of edges N for polygonal stock shapes.",
+    },
+    "program_sw": {
+        "de": "Schluesselweite SW fuer passende Mehrkant- oder Polygonrohteilformen.",
+        "en": "Across-flats size SW for matching polygonal stock shapes.",
+    },
+    "program_retract_mode": {
+        "de": "Legt fest, welche Rueckzugsebenen verfuegbar und fuer Generator sowie Vorschau relevant sind: einfach, erweitert oder alle.",
+        "en": "Choose which retract planes are available and relevant for generator and preview: simple, extended, or all.",
+    },
     "program_xra": {
         "de": "Aeussere Rueckzugsebene in X fuer sichere Verfahrwege ausserhalb des Werkstuecks.",
         "en": "Outer X retract plane for safe moves outside the part.",
@@ -809,6 +875,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
         except Exception:
             return 0.0
         return x_num * 0.5 if getattr(self, "x_is_diameter", False) else x_num
+
+    def _display_x_to_label(self, x_display: float) -> float:
+        """Map display-space X back to the user-facing axis label value."""
+        try:
+            x_num = float(x_display)
+        except Exception:
+            return 0.0
+        return x_num * 2.0 if getattr(self, "x_is_diameter", False) else x_num
 
 
     def _on_blink_timer(self):
@@ -1518,13 +1592,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{val:.0f}")
+                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{self._display_x_to_label(val):.0f}")
                 val += step_x
 
             # Achsbeschriftungen
             painter.setPen(font_pen)
             painter.drawText(QtCore.QPointF(rect.right() - 20, z_axis.y() - 6), "Z")
-            painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X/R")
+            painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X")
             draw_order = [idx for idx in range(len(self.paths)) if idx != self.active_index]
             if self.active_index is not None and 0 <= self.active_index < len(self.paths):
                 draw_order.append(self.active_index)
@@ -1906,11 +1980,13 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
     Supports absolute/incremental flags:
       - xra_absolute / xri_absolute / zra_absolute / zri_absolute
 
-    Interpretation (matching program header semantics):
-      - XRA (outer retract): if incremental -> XA + XRA, else -> XRA
-      - XRI (inner retract): if incremental -> XI - XRI, else -> XRI
-      - ZRA (front retract): if incremental -> ZA + ZRA, else -> ZRA
-      - ZRI (back retract):  if incremental -> ZI - ZRI, else -> ZRI
+    Interpretation (matching current program header semantics):
+      - XRA (outer retract): always available; if incremental -> XA + XRA, else -> XRA
+      - XRI (inner retract): only relevant in retract mode `erweitert`/`alle`;
+        if incremental -> XI + XRI, else -> XRI
+      - ZRA (front retract): always available; if incremental -> ZA + ZRA, else -> ZRA
+      - ZRI (back retract): only relevant in retract mode `alle`;
+        if incremental -> ZI - ZRI, else -> ZRI
 
     Output format:
       {"role":"retract","type":"line","p1":(x,z),"p2":(x,z)}
@@ -1965,13 +2041,13 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-    # XRI (inner) - only meaningful if XI > 0
+    # XRI (inner)
     xri = program.get("xri", None)
-    if xri is not None and xi > 0.0:
+    if xri is not None:
         try:
             xri_f = _sf(xri)
             if abs(xri_f) > 1e-12:
-                x = xri_f if _is_true("xri_absolute") else (xi - xri_f)
+                x = xri_f if _is_true("xri_absolute") else (xi + xri_f)
                 vline(x)
         except Exception:
             pass
@@ -3032,7 +3108,7 @@ class WidgetResolver:
                 iid = int(maybe_id)
                 for r in roots:
                     try:
-                        for w in r.findChildren(cls, QtCore.Qt.FindChildrenRecursively):
+                        for w in r.findChildren(cls, options=QtCore.Qt.FindChildrenRecursively):
                             try:
                                 val = w.property("idx")
                                 if val is None:
@@ -3052,7 +3128,7 @@ class WidgetResolver:
             if name:
                 c = r.findChildren(cls, name, QtCore.Qt.FindChildrenRecursively)
             else:
-                c = r.findChildren(cls, QtCore.Qt.FindChildrenRecursively)
+                c = r.findChildren(cls, options=QtCore.Qt.FindChildrenRecursively)
             found.extend(c)
 
         for w in self.widgets:
@@ -3061,7 +3137,7 @@ class WidgetResolver:
             if name:
                 c = w.findChildren(cls, name, QtCore.Qt.FindChildrenRecursively)
             else:
-                c = w.findChildren(cls, QtCore.Qt.FindChildrenRecursively)
+                c = w.findChildren(cls, options=QtCore.Qt.FindChildrenRecursively)
             found.extend(c)
 
         uniq = []
@@ -3239,6 +3315,7 @@ class HandlerClass:
             "contourPreview",
             "previewSliceWidget",
             "btn_slice_view",
+            "program_language",
             "program_unit",
             "program_shape",
             "program_retract_mode",
@@ -3594,8 +3671,14 @@ class HandlerClass:
     def _mark_all_operations_dirty(self) -> None:
         mark_all_operations_dirty(self)
 
+    def _mark_program_structure_dirty(self, *, operation_indices: set[int] | None = None) -> None:
+        mark_program_structure_dirty(self, operation_indices=operation_indices)
+
     def _clear_dirty_state(self) -> None:
         clear_dirty_state(self)
+
+    def _clear_program_dirty(self, *, header: bool = False, structure: bool = False, all_flags: bool = False) -> None:
+        clear_program_dirty(self, header=header, structure=structure, all_flags=all_flags)
 
     def _clear_dirty_operation(self, operation_index: int) -> None:
         clear_dirty_operation(self, operation_index)
@@ -3686,6 +3769,7 @@ class HandlerClass:
             ("preview", "previewWidget", LathePreviewWidget),
             ("contour_preview", "contourPreview", LathePreviewWidget),
             ("preview_slice", "previewSliceWidget", QtWidgets.QWidget),
+            ("program_language", "program_language", QtWidgets.QComboBox),
             ("program_unit", "program_unit", QtWidgets.QComboBox),
             ("program_shape", "program_shape", QtWidgets.QComboBox),
             ("program_retract_mode", "program_retract_mode", QtWidgets.QComboBox),
@@ -4126,7 +4210,7 @@ class HandlerClass:
             if maybe_id is not None:
                 try:
                     iid = int(maybe_id)
-                    for w in r.findChildren(QtWidgets.QWidget, QtCore.Qt.FindChildrenRecursively):
+                    for w in r.findChildren(QtWidgets.QWidget, options=QtCore.Qt.FindChildrenRecursively):
                         try:
                             val = w.property("idx")
                             if val is None:
@@ -4238,7 +4322,7 @@ class HandlerClass:
         if root is not None:
             try:
                 widgets = [root]
-                widgets.extend(root.findChildren(QtWidgets.QWidget, QtCore.Qt.FindChildrenRecursively))
+                widgets.extend(root.findChildren(QtWidgets.QWidget, options=QtCore.Qt.FindChildrenRecursively))
                 for widget in widgets:
                     try:
                         obj_name = widget.objectName()
@@ -4263,6 +4347,20 @@ class HandlerClass:
         bucket = self._widget_name_cache.setdefault(obj_name, [])
         if widget not in bucket:
             bucket.append(widget)
+
+    def _widgets_by_name(self, name: str) -> List[QtWidgets.QWidget]:
+        if not name:
+            return []
+        if not hasattr(self, "_widget_name_cache") or not getattr(self, "_widget_name_cache", None):
+            try:
+                self._rebuild_widget_name_cache()
+            except Exception:
+                pass
+        widgets = list((getattr(self, "_widget_name_cache", {}) or {}).get(name, []))
+        if widgets:
+            return widgets
+        widget = self._get_widget_by_name(name)
+        return [widget] if widget is not None else []
 
     def _get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
         """Robuste Widget-Auflösung mit erweiterten Fallbacks für embedded Panel.
@@ -4407,43 +4505,40 @@ class HandlerClass:
         try:
             if root is not None:
                 lname = (name or "").lower()
-                # try common alternates: swap 'preview' <-> 'contour'
+                wants_preview = "preview" in lname or "contourpreview" in lname
                 alternates = set()
-                if 'preview' in lname and 'contour' in lname:
-                    alternates.add(lname.replace('preview', 'contour'))
-                    alternates.add(lname.replace('contour', 'preview'))
-                else:
-                    if 'preview' in lname:
-                        alternates.add(lname.replace('preview', 'contour'))
-                    if 'contour' in lname:
-                        alternates.add(lname.replace('contour', 'preview'))
+                if "preview" in lname and "contour" in lname:
+                    alternates.add(lname.replace("preview", "contour"))
+                    alternates.add(lname.replace("contour", "preview"))
+                elif wants_preview:
+                    alternates.add(lname.replace("preview", "contour"))
+                elif "contour" in lname:
+                    alternates.add(lname.replace("contour", "preview"))
 
-                # scan only widgets inside the panel root
-                for w in root.findChildren(QtWidgets.QWidget, QtCore.Qt.FindChildrenRecursively):
-                    try:
-                        on = (w.objectName() or "").lower()
-                    except Exception:
-                        on = ""
-                    # objectName alternate match
-                    if on and any(alt == on for alt in alternates):
-                        return w
-
-                    # class-name based detection for preview widgets
-                    try:
-                        # PyQt: metaObject().className() is reliable for custom widgets
-                        clsname = ""
-                        mo = getattr(w, 'metaObject', None)
-                        if callable(mo):
-                            try:
-                                clsname = w.metaObject().className() or ""
-                            except Exception:
-                                clsname = w.__class__.__name__
-                        else:
-                            clsname = w.__class__.__name__
-                        if clsname and 'lathepreview' in clsname.lower():
+                if alternates or wants_preview:
+                    for w in root.findChildren(QtWidgets.QWidget, options=QtCore.Qt.FindChildrenRecursively):
+                        try:
+                            on = (w.objectName() or "").lower()
+                        except Exception:
+                            on = ""
+                        if on and any(alt == on for alt in alternates):
                             return w
-                    except Exception:
-                        pass
+                        if not wants_preview:
+                            continue
+                        try:
+                            clsname = ""
+                            mo = getattr(w, "metaObject", None)
+                            if callable(mo):
+                                try:
+                                    clsname = w.metaObject().className() or ""
+                                except Exception:
+                                    clsname = w.__class__.__name__
+                            else:
+                                clsname = w.__class__.__name__
+                            if clsname and "lathepreview" in clsname.lower():
+                                return w
+                        except Exception:
+                            pass
         except Exception:
             pass
 
@@ -5138,26 +5233,36 @@ class HandlerClass:
             return text if text else "0"
 
         lang = self._current_language_code()
-        custom = "Custom" if lang == "en" else "Benutzerdefiniert"
+        custom_key = "combo.thread_standard.custom"
 
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem(custom, {"label": custom})
+        combo.addItem(TRANSLATIONS.tr(custom_key, lang), {"label_key": custom_key})
         # Metric threads (ISO 60°) -> profile "metric"
         for name, diameter, pitch in metric_thread_presets():
             pitch_text = _compact(pitch)
-            label = f"{name} x {pitch_text}"
+            technical_id = f"thread.standard.metric.{name.lower()}x{pitch_text.replace('.', '_')}"
             combo.addItem(
-                label,
-                {"label": label, "major": diameter, "pitch": pitch, "profile": "metric"},
+                TRANSLATIONS.tr(technical_id, lang),
+                {
+                    "label_key": technical_id,
+                    "major": diameter,
+                    "pitch": pitch,
+                    "profile": "metric",
+                },
             )
         # Trapezoidal threads -> profile "tr"
         for name, diameter, pitch in trapezoidal_thread_presets():
             pitch_text = _compact(pitch)
-            label = f"{name} x {pitch_text}"
+            technical_id = f"thread.standard.tr.{name.lower()}x{pitch_text.replace('.', '_')}"
             combo.addItem(
-                label,
-                {"label": label, "major": diameter, "pitch": pitch, "profile": "tr"},
+                TRANSLATIONS.tr(technical_id, lang),
+                {
+                    "label_key": technical_id,
+                    "major": diameter,
+                    "pitch": pitch,
+                    "profile": "tr",
+                },
             )
         combo.setCurrentIndex(0)
         combo.blockSignals(False)
@@ -5193,6 +5298,8 @@ class HandlerClass:
             return
         data = combo.currentData()
         if not isinstance(data, dict):
+            return
+        if validate_thread_preset_data(data):
             return
         major = data.get("major")
         pitch = data.get("pitch")
@@ -5241,6 +5348,16 @@ class HandlerClass:
             return
         data = combo.currentData()
         if not isinstance(data, dict):
+            return
+        validation_errors = validate_thread_preset_data(data)
+        if validation_errors:
+            try:
+                self._log(
+                    f"[LatheEasyStep] thread preset skipped: {'; '.join(validation_errors)}",
+                    level="warning",
+                )
+            except Exception:
+                pass
             return
 
         self._thread_applying_standard = True
@@ -5377,7 +5494,7 @@ class HandlerClass:
         combo = getattr(self, "parting_slice_strategy", None)
         if combo is None:
             return
-        for idx, data_value in enumerate((1, 2)):
+        for idx, data_value in enumerate(("parallel_x", "parallel_z")):
             if idx < combo.count():
                 combo.setItemData(idx, data_value, QtCore.Qt.UserRole)
 
@@ -5397,17 +5514,11 @@ class HandlerClass:
         except Exception:
             pass
         if isinstance(value, str):
-            target = None
-            lowered = value.lower()
-            if lowered == "parallel_x":
-                target = "Parallel X"
-            elif lowered == "parallel_z":
-                target = "Parallel Z"
-            if target is not None:
-                idx = combo.findText(target)
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
-                    return True
+            lowered = value.strip().lower()
+            idx = combo.findData(lowered, QtCore.Qt.UserRole)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                return True
         return False
 
     def _check_unit_change(self):
@@ -5551,71 +5662,143 @@ class HandlerClass:
 
     def _current_language_code(self) -> str:
         combo = self._get_widget_by_name(LANGUAGE_WIDGET_NAME)
-        if combo is None:
+        if combo is None or not hasattr(combo, "currentIndex"):
             return DEFAULT_LANGUAGE
-        return "en" if combo.currentIndex() == 1 else "de"
+        try:
+            data = combo.currentData()
+        except Exception:
+            data = None
+        if isinstance(data, str):
+            code = data.strip().lower()
+            if code:
+                return code
+        try:
+            idx = int(combo.currentIndex())
+        except Exception:
+            idx = 0
+        if idx == 1:
+            return "en"
+        if idx == 2:
+            return "es"
+        return "de"
 
     def _handle_language_change(self, *_args):
         self._apply_language_texts()
         self._thread_standard_populated = False
         self._setup_thread_helpers()
 
-    def _apply_language_texts(self):
-        lang = self._current_language_code()
-        for name, translations in TEXT_TRANSLATIONS.items():
-            # Schutz für Embedded-Mode: generische Qt-Labelnamen wie label_32,
-            # label_38 etc. kollidieren häufig mit Host-GUI-Widgets (z. B.
-            # QtDragon Tool-Info). Diese Namen daher grundsätzlich nicht
-            # automatisch überschreiben.
+    def _apply_registered_texts(self, lang: str):
+        for name, key in UI_TEXT_KEYS.items():
             if re.match(r"^label_\d+$", str(name or "")):
                 continue
-            widget = self._get_widget_by_name(name)
-            if widget is None:
-                continue
-            text = translations.get(lang)
-            if text is not None:
+            text = TRANSLATIONS.tr(key, lang)
+            for widget in self._widgets_by_name(name):
+                try:
+                    widget.setProperty("text_key", key)
+                except Exception:
+                    pass
                 try:
                     widget.setText(text)
                 except Exception:
                     pass
+
+    def _apply_widget_property_translations(self, lang: str):
+        root = self.root_widget or self._find_root_widget()
+        if root is None:
+            return
+        try:
+            widgets = [root]
+            widgets.extend(root.findChildren(QtWidgets.QWidget, options=QtCore.Qt.FindChildrenRecursively))
+        except Exception:
+            widgets = [root]
+        for widget in widgets:
+            try:
+                text_key = widget.property("text_key")
+            except Exception:
+                text_key = None
+            if isinstance(text_key, str) and text_key:
+                text = TRANSLATIONS.tr(text_key, lang)
+                try:
+                    widget.setText(text)
+                except Exception:
+                    pass
+            try:
+                tooltip_key = widget.property("tooltip_key")
+            except Exception:
+                tooltip_key = None
+            if isinstance(tooltip_key, str) and tooltip_key:
+                text = TRANSLATIONS.tr(tooltip_key, lang)
+                self._set_tooltip_deep(widget, text)
+
+    def _apply_language_texts(self):
+        lang = self._current_language_code()
+        root = getattr(self, "root_widget", None)
+        if root is None:
+            find_root = getattr(self, "_find_root_widget", None)
+            if callable(find_root):
+                try:
+                    root = find_root()
+                except Exception:
+                    root = None
+        if root is not None:
+            try:
+                apply_ui_static_translations(root, TRANSLATIONS.tr, lang)
+            except Exception:
+                pass
+        self._apply_registered_texts(lang)
         self._apply_combo_translations(lang)
         self._handle_global_change()
         self._apply_tab_titles(lang)
         self._apply_button_translations(lang)
         try:
-            self._apply_general_tooltips(lang)
-        except Exception:
-            pass
-        # Thread tooltips (localized)
-        try:
-            self._apply_thread_tooltips(lang)
+            self._apply_registered_tooltips(lang)
         except Exception:
             pass
         try:
-            self._apply_parting_tooltips(lang)
+            self._apply_widget_property_translations(lang)
+        except Exception:
+            pass
+        # No tooltip fallback text from widgets/UI: only explicit translation keys are allowed.
+        try:
+            if getattr(self, "contour_segments", None) is not None:
+                self._init_contour_table()
         except Exception:
             pass
         try:
-            self._apply_groove_tooltips(lang)
+            if getattr(self, "btn_slice_view", None) is not None:
+                update_slice_view_button(self, bool(self.btn_slice_view.isChecked()))
         except Exception:
             pass
         try:
             self._update_dirty_status()
         except Exception:
             pass
+        TRANSLATIONS.validate_language(lang, getattr(self, "LOG", None))
 
     def _apply_combo_translations(self, lang: str):
-        for name, options in COMBO_OPTION_TRANSLATIONS.items():
-            widget = self._get_widget_by_name(name)
-            if widget is None or lang not in options:
-                continue
-            current_index = widget.currentIndex()
-            widget.blockSignals(True)
-            widget.clear()
-            for entry in options[lang]:
-                widget.addItem(entry)
-            widget.setCurrentIndex(max(0, min(current_index, widget.count() - 1)))
-            widget.blockSignals(False)
+        for name, items in COMBO_ITEM_REGISTRY.items():
+            for widget in self._widgets_by_name(name):
+                if not all(hasattr(widget, attr) for attr in ("currentIndex", "count", "blockSignals", "clear", "addItem", "setCurrentIndex")):
+                    continue
+                current_index = widget.currentIndex()
+                try:
+                    current_data = widget.currentData()
+                except Exception:
+                    current_data = None
+                widget.blockSignals(True)
+                widget.clear()
+                for value, text_key in items:
+                    widget.addItem(TRANSLATIONS.tr(text_key, lang), value)
+                target_index = -1
+                if current_data is not None:
+                    try:
+                        target_index = widget.findData(current_data, QtCore.Qt.UserRole)
+                    except Exception:
+                        target_index = -1
+                if target_index < 0:
+                    target_index = max(0, min(current_index, widget.count() - 1)) if widget.count() else -1
+                widget.setCurrentIndex(target_index)
+                widget.blockSignals(False)
         self._setup_parting_slice_strategy_items()
 
     def _apply_tab_titles(self, lang: str):
@@ -5626,21 +5809,12 @@ class HandlerClass:
         count = tab_widget.count()
         for idx in range(count):
             title = None
-            translations = None
             tab_widget_page = tab_widget.widget(idx)
             if tab_widget_page is not None:
                 tab_name = tab_widget_page.objectName()
-                translations = TAB_TRANSLATIONS.get(tab_name)
-            if translations is None and idx < len(TAB_ORDER):
-                translations = TAB_TRANSLATIONS.get(TAB_ORDER[idx])
-            if translations:
-                title = translations.get(lang)
-            if title is None:
-                current_text = self.tab_params.tabText(idx).strip()
-                for translations in TAB_TRANSLATIONS.values():
-                    if current_text in translations.values():
-                        title = translations.get(lang)
-                        break
+                title = TRANSLATIONS.tab_title(tab_name, lang)
+            if not title and idx < len(TAB_ORDER):
+                title = TRANSLATIONS.tab_title(TAB_ORDER[idx], lang)
             if title:
                 try:
                     self.tab_params.setTabText(idx, title)
@@ -5648,12 +5822,11 @@ class HandlerClass:
                     pass
 
     def _apply_button_translations(self, lang: str):
-        for name, translations in BUTTON_TRANSLATIONS.items():
-            button = self._get_widget_by_name(name)
-            if button is None:
+        for name, key in UI_TEXT_KEYS.items():
+            if not name.startswith("btn"):
                 continue
-            text = translations.get(lang)
-            if text is not None:
+            text = TRANSLATIONS.tr(key, lang)
+            for button in self._widgets_by_name(name):
                 try:
                     button.setText(text)
                 except Exception:
@@ -5742,14 +5915,135 @@ class HandlerClass:
             except Exception:
                 pass
 
-    def _apply_thread_tooltips(self, lang: str):
-        """Setzt Tooltips für bekannte Thread-Widgets gemäß Sprache."""
-        for name, translations in THREAD_TOOLTIP_TRANSLATIONS.items():
+    def _layout_item_contains_widget(self, item, widget) -> bool:
+        if item is None or widget is None:
+            return False
+        try:
+            direct_widget = item.widget()
+        except Exception:
+            direct_widget = None
+        if direct_widget is widget:
+            return True
+        if direct_widget is not None and hasattr(direct_widget, "findChildren"):
+            try:
+                if widget in direct_widget.findChildren(QtWidgets.QWidget):
+                    return True
+            except Exception:
+                pass
+        try:
+            layout = item.layout()
+        except Exception:
+            layout = None
+        if layout is None:
+            return False
+        try:
+            for idx in range(layout.count()):
+                if self._layout_item_contains_widget(layout.itemAt(idx), widget):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _form_label_for_widget(self, widget):
+        form_layout_cls = getattr(QtWidgets, "QFormLayout", None)
+        if form_layout_cls is None:
+            return None
+        parent = widget
+        while parent is not None:
+            try:
+                layout = parent.layout() if hasattr(parent, "layout") else None
+            except Exception:
+                layout = None
+            if isinstance(layout, form_layout_cls):
+                try:
+                    direct = layout.labelForField(widget)
+                except Exception:
+                    direct = None
+                if direct is not None:
+                    return direct
+                try:
+                    for row in range(layout.rowCount()):
+                        field_item = layout.itemAt(row, form_layout_cls.FieldRole)
+                        if self._layout_item_contains_widget(field_item, widget):
+                            label_item = layout.itemAt(row, form_layout_cls.LabelRole)
+                            return label_item.widget() if label_item is not None else None
+                except Exception:
+                    pass
+            try:
+                parent = parent.parentWidget() if hasattr(parent, "parentWidget") else None
+            except Exception:
+                parent = None
+        return None
+
+    def _fallback_tooltip_text(self, widget) -> str:
+        if widget is None:
+            return ""
+        try:
+            name = str(widget.objectName() or "").strip()
+        except Exception:
+            name = ""
+        label_candidates = []
+        if name:
+            label_candidates.extend(
+                [
+                    f"label_{name}",
+                    f"label_prog_{name[8:]}" if name.startswith("program_") else "",
+                    f"label_face_{name[5:]}" if name.startswith("face_") else "",
+                    f"label_thread_{name[7:]}" if name.startswith("thread_") else "",
+                    f"label_groove_{name[7:]}" if name.startswith("groove_") else "",
+                    f"label_drill_{name[6:]}" if name.startswith("drill_") else "",
+                    f"label_key_{name[4:]}" if name.startswith("key_") else "",
+                    f"label_parting_{name[8:]}" if name.startswith("parting_") else "",
+                ]
+            )
+        for candidate in [entry for entry in label_candidates if entry]:
+            try:
+                label = self._get_widget_by_name(candidate)
+            except Exception:
+                label = None
+            if label is None:
+                continue
+            try:
+                text = str(label.text() or "").strip()
+            except Exception:
+                text = ""
+            if text:
+                return text
+        label = self._form_label_for_widget(widget)
+        if label is not None:
+            try:
+                text = str(label.text() or "").strip()
+            except Exception:
+                text = ""
+            if text:
+                return text
+        try:
+            own_text = str(widget.text() or "").strip() if hasattr(widget, "text") else ""
+        except Exception:
+            own_text = ""
+        return own_text
+
+    def _apply_tooltip_fallbacks(self):
+        # Intentionally disabled by architecture rule:
+        # never derive visible text from UI/Python fallback sources.
+        return
+
+    def _apply_registered_tooltips(self, lang: str):
+        for name, key in UI_TOOLTIP_KEYS.items():
             widget = self._get_widget_by_name(name)
             if widget is None:
                 continue
-            text = translations.get(lang) or translations.get("de")
+            text = TRANSLATIONS.tr(key, lang)
+            try:
+                widget.setProperty("tooltip_key", key)
+                widget.setProperty("tooltip_fallback_auto", False)
+            except Exception:
+                pass
             self._set_tooltip_deep(widget, text)
+
+    def _apply_thread_tooltips(self, lang: str):
+        """Rueckwaertskompatibler Wrapper fuer den zentralen Tooltip-Pfad."""
+        self._apply_registered_tooltips(lang)
         for btn_attr, handler, flag in (
             ("contour_add_segment", self._handle_contour_add_segment, "_contour_add_connected"),
             ("contour_delete_segment", self._handle_contour_delete_segment, "_contour_delete_connected"),
@@ -5776,30 +6070,15 @@ class HandlerClass:
             self._contour_table_connected = True
 
     def _apply_general_tooltips(self, lang: str):
-        for name, translations in GENERAL_TOOLTIP_TRANSLATIONS.items():
-            widget = self._get_widget_by_name(name)
-            if widget is None:
-                continue
-            text = translations.get(lang) or translations.get("de")
-            self._set_tooltip_deep(widget, text)
+        self._apply_registered_tooltips(lang)
 
     def _apply_parting_tooltips(self, lang: str):
-        """Setzt Tooltips für bekannte Abspanen-Widgets gemäß Sprache."""
-        for name, translations in PARTING_TOOLTIP_TRANSLATIONS.items():
-            widget = self._get_widget_by_name(name)
-            if widget is None:
-                continue
-            text = translations.get(lang) or translations.get("de")
-            self._set_tooltip_deep(widget, text)
+        """Rueckwaertskompatibler Wrapper fuer den zentralen Tooltip-Pfad."""
+        self._apply_registered_tooltips(lang)
 
     def _apply_groove_tooltips(self, lang: str):
-        """Setzt Tooltips für bekannte Nut-Widgets gemäß Sprache."""
-        for name, translations in GROOVE_TOOLTIP_TRANSLATIONS.items():
-            widget = self._get_widget_by_name(name)
-            if widget is None:
-                continue
-            text = translations.get(lang) or translations.get("de")
-            self._set_tooltip_deep(widget, text)
+        """Rueckwaertskompatibler Wrapper fuer den zentralen Tooltip-Pfad."""
+        self._apply_registered_tooltips(lang)
 
         if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
             self.contour_start_x.valueChanged.connect(self._update_contour_preview_temp)
@@ -5964,7 +6243,9 @@ class HandlerClass:
                     if key == "slice_strategy":
                         idx = widget.currentIndex()
                         data = widget.itemData(idx, QtCore.Qt.UserRole)
-                        if isinstance(data, (int, float)):
+                        if isinstance(data, str) and data:
+                            params[key] = data
+                        elif isinstance(data, (int, float)):
                             params[key] = int(float(data))
                         else:
                             params[key] = idx + 1
@@ -6077,6 +6358,45 @@ class HandlerClass:
         return params
     def _collect_program_header(self) -> Dict[str, object]:
         """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
+        def _ensure_checkbox(attr_name: str):
+            widget = getattr(self, attr_name, None)
+            if widget is not None and hasattr(widget, "isChecked"):
+                return widget
+            candidate = self._get_widget_by_name(attr_name)
+            if candidate is not None and hasattr(candidate, "isChecked"):
+                setattr(self, attr_name, candidate)
+                return candidate
+            setattr(self, attr_name, None)
+            return None
+
+        def _combo_data(widget):
+            if widget is None:
+                return None
+            if hasattr(widget, "currentData"):
+                try:
+                    data = widget.currentData()
+                except Exception:
+                    data = None
+                if data is not None:
+                    return data
+            try:
+                name = str(widget.objectName() or "").strip()
+            except Exception:
+                name = ""
+            if name == "program_unit":
+                try:
+                    return "mm" if int(widget.currentIndex()) == 0 else "inch"
+                except Exception:
+                    return None
+            if name == "program_npv" and hasattr(widget, "currentText"):
+                try:
+                    token = str(widget.currentText() or "").strip().upper()
+                except Exception:
+                    token = ""
+                if token.startswith("G"):
+                    return token
+            return None
+
         # Fehlende Widgets nachladen, falls sie zum Zeitpunkt der Initialisierung
         # noch nicht gefunden wurden (z. B. wegen verzögertem UI-Aufbau).
         if self.program_npv is None:
@@ -6165,14 +6485,24 @@ class HandlerClass:
             self.program_zra_absolute = self._get_widget_by_name("program_zra_absolute")
         if self.program_zri_absolute is None:
             self.program_zri_absolute = self._get_widget_by_name("program_zri_absolute")
+        self.program_xra_absolute = _ensure_checkbox("program_xra_absolute")
+        self.program_xri_absolute = _ensure_checkbox("program_xri_absolute")
+        self.program_zra_absolute = _ensure_checkbox("program_zra_absolute")
+        self.program_zri_absolute = _ensure_checkbox("program_zri_absolute")
+        self.program_xt_absolute = _ensure_checkbox("program_xt_absolute")
+        self.program_zt_absolute = _ensure_checkbox("program_zt_absolute")
+        self.program_has_subspindle = _ensure_checkbox("program_has_subspindle")
+        self.program_park_sequential = _ensure_checkbox("program_park_sequential")
+        self.program_optional_stop_toolchange = _ensure_checkbox("program_optional_stop_toolchange")
+        self.program_preview_warnings = _ensure_checkbox("program_preview_warnings")
 
         header: Dict[str, object] = {}
         if self.program_npv:
-            header["npv"] = self.program_npv.currentText().strip()
+            header["npv"] = _combo_data(self.program_npv)
         if self.program_unit:
-            header["unit"] = self.program_unit.currentText().strip()
+            header["unit"] = _combo_data(self.program_unit)
         if self.program_shape:
-            header["shape"] = self.program_shape.currentText().strip()
+            header["shape"] = _combo_data(self.program_shape)
 
         def _val(widget):
             if widget is None:
@@ -6205,7 +6535,7 @@ class HandlerClass:
 
         # Rückzug/Ebenen
         header["retract_mode"] = (
-            self.program_retract_mode.currentText().strip()
+            str(_combo_data(self.program_retract_mode) or "").strip()
             if self.program_retract_mode
             else ""
         )
@@ -6228,34 +6558,30 @@ class HandlerClass:
         header["zt"] = _val(self.program_zt)
         header["sc"] = _val(self.program_sc)
         if getattr(self, "program_machine_profile", None):
-            header["machine_profile"] = self.program_machine_profile.currentText().strip()
+            header["machine_profile"] = _combo_data(self.program_machine_profile)
         if getattr(self, "program_chuck_size", None):
-            header["chuck_size"] = self.program_chuck_size.currentText().strip()
+            header["chuck_size"] = _combo_data(self.program_chuck_size)
         if getattr(self, "program_chuck_part_type", None):
-            header["chuck_part_type"] = self.program_chuck_part_type.currentText().strip()
+            header["chuck_part_type"] = _combo_data(self.program_chuck_part_type)
         if getattr(self, "program_chuck_grip_mode", None):
-            header["chuck_grip_mode"] = self.program_chuck_grip_mode.currentText().strip()
+            header["chuck_grip_mode"] = _combo_data(self.program_chuck_grip_mode)
         if getattr(self, "program_chuck_profile", None):
-            header["chuck_profile"] = self.program_chuck_profile.currentText().strip()
+            header["chuck_profile"] = _combo_data(self.program_chuck_profile)
         header["chuck_no_go_x_min"] = _val(getattr(self, "program_chuck_x_min", None))
         header["chuck_no_go_x_max"] = _val(getattr(self, "program_chuck_x_max", None))
         header["chuck_no_go_z_limit"] = _val(getattr(self, "program_chuck_z_limit", None))
         if getattr(self, "program_spindle_mode", None):
-            data = self.program_spindle_mode.currentData()
-            header["spindle_mode"] = data if data is not None else self.program_spindle_mode.currentText().strip()
+            header["spindle_mode"] = _combo_data(self.program_spindle_mode)
         header["spindle_max_rpm"] = _val(getattr(self, "program_spindle_max_rpm", None))
         if getattr(self, "program_park_mode", None):
-            data = self.program_park_mode.currentData()
-            header["park_mode"] = data if data is not None else self.program_park_mode.currentText().strip()
+            header["park_mode"] = _combo_data(self.program_park_mode)
         if getattr(self, "program_toolchange_coords", None):
-            data = self.program_toolchange_coords.currentData()
-            header["toolchange_coords"] = data if data is not None else self.program_toolchange_coords.currentText().strip()
+            header["toolchange_coords"] = _combo_data(self.program_toolchange_coords)
             toolchange_coords = str(header.get("toolchange_coords", "work") or "work").strip().lower()
             header["xt_absolute"] = toolchange_coords != "machine"
             header["zt_absolute"] = toolchange_coords != "machine"
         if getattr(self, "program_park_coords", None):
-            data = self.program_park_coords.currentData()
-            header["park_coords"] = data if data is not None else self.program_park_coords.currentText().strip()
+            header["park_coords"] = _combo_data(self.program_park_coords)
         else:
             xt_abs = bool(header.get("xt_absolute", True))
             zt_abs = bool(header.get("zt_absolute", True))
@@ -6263,9 +6589,9 @@ class HandlerClass:
             header["park_coords"] = header.get("toolchange_coords", "work")
         header["park_x"] = _val(getattr(self, "program_park_x", None))
         header["park_z"] = _val(getattr(self, "program_park_z", None))
-        header["park_sequential"] = bool(getattr(self, "program_park_sequential", None).isChecked()) if getattr(self, "program_park_sequential", None) else False
-        header["optional_stop_toolchange"] = bool(getattr(self, "program_optional_stop_toolchange", None).isChecked()) if getattr(self, "program_optional_stop_toolchange", None) else False
-        header["preview_warnings"] = bool(getattr(self, "program_preview_warnings", None).isChecked()) if getattr(self, "program_preview_warnings", None) else False
+        header["park_sequential"] = bool(self.program_park_sequential.isChecked()) if self.program_park_sequential else False
+        header["optional_stop_toolchange"] = bool(self.program_optional_stop_toolchange.isChecked()) if self.program_optional_stop_toolchange else False
+        header["preview_warnings"] = bool(self.program_preview_warnings.isChecked()) if self.program_preview_warnings else False
 
         if self.program_name:
             header["program_name"] = self.program_name.text().strip()
@@ -6360,22 +6686,21 @@ class HandlerClass:
             else:
                 mode = "xz"
 
-            # Edge type text (German/English): prefer combo widget if present
+            # Edge type: prefer stable combo data IDs.
             edge_txt = ""
             try:
-                if edge_widget is not None and hasattr(edge_widget, "currentText"):
-                    edge_txt = str(edge_widget.currentText()).strip().lower()
+                if edge_widget is not None and hasattr(edge_widget, "currentData"):
+                    edge_txt = str(edge_widget.currentData() or "").strip().lower()
                 elif edge_item is not None and edge_item.text():
                     edge_txt = edge_item.text().strip().lower()
             except Exception:
                 edge_txt = ""
             if not edge_txt:
-                edge_txt = "keine"
+                edge_txt = "none"
             
-            # Accept common German/English labels
-            if edge_txt.startswith(("f", "c")):  # Fase / Chamfer
+            if edge_txt in ("chamfer", "fase"):
                 edge = "chamfer"
-            elif edge_txt.startswith(("r", "ra")):  # Radius
+            elif edge_txt == "radius":
                 edge = "radius"
             else:
                 edge = "none"
@@ -6384,8 +6709,8 @@ class HandlerClass:
             # Bogen-Seite (Auto/Außen/Innen) – nur relevant bei Radius
             arc_txt = ""
             try:
-                if arc_side_widget is not None and hasattr(arc_side_widget, "currentText"):
-                    arc_txt = str(arc_side_widget.currentText()).strip().lower()
+                if arc_side_widget is not None and hasattr(arc_side_widget, "currentData"):
+                    arc_txt = str(arc_side_widget.currentData() or "").strip().lower()
                 elif arc_side_item is not None and arc_side_item.text():
                     arc_txt = arc_side_item.text().strip().lower()
             except Exception:
@@ -6395,10 +6720,10 @@ class HandlerClass:
 
             feature_type = "none"
             try:
-                feature_txt = str(feature_widget.currentText()).strip().lower() if feature_widget is not None and hasattr(feature_widget, "currentText") else ""
+                feature_txt = str(feature_widget.currentData() or "").strip().lower() if feature_widget is not None and hasattr(feature_widget, "currentData") else ""
             except Exception:
                 feature_txt = ""
-            if "freistich" in feature_txt or "hinterschnitt" in feature_txt:
+            if feature_txt == "din_relief":
                 feature_type = "din_relief"
 
             thread_size = ""
@@ -6406,16 +6731,16 @@ class HandlerClass:
             side = "external"
             orientation = "end"
             try:
-                if thread_widget is not None and hasattr(thread_widget, "currentText"):
-                    thread_size = str(thread_widget.currentText()).strip().upper()
-                if norm_widget is not None and hasattr(norm_widget, "currentText"):
-                    norm = str(norm_widget.currentText()).strip()
-                if side_widget is not None and hasattr(side_widget, "currentText"):
-                    side_txt = str(side_widget.currentText()).strip().lower()
-                    side = "internal" if side_txt.startswith("in") else "external"
-                if orient_widget is not None and hasattr(orient_widget, "currentText"):
-                    orient_txt = str(orient_widget.currentText()).strip().lower()
-                    orientation = "start" if orient_txt.startswith("start") else "end"
+                if thread_widget is not None and hasattr(thread_widget, "currentData"):
+                    thread_size = str(thread_widget.currentData() or "").strip().upper()
+                if norm_widget is not None and hasattr(norm_widget, "currentData"):
+                    norm = str(norm_widget.currentData() or "").strip()
+                if side_widget is not None and hasattr(side_widget, "currentData"):
+                    side_txt = str(side_widget.currentData() or "").strip().lower()
+                    side = "internal" if side_txt == "internal" else "external"
+                if orient_widget is not None and hasattr(orient_widget, "currentData"):
+                    orient_txt = str(orient_widget.currentData() or "").strip().lower()
+                    orientation = "start" if orient_txt == "start" else "end"
             except Exception:
                 pass
 
@@ -6465,7 +6790,7 @@ class HandlerClass:
                 # fallback: plain item text
                 table.setItem(row, 3, item_cls(str(edge_text)))
             else:
-                idx = w_edge.findText(str(edge_text))
+                idx = w_edge.findData(str(edge_text), QtCore.Qt.UserRole)
                 if idx >= 0:
                     w_edge.setCurrentIndex(idx)
         
@@ -6477,10 +6802,12 @@ class HandlerClass:
             w = table.cellWidget(row, 5)
             if w is not None and hasattr(w, "setEnabled"):
                 # nur aktiv bei Radius
-                edge_now = (edge_text if edge_text is not None else (table.item(row, 3).text() if table.item(row,3) else ""))
-                w.setEnabled(str(edge_now).lower().startswith("r"))
-                if arc_text is not None and hasattr(w, "findText"):
-                    idx = w.findText(arc_text, QtCore.Qt.MatchFixedString)
+                edge_now = str(edge_text or "").strip().lower()
+                if not edge_now and hasattr(table.cellWidget(row, 3), "currentData"):
+                    edge_now = str(table.cellWidget(row, 3).currentData() or "").strip().lower()
+                w.setEnabled(edge_now == "radius")
+                if arc_text is not None and hasattr(w, "findData"):
+                    idx = w.findData(str(arc_text).strip().lower(), QtCore.Qt.UserRole)
                     if idx >= 0:
                         w.setCurrentIndex(idx)
         except Exception:
@@ -6701,7 +7028,7 @@ class HandlerClass:
                     return
                 self.model.add_operation(op)
                 try:
-                    self._mark_all_operations_dirty()
+                    self._mark_program_structure_dirty(operation_indices={len(self.model.operations) - 1})
                 except Exception:
                     pass
                 try:
@@ -6733,11 +7060,16 @@ class HandlerClass:
                 return
             if idx == 0:
                 parent = self.root_widget or self._find_root_widget()
-                QtWidgets.QMessageBox.warning(parent, "Löschen", "Der Programmkopf kann nicht gelöscht werden.")
+                lang = self._current_language_code()
+                QtWidgets.QMessageBox.warning(
+                    parent,
+                    TRANSLATIONS.tr("dialog.delete.title", lang),
+                    TRANSLATIONS.tr("message.delete.program_header_forbidden", lang),
+                )
                 return
             self.model.remove_operation(idx)
             try:
-                self._mark_all_operations_dirty()
+                self._mark_program_structure_dirty()
             except Exception:
                 pass
             new_idx = min(idx, len(self.model.operations) - 1)

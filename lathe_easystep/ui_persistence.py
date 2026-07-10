@@ -7,9 +7,16 @@ import os
 from qtpy import QtCore, QtWidgets
 
 from .model import OpType
+from .translations import TRANSLATIONS
 from .persistence import build_program_data as build_program_data_payload
 from .storage import parse_program_payload
 from .ui_messages import format_user_error
+
+
+def _tr(handler, key: str, **kwargs) -> str:
+    lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
+    text = TRANSLATIONS.tr(key, lang)
+    return text.format(**kwargs) if kwargs else text
 
 
 def build_program_data(handler):
@@ -62,7 +69,7 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
         idx = handler._selected_operation_index()
         if idx < 0:
             parent = handler.root_widget or handler._find_root_widget()
-            QtWidgets.QMessageBox.warning(parent, "Step speichern", "Bitte zuerst eine Operation auswählen.")
+            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.save.title"), _tr(handler, "message.step.select_operation_first"))
             return
         parent = handler.root_widget or handler._find_root_widget()
         settings = QtCore.QSettings()
@@ -74,7 +81,7 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
         default_name = os.path.join(start_dir, "lathe_step.step.json")
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             parent,
-            "Step speichern",
+            _tr(handler, "dialog.step.save.title"),
             default_name,
             step_file_filter,
         )
@@ -87,13 +94,13 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
             op = handler.model.operations[idx]
             warning = handler._tool_orientation_mismatch(op)
             if warning:
-                QtWidgets.QMessageBox.warning(parent, "Werkzeuglage prüfen", warning)
+                QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.tool_orientation_check.title"), warning)
             handler._set_step_file_path(op, file_path)
             data = handler._operation_to_step_data(op)
             with builtins.open(file_path, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, indent=2)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(parent, "Step speichern", format_user_error(handler, exc, fallback_title="Step konnte nicht gespeichert werden"))
+            QtWidgets.QMessageBox.critical(parent, _tr(handler, "dialog.step.save.title"), format_user_error(handler, exc, fallback_title=_tr(handler, "message.step.save_failed")))
             return
         handler._remember_dialog_path(
             settings,
@@ -101,9 +108,28 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
             "LatheEasyStep/StepLastDir",
             "LatheEasyStep/LastDialogDir",
         )
-        QtWidgets.QMessageBox.information(parent, "Step speichern", f"Step wurde nach '{file_path}' geschrieben.")
+        QtWidgets.QMessageBox.information(parent, _tr(handler, "dialog.step.save.title"), _tr(handler, "message.step.saved", path=file_path))
         try:
             handler._clear_dirty_operation(idx)
+            if (
+                not handler._dirty_operation_indices
+                and not getattr(handler, "_dirty_program_header", False)
+                and getattr(handler, "_dirty_program_structure", False)
+                and not handler._normalized_file_path(getattr(handler, "_current_program_path", None))
+            ):
+                handler._clear_program_dirty(structure=True)
+        except Exception:
+            pass
+        try:
+            gcode_path = handler._normalized_file_path(getattr(handler, "_current_gcode_path", None))
+            if gcode_path and not handler._has_unsaved_changes():
+                handler._write_gcode_file(gcode_path)
+                handler._remember_dialog_path(
+                    settings,
+                    gcode_path,
+                    "LatheEasyStep/GcodeLastDir",
+                    "LatheEasyStep/LastDialogDir",
+                )
         except Exception:
             pass
     finally:
@@ -124,7 +150,7 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
         )
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             parent,
-            "Step laden",
+            _tr(handler, "dialog.step.load.title"),
             start_dir,
             step_file_filter,
         )
@@ -134,12 +160,12 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
             with builtins.open(file_path, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(parent, "Step laden", f"Step konnte nicht geöffnet werden:\n{exc}")
+            QtWidgets.QMessageBox.critical(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.open_failed", error=exc))
             return
 
         op = handler._step_data_to_operation(data)
         if op is None:
-            QtWidgets.QMessageBox.warning(parent, "Step laden", "Die ausgewählte Datei enthält keinen gültigen Step.")
+            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.invalid"))
             return
         handler._set_step_file_path(op, file_path)
         handler._insert_loaded_operation(op)
@@ -170,9 +196,9 @@ def handle_save_program(handler) -> None:
         )
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             parent,
-            "Programm speichern",
+            _tr(handler, "dialog.program.save.title"),
             default_dir,
-            "LatheEasyStep Dateien (*.lse);;Alle Dateien (*)",
+            _tr(handler, "dialog.program.filter"),
         )
         if not file_path:
             return
@@ -188,8 +214,8 @@ def handle_save_program(handler) -> None:
         )
         QtWidgets.QMessageBox.information(
             parent,
-            "Programm gespeichert",
-            f"Programm gespeichert unter:\n{file_path}",
+            _tr(handler, "dialog.program.saved.title"),
+            _tr(handler, "message.program.saved", path=file_path),
         )
         try:
             handler._program_dirty = False
@@ -199,8 +225,8 @@ def handle_save_program(handler) -> None:
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             parent or None,
-            "Fehler beim Speichern",
-            format_user_error(handler, exc, fallback_title="Programm konnte nicht gespeichert werden"),
+            _tr(handler, "dialog.program.save_error.title"),
+            format_user_error(handler, exc, fallback_title=_tr(handler, "message.program.save_failed")),
         )
 
 
@@ -215,9 +241,9 @@ def handle_load_program(handler) -> None:
         )
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             parent,
-            "Programm laden",
+            _tr(handler, "dialog.program.load.title"),
             default_dir,
-            "LatheEasyStep Dateien (*.lse);;Alle Dateien (*)",
+            _tr(handler, "dialog.program.filter"),
         )
         if not file_path:
             return
@@ -236,7 +262,7 @@ def handle_load_program(handler) -> None:
                 file_path,
             )
         except ValueError as exc:
-            QtWidgets.QMessageBox.warning(parent, "Programm laden", str(exc))
+            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.program.load.title"), str(exc))
             return
 
         handler.model.operations.clear()
@@ -276,14 +302,14 @@ def handle_load_program(handler) -> None:
             pass
         QtWidgets.QMessageBox.information(
             parent,
-            "Programm geladen",
-            f"Programm mit {len(ops_data)} Steps geladen.",
+            _tr(handler, "dialog.program.loaded.title"),
+            _tr(handler, "message.program.loaded", count=len(ops_data)),
         )
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             parent or None,
-            "Fehler beim Laden",
-            format_user_error(handler, exc, fallback_title="Programm konnte nicht geladen werden"),
+            _tr(handler, "dialog.program.load_error.title"),
+            format_user_error(handler, exc, fallback_title=_tr(handler, "message.program.load_failed")),
         )
 
 
@@ -303,7 +329,11 @@ def handle_save_changes(handler) -> None:
 
         saved_steps = 0
         linked_steps = 0
-        for idx, op in enumerate(handler.model.operations):
+        dirty_step_indices = sorted(int(idx) for idx in getattr(handler, "_dirty_operation_indices", set()) if int(idx) >= 0)
+        for idx in dirty_step_indices:
+            if idx >= len(handler.model.operations):
+                continue
+            op = handler.model.operations[idx]
             if op.op_type == OpType.PROGRAM_HEADER:
                 continue
             step_path = handler._step_file_path(op)
@@ -327,7 +357,7 @@ def handle_save_changes(handler) -> None:
 
         saved_program = False
         program_path = handler._normalized_file_path(handler._current_program_path)
-        if program_path:
+        if program_path and handler._program_dirty:
             handler._write_program_file(program_path)
             handler._remember_dialog_path(
                 settings,
@@ -337,11 +367,11 @@ def handle_save_changes(handler) -> None:
             )
             saved_program = True
         else:
-            handler._log("[LatheEasyStep] save_changes: no linked program file", level="info")
+            handler._log("[LatheEasyStep] save_changes: no linked or dirty program file", level="info")
 
         saved_gcode = False
         gcode_path = handler._normalized_file_path(handler._current_gcode_path)
-        if gcode_path:
+        if gcode_path and (bool(dirty_step_indices) or handler._program_dirty):
             handler._write_gcode_file(gcode_path)
             handler._remember_dialog_path(
                 settings,
@@ -351,26 +381,26 @@ def handle_save_changes(handler) -> None:
             )
             saved_gcode = True
         else:
-            handler._log("[LatheEasyStep] save_changes: no linked gcode file", level="info")
+            handler._log("[LatheEasyStep] save_changes: no linked or dirty gcode file", level="info")
 
         if not saved_steps and not saved_program and not saved_gcode:
             handler._log("[LatheEasyStep] save_changes: nothing linked to save", level="warning")
             QtWidgets.QMessageBox.information(
                 parent,
-                "Aenderungen speichern",
-                "Es sind noch keine verknuepften Step-, Programm- oder G-Code-Dateien vorhanden.",
+                _tr(handler, "dialog.changes.save.title"),
+                _tr(handler, "message.changes.nothing_linked"),
             )
             return
 
         messages = []
-        if linked_steps:
-            messages.append(f"Step-Dateien aktualisiert: {saved_steps}")
+        if dirty_step_indices:
+            messages.append(_tr(handler, "message.changes.steps_updated", count=saved_steps))
         else:
-            messages.append("Keine einzelnen Step-Dateien verknuepft")
-        messages.append("Programm aktualisiert" if saved_program else "Programm nicht verknuepft")
-        messages.append("G-Code aktualisiert" if saved_gcode else "G-Code nicht verknuepft")
+            messages.append(_tr(handler, "message.changes.steps_unchanged"))
+        messages.append(_tr(handler, "message.changes.program_updated") if saved_program else _tr(handler, "message.changes.program_unchanged"))
+        messages.append(_tr(handler, "message.changes.gcode_updated") if saved_gcode else _tr(handler, "message.changes.gcode_unchanged"))
         if saved_program and not linked_steps:
-            messages.append("Die geaenderten Steps wurden im Programm gespeichert.")
+            messages.append(_tr(handler, "message.changes.steps_embedded_in_program"))
         handler._log(
             f"[LatheEasyStep] save_changes done: linked_steps={linked_steps} steps={saved_steps} "
             f"program={saved_program} gcode={saved_gcode}",
@@ -378,7 +408,7 @@ def handle_save_changes(handler) -> None:
         )
         QtWidgets.QMessageBox.information(
             parent,
-            "Aenderungen speichern",
+            _tr(handler, "dialog.changes.save.title"),
             "\n".join(messages),
         )
         try:
@@ -388,8 +418,8 @@ def handle_save_changes(handler) -> None:
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
-            "Aenderungen speichern",
-            format_user_error(handler, exc, fallback_title="Aenderungen konnten nicht gespeichert werden"),
+            _tr(handler, "dialog.changes.save.title"),
+            format_user_error(handler, exc, fallback_title=_tr(handler, "message.changes.save_failed")),
         )
     finally:
         handler._saving_changes = False

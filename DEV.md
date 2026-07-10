@@ -180,6 +180,13 @@ Geplante Erweiterung:
 - Vorschau zeichnet X weiterhin als Durchmesser (für die Beschriftung), nutzt intern aber immer halbierte X-Werte, damit Kreise wirklich rund und in Radiusmaßstab dargestellt werden.
 - Unsaved-State wird bewusst nicht ueber Dateisystem-Events, sondern ueber Form-/Struktur-Aenderungen im Handler gefuehrt; Warnungen beim Reiter-/Stepwechsel sind nur Hinweis, kein implizites Speichern.
 
+## Verbindliche i18n-Regel (ID-only)
+- Keine sichtbaren Texte aus Python-Strings oder `.ui`-Fallbacks verwenden.
+- Sichtbare Texte, Tooltips, Tabellenkoepfe und Dialogtexte muessen aus Sprachkeys (`.lng`) kommen.
+- Fehlende Keys duerfen nicht kaschiert werden: sichtbar bleibt der Key/ID.
+- Programmlogik darf nicht auf `currentText()` basieren; nur technische Werte via `currentData()`.
+- Neue UI-Elemente zuerst mit stabiler ID/Key einfuehren, danach Sprachdateien erweitern.
+
 ---
 
 ## Embedded-Widget-Binding (2026-02 Fix)
