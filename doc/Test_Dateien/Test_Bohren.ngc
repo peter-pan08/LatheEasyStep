@@ -8,7 +8,7 @@ G95
 G54
 
 (=== SICHERHEITSPARAMETER ===)
-(Werkzeugwechselpunkt: X60.000 Z90.000 Maschinenkoordinaten G53)
+(Werkzeugwechselpunkt: X60.000 Z90.000 Werkstueckkoordinaten)
 (Rueckzugsebenen: XRA=2.000 XRI=0.000)
 (               ZRA=5.000 ZRI=0.000)
 (Rohteil Aussendurchmesser: 50.000 mm)
@@ -50,7 +50,7 @@ G0 X52.000
 M5
 M9
 (Toolchange move)
-G53 G0 X60.000 Z90.000
+G0 X60.000 Z90.000
 T10 M6
 G0 X52.000 Z6.000
 
@@ -70,7 +70,7 @@ G18
 G0 Z6.000
 G0 X52.000
 
-G53 G0 X60.000 Z90.000
+G0 X60.000 Z90.000
 M5
 M9
 M30

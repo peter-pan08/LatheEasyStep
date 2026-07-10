@@ -37,7 +37,7 @@ weiter als ein reiner Prototyp:
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
 - Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.7.0 deutlich weiter modularisiert
-- die aktuelle Refactor-Basis inkl. Freistich-/Sicherheitsausbau, Dirty-State, Preview-Docking, Groove-Fix, expliziter Toolchange-Koordinatenlogik, erweiterter Gewindelogik und UI-Anbindung ist mit `194 passed` validiert
+- die aktuelle Refactor-Basis inkl. Freistich-/Sicherheitsausbau, Dirty-State, Preview-Docking, Groove-Fix, expliziter Toolchange-Koordinatenlogik, erweiterter Gewindelogik, `XRI`-Sicherheitslogik fuer Innenbearbeitung und UI-Anbindung ist mit `202 passed` validiert
 
 Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
 
@@ -118,6 +118,7 @@ Hier werden die globalen Programmeinstellungen festgelegt:
 
 - Sicherheitsabstaende und Rueckzugsebenen
 - Sicherheitsabstand / Rueckzugsebene Z als Pflichtwert fuer sichere Anfahrten und Generatorvalidierung
+- `XRI` als Pflichtwert fuer Innen-Gewinde und Innen-Abspanen; unplausible Innen-Rueckzugswerte werden generatorseitig abgewiesen
 - Rohteilgeometrie
 - Nullpunkt und Bezug
 - maximale Drehzahlen
@@ -197,6 +198,13 @@ Die Generatorausgabe dokumentiert zusaetzlich:
 - Aufmass X/Z
 - Fallback-Gruende bei nicht zyklustauglicher Kontur oder Expertenoptionen
 
+Sicherheitsstand fuer Innen-Abspanen:
+
+- `XRI` ist fuer Innen-Abspanen verpflichtend
+- interne `G71`-Starts werden nicht mehr aus `X0/Z0` abgeleitet
+- Anfahrt und Rueckzug verwenden fuer Innenkonturen `XRI/ZRI`
+- der Schlicht-Einfahrweg fuer aktive Schneidenradiuskorrektur wird so erzeugt, dass LinuxCNC die Kompensation sauber annehmen kann
+
 Die UI bietet dafuer jetzt auch direkte Bedienfelder fuer:
 
 - Hinterschnitt-Modus
@@ -227,6 +235,7 @@ Gewinde-Stand:
 
 - separates Feld `Gewindestart Z`
 - separate Auswahl fuer Rechts- und Linksgewinde
+- `XRI`-Pflicht und Plausibilitaetspruefung fuer Innengewinde
 - Vorschau und Generator fuer:
   - Aussengewinde rechts
   - Aussengewinde links

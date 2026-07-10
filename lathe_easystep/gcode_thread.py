@@ -4,6 +4,7 @@ from typing import Callable, Dict, List, Tuple
 
 from .presets import get_din_relief_preset
 from .model import Operation
+from .gcode_utils import float_or_none
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
@@ -19,6 +20,18 @@ THREAD_RELIEF_SIZE_BY_MAJOR = {
     14.0: "M14",
     16.0: "M16",
 }
+
+
+def _resolve_internal_safe_x(settings: Dict[str, object]) -> float | None:
+    xri = float_or_none(settings.get("xri"))
+    if xri is None:
+        return None
+    if bool(settings.get("xri_absolute", False)):
+        return xri
+    xi = float_or_none(settings.get("xi"))
+    if xi is None:
+        return None
+    return xi + xri
 
 
 def generate_thread_gcode(
@@ -65,9 +78,9 @@ def generate_thread_gcode(
 
     raw_peak_offset = op.params.get("peak_offset")
     if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
-        peak_offset = float(raw_peak_offset)
+        peak_offset = abs(float(raw_peak_offset))
     else:
-        peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
+        peak_offset = max(first_depth, pitch * 0.05)
 
     retract_r = float(op.params.get("retract_r", 1.5))
     infeed_q = float(op.params.get("infeed_q", 29.5))
@@ -92,12 +105,24 @@ def generate_thread_gcode(
         if isinstance(std_label_tmp, str):
             standard_label = std_label_tmp
 
+    minor_diameter = major_diameter - 2.0 * thread_depth
+    full_thread_depth = abs(major_diameter - minor_diameter)
+    first_cut_depth = max(first_depth * 2.0, 0.0001)
+
     if internal:
         peak_offset = abs(peak_offset)
-        approach_x = major_diameter - 2.0 * thread_depth
+        approach_x = minor_diameter - peak_offset
+        safe_x = _resolve_internal_safe_x(settings)
+        if safe_x is None or safe_x <= 0.0:
+            raise ValueError("Innengewinde erfordert ein gueltiges XRI im Programmkopf.")
+        if safe_x >= minor_diameter - 1e-9:
+            raise ValueError(
+                f"XRI={safe_x:.3f} ist fuer Innengewinde unplausibel. "
+                f"XRI muss kleiner als der Kerndurchmesser ({minor_diameter:.3f}) sein."
+            )
     else:
         peak_offset = -abs(peak_offset)
-        approach_x = major_diameter
+        approach_x = major_diameter - peak_offset
 
     comments: List[str] = []
     if standard_label and standard_label != "Benutzerdefiniert":
@@ -147,9 +172,9 @@ def generate_thread_gcode(
             f"P{pitch:.4f} "
             f"Z{end_z:.3f} "
             f"I{peak_offset:.4f} "
-            f"J{first_depth:.4f} "
+            f"J{first_cut_depth:.4f} "
             f"R{retract_r:.4f} "
-            f"K{thread_depth:.4f} "
+            f"K{full_thread_depth:.4f} "
             f"Q{infeed_q:.4f} "
             f"H{spring_passes:d} "
             f"E{e_val:.4f} "

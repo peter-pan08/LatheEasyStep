@@ -39,6 +39,15 @@ from .gcode_utils import (
 from .model import OpType, Operation
 
 
+def _active_retract_mode_for_op(op: Operation) -> str:
+    params = op.params or {}
+    if op.op_type == OpType.THREAD and int(float(params.get("orientation", 0) or 0)) == 1:
+        return "internal"
+    if op.op_type == OpType.ABSPANEN and int(float(params.get("side", 0) or 0)) == 1:
+        return "internal"
+    return "external"
+
+
 def gcode_from_path(path, feed: float, safe_z: float) -> List[str]:
     lines: List[str] = []
     if not path:
@@ -353,6 +362,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         if op.op_type == OpType.PROGRAM_HEADER:
             continue
         step_num += 1
+        settings["_active_retract_mode"] = _active_retract_mode_for_op(op)
         op_tool = get_tool_number(op.params)
         if op_tool > 0:
             tool_lines: List[str] = []

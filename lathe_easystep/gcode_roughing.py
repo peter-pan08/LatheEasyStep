@@ -9,6 +9,7 @@ from .contour_logic import build_contour_variants
 from .gcode_safety import append_tool_and_spindle, emit_approach, nose_compensation_command
 from .gcode_utils import (
     Point,
+    float_or_none,
     get_tool_number,
     is_monotonic_x,
     is_monotonic_x_decreasing,
@@ -45,6 +46,51 @@ def _normalize_output_preference(value: object | None) -> str:
     if text in ("explicit", "prefer_explicit", "ausgeschrieben", "2"):
         return "prefer_explicit"
     return "auto"
+
+
+def _resolve_roughing_stock_x(
+    settings: Dict[str, object],
+    rough_path: List[Point],
+    *,
+    external: bool,
+) -> float:
+    contour_max_x = max(point[0] for point in rough_path)
+    contour_min_x = min(point[0] for point in rough_path)
+    stock_key = "xa" if external else "xi"
+    fallback = contour_max_x
+    try:
+        stock_x = float(settings.get(stock_key))
+    except Exception:
+        return fallback
+    if external:
+        return max(stock_x, contour_max_x)
+    if stock_x <= 0.0 or stock_x < contour_min_x - 1e-9:
+        return fallback
+    return max(stock_x, contour_max_x)
+
+
+def _finish_entry_point(
+    finish_points: List[Point],
+    safe_z: float,
+    *,
+    lead_length: float = LEADOUT_LENGTH_DEFAULT,
+) -> Point:
+    start_x, start_z = finish_points[0]
+    if safe_z > start_z + 1e-9:
+        return (start_x, safe_z)
+    return (start_x, start_z + max(lead_length, 0.5))
+
+
+def _resolve_internal_safe_x(settings: Dict[str, object]) -> Optional[float]:
+    xri = float_or_none(settings.get("xri"))
+    if xri is None:
+        return None
+    if bool(settings.get("xri_absolute", False)):
+        return xri
+    xi = float_or_none(settings.get("xi"))
+    if xi is None:
+        return None
+    return xi + xri
 
 
 def _emit_relief_pass(
@@ -401,16 +447,22 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         finish_path = rough_path
 
     path = finish_path
-    stock_hint = settings.get("xa") if side_idx == 0 else settings.get("xi")
-    try:
-        stock_x = float(stock_hint) if stock_hint is not None else max(point[0] for point in rough_path)
-    except Exception:
-        stock_x = max(point[0] for point in rough_path)
+    stock_x = _resolve_roughing_stock_x(settings, rough_path, external=side_idx == 0)
     cfg = get_retract_cfg(settings, side_idx)
     if cfg.z_value is None:
         raise ValueError("ZRA/ZRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")
     safe_z = float(cfg.z_value)
     external = side_idx == 0
+    if not external:
+        safe_x = _resolve_internal_safe_x(settings)
+        contour_min_x = min(point[0] for point in rough_path)
+        if safe_x is None or safe_x <= 0.0:
+            raise ValueError("Innenbearbeitung erfordert ein gueltiges XRI im Programmkopf.")
+        if safe_x >= contour_min_x - 1e-9:
+            raise ValueError(
+                f"XRI={safe_x:.3f} ist fuer Innenbearbeitung unplausibel. "
+                f"XRI muss kleiner als der kleinste Konturdurchmesser ({contour_min_x:.3f}) sein."
+            )
     tool_info = (settings.get("tools", {}) or {}).get(tool_num)
     compensation_command = nose_compensation_command(tool_info, external)
     nose_disabled = bool(p.get("nose_comp_disabled", False))
@@ -508,12 +560,15 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if mode_idx in (1, 2) and not cycle_finish_done:
         lines.append("(Schlichtschnitt Kontur)")
         finish_points = rough_path if relief_mode == "ignore" else finish_path
-        lines.append(f"G0 X{finish_points[0][0]:.3f} Z{safe_z:.3f}")
+        entry_x, entry_z = _finish_entry_point(finish_points, safe_z)
+        lines.append(f"G0 X{entry_x:.3f} Z{entry_z:.3f}")
         if compensation_command and not nose_disabled:
             lines.append(compensation_command)
-        prev_point = None
-        for (x, z) in finish_points:
+        prev_point = (entry_x, entry_z) if compensation_command and not nose_disabled else None
+        for idx, (x, z) in enumerate(finish_points):
             current_point = (x, z)
+            if idx == 0 and compensation_command and not nose_disabled and abs(entry_z - z) <= 1e-9 and abs(entry_x - x) <= 1e-9:
+                continue
             if current_point != prev_point:
                 lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
                 prev_point = current_point
