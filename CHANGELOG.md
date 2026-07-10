@@ -1,6 +1,12 @@
 # Changelog
 
 ## [Unreleased]
+- Architektur: Strikte Trennung von UI und Sprache eingefuehrt: sichtbare Texte werden nicht mehr aus Python-/UI-Fallbacks hergeleitet, fehlende Eintraege zeigen den jeweiligen Schluessel/ID
+- Architektur: Tooltip-Fallback-Ableitung aus Label-/Widget-Texten deaktiviert; Tooltips kommen nur noch aus expliziten Uebersetzungskeys
+- UI-Logik: Kritische Auswahl-/Sichtbarkeitslogik auf technische IDs (`currentData`) umgestellt statt auf lokalisierte Anzeige-Texte (`currentText`)
+- Kontur-Editor: Segment-Combos (Kante, Bogen-Seite, Feature, Innen/Aussen, Start/Ende) nutzen nun stabile interne IDs in `itemData`
+- Programmkopf: Relevante Combo-Werte werden beim Sammeln/Laden als technische Werte gespeichert/verarbeitet (sprachunabhaengig)
+- Tests: Sprach-/Tooltip-Regressionen an den strikten ID-only Modus angepasst; fokussierte Regressionen laufen gruen (`22 passed`)
 - Safety: Innen-Gewinde und Innen-Abspanen erzwingen jetzt ein plausibles `XRI`; ohne gueltige Innen-Rueckzugsebene bricht die G-Code-Erzeugung mit einer klaren Fehlermeldung ab
 - Safety: Innen-Gewinde und Innen-Abspanen verwenden jetzt op-spezifische sichere Anfahr- und Rueckzugsebenen ueber `XRI/ZRI` statt pauschal `XRA/ZRA`
 - Abspanen: Interner `G71`-Startdurchmesser wird jetzt aus Kontur und Innen-Rueckzug fachlich korrekt abgeleitet; unplausible `X0/Z0`-Zyklusstarts fuer Innenkonturen werden nicht mehr erzeugt

@@ -5,6 +5,14 @@ import re
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from .translations import TRANSLATIONS
+
+
+def _tr(handler, key: str, **kwargs) -> str:
+    lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
+    text = TRANSLATIONS.tr(key, lang)
+    return text.format(**kwargs) if kwargs else text
+
 
 def handle_load_tool_table(handler) -> None:
     """Load tool table and refresh all tool widgets."""
@@ -18,9 +26,9 @@ def handle_load_tool_table(handler) -> None:
         )
         filepath, _ = QtWidgets.QFileDialog.getOpenFileName(
             handler.root_widget,
-            "Werkzeugtabelle laden",
+            _tr(handler, "dialog.tool_table.load.title"),
             default_path,
-            "tool.tbl (*.tbl);;Tool Table Dateien (*.tbl);;Alle Dateien (*)",
+            _tr(handler, "dialog.tool_table.load.filter"),
         )
         if not filepath:
             return
@@ -46,21 +54,21 @@ def handle_load_tool_table(handler) -> None:
         )
         QtWidgets.QMessageBox.information(
             handler.root_widget or None,
-            "LatheEasyStep",
-            f"Werkzeugtabelle geladen: {len(tools)} Werkzeuge gefunden.",
+            _tr(handler, "dialog.app.title"),
+            _tr(handler, "message.tool_table.loaded", count=len(tools)),
         )
         if missing_iso:
             formatted = ", ".join(f"T{num:02d}" for num in missing_iso)
             QtWidgets.QMessageBox.information(
                 handler.root_widget or None,
-                "ISO fehlt",
-                f"ISO-Code/Radius konnte für die folgenden Werkzeuge nicht ermittelt werden (optional):\n{formatted}",
+                _tr(handler, "dialog.tool_table.iso_missing.title"),
+                _tr(handler, "message.tool_table.iso_missing", tools=formatted),
             )
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
-            "LatheEasyStep",
-            f"Fehler beim Laden der Werkzeugtabelle:\n{exc}",
+            _tr(handler, "dialog.app.title"),
+            _tr(handler, "message.tool_table.load_failed", error=exc),
         )
 
 
@@ -156,7 +164,7 @@ def populate_tool_combos(handler, tools) -> None:
         previous = combo.currentData() if hasattr(combo, "currentData") else None
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem("— Werkzeug wählen —", 0)
+        combo.addItem(_tr(handler, "runtime.tool.combo.select"), 0)
         for tool_no, text in items:
             combo.addItem(text, tool_no)
 
@@ -197,12 +205,12 @@ def update_tool_previews(handler) -> None:
             except Exception as exc:
                 handler._log(f"[LatheEasyStep] tool preview render failed for T{tool_num:02d}: {exc}", level="warning")
                 lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-                txt = "Toolfehler" if lang == "de" else "Tool error"
+                txt = TRANSLATIONS.tr("runtime.tool.preview.error", lang)
                 img_label.setPixmap(handler._render_tool_placeholder(txt))
                 img_label.setText("")
         else:
             lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-            txt = "Tool wählen" if lang == "de" else "Select tool"
+            txt = TRANSLATIONS.tr("runtime.tool.preview.select", lang)
             img_label.setPixmap(handler._render_tool_placeholder(txt))
             img_label.setText("")
 
@@ -394,7 +402,8 @@ def ensure_tool_preview_calibration_controls(handler) -> None:
 
     label = QtWidgets.QLabel(parent)
     label.setObjectName("label_tool_preview_orientation")
-    label.setText("Vorschau-Lage")
+    label.setProperty("text_key", "runtime.tool.preview.orientation")
+    label.setText(_tr(handler, "runtime.tool.preview.orientation"))
 
     row_widget = QtWidgets.QWidget(parent)
     row_widget.setObjectName("tool_preview_orientation_row")
@@ -408,12 +417,15 @@ def ensure_tool_preview_calibration_controls(handler) -> None:
     offset.setSingleStep(5.0)
     offset.setDecimals(1)
     offset.setSuffix(" °")
-    offset.setToolTip("Winkel-Offset für Werkzeugvorschau (Anzeige)")
+    offset.setProperty("tooltip_key", "runtime.tool.preview.orientation_offset.tooltip")
+    offset.setToolTip(_tr(handler, "runtime.tool.preview.orientation_offset.tooltip"))
 
     mirror = QtWidgets.QCheckBox(row_widget)
     mirror.setObjectName("tool_preview_orient_mirror")
-    mirror.setText("spiegeln")
-    mirror.setToolTip("Vorschau-Lage spiegeln (Anzeige)")
+    mirror.setProperty("text_key", "runtime.tool.preview.mirror")
+    mirror.setProperty("tooltip_key", "runtime.tool.preview.mirror.tooltip")
+    mirror.setText(_tr(handler, "runtime.tool.preview.mirror"))
+    mirror.setToolTip(_tr(handler, "runtime.tool.preview.mirror.tooltip"))
 
     row_layout.addWidget(offset)
     row_layout.addWidget(mirror)

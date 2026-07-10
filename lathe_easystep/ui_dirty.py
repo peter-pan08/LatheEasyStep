@@ -3,18 +3,7 @@ from __future__ import annotations
 from qtpy import QtWidgets
 
 from .model import OpType
-
-
-TAB_LABELS = {
-    OpType.PROGRAM_HEADER: {"de": "Programm", "en": "Program"},
-    OpType.FACE: {"de": "Planen", "en": "Facing"},
-    OpType.CONTOUR: {"de": "Kontur", "en": "Contour"},
-    OpType.ABSPANEN: {"de": "Abspanen", "en": "Parting"},
-    OpType.THREAD: {"de": "Gewinde", "en": "Thread"},
-    OpType.GROOVE: {"de": "Einstich / Abstich", "en": "Groove / Parting"},
-    OpType.DRILL: {"de": "Bohren", "en": "Drilling"},
-    OpType.KEYWAY: {"de": "Keilnut", "en": "Keyway"},
-}
+from .translations import TRANSLATIONS
 
 
 def _lang(handler) -> str:
@@ -29,27 +18,65 @@ def init_dirty_state(handler) -> None:
         handler._dirty_operation_indices = set()
     if not hasattr(handler, "_program_dirty"):
         handler._program_dirty = False
+    if not hasattr(handler, "_dirty_program_header"):
+        handler._dirty_program_header = False
+    if not hasattr(handler, "_dirty_program_structure"):
+        handler._dirty_program_structure = False
     if not hasattr(handler, "_dirty_warning_suppressed"):
         handler._dirty_warning_suppressed = False
     handler._update_dirty_status()
 
 
 def tab_label(handler, op_type: str | None) -> str:
-    translations = TAB_LABELS.get(op_type, TAB_LABELS[OpType.PROGRAM_HEADER])
-    return translations.get(_lang(handler), translations.get("de", "Programm"))
+    mapping = {
+        OpType.PROGRAM_HEADER: "tab.tabProgram.title",
+        OpType.FACE: "tab.tabFace.title",
+        OpType.CONTOUR: "tab.tabContour.title",
+        OpType.ABSPANEN: "tab.tabParting.title",
+        OpType.THREAD: "tab.tabThread.title",
+        OpType.GROOVE: "tab.tabGroove.title",
+        OpType.DRILL: "tab.tabDrill.title",
+        OpType.KEYWAY: "tab.tabKeyway.title",
+    }
+    return TRANSLATIONS.tr(mapping.get(op_type, "tab.tabProgram.title"), _lang(handler))
 
 
 def mark_dirty(handler, *, operation_index: int | None = None, program: bool = False) -> None:
     if program:
         handler._program_dirty = True
+        handler._dirty_program_header = True
     if operation_index is not None and operation_index >= 0:
         handler._dirty_operation_indices.add(int(operation_index))
     handler._update_dirty_status()
 
 
+def mark_program_structure_dirty(handler, *, operation_indices: set[int] | None = None) -> None:
+    handler._program_dirty = True
+    handler._dirty_program_structure = True
+    if operation_indices:
+        for operation_index in operation_indices:
+            if operation_index is not None and int(operation_index) >= 0:
+                handler._dirty_operation_indices.add(int(operation_index))
+    handler._update_dirty_status()
+
+
 def clear_dirty_state(handler) -> None:
     handler._program_dirty = False
+    handler._dirty_program_header = False
+    handler._dirty_program_structure = False
     handler._dirty_operation_indices.clear()
+    handler._update_dirty_status()
+
+
+def clear_program_dirty(handler, *, header: bool = False, structure: bool = False, all_flags: bool = False) -> None:
+    if all_flags or header:
+        handler._dirty_program_header = False
+    if all_flags or structure:
+        handler._dirty_program_structure = False
+    handler._program_dirty = bool(
+        getattr(handler, "_dirty_program_header", False)
+        or getattr(handler, "_dirty_program_structure", False)
+    )
     handler._update_dirty_status()
 
 
@@ -65,6 +92,7 @@ def mark_all_operations_dirty(handler) -> None:
             dirty.add(idx)
     handler._dirty_operation_indices = dirty
     handler._program_dirty = True
+    handler._dirty_program_structure = True
     handler._update_dirty_status()
 
 
@@ -93,13 +121,14 @@ def dirty_status_text(handler) -> str:
     lang = _lang(handler)
     dirty_ops = len(handler._dirty_operation_indices)
     if not has_unsaved_changes(handler):
-        return "Keine offenen Aenderungen" if lang == "de" else "No pending changes"
+        return TRANSLATIONS.tr("text.label_dirty_status", lang)
     parts = []
     if handler._program_dirty:
-        parts.append("Programm" if lang == "de" else "Program")
+        parts.append(TRANSLATIONS.tr("dirty.program", lang))
     if dirty_ops:
-        parts.append(f"{dirty_ops} Step{'s' if dirty_ops != 1 else ''}")
-    prefix = "Ungespeichert: " if lang == "de" else "Unsaved: "
+        unit_key = "dirty.steps_plural" if dirty_ops != 1 else "dirty.steps_singular"
+        parts.append(f"{dirty_ops} {TRANSLATIONS.tr(unit_key, lang)}")
+    prefix = TRANSLATIONS.tr("dirty.unsaved_prefix", lang)
     return prefix + ", ".join(parts)
 
 
@@ -117,7 +146,7 @@ def update_dirty_status(handler) -> None:
             pass
     button = getattr(handler, "btn_save_changes", None)
     if button is not None:
-        base = "Aenderungen speichern" if _lang(handler) == "de" else "Save Changes"
+        base = TRANSLATIONS.tr("text.btnSaveChanges", _lang(handler))
         try:
             button.setText(base + (" *" if has_unsaved_changes(handler) else ""))
         except Exception:
@@ -130,7 +159,7 @@ def warn_if_dirty(handler, context: str, *, row: int | None = None) -> None:
     if not current_operation_is_dirty(handler, row=row):
         return
     lang = _lang(handler)
-    title = "Ungespeicherte Aenderungen" if lang == "de" else "Unsaved changes"
+    title = TRANSLATIONS.tr("dialog.unsaved_changes.title", lang)
     if row is not None and row >= 0:
         try:
             op_type = handler.model.operations[row].op_type
@@ -139,10 +168,8 @@ def warn_if_dirty(handler, context: str, *, row: int | None = None) -> None:
     else:
         op_type = handler._current_op_type() if hasattr(handler, "_current_op_type") else None
     tab = tab_label(handler, op_type)
-    if lang == "de":
-        text = f"Im Reiter {tab} gibt es ungespeicherte Aenderungen. {context} speichert keine Dateien automatisch."
-    else:
-        text = f"There are unsaved changes in the {tab} tab. {context} does not save files automatically."
+    template = TRANSLATIONS.tr("dialog.unsaved_changes.body", lang)
+    text = template.format(tab=tab, context=context)
     parent = getattr(handler, "root_widget", None) or handler._find_root_widget()
     try:
         QtWidgets.QMessageBox.warning(parent, title, text)

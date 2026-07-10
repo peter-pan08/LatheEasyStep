@@ -4,7 +4,6 @@ import re
 
 from qtpy import QtCore, QtWidgets
 
-
 def handle_global_change(handler, *args, **kwargs):
     sender_name = ""
     try:
@@ -21,7 +20,7 @@ def handle_global_change(handler, *args, **kwargs):
     handler._update_retract_visibility()
     handler._update_subspindle_visibility()
     handler._update_face_visibility()
-    if sender_name and not getattr(handler, "_ui_loading", False):
+    if sender_name and sender_name != "program_language" and not getattr(handler, "_ui_loading", False):
         try:
             handler._mark_dirty(program=True)
         except Exception:
@@ -76,10 +75,29 @@ def chuck_size_mm(handler) -> int:
     if combo is None:
         return 0
     try:
+        data = combo.currentData()
+    except Exception:
+        data = None
+    if isinstance(data, str):
+        token = data.strip().lower()
+        if token in {"", "none"}:
+            return 0
+        if token.isdigit():
+            return int(token)
+    try:
+        idx = int(combo.currentIndex())
+        item_data = combo.itemData(idx, QtCore.Qt.UserRole)
+        if isinstance(item_data, str):
+            token = item_data.strip().lower()
+            if token in {"", "none"}:
+                return 0
+            if token.isdigit():
+                return int(token)
+    except Exception:
+        pass
+    try:
         txt = str(combo.currentText() or "").lower().strip()
     except Exception:
-        return 0
-    if not txt or "kein" in txt or "no chuck" in txt:
         return 0
     match = re.search(r"(\d+)", txt)
     if not match:
@@ -204,15 +222,25 @@ def update_program_visibility(handler, shape=None):
     shape_idx = None
     if hasattr(handler, "program_shape") and handler.program_shape is not None:
         try:
-            shape_idx = int(handler.program_shape.currentIndex())
+            data = handler.program_shape.currentData()
         except Exception:
-            shape_idx = None
+            data = None
+        if isinstance(data, str) and data:
+            shape_idx = data
+        else:
+            try:
+                shape_idx = int(handler.program_shape.currentIndex())
+            except Exception:
+                shape_idx = None
     if shape is None:
-        shape = shape_idx if shape_idx is not None and shape_idx >= 0 else (handler.program_shape.currentText() if handler.program_shape is not None else None)
+        if isinstance(shape_idx, str) and shape_idx:
+            shape = shape_idx
+        else:
+            shape = shape_idx if shape_idx is not None and shape_idx >= 0 else None
     if shape is None or shape == "":
         return
     if isinstance(shape, int):
-        shape_map = {0: "zylinder", 1: "rohr", 2: "rechteck", 3: "n-eck"}
+        shape_map = {0: "cylinder", 1: "tube", 2: "rectangle", 3: "polygon"}
         shape_norm = shape_map.get(shape, str(shape)).strip().lower()
     else:
         shape_norm = str(shape).strip().lower()
@@ -239,11 +267,11 @@ def update_program_visibility(handler, shape=None):
         "label_n": _w("label_prog_n"), "n": _w("program_n"),
         "label_sw": _w("label_prog_sw"), "sw": _w("program_sw"),
     }
-    show_xa = shape_norm in ("zylinder", "rohr")
-    show_xi = shape_norm == "rohr"
-    show_w = shape_norm == "rechteck"
-    show_l = shape_norm == "rechteck"
-    show_n = shape_norm in ("n-eck", "ne-eck", "n-eck ")
+    show_xa = shape_norm in ("cylinder", "tube")
+    show_xi = shape_norm in ("tube",)
+    show_w = shape_norm in ("rectangle",)
+    show_l = shape_norm in ("rectangle",)
+    show_n = shape_norm in ("polygon",)
     show_sw = show_n
     for key, visible in {
         "label_xa": show_xa, "xa": show_xa, "label_xi": show_xi, "xi": show_xi,
@@ -259,9 +287,16 @@ def update_retract_visibility(handler, widget=None, mode_in=None):
     combo = handler.program_retract_mode if not isinstance(widget, QtWidgets.QComboBox) else widget
     if combo is None:
         return
+    try:
+        mode_code = combo.currentData()
+    except Exception:
+        mode_code = None
     idx = combo.currentIndex()
     if isinstance(mode_in, (int, float)):
         idx = int(mode_in)
+        mode_code = None
+    elif isinstance(mode_in, str) and mode_in:
+        mode_code = mode_in
     root = handler.root_widget or handler._find_root_widget() or getattr(handler, "w", None)
     if root is None:
         return
@@ -287,10 +322,11 @@ def update_retract_visibility(handler, widget=None, mode_in=None):
     ]
     for name in all_widgets:
         show(name, False)
-    if idx == 0:
+    mode_code = str(mode_code or "").strip().lower()
+    if mode_code in ("simple", "") and idx == 0 or mode_code == "simple":
         for name in ("label_prog_xra", "program_xra", "program_xra_absolute", "label_prog_zra", "program_zra", "program_zra_absolute", "label_retract_hint"):
             show(name, True)
-    elif idx == 1:
+    elif mode_code == "extended" or (not mode_code and idx == 1):
         for name in ("label_prog_xra", "program_xra", "program_xra_absolute", "label_prog_zra", "program_zra", "program_zra_absolute", "label_prog_xri", "program_xri", "program_xri_absolute", "label_retract_hint"):
             show(name, True)
     else:
@@ -358,15 +394,22 @@ def update_face_visibility(handler):
             handler.face_radius = root.findChild(QtWidgets.QDoubleSpinBox, "face_radius") or root.findChild(QtWidgets.QDoubleSpinBox, "face_edge_radius")
     if getattr(handler, "face_mode", None) is None or getattr(handler, "face_edge_type", None) is None:
         return
-    mode_text = (handler.face_mode.currentText() or "").strip().lower()
-    finish_visible = ("schlichten" in mode_text) or ("finish" in mode_text)
+    try:
+        mode_data = handler.face_mode.currentData()
+    except Exception:
+        mode_data = None
+    finish_visible = str(mode_data or "").strip().lower() in {"finish", "rough_finish"}
     if getattr(handler, "label_face_finish_direction", None) is not None:
         handler.label_face_finish_direction.setVisible(finish_visible)
     if getattr(handler, "face_finish_direction", None) is not None:
         handler.face_finish_direction.setVisible(finish_visible)
-    edge_text = (handler.face_edge_type.currentText() or "").strip().lower()
-    is_chamfer = ("fase" in edge_text) or ("chamfer" in edge_text)
-    is_radius = "radius" in edge_text
+    try:
+        edge_data = handler.face_edge_type.currentData()
+    except Exception:
+        edge_data = None
+    edge_mode = str(edge_data or "").strip().lower()
+    is_chamfer = edge_mode == "chamfer"
+    is_radius = edge_mode == "radius"
     edge_visible = is_chamfer or is_radius
     for w in (
         getattr(handler, "label_face_edge_size", None), getattr(handler, "face_edge_size", None),
@@ -389,10 +432,6 @@ def update_face_visibility(handler):
         return
     if getattr(handler, "label_face_edge_size", None) is not None:
         handler.label_face_edge_size.setVisible(True)
-        try:
-            handler.label_face_edge_size.setText("Fase:" if is_chamfer else "Radius:")
-        except Exception:
-            pass
     if getattr(handler, "face_edge_size", None) is not None:
         handler.face_edge_size.setVisible(True)
 

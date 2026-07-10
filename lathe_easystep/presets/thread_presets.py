@@ -71,6 +71,25 @@ def _preset_dict(entries: List[Tuple[str, float, float]], profile: str) -> Dict[
     return result
 
 
+def validate_thread_preset_data(data: Dict[str, object] | None) -> List[str]:
+    errors: List[str] = []
+    if not isinstance(data, dict):
+        return ["preset is not a dictionary"]
+    label = data.get("label")
+    if not isinstance(label, str) or not label.strip():
+        errors.append("missing label")
+    major = data.get("major")
+    if not isinstance(major, (int, float)) or float(major) <= 0.0:
+        errors.append("major diameter must be > 0")
+    pitch = data.get("pitch")
+    if not isinstance(pitch, (int, float)) or float(pitch) <= 0.0:
+        errors.append("pitch must be > 0")
+    profile = data.get("profile")
+    if str(profile or "").strip().lower() not in {"metric", "tr"}:
+        errors.append("profile must be 'metric' or 'tr'")
+    return errors
+
+
 THREAD_PRESET_INDEX: Dict[str, Dict[str, object]] = {}
 THREAD_PRESET_INDEX.update(_preset_dict(METRIC_THREAD_PRESETS, "metric"))
 THREAD_PRESET_INDEX.update(_preset_dict(TRAPEZOIDAL_THREAD_PRESETS, "tr"))
@@ -85,5 +104,10 @@ def trapezoidal_thread_presets() -> List[Tuple[str, float, float]]:
 
 
 def get_thread_preset(name: str) -> Dict[str, object] | None:
-    return THREAD_PRESET_INDEX.get(str(name or "").strip().upper())
-
+    preset = THREAD_PRESET_INDEX.get(str(name or "").strip().upper())
+    if preset is None:
+        return None
+    result = dict(preset)
+    if validate_thread_preset_data(result):
+        return None
+    return result

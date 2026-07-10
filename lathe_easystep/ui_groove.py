@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtGui
 
+from .translations import TRANSLATIONS
+
 
 def setup_groove_tab_ui(handler) -> None:
     try:
@@ -60,7 +62,9 @@ def update_groove_tab_ui(handler) -> None:
         idx = int(handler.groove_lage.currentIndex()) if handler.groove_lage is not None else 0
         lbl_z = handler._get_widget_by_name("label_23")
         if lbl_z:
-            lbl_z.setText("Z0 Bezugspunkt (abs)" if not is_parting else "Abstichposition Z0 (abs)")
+            lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
+            text_key = "runtime.groove.label_z0" if not is_parting else "runtime.groove.label_parting_z0"
+            lbl_z.setText(TRANSLATIONS.tr(text_key, lang))
         for label_name, widget_name in (
             ("label_groove_reduced_feed_start_x", "groove_reduced_feed_start_x"),
             ("label_groove_reduced_feed", "groove_reduced_feed"),

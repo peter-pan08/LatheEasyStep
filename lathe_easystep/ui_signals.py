@@ -124,7 +124,7 @@ def connect_global_form_signals(handler) -> None:
         getattr(handler, "program_optional_stop_toolchange", None),
         getattr(handler, "program_preview_warnings", None),
     ):
-        if widget and widget not in handler._connected_global_widgets:
+        if widget and widget not in handler._connected_global_widgets and hasattr(widget, "toggled"):
             widget.toggled.connect(handler._handle_global_change)
             handler._connected_global_widgets.add(widget)
     line_edit = getattr(handler, "program_name", None)
@@ -134,16 +134,37 @@ def connect_global_form_signals(handler) -> None:
     if handler.program_unit and handler.program_unit not in handler._connected_global_widgets:
         handler.program_unit.currentIndexChanged.connect(handler._handle_global_change)
         handler._connected_global_widgets.add(handler.program_unit)
-    if handler.program_has_subspindle and handler.program_has_subspindle not in handler._connected_global_widgets:
+    if (
+        handler.program_has_subspindle
+        and hasattr(handler.program_has_subspindle, "toggled")
+        and not getattr(handler, "_program_has_subspindle_visibility_connected", False)
+    ):
         handler.program_has_subspindle.toggled.connect(handler._update_subspindle_visibility)
-        handler._connected_global_widgets.add(handler.program_has_subspindle)
+        handler._program_has_subspindle_visibility_connected = True
 
 
 def connect_language_signal(handler) -> None:
-    lang_combo = handler._get_widget_by_name("program_language")
-    if lang_combo and not getattr(handler, "_language_connected", False):
-        lang_combo.currentIndexChanged.connect(handler._handle_language_change)
-        handler._language_connected = True
+    if not hasattr(handler, "_language_connected_widgets"):
+        handler._language_connected_widgets = set()
+    widgets = []
+    try:
+        widgets = list(handler._widgets_by_name("program_language"))
+    except Exception:
+        combo = handler._get_widget_by_name("program_language")
+        if combo is not None:
+            widgets = [combo]
+    for lang_combo in widgets:
+        if lang_combo is None:
+            continue
+        key = id(lang_combo)
+        if key in handler._language_connected_widgets:
+            continue
+        try:
+            lang_combo.currentIndexChanged.connect(handler._handle_language_change)
+            handler._language_connected_widgets.add(key)
+        except Exception:
+            continue
+    handler._language_connected = bool(handler._language_connected_widgets)
 
 
 def connect_mode_visibility_signals(handler) -> None:
@@ -219,12 +240,24 @@ def connect_core_signals(handler) -> None:
     if handler.tab_params and not getattr(handler, "_tab_params_connected", False):
         handler.tab_params.currentChanged.connect(handler._handle_tab_changed)
         handler._tab_params_connected = True
-    if handler.parting_mode and not getattr(handler, "_parting_mode_connected", False):
+    if (
+        handler.parting_mode
+        and hasattr(handler.parting_mode, "currentIndexChanged")
+        and not getattr(handler, "_parting_mode_connected", False)
+    ):
         handler.parting_mode.currentIndexChanged.connect(handler._update_parting_mode_visibility)
         handler._parting_mode_connected = True
-    if getattr(handler, "parting_undercut_mode", None) and not getattr(handler, "_parting_undercut_mode_connected", False):
+    if (
+        getattr(handler, "parting_undercut_mode", None)
+        and hasattr(handler.parting_undercut_mode, "currentIndexChanged")
+        and not getattr(handler, "_parting_undercut_mode_connected", False)
+    ):
         handler.parting_undercut_mode.currentIndexChanged.connect(handler._update_parting_mode_visibility)
         handler._parting_undercut_mode_connected = True
-    if getattr(handler, "groove_process_type", None) and not getattr(handler, "_groove_process_type_connected", False):
+    if (
+        getattr(handler, "groove_process_type", None)
+        and hasattr(handler.groove_process_type, "currentIndexChanged")
+        and not getattr(handler, "_groove_process_type_connected", False)
+    ):
         handler.groove_process_type.currentIndexChanged.connect(handler._update_groove_tab_ui)
         handler._groove_process_type_connected = True

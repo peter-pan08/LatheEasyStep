@@ -6,7 +6,22 @@ from qtvcp.core import Action
 from qtpy import QtCore, QtWidgets
 
 from .model import OpType
+from .translations import TRANSLATIONS
 from .ui_messages import format_user_error
+
+
+def _tr(handler, key: str, **kwargs) -> str:
+    lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
+    text = TRANSLATIONS.tr(key, lang)
+    return text.format(**kwargs) if kwargs else text
+
+
+def _translate_value(handler, prefix: str, value) -> str:
+    normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if not normalized:
+        return ""
+    text = _tr(handler, f"{prefix}.{normalized}")
+    return value if text == f"{prefix}.{normalized}" else text
 
 
 def build_gcode_lines(handler):
@@ -54,7 +69,7 @@ def handle_move_up(handler):
             return
         handler.model.move_up(idx)
         try:
-            handler._mark_all_operations_dirty()
+            handler._mark_program_structure_dirty()
         except Exception:
             pass
         handler._refresh_operation_list(select_index=idx - 1)
@@ -75,7 +90,7 @@ def handle_move_down(handler):
             return
         handler.model.move_down(idx)
         try:
-            handler._mark_all_operations_dirty()
+            handler._mark_program_structure_dirty()
         except Exception:
             pass
         handler._refresh_operation_list(select_index=idx + 1)
@@ -121,9 +136,9 @@ def handle_generate_gcode(handler):
         os.makedirs(os.path.dirname(default_filepath), exist_ok=True)
         filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
             handler.root_widget,
-            "G-Code speichern",
+            _tr(handler, "dialog.gcode.save.title"),
             default_filepath,
-            "G-Code Dateien (*.ngc);;Alle Dateien (*)",
+            _tr(handler, "dialog.gcode.filter"),
         )
         if not filepath:
             return
@@ -142,15 +157,15 @@ def handle_generate_gcode(handler):
         else:
             QtWidgets.QMessageBox.information(
                 handler.root_widget or None,
-                "LatheEasyStep",
-                f"Programm gespeichert unter:\n{filepath}\nAutomatisches Öffnen ist nicht verfügbar.",
+                _tr(handler, "dialog.app.title"),
+                _tr(handler, "message.gcode.saved_no_auto_open", path=filepath),
             )
             handler._log(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar", level="info")
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
-            "LatheEasyStep",
-            format_user_error(handler, exc, fallback_title="Fehler beim Erzeugen des Programms"),
+            _tr(handler, "dialog.app.title"),
+            format_user_error(handler, exc, fallback_title=_tr(handler, "message.gcode.generate_failed")),
         )
     finally:
         handler._generating_gcode = False
@@ -173,41 +188,77 @@ def describe_operation(handler, op, number=None):
 
     if t == OpType.PROGRAM_HEADER:
         wcs = str(p.get("wcs", "G54")).upper()
-        return wrap(f"Programmkopf ({wcs})")
+        return wrap(_tr(handler, "operation.program_header", wcs=wcs))
     if t == OpType.FACE:
         mode = p.get("mode", "schruppen")
         if isinstance(mode, (int, float)):
-            mode = {0: "schruppen", 1: "schlichten", 2: "schruppen + schlichten"}.get(int(mode), "schruppen")
-        mode = "schruppen" if mode is None else str(mode)
+            mode = {0: "rough", 1: "finish", 2: "rough_finish"}.get(int(mode), "rough")
+        mode = "rough" if mode is None else str(mode)
+        mode = {
+            "schruppen": "rough",
+            "schlichten": "finish",
+            "schruppen + schlichten": "rough_finish",
+        }.get(mode.strip().lower(), mode)
         z_start = p.get("z_start", 0.0)
         z_end = p.get("z_end", 0.0)
-        coolant = " mit Kühlung" if p.get("coolant") else ""
+        coolant = _tr(handler, "operation.face.coolant_suffix") if p.get("coolant") else ""
         tool = p.get("tool", "T01")
-        return wrap(f"Planen {mode.title()} (Z {fnum(z_start)}→{fnum(z_end)}){coolant} ({tool})")
+        mode_label = _tr(handler, f"operation.face.mode.{str(mode).replace(' ', '_').replace('+', '_')}")
+        return wrap(_tr(handler, "operation.face", mode=mode_label, z_start=fnum(z_start), z_end=fnum(z_end), coolant=coolant, tool=tool))
     if t == OpType.CONTOUR:
         name = str(p.get("name") or "unbenannt").strip()
-        return wrap(f"Kontur: {name}")
+        return wrap(_tr(handler, "operation.contour", name=name))
     if t == OpType.DRILL:
-        return wrap(f"Bohren {p.get('mode', 'normal')} (Z {fnum(p.get('z0', 0.0))}→{fnum(p.get('depth', 0.0))}) ({p.get('tool', 'T01')})")
+        return wrap(
+            _tr(
+                handler,
+                "operation.drill",
+                mode=_translate_value(handler, "operation.drill.mode", p.get("mode", "normal")),
+                z_start=fnum(p.get("z0", 0.0)),
+                depth=fnum(p.get("depth", 0.0)),
+                tool=p.get("tool", "T01"),
+            )
+        )
     if t == OpType.GROOVE:
-        process_label = "Abstich" if str(p.get("process_type", "groove")).strip().lower() == "parting" else "Einstich"
-        return wrap(f"{process_label} (Z {fnum(p.get('z', 0.0))}; B {fnum(p.get('width', 0.0))}) ({p.get('tool', 'T01')})")
+        process_key = "operation.groove.parting" if str(p.get("process_type", "groove")).strip().lower() == "parting" else "operation.groove.groove"
+        return wrap(_tr(handler, process_key, z=fnum(p.get("z", 0.0)), width=fnum(p.get("width", 0.0)), tool=p.get("tool", "T01")))
     if t == OpType.THREAD:
         relief = ""
         if str(p.get("relief_mode", "off")).strip().lower() == "suggest":
-            relief = " + Freistich-Vorschlag"
-        thread_type = "Innengewinde" if int(float(p.get("orientation", 0) or 0)) == 1 else "Aussengewinde"
-        hand = "Links" if int(float(p.get("hand", 0) or 0)) == 1 else "Rechts"
+            relief = _tr(handler, "operation.thread.relief_suffix")
+        thread_type = _tr(handler, "operation.thread.type.internal") if int(float(p.get("orientation", 0) or 0)) == 1 else _tr(handler, "operation.thread.type.external")
+        hand = _tr(handler, "operation.thread.hand.left") if int(float(p.get("hand", 0) or 0)) == 1 else _tr(handler, "operation.thread.hand.right")
         start_z = float(p.get("thread_start_z", 0.0) or 0.0)
         length = abs(float(p.get("length", 0.0) or 0.0))
         end_z = start_z + ((1.0 if int(float(p.get("hand", 0) or 0)) == 1 else -1.0) * length)
-        return wrap(f"Gewinde {thread_type} {hand} (P {fnum(p.get('pitch', 0.0),2)}; Z {fnum(start_z)}→{fnum(end_z)}){relief} ({p.get('tool', 'T01')})")
+        return wrap(
+            _tr(
+                handler,
+                "operation.thread",
+                thread_type=thread_type,
+                hand=hand,
+                pitch=fnum(p.get("pitch", 0.0), 2),
+                z_start=fnum(start_z),
+                z_end=fnum(end_z),
+                relief=relief,
+                tool=p.get("tool", "T01"),
+            )
+        )
     if t == OpType.ABSPANEN:
         relief = str(p.get("undercut_mode", "finish_only"))
-        return wrap(f"Abspanen ({p.get('contour_name', 'unbekannt')}, {p.get('slice_strategy', 'parallel_z')}, {relief}) ({p.get('tool', 'T01')})")
+        return wrap(
+            _tr(
+                handler,
+                "operation.parting",
+                contour=p.get("contour_name", "unknown"),
+                strategy=_translate_value(handler, "operation.parting.strategy", p.get("slice_strategy", "parallel_z")),
+                relief=_translate_value(handler, "operation.parting.relief", relief),
+                tool=p.get("tool", "T01"),
+            )
+        )
     if t == OpType.KEYWAY:
         slot_count = int(float(p.get("slot_count", 1) or 1))
-        return wrap(f"Keilnut ({slot_count}x ab Z {fnum(p.get('start_z', 0.0))}) ({p.get('tool', 'T01')})")
+        return wrap(_tr(handler, "operation.keyway", slots=slot_count, start_z=fnum(p.get("start_z", 0.0)), tool=p.get("tool", "T01")))
     return wrap(f"{t}: {p}")
 
 

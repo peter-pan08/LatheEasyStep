@@ -1,0 +1,494 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Test)
+(Masseinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X70.000 Z100.000 Werkstueckkoordinaten)
+(Rueckzugsebenen: XRA=2.000 XRI=9.800)
+(               ZRA=5.000 ZRI=0.000)
+(Rohteil Aussendurchmesser: 50.000 mm)
+(Rohteil Z-Bereich: 1.000 bis -80.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+
+
+(=== Subroutine Definitions ===)
+o100 sub
+G1 X27.000 Z0.000
+G1 X28.000 Z0.000
+G1 X28.002 Z0.000
+G3 X30.000 Z-0.999 I0.000 K-0.999
+G1 X30.000 Z-35.000
+G1 X40.000 Z-35.000
+G1 X40.000 Z-45.000
+G1 X50.000 Z-60.000
+o100 endsub
+o101 sub
+G1 X10.000 Z-44.000
+G1 X11.400 Z-44.000
+G1 X12.000 Z-43.400
+G1 X12.000 Z-10.500
+G3 X13.000 Z-10.000 I1.000 K0.000
+G1 X16.000 Z-10.000
+G1 X19.000 Z-10.000
+o101 endsub
+o<step_x_pause> sub
+(Step X pause helper)
+G4 P0.1
+o<step_x_pause> endsub
+(=== GROOVE CYCLE LIBRARY ===)
+o200 sub
+  #<Wbase> = #1
+  #<mode>  = #2
+  #<C>     = #3
+  #<camp>  = #4
+  #<Fsw>   = #5
+  #<cn>    = #6
+  o201 if [#<camp> GT 0.0001 AND #<cn> GT 0]
+    #<i> = [0]
+    o202 while [#<i> LT #<cn>]
+      o203 if [#<mode> EQ 0]
+        G1 Z[#<C> + #<Wbase> + #<camp>] F[#<Fsw>]
+        G1 Z[#<C> + #<Wbase> - #<camp>] F[#<Fsw>]
+        G1 Z[#<C> + #<Wbase>]           F[#<Fsw>]
+      o203 else
+        G1 X[#<C> + #<Wbase> + #<camp>] F[#<Fsw>]
+        G1 X[#<C> + #<Wbase> - #<camp>] F[#<Fsw>]
+        G1 X[#<C> + #<Wbase>]           F[#<Fsw>]
+      o203 endif
+      #<i> = [#<i> + 1]
+    o202 endwhile
+  o201 endif
+o200 endsub
+
+o210 sub
+  #<Atgt>  = #1
+  #<mode>  = #2
+  #<C>     = #3
+  #<Astart> = #4
+  #<retr>  = #5
+  #<sgn>   = #6
+  #<Fpl>   = #7
+  #<stepW> = #8
+  #<omin>  = #9
+  #<omax>  = #10
+  #<camp>  = #11
+  #<Fsw>   = #12
+  #<cn>    = #13
+
+  (Offset order: 0, +stepW, -stepW, +2stepW, -2stepW, ...)
+  #<k> = [0]
+  o211 while [1]
+    o212 if [#<k> EQ 0]
+      #<Woff> = [0]
+    o212 else
+      #<tmp>  = [#<k> + 1]
+      #<tmp>  = [#<tmp> / 2]
+      #<m>    = [FIX[#<tmp>]]
+      #<kmod> = [#<k> MOD 2]
+      o213 if [#<kmod> EQ 1]
+        #<Woff> = [#<m> * #<stepW>]
+      o213 else
+        #<Woff> = [0 - #<m> * #<stepW>]
+      o213 endif
+    o212 endif
+
+    #<omin_lim> = [#<omin> - 0.0001]
+    #<omax_lim> = [#<omax> + 0.0001]
+    o214 if [#<Woff> LT #<omin_lim>]
+      o211 break
+    o214 endif
+    o215 if [#<Woff> GT #<omax_lim>]
+      o211 break
+    o215 endif
+
+    o216 if [#<mode> EQ 0]
+      (radial: width axis Z, plunge axis X)
+      G0 X[#<Astart>] Z[#<C> + #<Woff>]
+      G1 X[#<Atgt>] F[#<Fpl>]
+      o200 call [#<Woff>] [#<mode>] [#<C>] [#<camp>] [#<Fsw>] [#<cn>]
+      (retract towards start)
+      G1 X[#<Atgt> - #<sgn> * #<retr>] F[#<Fpl>]
+      G0 X[#<Astart>]
+    o216 else
+      (face: width axis X in diameter, plunge axis Z)
+      G0 Z[#<Astart>] X[#<C> + #<Woff>]
+      G1 Z[#<Atgt>] F[#<Fpl>]
+      o200 call [#<Woff>] [#<mode>] [#<C>] [#<camp>] [#<Fsw>] [#<cn>]
+      G1 Z[#<Atgt> - #<sgn> * #<retr>] F[#<Fpl>]
+      G0 Z[#<Astart>]
+    o216 endif
+
+    #<k> = [#<k> + 1]
+    o217 if [#<k> GT 200]
+      o211 break
+    o217 endif
+  o211 endwhile
+
+o210 endsub
+
+o220 sub
+
+  M70
+  G90
+  G18
+
+  #<mode>   = [FIX[#1]]
+  #<wtool>  = [ABS[#2]]
+  #<wnut>   = [ABS[#3]]
+  #<C>      = [#4]
+  #<Astart> = [#5]
+  #<Aend>   = [#6]
+  #<stepA>  = [ABS[#7]]
+  #<over>   = [ABS[#8]]
+  #<retr>   = [ABS[#9]]
+  #<Fpl>    = [ABS[#10]]
+  #<Fsw>    = [ABS[#11]]
+  #<fin>    = [ABS[#12]]
+  #<camp>   = [ABS[#13]]
+  #<cn>     = [ABS[#14]]
+  #<cn>     = [FIX[#<cn>]]
+
+  (Checks)
+  o221 if [#<wtool> LE 0]
+    (ABBRUCH: Werkzeugbreite <= 0)
+  o221 endif
+  o222 if [#<wnut> LE 0]
+    (ABBRUCH: Nutbreite <= 0)
+  o222 endif
+  o223 if [#<stepA> LE 0]
+    (ABBRUCH: Zustellung <= 0)
+  o223 endif
+  o224 if [#<wtool> GT #<wnut> + 0.0001]
+    (ABBRUCH: Werkzeug breiter als Nut)
+  o224 endif
+
+  (Width stepping)
+  #<stepW> = [#<wtool> - #<over>]
+  o225 if [#<stepW> GT 0.8 * #<wtool>]
+    #<stepW> = [0.8 * #<wtool>]
+  o225 endif
+  o226 if [#<stepW> LE 0.001]
+    (ABBRUCH: Ueberdeckung zu gross)
+  o226 endif
+
+  #<extra> = [#<wnut> - #<wtool>]
+  #<omin>  = [0 - 0.5 * #<extra>]
+  #<omax>  = [0.5 * #<extra>]
+  o227 if [#<stepW> GT #<omax>]
+    #<stepW> = #<omax>
+  o227 endif
+
+  (Direction along plunge axis: from start to end)
+  #<sgn> = [1]
+  o232 if [#<Aend> LT #<Astart>]
+    #<sgn> = [0 - 1]
+  o232 endif
+
+  (Rough target with finish allowance)
+  #<Arough> = [#<Aend> - #<sgn> * #<fin>]
+
+  (Roughing passes up to Arough)
+  #<Acur> = [#<Astart>]
+  o228 if [#<sgn> * [#<Arough> - #<Astart>] GT 0]
+    o229 while [#<sgn> * [#<Acur> - #<Arough>] LT 0]
+      #<Anext> = [#<Acur> + #<sgn> * #<stepA>]
+      o230 if [#<sgn> * [#<Anext> - #<Arough>] GT 0]
+        #<Anext> = [#<Arough>]
+      o230 endif
+      o210 call [#<Anext>] [#<mode>] [#<C>] [#<Astart>] [#<retr>] [#<sgn>] [#<Fpl>] [#<stepW>] [#<omin>] [#<omax>] [#<camp>] [#<Fsw>] [#<cn>]
+      #<Acur> = [#<Anext>]
+    o229 endwhile
+  o228 endif
+
+  (Finish pass optional)
+  o231 if [#<fin> GT 0.0001]
+    o210 call [#<Aend>] [#<mode>] [#<C>] [#<Astart>] [#<retr>] [#<sgn>] [#<Fpl>] [#<stepW>] [#<omin>] [#<omax>] [#<camp>] [#<Fsw>] [#<cn>]
+  o231 endif
+
+  M72
+o220 endsub
+(=== END GROOVE CYCLE LIBRARY ===)
+o102 sub
+G1 X50.000 Z-2.000
+G1 X46.000 Z0.000
+G1 X-1.000 Z0.000
+o102 endsub
+(=== End Subroutines ===)
+
+
+
+
+(Werkzeug T01)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+T01 M6
+G0 X52.000 Z6.000
+
+(Step 3: face | T1: DCMT Aussendrehen)
+(STEP: 3. Planen Schruppen Z 0.0?0.0 mit Kuehlung 1)
+G97 S800 M3
+M8
+F0.200
+(Anfahren vor Zyklus)
+(WARN: Startpunkt X50.000 Z1.000 liegt im Rohteil)
+G0 X50.000 Z1.000
+G72 Q102 X50.000 Z1.000 D0.030 I1.000 R0.500
+G0 X52.000
+G0 Z6.000
+(Werkzeug T11)
+G0 Z-80.000
+G0 X9.800
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T11 M6
+G0 X9.800 Z-80.000
+
+(Step 4: abspanen | T11: VCMT Innendrehen)
+(STEP: 5. Abspanen ausdrehen, 2, 0.0 11)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.100/0.030 mm)
+G97 S1200 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(Aufmass X/Z: 0.100/0.030)
+(Fallback-Grund: automatische Entscheidung -> Move-based)
+(ABSPANEN Rough - parallel Z - Move-based)
+G0 Z0.000
+G0 X9.800
+(Schlichtschnitt Kontur)
+G0 X10.000 Z0.000
+G41.1 D0.4000 L6
+G1 X10.000 Z-44.000 F0.150
+G1 X11.400 Z-44.000 F0.150
+G1 X12.000 Z-43.400 F0.150
+G1 X12.000 Z-10.500 F0.150
+G1 X13.000 Z-10.000 F0.150
+G1 X16.000 Z-10.000 F0.150
+G1 X19.000 Z-10.000 F0.150
+G0 Z0.000
+G40
+G0 X9.800
+G0 Z-80.000
+(Werkzeug T02)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T02 M6
+G0 X52.000 Z6.000
+
+(Step 5: abspanen | T2: CCMT Aussendrehen)
+(STEP: 5. Abspanen abdrehen, 2, 3.0 2)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.100/0.030 mm)
+G97 S1200 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(Aufmass X/Z: 0.100/0.030)
+(ABSPANEN Rough - parallel Z)
+G0 X50.000 Z5.000
+G71 Q100 X50.000 Z5.000 D1.000
+(Schlichtschnitt Kontur)
+G0 X27.000 Z5.000
+G42.1 D0.8000 L2
+G1 X27.000 Z0.000 F0.150
+G1 X28.000 Z0.000 F0.150
+G1 X28.002 Z0.000 F0.150
+G1 X30.000 Z-0.999 F0.150
+G1 X30.000 Z-35.000 F0.150
+G1 X40.000 Z-35.000 F0.150
+G1 X40.000 Z-45.000 F0.150
+G1 X50.000 Z-60.000 F0.150
+G0 Z5.000
+G40
+G0 X52.000
+G0 Z6.000
+(Werkzeug T09)
+G0 Z-80.000
+G0 X9.800
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T09 M6
+G0 X9.800 Z-80.000
+
+(Step 6: thread | T9: Innengewinde MMT11ir AG60)
+(STEP: 7. Gewinde Innengewinde Rechts P 1.75; Z -10.0?-30.0 9)
+G97 S500 M3
+M9
+(Normgewinde: M12 x 1.75)
+(Gewindetyp: Innen)
+(Gewinderichtung: Rechtsgewinde)
+(Gewindestart/-ende Z: -10.000 -> -30.000)
+(Anfahren vor Gewinde)
+(WARN: Rueckzugsebene Z-80.000 schneidet den Futterbereich)
+G0 X9.320 Z2.000
+G0 Z-10.000
+G76 P1.7500 Z-30.000 I0.5400 J0.2200 R1.5000 K2.1400 Q29.5000 H1 E0.0000 L0
+G0 Z-80.000
+G0 X9.800
+(Werkzeug T07)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T07 M6
+G0 X52.000 Z6.000
+
+(Step 7: groove | T7: Einstechen Innen)
+(STEP: 8. Einstich Z -40.0; B 4.0 7)
+G97 S600 M3
+M9
+(Anfahren vor Groove)
+G0 Z2.000
+G0 X12.000
+o220 call [0] [0.800] [4.000] [-40.000] [12.000] [14.000] [0.800] [0.200] [0.400] [0.150] [0.150] [0.000] [0.000] [0]
+G0 X52.000
+G0 Z6.000
+(Werkzeug T10)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T10 M6
+G0 X52.000 Z6.000
+
+(Step 8: drill | T10: ER25 Aufnahme)
+G97 S600 M3
+M9
+(Anfahren vor Zyklus)
+G0 X0.000 Z2.000
+(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
+G17
+F0.120
+G73 X0.000 Z-45.000 R2.000 Q5.000 F0.120
+G80
+G0 Z2.000
+G18
+G0 Z6.000
+G0 X52.000
+(Werkzeug T11)
+G0 Z-80.000
+G0 X9.800
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T11 M6
+G0 X9.800 Z-80.000
+
+(Step 9: abspanen | T11: VCMT Innendrehen)
+(STEP: 10. Abspanen ausdrehen, 2, 0.0 11)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.100/0.030 mm)
+G97 S1200 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(Aufmass X/Z: 0.100/0.030)
+(Fallback-Grund: automatische Entscheidung -> Move-based)
+(ABSPANEN Rough - parallel Z - Move-based)
+G0 Z0.000
+G0 X9.800
+G0 X9.800
+G0 Z-80.000
+
+(Step 10: abspanen | T11: VCMT Innendrehen)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.100/0.030 mm)
+G97 S1200 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(Aufmass X/Z: 0.100/0.030)
+(Fallback-Grund: automatische Entscheidung -> Move-based)
+(ABSPANEN Rough - parallel Z - Move-based)
+G0 Z0.000
+G0 X9.800
+(Schlichtschnitt Kontur)
+G0 X10.000 Z0.000
+G41.1 D0.4000 L6
+G1 X10.000 Z-44.000 F0.150
+G1 X11.400 Z-44.000 F0.150
+G1 X12.000 Z-43.400 F0.150
+G1 X12.000 Z-10.500 F0.150
+G1 X13.000 Z-10.000 F0.150
+G1 X16.000 Z-10.000 F0.150
+G1 X19.000 Z-10.000 F0.150
+G0 Z0.000
+G40
+G0 X9.800
+G0 Z-80.000
+(Werkzeug T07)
+G0 Z6.000
+G0 X52.000
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T07 M6
+G0 X52.000 Z6.000
+
+(Step 11: groove | T7: Einstechen Innen)
+G97 S600 M3
+M9
+(Anfahren vor Groove)
+G0 Z2.000
+G0 X12.000
+o220 call [0] [0.800] [4.000] [-40.000] [12.000] [14.000] [0.800] [0.200] [0.400] [0.150] [0.150] [0.000] [0.000] [0]
+G0 X52.000
+G0 Z6.000
+(Werkzeug T09)
+G0 Z-80.000
+G0 X9.800
+M5
+M9
+(Toolchange move)
+G0 X70.000 Z100.000
+T09 M6
+G0 X9.800 Z-80.000
+
+(Step 12: thread | T9: Innengewinde MMT11ir AG60)
+(STEP: 13. Gewinde Innengewinde Rechts P 1.75; Z -10.0?-30.0 9)
+G97 S500 M3
+M9
+(Normgewinde: M12 x 1.75)
+(Gewindetyp: Innen)
+(Gewinderichtung: Rechtsgewinde)
+(Gewindestart/-ende Z: -10.000 -> -30.000)
+(Anfahren vor Gewinde)
+(WARN: Rueckzugsebene Z-80.000 schneidet den Futterbereich)
+G0 X9.320 Z2.000
+G0 Z-10.000
+G76 P1.7500 Z-30.000 I0.5400 J0.2200 R1.5000 K2.1400 Q29.5000 H1 E0.0000 L0
+G0 Z-80.000
+G0 X9.800
+
+G0 X70.000 Z100.000
+M5
+M9
+M30
+%
