@@ -1,6 +1,12 @@
 # Changelog
 
 ## [Unreleased]
+- Safety: Innen-Gewinde und Innen-Abspanen erzwingen jetzt ein plausibles `XRI`; ohne gueltige Innen-Rueckzugsebene bricht die G-Code-Erzeugung mit einer klaren Fehlermeldung ab
+- Safety: Innen-Gewinde und Innen-Abspanen verwenden jetzt op-spezifische sichere Anfahr- und Rueckzugsebenen ueber `XRI/ZRI` statt pauschal `XRA/ZRA`
+- Abspanen: Interner `G71`-Startdurchmesser wird jetzt aus Kontur und Innen-Rueckzug fachlich korrekt abgeleitet; unplausible `X0/Z0`-Zyklusstarts fuer Innenkonturen werden nicht mehr erzeugt
+- Abspanen: Innen-Schlichtschnitt mit aktiver Schneidenradiuskorrektur bekommt jetzt einen echten Einfahrweg, damit LinuxCNC keine Fehler wegen zu kurzer Kompensations-Einfahrt meldet
+- Tests: Regressionen fuer `XRI`-Pflicht, Innen-Anfahrlogik, `M30`-Programmende und Subroutinen-Reihenfolge erweitert
+- Tests: Referenz- und Regressionsstand auf `202 passed` angehoben
 - Gewinde: Gewinde-Reiter um `Gewindestart Z` sowie separate Rechts-/Linksgewinde-Auswahl erweitert; Werte laufen jetzt durch UI, Save/Load, Vorschau und Generator
 - Gewinde: Vorschau und G-Code unterscheiden jetzt alle vier Kombinationen aus Innen/Aussen und Rechts/Links; Start-Z und Gewinderichtung steuern Anfahrpunkt, Endpunkt und Z-Laufrichtung
 - Gewinde: Zusaetzliche Plausibilitaetswarnungen fuer identische Start-/Endpunkte sowie Start-/Endlagen ausserhalb des Werkstueck-Z-Bereichs
@@ -45,7 +51,7 @@
 - Tests: Neue Regressionen fuer Freistich-Varianten, Sicherheitswarnungen und `M5` vor jedem Werkzeugwechsel hinzugefuegt
 - Tests: Save/Load, CSS/Parklogik, Gewinde-Freistich-Vorschlag und optionale Stops zusaetzlich abgesichert
 - Tests: Dirty-State, Groove/Abstich-Sichtbarkeit, benutzerfreundliche Fehlermeldungen und Snapshot-Normalisierung zusaetzlich abgesichert
-- Tests: Referenzprogramme regeneriert; aktueller Stand mit `194 passed` verifiziert
+- Tests: Referenzprogramme regeneriert; aktueller Stand mit `202 passed` verifiziert
 
 ## [0.7.0] - 2026-07-08
 

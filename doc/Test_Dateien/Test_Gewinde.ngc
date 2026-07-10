@@ -119,13 +119,16 @@ T08 M6
 G0 X52.000 Z6.000
 
 (Step 5: thread | T8: Aussengewinde MMT11er AG60)
-(STEP: 6. Gewinde 0.0 P 1.50; Z 0.0?0.0 8)
+(STEP: 6. Gewinde Aussengewinde Rechts P 1.50; Z 0.0?-29.0 8)
 G97 S500 M3
 M9
 (Normgewinde: M10 x 1.5)
 (Gewindetyp: Aussen)
+(Gewinderichtung: Rechtsgewinde)
+(Gewindestart/-ende Z: 0.000 -> -29.000)
 (Anfahren vor Gewinde)
 G0 X10.000 Z5.000
+G0 Z0.000
 G76 P1.5000 Z-29.000 I-0.4600 J0.0900 R1.5000 K0.9200 Q29.5000 H1 E0.0000 L0
 G0 Z6.000
 G0 X52.000

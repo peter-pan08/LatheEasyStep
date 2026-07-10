@@ -9,7 +9,7 @@ G54
 
 (=== SICHERHEITSPARAMETER ===)
 (Werkzeugwechselpunkt: X60.000 Z90.000 Werkstueckkoordinaten)
-(Rueckzugsebenen: XRA=2.000 XRI=0.000)
+(Rueckzugsebenen: XRA=2.000 XRI=9.000)
 (               ZRA=5.000 ZRI=0.000)
 (Rohteil Aussendurchmesser: 50.000 mm)
 (Rohteil Z-Bereich: 1.000 bis -100.000 mm)
@@ -39,12 +39,10 @@ G0 Z6.000
 G0 X52.000
 M5
 M9
-(Toolchange move)
-G0 X60.000 Z90.000
 T01 M6
 G0 X52.000 Z6.000
 
-(Step 1: face)
+(Step 1: face | T1: DCMT Aussendrehen)
 (STEP: 2. Planen Schruppen Z 0.0?0.0 mit Kuehlung 1)
 G97 S1200 M3
 M8
@@ -66,7 +64,7 @@ G0 X60.000 Z90.000
 T05 M6
 G0 X52.000 Z6.000
 
-(Step 3: abspanen)
+(Step 3: abspanen | T5: CCMT Innendrehen)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.200/0.100 mm)
 G97 S1200 M3
@@ -82,7 +80,7 @@ G71 Q100 X50.000 Z0.000 D1.000
 G0 X52.000
 G0 Z6.000
 
-(Step 4: abspanen)
+(Step 4: abspanen | T5: CCMT Innendrehen)
 (STEP: 5. Abspanen Ausdrehen, 2, 0.0 5)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.200/0.100 mm)
@@ -97,7 +95,8 @@ F0.150
 G0 X50.000 Z0.000
 G71 Q100 X50.000 Z0.000 D1.000
 (Schlichtschnitt Kontur)
-G0 X50.000 Z0.000
+G0 X50.000 Z2.000
+G41.1 D0.8000 L3
 G1 X50.000 Z0.000 F0.150
 G1 X41.000 Z0.000 F0.150
 G1 X40.000 Z-1.000 F0.150
@@ -106,6 +105,7 @@ G1 X14.000 Z-10.000 F0.150
 G1 X10.000 Z-12.000 F0.150
 G1 X10.000 Z-40.000 F0.150
 G0 Z0.000
+G40
 G0 X52.000
 G0 Z6.000
 (Werkzeug T09)
@@ -118,11 +118,10 @@ G0 X60.000 Z90.000
 T09 M6
 G0 X52.000 Z6.000
 
-(Step 5: thread)
+(Step 5: thread | T9: Innengewinde MMT11ir AG60)
 (STEP: 6. Gewinde Innengewinde Rechts P 1.50; Z -10.0?-39.0 9)
 G97 S500 M3
 M9
-(Normgewinde: M10 x 1.5)
 (Gewindetyp: Innen)
 (Gewinderichtung: Rechtsgewinde)
 (Gewindestart/-ende Z: -10.000 -> -39.000)
@@ -133,9 +132,7 @@ G76 P1.5000 Z-39.000 I0.4600 J0.1800 R1.5000 K1.8400 Q29.5000 H1 E0.0000 L0
 G0 Z6.000
 G0 X52.000
 
-(Werkzeugwechselpunkt am Ende)
 G0 X60.000 Z90.000
-
 M5
 M9
 M30

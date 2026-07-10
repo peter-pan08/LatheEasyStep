@@ -1,17 +1,19 @@
 """Tests for G76 threading – external vs. internal.
 
 Validates that:
-1. External threading: I < 0 (boring=0), approach at major_diameter
-2. Internal threading: I > 0 (boring=1), approach at bore surface (minor Ø)
+1. External threading: I < 0 (boring=0), approach at G76 driveline outside major diameter
+2. Internal threading: I > 0 (boring=1), approach at G76 driveline inside minor diameter
 3. Preview contour: single zig-zag line, no pass sequence
 """
 import re
 import sys
 import os
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import build_thread_path
 from slicer import gcode_for_thread, Operation, OpType
+from lathe_easystep.model import ProgramModel
 
 
 def _make_thread_op(orientation=0, **overrides):
@@ -29,6 +31,12 @@ def _make_thread_op(orientation=0, **overrides):
     return Operation(OpType.THREAD, params, path=[])
 
 
+def _thread_settings(**overrides):
+    settings = {"xi": 0.0, "xri": 7.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
+    settings.update(overrides)
+    return settings
+
+
 # ---------------------------------------------------------------------------
 # G-code generation tests
 # ---------------------------------------------------------------------------
@@ -39,17 +47,23 @@ class TestExternalThreadGCode:
     def test_peak_offset_I_is_negative(self):
         """I must be negative for external threading (boring=0 in LinuxCNC)."""
         op = _make_thread_op(orientation=0)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         g76_line = [l for l in lines if l.startswith("G76")][0]
         i_match = re.search(r"I([+-]?\d+\.?\d*)", g76_line)
         assert i_match, f"No I parameter in G76 line: {g76_line}"
         i_val = float(i_match.group(1))
         assert i_val < 0, f"I must be negative for external thread, got I={i_val}"
 
-    def test_approach_at_major_diameter(self):
-        """Tool must approach at major_diameter for external threading."""
+    def test_approach_at_diam_mode_g76_driveline(self):
+        """In G7 diameter mode, the approach X must be the G76 driveline Xi.
+
+        LinuxCNC's g76diam helper uses:
+            xi = major_diameter - I
+        with negative I for external threads, which places Xi slightly outside
+        the major diameter.
+        """
         op = _make_thread_op(orientation=0, major_diameter=25.0)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         # Find the last G0 before G76 — that's the approach move
         approach_lines = [l for l in lines if l.startswith("G0") and "X" in l]
         assert len(approach_lines) >= 1
@@ -57,18 +71,19 @@ class TestExternalThreadGCode:
         x_match = re.search(r"X([+-]?\d+\.?\d*)", last_approach)
         assert x_match
         x_val = float(x_match.group(1))
-        assert abs(x_val - 25.0) < 0.01, (
-            f"External approach X should be 25.0 (major_diameter), got {x_val}"
+        expected_drive = 25.0 - (-0.0900)
+        assert abs(x_val - expected_drive) < 0.01, (
+            f"External approach X should be {expected_drive:.3f} (G76 driveline), got {x_val}"
         )
 
     def test_comment_says_aussen(self):
         op = _make_thread_op(orientation=0)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         assert any("Aussen" in l for l in lines)
 
     def test_right_hand_thread_runs_towards_negative_z_from_start_z(self):
         op = _make_thread_op(orientation=0, hand=0, thread_start_z=-2.0, length=18.0, safe_z=3.0)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         assert "G0 Z-2.000" in lines
         g76_line = [l for l in lines if l.startswith("G76")][0]
         assert "Z-20.000" in g76_line
@@ -85,7 +100,7 @@ class TestInternalThreadGCode:
         When boring=1, each threading pass moves OUTWARD (+X).
         """
         op = _make_thread_op(orientation=1)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         g76_line = [l for l in lines if l.startswith("G76")][0]
         i_match = re.search(r"I([+-]?\d+\.?\d*)", g76_line)
         assert i_match, f"No I parameter in G76 line: {g76_line}"
@@ -94,37 +109,36 @@ class TestInternalThreadGCode:
             f"I must be positive for internal thread (boring=1), got I={i_val}"
         )
 
-    def test_approach_at_bore_surface(self):
-        """Internal thread approach must be at the bore surface (minor Ø),
-        NOT at the major diameter (which is inside the wall material).
+    def test_approach_at_diam_mode_g76_driveline(self):
+        """In G7 diameter mode, internal threading approaches at Xi = minor - I.
 
-        Minor Ø = major - 2*K, where K = thread_depth.
-        For M10x1.5: K = 1.5 * 0.6134 = 0.9201
-                     minor = 10 - 2*0.9201 = 8.160
+        LinuxCNC's g76diam helper uses positive I for internal threads, which
+        places the driveline slightly inside the minor diameter.
         """
         op = _make_thread_op(orientation=1, major_diameter=10.0, pitch=1.5)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         approach_lines = [l for l in lines if l.startswith("G0") and "X" in l]
         assert len(approach_lines) >= 1
         last_approach = approach_lines[-1]
         x_match = re.search(r"X([+-]?\d+\.?\d*)", last_approach)
         assert x_match
         x_val = float(x_match.group(1))
-        # K = 1.5 * 0.6134 = 0.9201, minor = 10 - 2*0.9201 = 8.1598
-        expected_bore = 10.0 - 2.0 * (1.5 * 0.6134)
-        assert abs(x_val - expected_bore) < 0.01, (
-            f"Internal approach X should be {expected_bore:.3f} (bore surface), "
+        thread_depth = 1.5 * 0.6134
+        minor_dia = 10.0 - 2.0 * thread_depth
+        expected_drive = minor_dia - 0.0900
+        assert abs(x_val - expected_drive) < 0.01, (
+            f"Internal approach X should be {expected_drive:.3f} (G76 driveline), "
             f"got {x_val:.3f}"
         )
 
     def test_comment_says_innen(self):
         op = _make_thread_op(orientation=1)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         assert any("Innen" in l for l in lines)
 
     def test_left_hand_thread_runs_towards_positive_z_from_start_z(self):
         op = _make_thread_op(orientation=1, hand=1, thread_start_z=-30.0, length=30.0, safe_z=2.0)
-        lines = gcode_for_thread(op)
+        lines = gcode_for_thread(op, _thread_settings())
         assert "G0 Z-30.000" in lines
         g76_line = [l for l in lines if l.startswith("G76")][0]
         assert "Z0.000" in g76_line
@@ -135,29 +149,37 @@ class TestInternalThreadGCode:
         The direction is controlled by the sign of I, not K."""
         for orient in (0, 1):
             op = _make_thread_op(orientation=orient)
-            lines = gcode_for_thread(op)
+            lines = gcode_for_thread(op, _thread_settings())
             g76_line = [l for l in lines if l.startswith("G76")][0]
             k_match = re.search(r"K([+-]?\d+\.?\d*)", g76_line)
             assert k_match
             k_val = float(k_match.group(1))
             assert k_val > 0, f"K must be positive, got {k_val} for orientation={orient}"
+            expected_k = 2.0 * (1.5 * 0.6134)
+            assert abs(k_val - expected_k) < 0.01, (
+                f"K should be full diameter thread depth {expected_k:.4f} in G7, got {k_val:.4f}"
+            )
 
     def test_J_is_always_positive(self):
-        """J (first depth) must be > 0 per LinuxCNC 'J must be greater than 0'."""
+        """J (first depth) must be > 0 and uses G7 diameter semantics."""
         for orient in (0, 1):
             op = _make_thread_op(orientation=orient)
-            lines = gcode_for_thread(op)
+            lines = gcode_for_thread(op, _thread_settings())
             g76_line = [l for l in lines if l.startswith("G76")][0]
             j_match = re.search(r"J([+-]?\d+\.?\d*)", g76_line)
             assert j_match
             j_val = float(j_match.group(1))
             assert j_val > 0, f"J must be positive, got {j_val} for orientation={orient}"
+            expected_j = 2.0 * max((1.5 * 0.6134) * 0.1, 1.5 * 0.05)
+            assert abs(j_val - expected_j) < 0.01, (
+                f"J should be diameter-mode initial cut depth {expected_j:.4f}, got {j_val:.4f}"
+            )
 
     def test_K_greater_than_J(self):
         """LinuxCNC requires K > J, per error check in interp_convert.cc."""
         for orient in (0, 1):
             op = _make_thread_op(orientation=orient)
-            lines = gcode_for_thread(op)
+            lines = gcode_for_thread(op, _thread_settings())
             g76_line = [l for l in lines if l.startswith("G76")][0]
             k_match = re.search(r"K([+-]?\d+\.?\d*)", g76_line)
             j_match = re.search(r"J([+-]?\d+\.?\d*)", g76_line)
@@ -167,6 +189,22 @@ class TestInternalThreadGCode:
             assert k_val > j_val, (
                 f"K ({k_val}) must be > J ({j_val}) for orientation={orient}"
             )
+
+    def test_internal_thread_approach_uses_xri_and_zri_safe_position(self):
+        m = ProgramModel()
+        m.operations = [_make_thread_op(orientation=1, thread_start_z=-6.0, safe_z=3.0)]
+        m.program_settings = _thread_settings()
+        lines = m.generate_gcode()
+        assert "G0 Z4.000" in lines
+        assert "G0 X7.000" in lines
+        assert "G0 X8.068 Z3.000" in lines
+
+    def test_internal_thread_rejects_unplausible_xri(self):
+        m = ProgramModel()
+        m.operations = [_make_thread_op(orientation=1)]
+        m.program_settings = _thread_settings(xri=9.0)
+        with pytest.raises(ValueError, match="XRI=.*unplausibel"):
+            m.generate_gcode()
 
 
 # ---------------------------------------------------------------------------

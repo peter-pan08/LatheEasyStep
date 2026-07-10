@@ -6,29 +6,40 @@ from .gcode_utils import float_or_none, get_tool_number
 from .model import OpType, Operation
 
 
+def _safe_axis_value(
+    settings: Dict[str, object] | None,
+    *,
+    axis: str,
+    internal: bool,
+) -> Optional[float]:
+    if not settings:
+        return None
+    base_key = f"{axis}{'ri' if internal else 'ra'}"
+    base_value = float_or_none(settings.get(base_key))
+    if base_value is None:
+        return None
+    absolute = bool(settings.get(f"{base_key}_absolute", False))
+    if absolute:
+        return base_value
+    stock_key = "xi" if internal and axis == "x" else "xa" if axis == "x" else "zi" if internal else "za"
+    stock_value = float_or_none(settings.get(stock_key))
+    if stock_value is None:
+        return None
+    return stock_value + base_value
+
+
 def get_safe_position(settings: Dict[str, object] | None) -> Optional[Tuple[float, float]]:
     if not settings:
         return None
-    xra = float_or_none(settings.get("xra"))
-    zra = float_or_none(settings.get("zra"))
-    if xra is None or zra is None:
-        return None
-    xra_absolute = bool(settings.get("xra_absolute", False))
-    zra_absolute = bool(settings.get("zra_absolute", False))
-    if xra_absolute:
-        x_safe = xra
-    else:
-        xa = float_or_none(settings.get("xa"))
-        if xa is None:
+    internal = str(settings.get("_active_retract_mode", "") or "").strip().lower() == "internal"
+    x_safe = _safe_axis_value(settings, axis="x", internal=internal)
+    z_safe = _safe_axis_value(settings, axis="z", internal=internal)
+    if x_safe is None or z_safe is None:
+        if internal:
+            x_safe = _safe_axis_value(settings, axis="x", internal=False)
+            z_safe = _safe_axis_value(settings, axis="z", internal=False)
+        if x_safe is None or z_safe is None:
             return None
-        x_safe = xa + xra
-    if zra_absolute:
-        z_safe = zra
-    else:
-        za = float_or_none(settings.get("za"))
-        if za is None:
-            return None
-        z_safe = za + zra
     return (x_safe, z_safe)
 
 
