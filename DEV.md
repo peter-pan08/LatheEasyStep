@@ -11,8 +11,8 @@ Ziel ist:
 - `v0.7.0` markiert den abgeschlossenen Refactor-Stand fuer Vorschau-Geometrie,
   Kontur-Logik, G-Code-Einstiegsmodule und die aktuelle Regressionstest-Basis.
 - Neue Umbauten werden wieder unter `Unreleased` im Changelog gesammelt und
-  zuerst auf `DEV` verifiziert.
-- Stand `2026-07-10` auf `DEV`: Freistich-/Hinterschnitt-Backend, Generator-Transparenz,
+  zuerst auf `dev` verifiziert.
+- Stand `2026-07-13` auf `dev`: Freistich-/Hinterschnitt-Backend, Generator-Transparenz,
   Dirty-State/Warnlogik, Preview-Docking, Groove/Abstich-Split, explizite
   Toolchange-/Park-Koordinatensysteme, erweiterte Gewinde-UI/-Generatorlogik,
   robustere Tooltip-Erzwingung, erweiterte Sicherheitslogik und
@@ -32,6 +32,22 @@ Ziel ist:
   - G-Code-Erzeugung
 
 UI und Toolpath-Logik sind bewusst getrennt.
+
+Gemeinsame Querschnittslogik:
+- `lathe_easystep/ui_helpers.py`
+  - robuster Sprachcode-Fallback
+  - Uebersetzung mit Formatparametern
+  - ID-stabile ComboBox-Befuellung
+  - zentrale Zuordnung von Operationstypen zu Tab-Bezeichnungen
+- `lathe_easystep/gcode_utils.py`
+  - generische Float-/Integer-Parameter-Lookups
+  - Werkzeugnummern-Lookup
+  - gemeinsame Aufloesung der internen Safe-X-Position
+
+Lokale Kopien dieser Helfer sollen nicht erneut in UI- oder G-Code-Modulen
+angelegt werden. Das fruehere Paket `lathe_easystep/contour/` war ungenutzt
+und intern unvollstaendig und wurde entfernt; produktive Konturpfade laufen
+ueber `contour_logic.py` und `contour_features.py`.
 
 ---
 

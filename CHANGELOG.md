@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Unreleased]
+- Refactor: Gemeinsame UI-Helfer fuer Sprachcode, Uebersetzung, ComboBox-Befuellen und Tab-Bezeichnungen in `lathe_easystep/ui_helpers.py` zentralisiert
+- Refactor: Doppelte Safe-X-Berechnung fuer Innen-Abspanen und Innengewinde nach `gcode_utils.py` verschoben
+- Refactor: Generische `get_param_int()`-/`get_param_float()`-Lookups aus dem Groove-Generator nach `gcode_utils.py` verschoben; Werkzeugnummern verwenden dieselbe zentrale Konvertierung
+- Cleanup: Ungenutztes und durch fehlende interne Module nicht importierbares Alt-Paket `lathe_easystep/contour/` entfernt; aktive Konturpfade ueber `contour_logic.py`/`contour_features.py` bleiben unveraendert
+- Verifikation: Python-Syntaxpruefung, Diff-Pruefung und fokussierte dependency-freie Tests der zentralisierten G-Code-Helfer erfolgreich; vollstaendiger Testlauf lokal wegen fehlendem `pytest`/`qtpy` nicht moeglich
 - Architektur: Strikte Trennung von UI und Sprache eingefuehrt: sichtbare Texte werden nicht mehr aus Python-/UI-Fallbacks hergeleitet, fehlende Eintraege zeigen den jeweiligen Schluessel/ID
 - Architektur: Tooltip-Fallback-Ableitung aus Label-/Widget-Texten deaktiviert; Tooltips kommen nur noch aus expliziten Uebersetzungskeys
 - UI-Logik: Kritische Auswahl-/Sichtbarkeitslogik auf technische IDs (`currentData`) umgestellt statt auf lokalisierte Anzeige-Texte (`currentText`)

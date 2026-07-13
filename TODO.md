@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-07-10
+Stand: 2026-07-13
 
 ## Prioritaet A
 
@@ -458,6 +458,9 @@ Stand: 2026-07-10
 
 ## Bereits in Code und Tests erledigt
 
+- Wiederholte UI-Helfer fuer Sprache, Uebersetzung, ComboBox-Befuellen und Tab-Bezeichnungen sind in `ui_helpers.py` zentralisiert.
+- Generische Parameter-Lookups und die gemeinsame interne Safe-X-Berechnung liegen in `gcode_utils.py`; Groove, Roughing und Thread verwenden diese zentrale Implementierung.
+- Das ungenutzte, intern unvollstaendige Alt-Paket `lathe_easystep/contour/` ist entfernt; die produktive Konturimplementierung liegt weiterhin in `contour_logic.py` und `contour_features.py`.
 - Generator startet nicht mehr unbeabsichtigt in `O`-Subroutinen; Reihenfolge von Subroutinen und Hauptprogramm ist per Regressionstest abgesichert.
 - `M30` beendet das Hauptprogramm am Ende; nach `M30` werden keine Subroutinen mehr ausgegeben.
 - Zusaetzliche Nullbewegungen nach Werkzeugwechselpfaden sind generatorseitig per Regressionstest abgesichert.

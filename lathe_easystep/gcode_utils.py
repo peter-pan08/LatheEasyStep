@@ -27,13 +27,39 @@ def require_positive(params: Dict[str, object], keys: List[str], op_label: str) 
 
 
 def get_tool_number(params: Dict[str, object]) -> int:
-    for key in ("tool", "toolno", "tool_number"):
+    return get_param_int(params, ["tool", "toolno", "tool_number"], 0) or 0
+
+
+def get_param_float(params: Dict[str, object], keys: List[str], default: float | None = None) -> float | None:
+    for key in keys:
         if key in params and params.get(key) not in (None, ""):
             try:
-                return int(float(params.get(key, 0)))
-            except Exception:
-                return 0
-    return 0
+                return float(params.get(key))
+            except (TypeError, ValueError):
+                continue
+    return default
+
+
+def get_param_int(params: Dict[str, object], keys: List[str], default: int | None = None) -> int | None:
+    for key in keys:
+        if key in params and params.get(key) not in (None, ""):
+            try:
+                return int(float(params.get(key)))
+            except (TypeError, ValueError):
+                continue
+    return default
+
+
+def resolve_internal_safe_x(settings: Dict[str, object]) -> float | None:
+    xri = float_or_none(settings.get("xri"))
+    if xri is None:
+        return None
+    if bool(settings.get("xri_absolute", False)):
+        return xri
+    xi = float_or_none(settings.get("xi"))
+    if xi is None:
+        return None
+    return xi + xri
 
 
 def require_tool(params: Dict[str, object], op_label: str) -> int:
@@ -157,6 +183,8 @@ __all__ = [
     "clean_path",
     "emit_coolant",
     "float_or_none",
+    "get_param_float",
+    "get_param_int",
     "get_tool_number",
     "is_monotonic_x",
     "is_monotonic_x_decreasing",
@@ -166,6 +194,7 @@ __all__ = [
     "require",
     "require_positive",
     "require_tool",
+    "resolve_internal_safe_x",
     "sanitize_comment_text",
     "sanitize_gcode_text",
 ]
