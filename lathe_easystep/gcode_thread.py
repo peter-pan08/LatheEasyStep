@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Tuple
 
 from .presets import get_din_relief_preset
 from .model import Operation
-from .gcode_utils import float_or_none
+from .gcode_utils import resolve_internal_safe_x
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
@@ -20,18 +20,6 @@ THREAD_RELIEF_SIZE_BY_MAJOR = {
     14.0: "M14",
     16.0: "M16",
 }
-
-
-def _resolve_internal_safe_x(settings: Dict[str, object]) -> float | None:
-    xri = float_or_none(settings.get("xri"))
-    if xri is None:
-        return None
-    if bool(settings.get("xri_absolute", False)):
-        return xri
-    xi = float_or_none(settings.get("xi"))
-    if xi is None:
-        return None
-    return xi + xri
 
 
 def generate_thread_gcode(
@@ -112,7 +100,7 @@ def generate_thread_gcode(
     if internal:
         peak_offset = abs(peak_offset)
         approach_x = minor_diameter - peak_offset
-        safe_x = _resolve_internal_safe_x(settings)
+        safe_x = resolve_internal_safe_x(settings)
         if safe_x is None or safe_x <= 0.0:
             raise ValueError("Innengewinde erfordert ein gueltiges XRI im Programmkopf.")
         if safe_x >= minor_diameter - 1e-9:

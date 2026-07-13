@@ -2,8 +2,8 @@ Lathe EasyStep
 ==============
 
 Current Version: `0.7.0+unreleased`
-Status Date: `2026-07-10`
-Primary Test Branch: `DEV`
+Status Date: `2026-07-13`
+Primary Test Branch: `dev`
 
 Deutsch
 -------
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.7.0 + Unreleased, 10. Juli 2026
+Stand: Version 0.7.0 + Unreleased, 13. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -37,6 +37,9 @@ weiter als ein reiner Prototyp:
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
 - Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.7.0 deutlich weiter modularisiert
+- gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
+- generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
+- das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
 - die aktuelle Refactor-Basis inkl. Freistich-/Sicherheitsausbau, Dirty-State, Preview-Docking, Groove-Fix, expliziter Toolchange-Koordinatenlogik, erweiterter Gewindelogik, `XRI`-Sicherheitslogik fuer Innenbearbeitung und UI-Anbindung ist mit `202 passed` validiert
 
 Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
@@ -45,7 +48,7 @@ Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unrele
 
 `main` gilt als lauffaehige Basis des Projekts.
 
-Neue Aenderungen sollen zuerst auf dem Branch `DEV` getestet werden. Erst wenn
+Neue Aenderungen sollen zuerst auf dem Branch `dev` getestet werden. Erst wenn
 die Anpassungen dort fachlich und technisch verifiziert wurden, werden sie in
 den Hauptbranch migriert.
 
@@ -380,6 +383,11 @@ Fuer den Stand `0.7.0` ist bereits ein grosser Teil der Logik aus
 `lathe_easystep_handler.py` und `slicer.py` in eigene Module ausgelagert
 worden. Die sinnvolle Zielstruktur ist:
 
+Gemeinsam verwendete Querschnittsfunktionen liegen bereits in
+`ui_helpers.py` und `gcode_utils.py`. Neue UI- oder Generator-Module sollen
+diese Helfer erweitern, statt lokale Kopien derselben Lookup-, Sprach- oder
+Sicherheitslogik anzulegen.
+
 ```text
 lathe_easystep/
   model.py
@@ -441,7 +449,7 @@ early prototype:
 
 `main` is the stable runnable base.
 
-New work is expected to be tested on `DEV` first. Only verified changes should
+New work is expected to be tested on `dev` first. Only verified changes should
 be merged back into `main`.
 
 ## Important Notice

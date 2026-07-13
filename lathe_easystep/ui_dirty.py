@@ -4,13 +4,7 @@ from qtpy import QtWidgets
 
 from .model import OpType
 from .translations import TRANSLATIONS
-
-
-def _lang(handler) -> str:
-    try:
-        return handler._current_language_code()
-    except Exception:
-        return "de"
+from .ui_helpers import current_language as _lang, tab_label
 
 
 def init_dirty_state(handler) -> None:
@@ -25,20 +19,6 @@ def init_dirty_state(handler) -> None:
     if not hasattr(handler, "_dirty_warning_suppressed"):
         handler._dirty_warning_suppressed = False
     handler._update_dirty_status()
-
-
-def tab_label(handler, op_type: str | None) -> str:
-    mapping = {
-        OpType.PROGRAM_HEADER: "tab.tabProgram.title",
-        OpType.FACE: "tab.tabFace.title",
-        OpType.CONTOUR: "tab.tabContour.title",
-        OpType.ABSPANEN: "tab.tabParting.title",
-        OpType.THREAD: "tab.tabThread.title",
-        OpType.GROOVE: "tab.tabGroove.title",
-        OpType.DRILL: "tab.tabDrill.title",
-        OpType.KEYWAY: "tab.tabKeyway.title",
-    }
-    return TRANSLATIONS.tr(mapping.get(op_type, "tab.tabProgram.title"), _lang(handler))
 
 
 def mark_dirty(handler, *, operation_index: int | None = None, program: bool = False) -> None:

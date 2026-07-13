@@ -4,25 +4,7 @@ from qtpy import QtCore, QtWidgets
 
 from .ui_contour import RELIEF_NORMS, RELIEF_THREAD_SIZES
 from .model import OpType, Operation
-from .translations import TRANSLATIONS
-
-
-def _lang(handler) -> str:
-    return handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-
-
-def _populate_combo(combo, options, lang: str, current_value=None, *, allow_empty: bool = False) -> None:
-    combo.blockSignals(True)
-    combo.clear()
-    if allow_empty:
-        combo.addItem("", "")
-    target_idx = -1
-    for idx, (value, key) in enumerate(options):
-        combo.addItem(TRANSLATIONS.tr(key, lang), value)
-        if current_value is not None and str(current_value).strip().lower() == str(value).strip().lower():
-            target_idx = idx + (1 if allow_empty else 0)
-    combo.setCurrentIndex(target_idx if target_idx >= 0 else (1 if allow_empty and options else 0))
-    combo.blockSignals(False)
+from .ui_helpers import current_language as _lang, populate_combo as _populate_combo
 
 
 CONTOUR_EDGE_OPTIONS = [

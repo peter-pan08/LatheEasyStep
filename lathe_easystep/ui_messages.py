@@ -4,6 +4,7 @@ import re
 
 from .model import OpType
 from .translations import TRANSLATIONS
+from .ui_helpers import current_language as _lang, tab_label as _tab
 
 OP_FIELDS = {
     OpType.FACE: {"depth_max", "feed", "spindle", "tool", "safe_z"},
@@ -13,29 +14,6 @@ OP_FIELDS = {
     OpType.KEYWAY: {"depth_per_pass", "tool", "feed"},
     OpType.ABSPANEN: {"depth_per_pass", "tool", "undercut_tool"},
 }
-
-
-def _lang(handler) -> str:
-    try:
-        return handler._current_language_code()
-    except Exception:
-        return "de"
-
-
-def _tab(handler, op_type: str | None) -> str:
-    if isinstance(op_type, str):
-        op_type = _normalize_op_type(op_type)
-    mapping = {
-        OpType.PROGRAM_HEADER: "tab.tabProgram.title",
-        OpType.FACE: "tab.tabFace.title",
-        OpType.CONTOUR: "tab.tabContour.title",
-        OpType.ABSPANEN: "tab.tabParting.title",
-        OpType.THREAD: "tab.tabThread.title",
-        OpType.GROOVE: "tab.tabGroove.title",
-        OpType.DRILL: "tab.tabDrill.title",
-        OpType.KEYWAY: "tab.tabKeyway.title",
-    }
-    return TRANSLATIONS.tr(mapping.get(op_type, "tab.tabProgram.title"), _lang(handler))
 
 
 def _field(handler, key: str) -> str:

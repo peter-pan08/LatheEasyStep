@@ -9,7 +9,6 @@ from .contour_logic import build_contour_variants
 from .gcode_safety import append_tool_and_spindle, emit_approach, nose_compensation_command
 from .gcode_utils import (
     Point,
-    float_or_none,
     get_tool_number,
     is_monotonic_x,
     is_monotonic_x_decreasing,
@@ -17,6 +16,7 @@ from .gcode_utils import (
     require,
     require_positive,
     require_tool,
+    resolve_internal_safe_x,
 )
 
 
@@ -79,18 +79,6 @@ def _finish_entry_point(
     if safe_z > start_z + 1e-9:
         return (start_x, safe_z)
     return (start_x, start_z + max(lead_length, 0.5))
-
-
-def _resolve_internal_safe_x(settings: Dict[str, object]) -> Optional[float]:
-    xri = float_or_none(settings.get("xri"))
-    if xri is None:
-        return None
-    if bool(settings.get("xri_absolute", False)):
-        return xri
-    xi = float_or_none(settings.get("xi"))
-    if xi is None:
-        return None
-    return xi + xri
 
 
 def _emit_relief_pass(
@@ -454,7 +442,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     safe_z = float(cfg.z_value)
     external = side_idx == 0
     if not external:
-        safe_x = _resolve_internal_safe_x(settings)
+        safe_x = resolve_internal_safe_x(settings)
         contour_min_x = min(point[0] for point in rough_path)
         if safe_x is None or safe_x <= 0.0:
             raise ValueError("Innenbearbeitung erfordert ein gueltiges XRI im Programmkopf.")

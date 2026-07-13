@@ -6,14 +6,8 @@ from qtvcp.core import Action
 from qtpy import QtCore, QtWidgets
 
 from .model import OpType
-from .translations import TRANSLATIONS
+from .ui_helpers import translate as _tr
 from .ui_messages import format_user_error
-
-
-def _tr(handler, key: str, **kwargs) -> str:
-    lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-    text = TRANSLATIONS.tr(key, lang)
-    return text.format(**kwargs) if kwargs else text
 
 
 def _translate_value(handler, prefix: str, value) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable, Dict, List
 
 from .model import Operation
+from .gcode_utils import get_param_float, get_param_int
 
 
 def groove_sub_definition() -> List[str]:
@@ -181,26 +182,6 @@ def groove_sub_definition() -> List[str]:
         "o220 endsub",
         "(=== END GROOVE CYCLE LIBRARY ===)",
     ]
-
-
-def get_param_float(params: Dict[str, object], keys: List[str], default: float | None = None) -> float | None:
-    for key in keys:
-        if key in params and params.get(key) not in (None, ""):
-            try:
-                return float(params.get(key))
-            except (TypeError, ValueError):
-                continue
-    return default
-
-
-def get_param_int(params: Dict[str, object], keys: List[str], default: int | None = None) -> int | None:
-    for key in keys:
-        if key in params and params.get(key) not in (None, ""):
-            try:
-                return int(float(params.get(key)))
-            except (TypeError, ValueError):
-                continue
-    return default
 
 
 def groove_center_from_ref(base: float, width: float, ref: int) -> float:

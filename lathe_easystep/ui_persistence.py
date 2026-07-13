@@ -7,16 +7,10 @@ import os
 from qtpy import QtCore, QtWidgets
 
 from .model import OpType
-from .translations import TRANSLATIONS
+from .ui_helpers import translate as _tr
 from .persistence import build_program_data as build_program_data_payload
 from .storage import parse_program_payload
 from .ui_messages import format_user_error
-
-
-def _tr(handler, key: str, **kwargs) -> str:
-    lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-    text = TRANSLATIONS.tr(key, lang)
-    return text.format(**kwargs) if kwargs else text
 
 
 def build_program_data(handler):
