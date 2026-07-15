@@ -27,6 +27,10 @@ def mark_dirty(handler, *, operation_index: int | None = None, program: bool = F
         handler._dirty_program_header = True
     if operation_index is not None and operation_index >= 0:
         handler._dirty_operation_indices.add(int(operation_index))
+    try:
+        handler._log(f"[LatheEasyStep][debug] mark_dirty: program={program} operation_index={operation_index}", level="debug")
+    except Exception:
+        pass
     handler._update_dirty_status()
 
 
@@ -37,6 +41,10 @@ def mark_program_structure_dirty(handler, *, operation_indices: set[int] | None 
         for operation_index in operation_indices:
             if operation_index is not None and int(operation_index) >= 0:
                 handler._dirty_operation_indices.add(int(operation_index))
+    try:
+        handler._log(f"[LatheEasyStep][debug] mark_program_structure_dirty: operation_indices={operation_indices}", level="debug")
+    except Exception:
+        pass
     handler._update_dirty_status()
 
 

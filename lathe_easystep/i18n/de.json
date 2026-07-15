@@ -33,6 +33,7 @@
   "combo.parting_coolant.on": "Ein",
   "combo.parting_mode.finish": "Schlichten",
   "combo.parting_mode.rough": "Schruppen",
+  "combo.parting_mode.rough_finish": "Schruppen + Schlichten",
   "combo.parting_output_preference.auto": "Automatisch",
   "combo.parting_output_preference.prefer_cycle": "Zyklus bevorzugen",
   "combo.parting_output_preference.prefer_explicit": "Ausgeschrieben bevorzugen",

@@ -197,7 +197,9 @@ class TestInternalThreadGCode:
         lines = m.generate_gcode()
         assert "G0 Z4.000" in lines
         assert "G0 X7.000" in lines
-        assert "G0 X8.068 Z3.000" in lines
+        assert "G0 X7.000 Z3.000" in lines
+        assert "G0 Z-6.000" in lines
+        assert "G0 X8.068" in lines
 
     def test_internal_thread_rejects_unplausible_xri(self):
         m = ProgramModel()

@@ -12,26 +12,76 @@ Ziel ist:
   Kontur-Logik, G-Code-Einstiegsmodule und die aktuelle Regressionstest-Basis.
 - Neue Umbauten werden wieder unter `Unreleased` im Changelog gesammelt und
   zuerst auf `dev` verifiziert.
-- Stand `2026-07-13` auf `dev`: Freistich-/Hinterschnitt-Backend, Generator-Transparenz,
+- Stand `2026-07-14` auf `dev`: Freistich-/Hinterschnitt-Backend, Generator-Transparenz,
   Dirty-State/Warnlogik, Preview-Docking, Groove/Abstich-Split, explizite
   Toolchange-/Park-Koordinatensysteme, erweiterte Gewinde-UI/-Generatorlogik,
   robustere Tooltip-Erzwingung, erweiterte Sicherheitslogik und
-  zusaetzliche Validierungen sind implementiert und mit `194 passed`
-  abgesichert.
+  zusaetzliche Validierungen sind implementiert. Zusaetzlich wurden die
+  UI-/Spracharchitektur weiter geschaerft, neue Visibility-Regressionen
+  aufgebaut und die Test-Infrastruktur fuer echte PyQt5-Tests gegen die
+  Stub-Suite gehaertet.
+- Seit `2026-07-15` gilt zusaetzlich: `XRI` ist fuer Innenbearbeitung eine
+  harte Sicherheitsgrenze. Generatoren fuer Innengewinde, Inneneinstich und
+  Innen-Abspanen duerfen keinen kleineren X-Wert mehr emittieren.
 
 ---
 
 ## Architektur-Überblick
 - `lathe_easystep_handler.py`
-  - UI-Logik
-  - Konturverwaltung
-  - Benutzerparameter
+  - Nur noch "Kleber": QtVCP-`HandlerClass`, deren Methoden ueberwiegend an
+    Funktionen in `lathe_easystep/*.py` delegieren, plus Widget-Bootstrapping.
+  - Stand 2026-07-14: 4965 Zeilen (vorher 7501). Reduktion kam aus dem
+    Entfernen von ueber 1100 Zeilen totem, laengst durch `preview_geometry.py`/
+    `contour_logic.py` ersetztem Code sowie dem Ausgliedern von
+    `LathePreviewWidget` und `WidgetResolver` (siehe unten). Reines
+    Delegieren ist der Zielzustand; neue substanzielle Logik gehoert in ein
+    Modul unter `lathe_easystep/`, nicht in den Handler.
 - `slicer.py`
   - Geometrische Auswertung
   - Abspanstrategien
   - G-Code-Erzeugung
 
 UI und Toolpath-Logik sind bewusst getrennt.
+
+## UI-/Spracharchitektur
+- Zielzustand ist eine strikte Trennung zwischen Anzeige und Logik:
+  sichtbare Texte kommen ausschliesslich aus `.lng`-Dateien, fachliche Logik
+  arbeitet ausschliesslich mit technischen IDs und Werten.
+- `currentText()` ist in fachlicher Logik nicht mehr die Regel, sondern nur
+  noch an wenigen bewusst auditierten Fallback-/Debug-Stellen zulaessig.
+- Neue Regression `tests/test_ui_visibility_guards.py` friert diese noch
+  erlaubten Stellen ein, damit keine neuen textabhaengigen Logikpfade
+  unbemerkt hinzukommen.
+- Die strikte UI-/Sprachtrennung ist noch NICHT vollstaendig abgeschlossen:
+  verbleibende sichtbare Textquellen in Python und `.ui` sind als offene
+  Architekturarbeit in `TODO.md` dokumentiert.
+
+## Test-Hinweise
+- Es gibt zwei Testwelten:
+  - stub-basierte Suite ueber `tests/conftest.py`
+  - echte PyQt5-Roundtrip-Tests wie `tests/test_slice_strategy_ui_roundtrip.py`
+- Die Test-Infrastruktur wurde darauf gehaertet, dass Real-Qt-Tests die
+  `qtpy`-Alias-Module in `sys.modules` temporaer ersetzen duerfen, ohne danach
+  die restliche Stub-Suite zu zerlegen.
+- Bei neuen Real-Qt-Tests darauf achten:
+  - echte Module (`qtpy`, `qtpy.QtCore`, `qtpy.QtWidgets`, ggf. betroffene
+    Projektmodule) vor dem Import gezielt aus `sys.modules` entfernen
+  - danach keine stillschweigende Abhaengigkeit darauf einbauen, dass die
+    Stub-Aliase unveraendert geblieben sind
+
+Ausgegliederte Handler-Bestandteile (frueher direkt im Handler definiert):
+- `lathe_easystep/preview_widget.py`
+  - `LathePreviewWidget` (2D-Vorschau-Canvas, reines Qt-Paint-Widget ohne
+    fachliche Logik). Als promoted Widget in `lathe_easystep.ui` weiterhin
+    ueber `<header>lathe_easystep_handler</header>` referenziert - der Handler
+    re-exportiert die Klasse per Import, das `.ui`-Customwidget muss dafuer
+    nicht geaendert werden.
+- `lathe_easystep/widget_resolver.py`
+  - `WidgetResolver`/`WidgetResolveError`: robuste, rein Qt-baumbasierte
+    Widget-Suche fuer Standalone- vs. eingebettetes Panel.
+- `lathe_easystep/ui_params.py`
+  - `setup_param_maps()` (mit Cache, siehe Performance-Hinweis unten) und
+    `collect_params()` fuer die generische Feld-Sammlung pro Operationstyp.
 
 Gemeinsame Querschnittslogik:
 - `lathe_easystep/ui_helpers.py`
@@ -43,11 +93,27 @@ Gemeinsame Querschnittslogik:
   - generische Float-/Integer-Parameter-Lookups
   - Werkzeugnummern-Lookup
   - gemeinsame Aufloesung der internen Safe-X-Position
+  - zentrale Validierung harter Innen-X-Grenzen ueber `validate_internal_x_limit()`
+  - `is_internal_side()`/`is_left_hand()`/`resolve_enum_index()`: robuste
+    Interpretation von Combo-Werten, die seit der ID-only-Umstellung sowohl
+    als String-ID als auch (Altdaten) als Zahl vorliegen koennen
+- `lathe_easystep/ui_registry.py`
+  - `PANEL_WIDGET_NAMES` (moegliche Root-Objektnamen je nach Embedding), neben
+    den bestehenden Text-/Tooltip-/Combo-Item-Registries
 
 Lokale Kopien dieser Helfer sollen nicht erneut in UI- oder G-Code-Modulen
 angelegt werden. Das fruehere Paket `lathe_easystep/contour/` war ungenutzt
 und intern unvollstaendig und wurde entfernt; produktive Konturpfade laufen
 ueber `contour_logic.py` und `contour_features.py`.
+
+Weitere Handler-Methoden mit substanzieller Eigenlogik (statt reinem
+Delegieren), die sich als naechstes ausgliedern liessen: `_collect_program_header`,
+`_collect_contour_segments`, `_apply_thread_preset`/`_populate_thread_standard_options`,
+`_get_widget_by_name`/`_resolve_core_widgets_strict`/`_register_known_widgets`
+(Widget-Bootstrapping), `_set_tooltip_deep`/`_fallback_tooltip_text` (Tooltip-
+Erzwingung). Nicht in dieser Runde gemacht, um das Risiko in einem Durchgang
+begrenzt zu halten - jede Extraktion wurde einzeln mit vollem Testlauf und
+echtem PyQt5 (`uic.loadUi`) gegengeprueft.
 
 ---
 
@@ -149,6 +215,7 @@ Geplante Erweiterung:
   - freie Parkposition
   - sequentielle Endbewegung
 - Werkzeugwechsel- und Parkpositionen koennen explizit als Werkstueck- oder Maschinenkoordinaten erzeugt werden; fuer Maschinenkoordinaten wird `G53` direkt an der Bewegung ausgegeben
+- Vor jedem expliziten `T.. M6` wird derselbe Werkzeugwechselpfad erzwungen; der erste reale Wechsel faehrt den Wechselpunkt jetzt nicht mehr aus Versehen aus
 - Spindelmodus kann generatorseitig zwischen `G97` und `G96` unterscheiden; fuer `G96` ist ein Max-RPM-Wert vorgesehen.
 - Werkzeugwechsel kann jetzt optional einen `M1` vor dem Wechsel ausgeben; Gewinde und separater Hinterschnitt koennen ebenfalls optional gestoppt werden.
 - Legacy-Dateien mit gemischter XT-/ZT-Altlogik bleiben weiterhin les- und generierbar.
@@ -202,6 +269,7 @@ Geplante Erweiterung:
 - Fehlende Keys duerfen nicht kaschiert werden: sichtbar bleibt der Key/ID.
 - Programmlogik darf nicht auf `currentText()` basieren; nur technische Werte via `currentData()`.
 - Neue UI-Elemente zuerst mit stabiler ID/Key einfuehren, danach Sprachdateien erweitern.
+- Generatorwarnungen, die als `(...)`-Kommentare ins `.ngc` gehen, muessen vor der Ausgabe geklammert-sicher sanitisiert werden, damit LinuxCNC keine `nested comment`-Fehler bekommt.
 
 ---
 

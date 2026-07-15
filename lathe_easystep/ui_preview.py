@@ -66,8 +66,14 @@ def setup_slice_view(handler) -> None:
     if handler.preview is not None:
         try:
             handler.preview.sliceChanged.connect(handler._on_slice_changed)
-        except Exception:
-            pass
+            handler._log("[LatheEasyStep] sliceChanged signal connected", level="info")
+        except Exception as exc:
+            handler._log(f"[LatheEasyStep] sliceChanged signal connect failed: {exc}", level="warning")
+        try:
+            handler.preview._slice_change_callback = handler._on_slice_changed
+            handler._log("[LatheEasyStep] slice callback fallback installed", level="info")
+        except Exception as exc:
+            handler._log(f"[LatheEasyStep] slice callback fallback install failed: {exc}", level="warning")
 
 
 def update_slice_view_button(handler, checked: bool) -> None:
@@ -356,11 +362,21 @@ def on_toggle_slice_view(handler, checked: bool) -> None:
 def sync_slice_widget(handler) -> None:
     if handler.preview is None or handler.preview_slice is None:
         return
+    visible = None
     try:
-        if not handler.preview_slice.isVisible():
-            return
+        visible = bool(handler.preview_slice.isVisible())
     except Exception:
-        return
+        visible = None
+    try:
+        handler._log(
+            f"[LatheEasyStep][debug] sync_slice_widget: visible={visible} "
+            f"slice_z={getattr(handler.preview, 'slice_z', None)!r} "
+            f"paths={len(getattr(handler.preview, 'paths', []) or [])} "
+            f"active_index={getattr(handler.preview, 'active_index', None)!r}",
+            level="debug",
+        )
+    except Exception:
+        pass
     try:
         handler.preview_slice.set_slice_z(getattr(handler.preview, "slice_z", 0.0))
     except Exception:
@@ -378,6 +394,10 @@ def sync_slice_widget(handler) -> None:
             getattr(handler.preview, "front_program", {}),
             getattr(handler.preview, "front_operation", None),
         )
+    except Exception:
+        pass
+    try:
+        handler.preview_slice.update()
     except Exception:
         pass
 

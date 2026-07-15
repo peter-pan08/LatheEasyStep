@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from .gcode_utils import float_or_none, get_tool_number
+from .gcode_utils import float_or_none, get_tool_number, sanitize_comment_text
 from .model import OpType, Operation
 
 
@@ -21,7 +21,15 @@ def _safe_axis_value(
     absolute = bool(settings.get(f"{base_key}_absolute", False))
     if absolute:
         return base_value
-    stock_key = "xi" if internal and axis == "x" else "xa" if axis == "x" else "zi" if internal else "za"
+    # X: "innen" heisst radial zur Bohrungswand hin (xi = vorhandener Innen-
+    # durchmesser), das kehrt sich zwischen aussen/innen tatsaechlich um.
+    # Z: die Werkzeugfreifahrt erfolgt bei Innen- UND Aussenbearbeitung immer
+    # zur vorderen, zugaenglichen Seite (za = "Vorderes Anfangsmass"), niemals
+    # zum hinteren Ende (zi = "Hinteres Endmass"), das beim Innenbohren naeher
+    # am Futter liegt und keine sichere Rueckzugsrichtung ist. zi + zri wuerde
+    # hier eine Rueckzugsebene mitten im bzw. jenseits des Rohteils erzeugen
+    # (siehe get_approach_warnings: "Rueckzugsebene schneidet den Futterbereich").
+    stock_key = "xi" if internal and axis == "x" else "xa" if axis == "x" else "za"
     stock_value = float_or_none(settings.get(stock_key))
     if stock_value is None:
         return None
@@ -41,6 +49,24 @@ def get_safe_position(settings: Dict[str, object] | None) -> Optional[Tuple[floa
         if x_safe is None or z_safe is None:
             return None
     return (x_safe, z_safe)
+
+
+def get_safe_position_for_mode(
+    settings: Dict[str, object] | None,
+    *,
+    internal: bool,
+) -> Optional[Tuple[float, float]]:
+    if not settings:
+        return None
+    saved = settings.get("_active_retract_mode")
+    try:
+        settings["_active_retract_mode"] = "internal" if internal else "external"
+        return get_safe_position(settings)
+    finally:
+        if saved is None:
+            settings.pop("_active_retract_mode", None)
+        else:
+            settings["_active_retract_mode"] = saved
 
 
 def emit_safe_retract(lines: List[str], settings: Dict[str, object] | None) -> None:
@@ -142,7 +168,7 @@ def estimate_operation_end_pos(op: Operation) -> Optional[Tuple[float, float]]:
 
 def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Dict[str, object] | None) -> None:
     for warning in get_approach_warnings(settings, (start_x, start_z)):
-        lines.append(f"(WARN: {warning})")
+        lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     safe = get_safe_position(settings)
     if safe and settings is not None:
         x_safe, z_safe = safe
@@ -158,7 +184,15 @@ def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Di
     lines.append(f"G0 X{start_x:.3f}")
 
 
-def append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle_value: object | None, settings: Dict[str, object] | None = None):
+def append_tool_and_spindle(
+    lines: List[str],
+    tool_value: object | None,
+    spindle_value: object | None,
+    settings: Dict[str, object] | None = None,
+    *,
+    spindle_mode: object | None = None,
+    spindle_max_rpm: object | None = None,
+):
     if tool_value is None and settings is not None:
         tool_num = get_tool_number(settings)
     else:
@@ -172,8 +206,7 @@ def append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle
         if tool_num != last_tool:
             lines.append(f"(Werkzeug T{tool_num:02d})")
             if settings is not None:
-                skip_tool_move = bool(settings.pop("_skip_tool_move", False))
-                safe = get_safe_position(settings)
+                safe = get_safe_position_for_mode(settings, internal=False)
                 if safe:
                     x_safe, z_safe = safe
                     lines.append(f"G0 Z{z_safe:.3f}")
@@ -183,8 +216,7 @@ def append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle
                     lines.append("M1")
                 lines.append("M5")
                 lines.append("M9")
-                if not skip_tool_move:
-                    lines.extend(move_to_toolchange_pos(settings))
+                lines.extend(move_to_toolchange_pos(settings))
             lines.append(f"T{tool_num:02d} M6")
             if settings is not None:
                 settings["_current_tool"] = tool_num
@@ -197,9 +229,17 @@ def append_tool_and_spindle(lines: List[str], tool_value: object | None, spindle
     if rpm and rpm > 0:
         rpm_value = int(round(rpm))
         if rpm_value > 0:
-            spindle_mode = str((settings or {}).get("spindle_mode", "fixed") or "fixed").strip().lower()
-            max_rpm = float_or_none((settings or {}).get("spindle_max_rpm"))
-            if spindle_mode in ("css", "g96"):
+            # Op-spezifischer Drehzahlmodus hat Vorrang; ohne Angabe gilt weiterhin
+            # der globale Programmkopf-Wert (Rueckwaertskompatibilitaet).
+            if spindle_mode is not None:
+                effective_mode = str(spindle_mode or "fixed").strip().lower()
+            else:
+                effective_mode = str((settings or {}).get("spindle_mode", "fixed") or "fixed").strip().lower()
+            if spindle_max_rpm is not None:
+                max_rpm = float_or_none(spindle_max_rpm)
+            else:
+                max_rpm = float_or_none((settings or {}).get("spindle_max_rpm"))
+            if effective_mode in ("css", "g96"):
                 if max_rpm and max_rpm > 0:
                     lines.append(f"G96 D{int(round(max_rpm))} S{rpm_value} M3")
                 else:
@@ -386,6 +426,7 @@ __all__ = [
     "emit_safe_retract_for_op",
     "estimate_operation_end_pos",
     "get_safe_position",
+    "get_safe_position_for_mode",
     "get_approach_warnings",
     "get_end_park_lines",
     "get_machine_limit_warnings",

@@ -3,7 +3,9 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Tuple
 
+from .contour_features import primitive_to_points
 from .contour_logic import build_contour_path as build_contour_primitives
+from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType, Operation
 
 Point = Tuple[float, float]
@@ -90,9 +92,8 @@ def build_thread_path(params: Dict[str, float]) -> List[Point]:
     major = float(params.get("major_diameter", 0.0) or 0.0)
     pitch = max(0.1, float(params.get("pitch", 1.5) or 1.5))
     length = abs(float(params.get("length", 0.0) or 0.0))
-    orientation = int(params.get("orientation", 0))
-    hand = int(params.get("hand", 0) or 0)
-    internal = orientation == 1
+    internal = is_internal_side(params.get("orientation", 0))
+    left_hand = is_left_hand(params.get("hand", 0))
     start_z = float(params.get("thread_start_z", 0.0) or 0.0)
     raw_td = params.get("thread_depth")
     if isinstance(raw_td, (int, float)) and raw_td > 0:
@@ -111,7 +112,7 @@ def build_thread_path(params: Dict[str, float]) -> List[Point]:
         crest_dia = max(0.0, major)
         root_dia = max(0.0, major - 2.0 * thread_depth)
 
-    z_dir = -1.0 if hand == 0 else 1.0
+    z_dir = 1.0 if left_hand else -1.0
     end_z = start_z + (z_dir * length)
 
     if abs(root_dia - crest_dia) <= 1e-9:
@@ -303,16 +304,296 @@ def build_groove_preview_path(params: Dict[str, float]) -> List[Point]:
 
 def build_abspanen_path(params: Dict[str, object]) -> List[Point]:
     source_path = params.get("source_path") or []
-    points: List[Point] = []
     try:
+        # source_path kommt aus der referenzierten Kontur-Operation
+        # (resolve_contour_path()); deren eigenes op.path ist immer
+        # primitiven-foermig ({"type": "line"/"arc", "p1": ..., "p2": ...}),
+        # nie eine flache Liste aus (x, z)-Punkten. Der reine Tupel-Zweig
+        # unten griff deshalb faktisch nie und lieferte fuer jede reale
+        # Abspanen-Operation einen leeren Vorschaupfad.
+        if source_path and isinstance(source_path[0], dict):
+            return primitive_to_points(source_path)
+        points: List[Point] = []
         for point in source_path:
             if not isinstance(point, (list, tuple)) or len(point) < 2:
                 continue
             points.append((float(point[0]), float(point[1])))
+        return points
     except Exception:
         return []
-    return points
 
 
 def build_contour_path(params) -> list:
     return build_contour_primitives(params)
+
+
+def build_stock_outline(program: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return a thin reference outline of the raw stock in XZ (diameter X).
+
+    Output format matches the preview widget's 'primitives' list of dicts.
+    Uses role='stock' so the widget can draw it in a neutral thin dashed style.
+    """
+    shape = str(program.get("shape", "")).lower().strip()
+
+    def _sf(v: Any, default: float = 0.0) -> float:
+        try:
+            if v is None:
+                return float(default)
+            if isinstance(v, str):
+                vv = v.strip().replace(",", ".")
+                return float(vv) if vv else float(default)
+            return float(v)
+        except Exception:
+            return float(default)
+
+    xa = _sf(program.get("xa", 0.0), 0.0)  # outer diameter
+    xi = _sf(program.get("xi", 0.0), 0.0)  # inner diameter (for tube)
+    za = _sf(program.get("za", 0.0), 0.0)  # front face Z
+    zi = float(program.get("zi", 0.0) or 0.0)  # back face Z (often negative length)
+
+    if xa <= 0.0:
+        return []
+
+    # Normalize Z: ensure za is the front (greater) and zi is the back (smaller) for drawing
+    z_front = max(za, zi)
+    z_back = min(za, zi)
+
+    primitives: List[Dict[str, Any]] = []
+
+    def add_line(z1: float, x1: float, z2: float, x2: float) -> None:
+        primitives.append({"role": "stock", "type": "line", "p1": (x1, z1), "p2": (x2, z2)})
+
+    # Outer contour (L-shape: face + OD + back face + centerline return)
+    add_line(z_front, 0.0, z_front, xa)     # front face
+    add_line(z_front, xa, z_back, xa)       # OD along Z
+    add_line(z_back, xa, z_back, 0.0)       # back face
+    # centerline is optional; keep it minimal (no line back to front)
+
+    if shape in ("rohr", "tube") and xi > 0.0 and xi < xa:
+        # Inner bore contour as reference (also L-shape)
+        add_line(z_front, xi, z_back, xi)
+        # (front/back inner face lines are usually not needed for reference)
+
+    return primitives
+
+
+def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return retract plane lines (XRA/XRI/ZRA/ZRI) as preview primitives.
+
+    Supports absolute/incremental flags:
+      - xra_absolute / xri_absolute / zra_absolute / zri_absolute
+
+    Interpretation (matching current program header semantics):
+      - XRA (outer retract): always available; if incremental -> XA + XRA, else -> XRA
+      - XRI (inner retract): only relevant in retract mode `erweitert`/`alle`;
+        if incremental -> XI + XRI, else -> XRI
+      - ZRA (front retract): always available; if incremental -> ZA + ZRA, else -> ZRA
+      - ZRI (back retract): only relevant in retract mode `alle`;
+        if incremental -> ZI - ZRI, else -> ZRI
+
+    Output format:
+      {"role":"retract","type":"line","p1":(x,z),"p2":(x,z)}
+    """
+    def _sf(v: Any, default: float = 0.0) -> float:
+        try:
+            if v is None:
+                return float(default)
+            if isinstance(v, str):
+                vv = v.strip().replace(",", ".")
+                return float(vv) if vv else float(default)
+            return float(v)
+        except Exception:
+            return float(default)
+
+    xa = _sf(program.get("xa", 0.0), 0.0)
+    xi = _sf(program.get("xi", 0.0), 0.0)
+    za = _sf(program.get("za", 0.0), 0.0)
+    zi = _sf(program.get("zi", 0.0), 0.0)
+
+    # drawing span for the helper lines
+    z_front = max(za, zi)
+    z_back = min(za, zi)
+
+    prim: List[Dict[str, Any]] = []
+
+    def add_line(p1: tuple[float, float], p2: tuple[float, float]) -> None:
+        prim.append({"role": "retract", "type": "line", "p1": p1, "p2": p2})
+
+    def vline(x: float) -> None:
+        add_line((x, z_front), (x, z_back))
+
+    def hline(z: float) -> None:
+        # use XA as max extents (fallback: 0..10mm)
+        x_max = xa if xa > 0.0 else 10.0
+        add_line((0.0, z), (x_max, z))
+
+    def _is_true(key: str) -> bool:
+        try:
+            return bool(program.get(key, False))
+        except Exception:
+            return False
+
+    # XRA (outer)
+    xra = program.get("xra", None)
+    if xra is not None:
+        try:
+            xra_f = _sf(xra)
+            if abs(xra_f) > 1e-12:
+                x = xra_f if _is_true("xra_absolute") else (xa + xra_f)
+                vline(x)
+        except Exception:
+            pass
+
+    # XRI (inner)
+    xri = program.get("xri", None)
+    if xri is not None:
+        try:
+            xri_f = _sf(xri)
+            if abs(xri_f) > 1e-12:
+                x = xri_f if _is_true("xri_absolute") else (xi + xri_f)
+                vline(x)
+        except Exception:
+            pass
+
+    # ZRA (front)
+    zra = program.get("zra", None)
+    if zra is not None:
+        try:
+            zra_f = _sf(zra)
+            if abs(zra_f) > 1e-12:
+                z = zra_f if _is_true("zra_absolute") else (za + zra_f)
+                hline(z)
+        except Exception:
+            pass
+
+    # ZRI (back)
+    zri = program.get("zri", None)
+    if zri is not None:
+        try:
+            zri_f = _sf(zri)
+            if abs(zri_f) > 1e-12:
+                # If absolute flag is set, interpret value as absolute Z; otherwise incremental from ZI.
+                z = zri_f if _is_true("zri_absolute") else (zi - zri_f)
+                hline(z)
+        except Exception:
+            pass
+
+    return prim
+
+
+def build_worklimit_primitives(program: Dict[str, Any], stock_prims: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Bearbeitungsmaß / Werkstück-Überstand (Chuck-Kollisionsgrenze) als Linie.
+
+    program['zb'] = Z-Position der Grenze (wo das Material aus dem Futter herausragt).
+
+    Die Linienlänge wird **aus der Rohteilkontur** abgeleitet, damit sie nicht mit
+    Fantasie-Werten (±1000) gezeichnet wird.
+    """
+    try:
+        z = float(program.get("zb", 0.0) or 0.0)
+    except Exception:
+        z = 0.0
+
+    if abs(z) < 1e-9:
+        return []
+
+    # X-Ausdehnung aus Rohteil-Kontur (points sind (x, z))
+    x_vals: List[float] = []
+    for prim in stock_prims or []:
+        if isinstance(prim, dict) and prim.get("type") == "polyline":
+            pts = prim.get("points") or []
+            for pt in pts:
+                if isinstance(pt, (tuple, list)) and len(pt) >= 2:
+                    try:
+                        x_vals.append(float(pt[0]))
+                    except Exception:
+                        pass
+        elif isinstance(prim, dict) and prim.get("type") == "line":
+            for pt in (prim.get("p1"), prim.get("p2")):
+                if isinstance(pt, (tuple, list)) and len(pt) >= 2:
+                    try:
+                        x_vals.append(float(pt[0]))
+                    except Exception:
+                        pass
+
+    if x_vals:
+        min_x = min(x_vals)
+        max_x = max(x_vals)
+        # kleine Sicherheitsmargen (typisch: min bei 0 -> Linie bis ca. -5mm)
+        margin_neg = 5.0
+        margin_pos = max(2.0, 0.02 * max(abs(max_x), 1.0))
+        x_min = min(min_x - margin_neg, -margin_neg)
+        x_max = max_x + margin_pos
+    else:
+        # Fallback, falls keine Rohteil-Kontur verfügbar ist
+        x_min = -5.0
+        x_max = 50.0
+
+    return [{
+        "type": "line",
+        "p1": (x_min, z),
+        "p2": (x_max, z),
+        "role": "worklimit",
+    }]
+
+
+def build_chuck_nogo_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Vorschau-Rechteck für die Futter-Sperrzone (No-Go-Bereich)."""
+    def _sf(v: Any, default: float | None = None) -> float | None:
+        try:
+            if v is None:
+                return default
+            if isinstance(v, str):
+                vv = v.strip().replace(",", ".")
+                return float(vv) if vv else default
+            return float(v)
+        except Exception:
+            return default
+
+    x_min = _sf(program.get("chuck_no_go_x_min"), None)
+    x_max = _sf(program.get("chuck_no_go_x_max"), None)
+    z_lim = _sf(program.get("chuck_no_go_z_limit"), None)
+    if x_min is None or x_max is None or z_lim is None:
+        return []
+
+    lo = min(float(x_min), float(x_max))
+    hi = max(float(x_min), float(x_max))
+    if hi - lo <= 1e-6:
+        return []
+
+    za = _sf(program.get("za"), 0.0) or 0.0
+    zi = _sf(program.get("zi"), 0.0) or 0.0
+    zb = _sf(program.get("zb"), None)
+
+    if zb is not None:
+        # ZB (Bearbeitungsmass) markiert, wo das nutzbare Rohteil endet und das
+        # futterseitig eingespannte Material beginnt - das ist die tatsaechliche
+        # nahe Grenze der Sperrzone, nicht ein geschaetzter Abstand. Die Zone
+        # beginnt dort und reicht bis zur (weiter negativen bzw. futterseitigen)
+        # chuck_no_go_z_limit, plus einem kleinen Rand, damit sichtbar ist, dass
+        # sie sich weiter ins Futter hinein fortsetzt statt dort hart aufzuhoeren.
+        margin = max(2.0, 0.05 * max(abs(za - zi), 1.0))
+        if float(z_lim) <= float(zb):
+            z0 = float(zb)
+            z1 = min(float(z_lim), float(zi)) - margin
+        else:
+            z0 = float(zb)
+            z1 = max(float(z_lim), float(zi)) + margin
+    else:
+        # Rueckfallverhalten fuer aeltere Programme ohne ZB im Header.
+        span = max(10.0, 0.20 * max(abs(za - zi), 1.0))
+        if float(z_lim) <= float(za):
+            z_far = min(float(zi), float(z_lim)) - span
+            z0 = z_far
+            z1 = float(z_lim)
+        else:
+            z_far = max(float(zi), float(z_lim)) + span
+            z0 = float(z_lim)
+            z1 = z_far
+
+    return [
+        {"type": "line", "p1": (lo, z0), "p2": (hi, z0), "role": "chuck_nogo"},
+        {"type": "line", "p1": (hi, z0), "p2": (hi, z1), "role": "chuck_nogo"},
+        {"type": "line", "p1": (hi, z1), "p2": (lo, z1), "role": "chuck_nogo"},
+        {"type": "line", "p1": (lo, z1), "p2": (lo, z0), "role": "chuck_nogo"},
+    ]

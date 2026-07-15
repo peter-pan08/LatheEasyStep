@@ -15,6 +15,14 @@ from .ui_messages import format_user_error
 
 def build_program_data(handler):
     handler._update_selected_operation(force=True)
+    # Abgeleitete Geometrie (u. a. ABSPANEN.source_path) wird bisher nur beim
+    # Laden ueber _rebuild_all_operation_geometry() aufgefrischt. Wurde eine
+    # Kontur bearbeitet, ohne dass jeder darauf verweisende Abspanen-Step
+    # zwischenzeitlich erneut ausgewaehlt wurde, landete beim Speichern
+    # weiterhin die veraltete Kontur im gespeicherten Programm (Vorschau in der
+    # "alle Steps"-Uebersicht zeigt dann eine andere Kontur als die aktuell
+    # gespeicherten Segmente). Vor jedem Speichern ebenfalls auffrischen.
+    handler._rebuild_all_operation_geometry()
     header = handler._collect_program_header()
     return build_program_data_payload(
         handler.model.operations,
@@ -278,9 +286,10 @@ def handle_load_program(handler) -> None:
         except Exception:
             pass
 
+        # Ausgangspunkt nach dem Laden ist immer der Programmkopf (Zeile 0),
+        # nicht der erste fachliche Schritt - unabhaengig davon, wie viele
+        # Operationen das geladene Programm enthaelt.
         selected_row = 0
-        if len(handler.model.operations) > 1 and handler.model.operations[0].op_type == OpType.PROGRAM_HEADER:
-            selected_row = 1
         handler._refresh_operation_list(select_index=selected_row)
         if handler.list_ops is not None and 0 <= selected_row < handler.list_ops.count():
             try:

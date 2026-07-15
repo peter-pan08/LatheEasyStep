@@ -44,17 +44,24 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
         widget.blockSignals(True)
         val = op.params[key]
         if isinstance(widget, QtWidgets.QComboBox):
-            handled = False
             if key == "slice_strategy":
-                handled = handler._select_slice_strategy_index(widget, val)
-            if not handled:
-                try:
-                    data_idx = widget.findData(val)
-                except Exception:
-                    data_idx = -1
-                if data_idx >= 0:
-                    widget.setCurrentIndex(data_idx)
-                    handled = True
+                # slice_strategy has domain-specific codes (1=parallel_x,
+                # 2=parallel_z); a value that doesn't map to one of those must
+                # show as "no selection", not fall through to the generic
+                # int-as-index guess below, which would silently display an
+                # unrelated (or entirely fabricated) strategy as if chosen.
+                if not handler._select_slice_strategy_index(widget, val):
+                    widget.setCurrentIndex(-1)
+                widget.blockSignals(False)
+                continue
+            handled = False
+            try:
+                data_idx = widget.findData(val)
+            except Exception:
+                data_idx = -1
+            if data_idx >= 0:
+                widget.setCurrentIndex(data_idx)
+                handled = True
             if not handled:
                 try:
                     widget.setCurrentIndex(int(val))

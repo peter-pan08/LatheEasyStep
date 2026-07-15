@@ -202,8 +202,11 @@ def update_parting_ready_state(handler, *args, **kwargs) -> None:
 
 
 def update_parting_mode_visibility(handler) -> None:
-    mode_idx = handler.parting_mode.currentIndex() if handler.parting_mode else 0
-    show_roughing = mode_idx == 0
+    mode_value = _combo_data_or_default(getattr(handler, "parting_mode", None), default="rough")
+    if str(mode_value or "").strip() == "":
+        mode_idx = handler.parting_mode.currentIndex() if handler.parting_mode else 0
+        mode_value = {0: "rough", 1: "finish", 2: "rough_finish"}.get(mode_idx, "rough")
+    show_roughing = str(mode_value).strip().lower() in {"rough", "rough_finish"}
     undercut_mode = _combo_data_or_default(getattr(handler, "parting_undercut_mode", None), default="")
     show_separate_relief = undercut_mode == "separate"
     for widget in (
@@ -489,6 +492,7 @@ def update_contour_preview_temp(handler) -> None:
             handler._set_preview_paths([])
             return
         primitives = build_contour_path(params)
+        handler._log(f"[LatheEasyStep][debug] contour preview OK: {len(segs)} segments, {len(primitives)} primitives", level="debug")
         handler._set_preview_paths([primitives])
     except Exception as exc:
         handler._log("[LatheEasyStep] _update_contour_preview_temp ERROR:", exc, level="error")

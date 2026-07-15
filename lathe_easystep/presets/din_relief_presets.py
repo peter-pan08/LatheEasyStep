@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, List
 
 
 RELIEF_NORMS = ["DIN 76-A", "DIN 76-B", "DIN 76-C"]
@@ -41,10 +41,33 @@ def relief_thread_sizes() -> list[str]:
     return sorted(DIN_RELIEF_TABLE.keys(), key=lambda item: float(item[1:]) if item[1:].replace(".", "", 1).isdigit() else 999.0)
 
 
+def validate_din_relief_preset_data(data: Dict[str, object] | None) -> List[str]:
+    """Plausibilitaetspruefung fuer einen einzelnen Freistich-Datensatz
+    (Breite/Tiefe/Uebergang), analog zu validate_thread_preset_data."""
+    errors: List[str] = []
+    if not isinstance(data, dict):
+        return ["preset is not a dictionary"]
+    width = data.get("width")
+    if not isinstance(width, (int, float)) or float(width) <= 0.0:
+        errors.append("width must be > 0")
+    depth = data.get("depth")
+    if not isinstance(depth, (int, float)) or float(depth) <= 0.0:
+        errors.append("depth must be > 0")
+    transition = str(data.get("transition") or "").strip().lower()
+    if transition not in {"radius", "chamfer"}:
+        errors.append("transition must be 'radius' or 'chamfer'")
+    transition_size = data.get("transition_size")
+    if not isinstance(transition_size, (int, float)) or float(transition_size) <= 0.0:
+        errors.append("transition_size must be > 0")
+    return errors
+
+
 def get_din_relief_preset(thread_size: str, internal: bool = False) -> Dict[str, object] | None:
     side = "internal" if internal else "external"
     preset = DIN_RELIEF_TABLE.get(str(thread_size or "").strip().upper(), {}).get(side)
-    return dict(preset) if preset else None
+    if not preset or validate_din_relief_preset_data(preset):
+        return None
+    return dict(preset)
 
 
 def get_thread_with_relief(thread_size: str, internal: bool = False) -> Dict[str, object] | None:

@@ -6,18 +6,23 @@ from typing import Dict, List, Optional, Tuple
 
 from .contour_features import normalize_relief_mode, primitive_to_points
 from .contour_logic import build_contour_variants
-from .gcode_safety import append_tool_and_spindle, emit_approach, nose_compensation_command
+from .gcode_safety import append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command
 from .gcode_utils import (
     Point,
     get_tool_number,
+    is_internal_side,
     is_monotonic_x,
     is_monotonic_x_decreasing,
     is_monotonic_z_decreasing,
     require,
     require_positive,
     require_tool,
+    resolve_enum_index,
     resolve_internal_safe_x,
+    validate_internal_x_limit,
 )
+
+PARTING_MODE_INDEX = {"rough": 0, "finish": 1}
 
 
 @dataclass(frozen=True)
@@ -65,7 +70,7 @@ def _resolve_roughing_stock_x(
     if external:
         return max(stock_x, contour_max_x)
     if stock_x <= 0.0 or stock_x < contour_min_x - 1e-9:
-        return fallback
+        return contour_min_x
     return max(stock_x, contour_max_x)
 
 
@@ -79,6 +84,44 @@ def _finish_entry_point(
     if safe_z > start_z + 1e-9:
         return (start_x, safe_z)
     return (start_x, start_z + max(lead_length, 0.5))
+
+
+def _emit_finish_primitives(lines: List[str], primitives: List[Dict[str, object]], *, feed: float) -> None:
+    cur_x: Optional[float] = None
+    cur_z: Optional[float] = None
+
+    def _ensure_linear_at(x: float, z: float) -> None:
+        nonlocal cur_x, cur_z
+        if cur_x is None or cur_z is None or abs(cur_x - x) > 1e-9 or abs(cur_z - z) > 1e-9:
+            lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+            cur_x, cur_z = x, z
+
+    for pr in primitives or []:
+        typ = pr.get("type")
+        if typ == "line":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            if p1 is None or p2 is None:
+                continue
+            x1, z1 = float(p1[0]), float(p1[1])
+            x2, z2 = float(p2[0]), float(p2[1])
+            _ensure_linear_at(x1, z1)
+            _ensure_linear_at(x2, z2)
+        elif typ == "arc":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            c = pr.get("c") or pr.get("center")
+            if p1 is None or p2 is None or c is None:
+                continue
+            x1, z1 = float(p1[0]), float(p1[1])
+            x2, z2 = float(p2[0]), float(p2[1])
+            cx, cz = float(c[0]), float(c[1])
+            _ensure_linear_at(x1, z1)
+            i = cx - (cur_x if cur_x is not None else x1)
+            k = cz - (cur_z if cur_z is not None else z1)
+            g = "G3" if pr.get("ccw") else "G2"
+            lines.append(f"{g} X{x2:.3f} Z{z2:.3f} I{i:.3f} K{k:.3f} F{feed:.3f}")
+            cur_x, cur_z = x2, z2
 
 
 def _emit_relief_pass(
@@ -98,7 +141,10 @@ def _emit_relief_pass(
     relief_feed = float(op_params.get("undercut_feed", feed) or feed)
     if bool(op_params.get("optional_stop_before_undercut", settings.get("optional_stop_before_undercut", False))):
         lines.append("M1")
-    append_tool_and_spindle(lines, relief_tool, relief_spindle, settings)
+    append_tool_and_spindle(
+        lines, relief_tool, relief_spindle, settings,
+        spindle_mode=op_params.get("spindle_mode"), spindle_max_rpm=op_params.get("spindle_max_rpm"),
+    )
     lines.append("(Hinterschnitt separat)")
     emit_approach(lines, feature_points[0][0], safe_z, settings)
     for idx, (x, z) in enumerate(feature_points):
@@ -395,13 +441,13 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     lines: List[str] = ["(ABSPANEN)"]
     require(p, ["depth_per_pass"], "ABSPANEN")
     require_positive(p, ["depth_per_pass"], "ABSPANEN")
-    side_idx = int(p.get("side", 0))
+    side_idx = 1 if is_internal_side(p.get("side", 0)) else 0
     feed = float(p.get("feed", 0.15))
     depth_per_pass = float(p["depth_per_pass"])
     pause_enabled = bool(p.get("pause_enabled", False))
     pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
     pause_duration = 0.5
-    mode_idx = int(p.get("mode", 0))
+    mode_idx = resolve_enum_index(p.get("mode", 0), PARTING_MODE_INDEX, default=0)
     if pause_enabled and pause_distance > 0.0 and mode_idx in (0, 2):
         settings["needs_step_line_pause_sub"] = True
     finish_allow_x = max(float(p.get("finish_allow_x", 0.0)), 0.0)
@@ -410,7 +456,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         lines.append(f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm)")
     tool_num = require_tool(p, "ABSPANEN")
     spindle = float(p.get("spindle", 0.0))
-    append_tool_and_spindle(lines, tool_num, spindle, settings)
+    append_tool_and_spindle(
+        lines, tool_num, spindle, settings,
+        spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
+    )
     lines.append(f"F{feed:.3f}")
     contour_variants = None
     contour_params = p.get("_contour_params")
@@ -442,15 +491,11 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     safe_z = float(cfg.z_value)
     external = side_idx == 0
     if not external:
-        safe_x = resolve_internal_safe_x(settings)
-        contour_min_x = min(point[0] for point in rough_path)
-        if safe_x is None or safe_x <= 0.0:
-            raise ValueError("Innenbearbeitung erfordert ein gueltiges XRI im Programmkopf.")
-        if safe_x >= contour_min_x - 1e-9:
-            raise ValueError(
-                f"XRI={safe_x:.3f} ist fuer Innenbearbeitung unplausibel. "
-                f"XRI muss kleiner als der kleinste Konturdurchmesser ({contour_min_x:.3f}) sein."
-            )
+        validate_internal_x_limit(
+            settings,
+            [pt[0] for pt in finish_path] + [pt[0] for pt in rough_path],
+            op_label="Innenbearbeitung",
+        )
     tool_info = (settings.get("tools", {}) or {}).get(tool_num)
     compensation_command = nose_compensation_command(tool_info, external)
     nose_disabled = bool(p.get("nose_comp_disabled", False))
@@ -487,7 +532,12 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     rough_done = False
     cycle_finish_done = False
 
-    if strategy_code == "parallel_x":
+    # mode_idx == 1 (reiner Schlichtstep) darf NIE einen G71/G72-Schruppzyklus
+    # erzeugen - ein separater Schruppstep (typischerweise mit eigenem
+    # Werkzeug) hat das Material bereits abgetragen. Ohne diese Schranke
+    # wiederholte ein dedizierter Schlichtstep mit gueltiger Strategie
+    # unbemerkt die komplette Schruppbearbeitung.
+    if strategy_code == "parallel_x" and mode_idx in (0, 2):
         if can_use_cycles and is_monotonic_x_decreasing(rough_cycle_path):
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
@@ -513,7 +563,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             if rough_lines:
                 rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
             lines.extend(rough_lines)
-    elif strategy_code == "parallel_z":
+    elif strategy_code == "parallel_z" and mode_idx in (0, 2):
         can_use_g71 = is_monotonic_z_decreasing(rough_cycle_path) and is_monotonic_x(rough_cycle_path)
         if can_use_cycles and can_use_g71:
             allocator = settings.get("sub_allocator")
@@ -549,18 +599,35 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         lines.append("(Schlichtschnitt Kontur)")
         finish_points = rough_path if relief_mode == "ignore" else finish_path
         entry_x, entry_z = _finish_entry_point(finish_points, safe_z)
-        lines.append(f"G0 X{entry_x:.3f} Z{entry_z:.3f}")
+        # War zuvor ein einzelner diagonaler G0 (X und Z gleichzeitig) direkt aus der
+        # jeweils vorherigen Position - potenziell noch im/am Rohteil bzw. in der
+        # Futter-Sperrzone. emit_approach() prueft das (WARN-Zeilen) und faehrt bei
+        # Bedarf erst Z, dann X auf die sichere Ebene, bevor der eigentliche
+        # Kontur-Einfahrpunkt angefahren wird - dieselbe Absicherung, die die
+        # Schrupp-Zustellung oben bereits nutzt.
+        emit_approach(lines, entry_x, entry_z, settings)
         if compensation_command and not nose_disabled:
             lines.append(compensation_command)
         prev_point = (entry_x, entry_z) if compensation_command and not nose_disabled else None
-        for idx, (x, z) in enumerate(finish_points):
-            current_point = (x, z)
-            if idx == 0 and compensation_command and not nose_disabled and abs(entry_z - z) <= 1e-9 and abs(entry_x - x) <= 1e-9:
-                continue
-            if current_point != prev_point:
-                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-                prev_point = current_point
-        lines.append(f"G0 Z{safe_z:.3f}")
+        if contour_variants and relief_mode != "ignore":
+            finish_primitives = contour_variants["finish_primitives"] or []
+            _emit_finish_primitives(lines, finish_primitives, feed=feed)
+            if finish_points:
+                prev_point = finish_points[-1]
+        else:
+            for idx, (x, z) in enumerate(finish_points):
+                current_point = (x, z)
+                if idx == 0 and compensation_command and not nose_disabled and abs(entry_z - z) <= 1e-9 and abs(entry_x - x) <= 1e-9:
+                    continue
+                if current_point != prev_point:
+                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+                    prev_point = current_point
+        # Nullbewegung vermeiden: wenn der letzte Konturpunkt bereits auf
+        # safe_z liegt (z. B. Kontur endet an der Stirnflaeche bei Z0, safe_z
+        # ebenfalls 0), ist der Rueckzug bereits erreicht - ein zusaetzliches
+        # G0 auf dieselbe Position ist eine bedeutungslose Nullbewegung.
+        if not (prev_point is not None and abs(prev_point[1] - safe_z) <= 1e-6):
+            lines.append(f"G0 Z{safe_z:.3f}")
         if compensation_command and not nose_disabled:
             lines.append("G40")
     elif mode_idx == 0 and strategy_code is None:

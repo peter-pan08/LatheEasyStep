@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Callable, Dict, List
 
 from .model import Operation
-from .gcode_utils import get_param_float, get_param_int
+from .gcode_utils import get_param_float, get_param_int, validate_internal_x_limit
+from .gcode_safety import get_safe_position
 
 
 def groove_sub_definition() -> List[str]:
@@ -121,18 +122,22 @@ def groove_sub_definition() -> List[str]:
         "  #<cn>     = [ABS[#14]]",
         "  #<cn>     = [FIX[#<cn>]]",
         "",
-        "  (Checks)",
+        "  (Checks: ungueltige Parameter brechen den Zyklus sofort ab)",
         "  o221 if [#<wtool> LE 0]",
         "    (ABBRUCH: Werkzeugbreite <= 0)",
+        "    M99",
         "  o221 endif",
         "  o222 if [#<wnut> LE 0]",
         "    (ABBRUCH: Nutbreite <= 0)",
+        "    M99",
         "  o222 endif",
         "  o223 if [#<stepA> LE 0]",
         "    (ABBRUCH: Zustellung <= 0)",
+        "    M99",
         "  o223 endif",
         "  o224 if [#<wtool> GT #<wnut> + 0.0001]",
         "    (ABBRUCH: Werkzeug breiter als Nut)",
+        "    M99",
         "  o224 endif",
         "",
         "  (Width stepping)",
@@ -142,6 +147,7 @@ def groove_sub_definition() -> List[str]:
         "  o225 endif",
         "  o226 if [#<stepW> LE 0.001]",
         "    (ABBRUCH: Ueberdeckung zu gross)",
+        "    M99",
         "  o226 endif",
         "",
         "  #<extra> = [#<wnut> - #<wtool>]",
@@ -162,6 +168,7 @@ def groove_sub_definition() -> List[str]:
         "",
         "  (Roughing passes up to Arough)",
         "  #<Acur> = [#<Astart>]",
+        "  #<rcnt> = [0]",
         "  o228 if [#<sgn> * [#<Arough> - #<Astart>] GT 0]",
         "    o229 while [#<sgn> * [#<Acur> - #<Arough>] LT 0]",
         "      #<Anext> = [#<Acur> + #<sgn> * #<stepA>]",
@@ -170,6 +177,11 @@ def groove_sub_definition() -> List[str]:
         "      o230 endif",
         "      o210 call [#<Anext>] [#<mode>] [#<C>] [#<Astart>] [#<retr>] [#<sgn>] [#<Fpl>] [#<stepW>] [#<omin>] [#<omax>] [#<camp>] [#<Fsw>] [#<cn>]",
         "      #<Acur> = [#<Anext>]",
+        "      #<rcnt> = [#<rcnt> + 1]",
+        "      (Sicherheitsabbruch gegen Endlosschleife bei Nullbewegung)",
+        "      o233 if [#<rcnt> GT 500]",
+        "        o229 break",
+        "      o233 endif",
         "    o229 endwhile",
         "  o228 endif",
         "",
@@ -209,6 +221,8 @@ def generate_groove_gcode(
         get_tool_number(op.params),
         op.params.get("spindle"),
         settings,
+        spindle_mode=op.params.get("spindle_mode"),
+        spindle_max_rpm=op.params.get("spindle_max_rpm"),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     p = op.params
@@ -283,11 +297,42 @@ def generate_groove_gcode(
             raise ValueError("GROOVE innen: Aend muss groesser als Astart sein (ID + 2*Tiefe).")
         if lage != 1 and not (a_end < a_start):
             raise ValueError("GROOVE aussen: Aend muss kleiner als Astart sein (OD - 2*Tiefe).")
+        if lage == 1:
+            validate_internal_x_limit(settings, [a_start, a_end], op_label="Inneneinstich")
+
+    # Diese Pruefungen verhindern degenerierte Zyklusparameter, die im o220-Zyklus
+    # sonst zu einer Nullbewegung und damit zu einer Endlosschleife fuehren wuerden.
+    if wtool <= 0.0:
+        raise ValueError("GROOVE: Werkzeugbreite muss groesser als 0 sein.")
+    if wnut <= 0.0:
+        raise ValueError("GROOVE: Nutbreite muss groesser als 0 sein.")
+    if step_a <= 0.0:
+        raise ValueError("GROOVE: Zustellung pro Schnitt muss groesser als 0 sein.")
+    if wtool > wnut + 0.0001:
+        raise ValueError("GROOVE: Werkzeug ist breiter als die Nut.")
+    step_w = wtool - overlap
+    if step_w > 0.8 * wtool:
+        step_w = 0.8 * wtool
+    if step_w <= 0.001:
+        raise ValueError("GROOVE: Ueberdeckung ist im Verhaeltnis zur Werkzeugbreite zu gross.")
 
     start_x = a_start if mode == 0 else c_val
     lines.append("(Anfahren vor Groove)")
-    lines.append(f"G0 Z{safe_z:.3f}")
-    lines.append(f"G0 X{start_x:.3f}")
+    safe_pos = get_safe_position(settings)
+    if safe_pos:
+        x_safe, z_safe = safe_pos
+        lines.append(f"G0 Z{z_safe:.3f}")
+        lines.append(f"G0 X{x_safe:.3f}")
+        if mode == 0:
+            lines.append(f"G0 Z{c_val:.3f}")
+            lines.append(f"G0 X{start_x:.3f}")
+        else:
+            lines.append(f"G0 X{c_val:.3f}")
+            lines.append(f"G0 Z{a_start:.3f}")
+        settings["_is_at_safe"] = False
+    else:
+        lines.append(f"G0 Z{safe_z:.3f}")
+        lines.append(f"G0 X{start_x:.3f}")
 
     def macro_arg(value: float, digits: int = 3) -> str:
         if value < 0:

@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Tuple
 
 from .presets import get_din_relief_preset
 from .model import Operation
-from .gcode_utils import resolve_internal_safe_x
+from .gcode_utils import is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
@@ -45,9 +45,7 @@ def generate_thread_gcode(
     length = float(op.params.get("length", 0.0))
     start_z = float(op.params.get("thread_start_z", 0.0) or 0.0)
     hand_raw = op.params.get("hand", 0)
-    hand_idx = 0
-    if isinstance(hand_raw, (int, float)):
-        hand_idx = max(0, min(int(hand_raw), len(THREAD_HAND_LABELS) - 1))
+    hand_idx = 1 if is_left_hand(hand_raw) else 0
     hand_label = THREAD_HAND_LABELS[hand_idx]
     z_dir = -1.0 if hand_idx == 0 else 1.0
     end_z = start_z + (z_dir * abs(length))
@@ -81,10 +79,8 @@ def generate_thread_gcode(
     l_val = int(float(op.params.get("l", 0)))
 
     orientation_raw = op.params.get("orientation", 0)
-    orientation_idx = 0
-    if isinstance(orientation_raw, (int, float)):
-        orientation_idx = max(0, min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1))
-    internal = orientation_idx == 1
+    internal = is_internal_side(orientation_raw)
+    orientation_idx = 1 if internal else 0
     orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
     standard_data = op.params.get("standard")
     standard_label = ""
@@ -100,14 +96,11 @@ def generate_thread_gcode(
     if internal:
         peak_offset = abs(peak_offset)
         approach_x = minor_diameter - peak_offset
-        safe_x = resolve_internal_safe_x(settings)
-        if safe_x is None or safe_x <= 0.0:
-            raise ValueError("Innengewinde erfordert ein gueltiges XRI im Programmkopf.")
-        if safe_x >= minor_diameter - 1e-9:
-            raise ValueError(
-                f"XRI={safe_x:.3f} ist fuer Innengewinde unplausibel. "
-                f"XRI muss kleiner als der Kerndurchmesser ({minor_diameter:.3f}) sein."
-            )
+        safe_x = validate_internal_x_limit(
+            settings,
+            [major_diameter, minor_diameter, approach_x],
+            op_label="Innengewinde",
+        )
     else:
         peak_offset = -abs(peak_offset)
         approach_x = major_diameter - peak_offset
@@ -122,7 +115,7 @@ def generate_thread_gcode(
         comments.append(pitch_warning)
     relief_mode = str(op.params.get("relief_mode", "off") or "off").strip().lower()
     relief_norm = str(op.params.get("relief_norm", "DIN 76-A") or "DIN 76-A").strip()
-    if relief_mode == "suggest":
+    if relief_mode in ("suggest", "suggest_din_relief"):
         relief_size = None
         for dia, size_name in THREAD_RELIEF_SIZE_BY_MAJOR.items():
             if abs(major_diameter - dia) <= 0.2:
@@ -144,6 +137,8 @@ def generate_thread_gcode(
         get_tool_number(op.params),
         op.params.get("spindle"),
         settings,
+        spindle_mode=op.params.get("spindle_mode"),
+        spindle_max_rpm=op.params.get("spindle_max_rpm"),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     lines.extend(comments)
@@ -151,9 +146,19 @@ def generate_thread_gcode(
     if bool(op.params.get("optional_stop_before", False)):
         lines.append("M1")
     lines.append("(Anfahren vor Gewinde)")
-    emit_approach(lines, approach_x, safe_z, settings)
-    if abs(start_z - safe_z) > 1e-9:
-        lines.append(f"G0 Z{start_z:.3f}")
+    if internal:
+        safe_x = resolve_internal_safe_x(settings)
+        if safe_x is None:
+            raise ValueError("Innengewinde erfordert ein gueltiges XRI im Programmkopf.")
+        emit_approach(lines, safe_x, safe_z, settings)
+        if abs(start_z - safe_z) > 1e-9:
+            lines.append(f"G0 Z{start_z:.3f}")
+        if abs(approach_x - safe_x) > 1e-9:
+            lines.append(f"G0 X{approach_x:.3f}")
+    else:
+        emit_approach(lines, approach_x, safe_z, settings)
+        if abs(start_z - safe_z) > 1e-9:
+            lines.append(f"G0 Z{start_z:.3f}")
     lines.append(
         (
             "G76 "

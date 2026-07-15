@@ -78,16 +78,25 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
         if z_is_abs is None:
             z_is_abs = not incremental
 
+        def _raw_axis(key: str, fallback: float) -> float:
+            # Nicht "s.get(key, fallback) or fallback" verwenden: ein
+            # gueltiges, bewusst gesetztes Ziel von exakt 0.0 ist in Python
+            # falsy und wuerde damit stillschweigend durch den vorherigen
+            # Punkt ersetzt (X=0/Z=0 sind z. B. bei Plan-/Zentrierpunkten
+            # voellig normale, haeufige Zielwerte).
+            raw = s.get(key)
+            return float(raw) if raw is not None else float(fallback)
+
         if s.get("x_empty"):
             x = last_x
         else:
-            xv = float(s.get("x", 0.0) or 0.0) if not x_is_abs else float(s.get("x", last_x) or last_x)
+            xv = _raw_axis("x", 0.0 if not x_is_abs else last_x)
             x = xv if x_is_abs else (last_x + xv)
 
         if s.get("z_empty"):
             z = last_z
         else:
-            zv = float(s.get("z", 0.0) or 0.0) if not z_is_abs else float(s.get("z", last_z) or last_z)
+            zv = _raw_axis("z", 0.0 if not z_is_abs else last_z)
             z = zv if z_is_abs else (last_z + zv)
 
         pts.append((x, z))
@@ -339,8 +348,17 @@ def validate_contour_segments_for_profile(params: Dict[str, Any]) -> Tuple[bool,
     x, z = start_x, start_z
     for i, seg in enumerate(segs):
         try:
-            x = float(seg.get("x", x))
-            z = float(seg.get("z", z))
+            # Segmente, die nur eine Achse aendern (mode='x'/'z'), tragen fuer
+            # die jeweils andere Achse einen Platzhalterwert (haeufig 0.0) mit
+            # x_empty/z_empty == True. Dieser Platzhalter darf hier NICHT als
+            # echtes Ziel uebernommen werden, sonst entstehen falsche Punkte
+            # (z. B. Sprung nach Z=0 statt Beibehalten der vorherigen Z) - das
+            # fuehrte zu falschen "Radius zu gross"/"colinear"-Fehlern und
+            # damit zu einer geleerten Kontur-Vorschau.
+            if not seg.get("x_empty"):
+                x = float(seg.get("x", x))
+            if not seg.get("z_empty"):
+                z = float(seg.get("z", z))
         except Exception:
             errors.append(f"Zeile {i+1}: X/Z ungültig.")
             continue

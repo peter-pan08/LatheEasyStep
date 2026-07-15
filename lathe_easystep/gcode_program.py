@@ -30,6 +30,7 @@ from .gcode_utils import (
     emit_coolant,
     float_or_none,
     get_tool_number,
+    is_internal_side,
     primitives_to_points,
     require,
     require_positive,
@@ -41,9 +42,14 @@ from .model import OpType, Operation
 
 def _active_retract_mode_for_op(op: Operation) -> str:
     params = op.params or {}
-    if op.op_type == OpType.THREAD and int(float(params.get("orientation", 0) or 0)) == 1:
+    if op.op_type == OpType.THREAD and is_internal_side(params.get("orientation", 0)):
         return "internal"
-    if op.op_type == OpType.ABSPANEN and int(float(params.get("side", 0) or 0)) == 1:
+    if op.op_type == OpType.ABSPANEN and is_internal_side(params.get("side", 0)):
+        return "internal"
+    if op.op_type == OpType.GROOVE and int(float(params.get("lage", 0) or 0)) == 1:
+        # Mantel - Innen (ID): Werkzeug arbeitet in der Bohrung, Rueckzug ueber
+        # XRI/ZRI statt der aussenbezogenen XRA/ZRA (mit automatischem Fallback,
+        # falls XRI/ZRI nicht gesetzt sind, siehe gcode_safety.get_safe_position).
         return "internal"
     return "external"
 
@@ -182,11 +188,11 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     settings = dict(program_settings or {})
     validation_warnings = validate_program_setup(operations, settings)
     for i, op in enumerate(operations):
-        if op.op_type in REQUIRED_KEYS:
-            require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
-            if op.op_type in [OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL]:
-                require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
         try:
+            if op.op_type in REQUIRED_KEYS:
+                require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
+                if op.op_type in [OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL]:
+                    require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
             gcode_for_operation(op, settings)
         except ValueError as e:
             raise ValueError(f"Operation {i+1} ({op.op_type}): {str(e)}") from e
@@ -206,8 +212,6 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     header_lines: List[str] = ["%", "(Programm automatisch erzeugt)", f"(Programmname: {program_name})", f"(Masseinheit: {unit})"]
     handler_header_lines = [str(x) for x in settings.get("header_lines", []) or []]
     footer_lines_from_settings = [str(x) for x in settings.get("footer_lines", []) or []]
-    if handler_header_lines:
-        settings["_skip_tool_move"] = True
     header_lines.extend(["G18 G7 G90 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
     header_lines.append("(=== SICHERHEITSPARAMETER ===)")
     xt = settings.get("xt")
@@ -252,9 +256,9 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             pass
     header_lines.extend(["(=== END SICHERHEITSPARAMETER ===)", ""])
     for warning in get_machine_limit_warnings(settings):
-        header_lines.append(f"(WARN: {warning})")
+        header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     for warning in validation_warnings:
-        header_lines.append(f"(WARN: {warning})")
+        header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     header_lines.append("")
 
     all_subs: List[List[str]] = []
@@ -307,6 +311,16 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     def _contour_key_from_points(points: List[Tuple[float, float]]) -> tuple:
         return tuple((_round6(x), _round6(z)) for x, z in points)
 
+    # Kontur-Subroutinen werden hier fuer JEDE Kontur mit Namen vorab allokiert,
+    # weil generate_abspanen_gcode() die zugewiesene Nummer schon kennen muss,
+    # falls es einen G71/G72-Zyklus (Q<num>) darauf aufbaut. Ob das tatsaechlich
+    # passiert, steht aber erst nach der Haupt-Ablaufgenerierung fest (z. B.
+    # faellt Innenbearbeitung ohne zyklustaugliche Kontur auf Move-based-Code
+    # zurueck und referenziert die Subroutine nie). Der Rumpf wird deshalb erst
+    # NACH main_flow_lines eingehaengt (siehe unten), gefiltert auf tatsaechlich
+    # per "Q<num>" referenzierte Nummern - sonst bliebe eine "o<n> sub ... endsub"
+    # -Definition im Programm stehen, die nie aufgerufen wird.
+    contour_sub_blocks: Dict[int, List[str]] = {}
     for op in operations:
         if op.op_type != OpType.CONTOUR:
             continue
@@ -317,13 +331,13 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             key = ("prims", _contour_key_from_primitives(op.path))
             if key not in contour_geom_map:
                 contour_geom_map[key] = settings["sub_allocator"].allocate()
-                all_subs.append(contour_sub_from_primitives(op.path, contour_geom_map[key]))
+                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_primitives(op.path, contour_geom_map[key])
             contour_subs[name] = contour_geom_map[key]
         else:
             key = ("pts", _contour_key_from_points(op.path))
             if key not in contour_geom_map:
                 contour_geom_map[key] = settings["sub_allocator"].allocate()
-                all_subs.append(contour_sub_from_points(op.path, contour_geom_map[key]))
+                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_points(op.path, contour_geom_map[key])
             contour_subs[name] = contour_geom_map[key]
 
     settings["contour_subs"] = contour_subs
@@ -399,6 +413,15 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             main_flow_lines.extend(op_lines)
         if op_lines and any(not line.startswith("(") for line in op_lines) and op.op_type not in (OpType.CONTOUR, OpType.PROGRAM_HEADER):
             emit_safe_retract_for_op(main_flow_lines, settings, op.op_type, current_pos=estimate_operation_end_pos(op))
+
+    if contour_sub_blocks:
+        referenced_text = "\n".join(main_flow_lines)
+        referenced_blocks = [
+            contour_sub_blocks[sub_num]
+            for sub_num in sorted(contour_sub_blocks)
+            if re.search(rf"\bQ{sub_num}\b", referenced_text)
+        ]
+        all_subs[0:0] = referenced_blocks
 
     lines: List[str] = []
     lines.extend(header_lines)
