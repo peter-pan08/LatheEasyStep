@@ -33,6 +33,7 @@
   "combo.parting_coolant.on": "On",
   "combo.parting_mode.finish": "Finish",
   "combo.parting_mode.rough": "Rough",
+  "combo.parting_mode.rough_finish": "Rough + Finish",
   "combo.parting_output_preference.auto": "Automatic",
   "combo.parting_output_preference.prefer_cycle": "Prefer cycle",
   "combo.parting_output_preference.prefer_explicit": "Prefer explicit",

@@ -51,14 +51,19 @@ class _CheckBox:
 
 
 class _ComboBox:
-    """Minimal ComboBox mock."""
-    def __init__(self, items=None, index=0):
+    """Minimal ComboBox mock. `data` mirrors Qt's itemData (the technical ID)."""
+    def __init__(self, items=None, index=0, data=None):
         self._items = list(items or [])
         self._index = index
+        self._data = list(data) if data is not None else [None] * len(self._items)
     def currentText(self):
         if 0 <= self._index < len(self._items):
             return self._items[self._index]
         return ""
+    def currentData(self):
+        if 0 <= self._index < len(self._data):
+            return self._data[self._index]
+        return None
     def currentIndex(self):
         return self._index
     def setCurrentIndex(self, i):
@@ -71,6 +76,15 @@ class _ComboBox:
             return self._items.index(text)
         except ValueError:
             return -1
+    def findData(self, value):
+        try:
+            return self._data.index(value)
+        except ValueError:
+            return -1
+    def itemData(self, i, role=None):
+        if 0 <= i < len(self._data):
+            return self._data[i]
+        return None
     def blockSignals(self, _):
         pass
     def count(self):
@@ -129,11 +143,28 @@ def _attach_header_widgets(h, header_vals=None):
     h.program_machine_profile = _ComboBox(
         ["Manuell", "Werkstatt 125 Standard", "Werkstatt 100 Soft", "Werkstatt 200 Innen"],
         vals.get("machine_profile_idx", 0),
+        data=["manual", "shop_125_standard", "shop_100_soft", "shop_200_boring"],
     )
-    h.program_chuck_size = _ComboBox(["Kein Futter", "80 mm", "100 mm", "125 mm"], vals.get("chuck_size_idx", 0))
-    h.program_chuck_part_type = _ComboBox(["Welle (Vollmaterial)", "Rohr"], vals.get("chuck_part_type_idx", 0))
-    h.program_chuck_grip_mode = _ComboBox(["Außen gespannt", "Innen gespannt"], vals.get("chuck_grip_mode_idx", 0))
-    h.program_chuck_profile = _ComboBox(["3-Backen Standard", "Softjaws", "Innenausdrehen"], vals.get("chuck_profile_idx", 0))
+    h.program_chuck_size = _ComboBox(
+        ["Kein Futter", "80 mm", "100 mm", "125 mm"],
+        vals.get("chuck_size_idx", 0),
+        data=["none", "80", "100", "125"],
+    )
+    h.program_chuck_part_type = _ComboBox(
+        ["Welle (Vollmaterial)", "Rohr"],
+        vals.get("chuck_part_type_idx", 0),
+        data=["solid", "tube"],
+    )
+    h.program_chuck_grip_mode = _ComboBox(
+        ["Außen gespannt", "Innen gespannt"],
+        vals.get("chuck_grip_mode_idx", 0),
+        data=["external", "internal"],
+    )
+    h.program_chuck_profile = _ComboBox(
+        ["3-Backen Standard", "Softjaws", "Innenausdrehen"],
+        vals.get("chuck_profile_idx", 0),
+        data=["standard_3jaw", "softjaws", "boring"],
+    )
     h.program_chuck_x_min = _SpinBox(vals.get("chuck_no_go_x_min", 0.0))
     h.program_chuck_x_max = _SpinBox(vals.get("chuck_no_go_x_max", 0.0))
     h.program_chuck_z_limit = _SpinBox(vals.get("chuck_no_go_z_limit", 0.0))
@@ -396,11 +427,12 @@ def test_header_roundtrip_with_chuck_fields():
     })
 
     header = h._collect_program_header()
-    assert header["chuck_size"] == "125 mm"
-    assert header["machine_profile"] == "Werkstatt 100 Soft"
-    assert header["chuck_part_type"] == "Rohr"
-    assert header["chuck_grip_mode"] == "Außen gespannt"
-    assert header["chuck_profile"] == "Innenausdrehen"
+    # Werte sind sprachunabhaengige technische IDs (itemData), keine Anzeige-Texte.
+    assert header["chuck_size"] == "125"
+    assert header["machine_profile"] == "shop_100_soft"
+    assert header["chuck_part_type"] == "tube"
+    assert header["chuck_grip_mode"] == "external"
+    assert header["chuck_profile"] == "boring"
     assert header["chuck_no_go_x_min"] == 24.0
     assert header["chuck_no_go_x_max"] == 132.0
     assert header["chuck_no_go_z_limit"] == -68.0

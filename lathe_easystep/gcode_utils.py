@@ -50,6 +50,87 @@ def get_param_int(params: Dict[str, object], keys: List[str], default: int | Non
     return default
 
 
+_INTERNAL_SIDE_TOKENS = {"internal", "inside", "innen", "in", "id"}
+_EXTERNAL_SIDE_TOKENS = {"external", "outside", "aussen", "außen", "out", "od"}
+
+
+def is_internal_side(value: object, default: bool = False) -> bool:
+    """Interpretiert Seiten-/Orientierungswerte robust.
+
+    Combos wie ``thread_orientation``, ``parting_side`` oder ``groove_lage``
+    liefern seit der ID-only-Umstellung ueber ``currentData()`` String-IDs
+    (z. B. ``"internal"``/``"external"``, ``"inside"``/``"outside"``) statt
+    des frueheren numerischen Index (0/1). Diese Funktion versteht beide
+    Formen, damit Alt-Daten (Save/Load, Tests mit rohen int-Werten) und neue
+    UI-Werte gleichermassen korrekt als innen/aussen erkannt werden.
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _INTERNAL_SIDE_TOKENS:
+            return True
+        if token in _EXTERNAL_SIDE_TOKENS:
+            return False
+        try:
+            return int(float(token)) == 1
+        except (TypeError, ValueError):
+            return default
+    try:
+        return int(float(value)) == 1
+    except (TypeError, ValueError):
+        return default
+
+
+_LEFT_HAND_TOKENS = {"left", "links", "l"}
+_RIGHT_HAND_TOKENS = {"right", "rechts", "r"}
+
+
+def is_left_hand(value: object, default: bool = False) -> bool:
+    """Analog zu is_internal_side(), aber fuer die Gewinderichtung
+    (thread_hand: 'right'/'left' seit der ID-only-Umstellung statt 0/1)."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _LEFT_HAND_TOKENS:
+            return True
+        if token in _RIGHT_HAND_TOKENS:
+            return False
+        try:
+            return int(float(token)) == 1
+        except (TypeError, ValueError):
+            return default
+    try:
+        return int(float(value)) == 1
+    except (TypeError, ValueError):
+        return default
+
+
+def resolve_enum_index(value: object, mapping: Dict[str, int], default: int = 0) -> int:
+    """Loest einen Enum-Parameter zu seinem legacy-numerischen Index auf.
+
+    Combos wie ``face_mode`` (rough/finish/rough_finish) oder ``parting_mode``
+    (rough/finish) liefern seit der ID-only-Umstellung String-IDs ueber
+    ``currentData()`` statt des frueheren numerischen Combo-Index. Bestehende
+    Generatorlogik vergleicht weiterhin gegen den Index (0/1/2); diese Funktion
+    versteht beide Formen, damit alte Zahlenwerte (Tests, Altdaten) und neue
+    String-IDs gleichermassen korrekt aufgeloest werden.
+    """
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in mapping:
+            return mapping[token]
+        try:
+            return int(float(token))
+        except (TypeError, ValueError):
+            return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def resolve_internal_safe_x(settings: Dict[str, object]) -> float | None:
     xri = float_or_none(settings.get("xri"))
     if xri is None:
@@ -60,6 +141,27 @@ def resolve_internal_safe_x(settings: Dict[str, object]) -> float | None:
     if xi is None:
         return None
     return xi + xri
+
+
+def validate_internal_x_limit(settings: Dict[str, object], x_values: List[object], *, op_label: str) -> float:
+    safe_x = resolve_internal_safe_x(settings)
+    if safe_x is None or safe_x <= 0.0:
+        raise ValueError(f"{op_label} erfordert ein gueltiges XRI im Programmkopf.")
+    numeric_values: List[float] = []
+    for value in x_values:
+        try:
+            numeric_values.append(float(value))
+        except Exception:
+            continue
+    if not numeric_values:
+        return safe_x
+    min_x = min(numeric_values)
+    if min_x < safe_x - 1e-9:
+        raise ValueError(
+            f"XRI={safe_x:.3f} ist fuer {op_label} unplausibel. "
+            f"Der kleinste angeforderte X-Wert waere {min_x:.3f}; XRI ist eine harte Sicherheitsgrenze und darf nicht unterschritten werden."
+        )
+    return safe_x
 
 
 def require_tool(params: Dict[str, object], op_label: str) -> int:
@@ -125,6 +227,11 @@ def sanitize_gcode_text(text: str) -> str:
         "ü": "ue",
         "Ü": "Ue",
         "ß": "ss",
+        # Ohne diesen Eintrag griff der generische ASCII-Fallback unten
+        # (encode("ascii", "replace")), der JEDES nicht-ASCII-Zeichen durch
+        # ein bedeutungsloses "?" ersetzt - z. B. wurde ein gespeicherter
+        # Planen-Kommentar "Z 0.0->0.0" (Pfeil) im G-Code zu "Z 0.0?0.0".
+        "→": "->",
     }
     for src, repl in translit.items():
         text = text.replace(src, repl)
@@ -156,6 +263,15 @@ def emit_coolant(lines: List[str], mode: object) -> None:
             return
     if isinstance(mode, bool):
         lines.append("M8" if mode else "M9")
+        return
+    if isinstance(mode, (int, float)):
+        # Manche Operationen (Drill/Groove/Thread) reichen params["coolant"]
+        # unveraendert durch, ohne vorher wie FACE (opt_bool()) nach bool zu
+        # wandeln. Ein gespeicherter Zahlenwert 1.0 traf dadurch weder den
+        # str- noch den bool-Zweig und fiel stillschweigend auf M9 (AUS)
+        # zurueck - obwohl 1.0 "an" bedeuten sollte. Realer Fund: Innen-
+        # Einstich/-Gewinde und Bohren mit coolant=1.0 blieben ohne Kuehlung.
+        lines.append("M8" if float(mode) != 0.0 else "M9")
         return
     lines.append("M9")
 
@@ -190,11 +306,15 @@ __all__ = [
     "is_monotonic_x_decreasing",
     "is_monotonic_x_increasing",
     "is_monotonic_z_decreasing",
+    "is_internal_side",
+    "is_left_hand",
     "primitives_to_points",
+    "resolve_enum_index",
     "require",
     "require_positive",
     "require_tool",
     "resolve_internal_safe_x",
+    "validate_internal_x_limit",
     "sanitize_comment_text",
     "sanitize_gcode_text",
 ]

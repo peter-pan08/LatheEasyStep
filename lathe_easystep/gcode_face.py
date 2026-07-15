@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
+from .gcode_utils import resolve_enum_index
 from .model import Operation
+
+FACE_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
 
 
 def generate_face_gcode(
@@ -36,7 +39,9 @@ def generate_face_gcode(
     def opt_bool(key: str) -> bool:
         return bool(p.get(key, False))
 
-    mode = req_int("mode")
+    if "mode" not in p:
+        raise ValueError("Missing parameter: 'mode'")
+    mode = resolve_enum_index(p.get("mode"), FACE_MODE_INDEX, default=0)
     start_x = req_float("start_x")
     start_z = req_float("start_z")
     end_x = req_float("end_x")
@@ -67,7 +72,10 @@ def generate_face_gcode(
     if spindle < 0.0:
         raise ValueError("spindle must be >= 0")
 
-    append_tool_and_spindle(lines, tool_num, spindle, settings)
+    append_tool_and_spindle(
+        lines, tool_num, spindle, settings,
+        spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
+    )
     coolant_mode = p.get("coolant_mode", coolant_enabled)
     emit_coolant(lines, coolant_mode)
     lines.append(f"F{feed:.3f}")

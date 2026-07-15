@@ -1,13 +1,72 @@
 from __future__ import annotations
 
 import os
+import time
 
 from qtvcp.core import Action
 from qtpy import QtCore, QtWidgets
 
+from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType
 from .ui_helpers import translate as _tr
-from .ui_messages import format_user_error
+from .ui_messages import format_user_error, parse_error_location
+
+_ERROR_HIGHLIGHT_STYLE = "border: 2px solid #d9534f; background-color: #fff3f3;"
+_ERROR_HIGHLIGHT_DURATION_MS = 4000
+
+
+def _flash_error_highlight(widget) -> None:
+    try:
+        original = widget.styleSheet()
+    except Exception:
+        return
+    try:
+        widget.setStyleSheet(_ERROR_HIGHLIGHT_STYLE)
+        QtCore.QTimer.singleShot(_ERROR_HIGHLIGHT_DURATION_MS, lambda: widget.setStyleSheet(original))
+    except Exception:
+        pass
+
+
+def jump_to_error_location(handler, exc: Exception) -> None:
+    """Springt beim Fehlschlagen der G-Code-Erzeugung automatisch zum
+    betroffenen Step und Reiter und hebt das fehlerhafte Feld kurz hervor,
+    damit der Nutzer genau sieht, was zu aendern ist."""
+    location = parse_error_location(exc)
+    op_number = location.get("op_number")
+    op_type = location.get("op_type")
+    field_key = location.get("field_key")
+    try:
+        handler._log(f"[LatheEasyStep][debug] jump_to_error_location: {location}", level="debug")
+    except Exception:
+        pass
+    if not op_number:
+        return
+    list_ops = getattr(handler, "list_ops", None)
+    if list_ops is None:
+        return
+    row = op_number - 1
+    try:
+        count = list_ops.count()
+    except Exception:
+        return
+    if row < 0 or row >= count:
+        return
+    try:
+        list_ops.setCurrentRow(row)
+        handler._handle_selection_change(row)
+    except Exception:
+        return
+    if not field_key or not op_type:
+        return
+    widgets = getattr(handler, "param_widgets", None) or {}
+    widget = widgets.get(op_type, {}).get(field_key)
+    if widget is None:
+        return
+    try:
+        widget.setFocus()
+    except Exception:
+        pass
+    _flash_error_highlight(widget)
 
 
 def _translate_value(handler, prefix: str, value) -> str:
@@ -67,6 +126,7 @@ def handle_move_up(handler):
         except Exception:
             pass
         handler._refresh_operation_list(select_index=idx - 1)
+        handler._renumber_operations()
         handler._refresh_preview()
     finally:
         handler._moving_up = False
@@ -88,6 +148,7 @@ def handle_move_down(handler):
         except Exception:
             pass
         handler._refresh_operation_list(select_index=idx + 1)
+        handler._renumber_operations()
         handler._refresh_preview()
     finally:
         handler._moving_down = False
@@ -136,8 +197,11 @@ def handle_generate_gcode(handler):
         )
         if not filepath:
             return
+        handler._log(f"[LatheEasyStep][debug] generate gcode: {len(handler.model.operations)} operations -> {filepath}", level="debug")
+        t0 = time.monotonic()
         handler._update_selected_operation(force=True)
         handler._write_gcode_file(filepath)
+        handler._log(f"[LatheEasyStep][debug] generate gcode finished in {time.monotonic() - t0:.3f}s", level="debug")
         handler._current_gcode_path = handler._normalized_file_path(filepath)
         handler._remember_dialog_path(
             settings,
@@ -156,6 +220,10 @@ def handle_generate_gcode(handler):
             )
             handler._log(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar", level="info")
     except Exception as exc:
+        try:
+            jump_to_error_location(handler, exc)
+        except Exception:
+            pass
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
             _tr(handler, "dialog.app.title"),
@@ -218,13 +286,15 @@ def describe_operation(handler, op, number=None):
         return wrap(_tr(handler, process_key, z=fnum(p.get("z", 0.0)), width=fnum(p.get("width", 0.0)), tool=p.get("tool", "T01")))
     if t == OpType.THREAD:
         relief = ""
-        if str(p.get("relief_mode", "off")).strip().lower() == "suggest":
+        if str(p.get("relief_mode", "off")).strip().lower() in ("suggest", "suggest_din_relief"):
             relief = _tr(handler, "operation.thread.relief_suffix")
-        thread_type = _tr(handler, "operation.thread.type.internal") if int(float(p.get("orientation", 0) or 0)) == 1 else _tr(handler, "operation.thread.type.external")
-        hand = _tr(handler, "operation.thread.hand.left") if int(float(p.get("hand", 0) or 0)) == 1 else _tr(handler, "operation.thread.hand.right")
+        thread_internal = is_internal_side(p.get("orientation", 0))
+        thread_left_hand = is_left_hand(p.get("hand", 0))
+        thread_type = _tr(handler, "operation.thread.type.internal") if thread_internal else _tr(handler, "operation.thread.type.external")
+        hand = _tr(handler, "operation.thread.hand.left") if thread_left_hand else _tr(handler, "operation.thread.hand.right")
         start_z = float(p.get("thread_start_z", 0.0) or 0.0)
         length = abs(float(p.get("length", 0.0) or 0.0))
-        end_z = start_z + ((1.0 if int(float(p.get("hand", 0) or 0)) == 1 else -1.0) * length)
+        end_z = start_z + ((1.0 if thread_left_hand else -1.0) * length)
         return wrap(
             _tr(
                 handler,
@@ -257,9 +327,22 @@ def describe_operation(handler, op, number=None):
 
 
 def renumber_operations(handler):
+    """Aktualisiert Listenanzeige UND den gespeicherten Kommentar jeder Operation.
+
+    Realer Bug: Verschieben/Loeschen einer Operation aktualisierte bisher nur
+    den Anzeigetext der Liste (item.setText). Der in op.params["comment"]
+    gespeicherte - und in der G-Code-Ausgabe als "(STEP: ...)" verwendete -
+    Kommentar behielt seine urspruengliche, jetzt falsche Stepnummer. Das
+    erzeugte genau den beobachteten Widerspruch zwischen "(Step 4: ...)"
+    (frisch aus der laufenden Nummerierung) und "(STEP: 5. ...)" (veralteter,
+    gespeicherter Kommentar) im generierten Programm.
+    """
     if handler.list_ops is None:
         return
     for i in range(handler.list_ops.count()):
         item = handler.list_ops.item(i)
         op = handler.model.operations[i]
-        item.setText(handler._describe_operation(op, i + 1))
+        description = handler._describe_operation(op, i + 1)
+        item.setText(description)
+        if op.op_type != OpType.PROGRAM_HEADER:
+            op.params["comment"] = description

@@ -91,9 +91,14 @@ class ProgramModel:
         if argc >= 2:
             op.path = builder(op.params, self.program_settings)
         else:
-            if hasattr(op, "path") and op.path and "path" not in op.params:
-                if op.path and isinstance(op.path[0], (list, tuple)) and len(op.path[0]) == 2:
-                    op.params["path"] = [{"x": x, "z": z} for x, z in op.path]
+            # Frueher wurde hier der bisherige op.path als Snapshot in
+            # op.params["path"] eingefroren (write-once: nur wenn der Key noch
+            # fehlte). Da dieser Snapshot nie wieder aktualisiert wurde,
+            # driftete er bei jeder spaeteren Parameteraenderung von der
+            # tatsaechlichen Geometrie weg und wurde als solcher mitgespeichert
+            # (siehe reale Step-Datei mit widerspruechlichem Aussen-/Innen-Pfad
+            # in params vs. Operation.path). Geometrie wird jetzt ausschliesslich
+            # ueber op.path gefuehrt; params["path"] wird nicht mehr geschrieben.
             op.path = builder(op.params)
 
     def generate_gcode(self) -> List[str]:

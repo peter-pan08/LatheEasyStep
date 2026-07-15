@@ -2,7 +2,7 @@ Lathe EasyStep
 ==============
 
 Current Version: `0.7.0+unreleased`
-Status Date: `2026-07-13`
+Status Date: `2026-07-14`
 Primary Test Branch: `dev`
 
 Deutsch
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.7.0 + Unreleased, 13. Juli 2026
+Stand: Version 0.7.0 + Unreleased, 14. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -41,6 +41,7 @@ weiter als ein reiner Prototyp:
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
 - die aktuelle Refactor-Basis inkl. Freistich-/Sicherheitsausbau, Dirty-State, Preview-Docking, Groove-Fix, expliziter Toolchange-Koordinatenlogik, erweiterter Gewindelogik, `XRI`-Sicherheitslogik fuer Innenbearbeitung und UI-Anbindung ist mit `202 passed` validiert
+- zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
 Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
 
@@ -63,6 +64,11 @@ Fuer die UI gilt jetzt verbindlich eine strikte Trennung von Anzeige und Logik:
 
 Das macht unvollstaendige Sprachdateien sofort sichtbar und verhindert, dass
 Logik von lokalisierten Anzeige-Texten abhaengt.
+
+Der Umbau ist noch nicht vollstaendig abgeschlossen. Verbleibende direkte
+Textquellen aus Python oder der `.ui` werden nicht mehr stillschweigend als
+"ok" behandelt, sondern explizit als offene Architekturarbeit in `TODO.md`
+gefuehrt.
 
 ## Wichtiger Hinweis
 
@@ -134,12 +140,16 @@ Hier werden die globalen Programmeinstellungen festgelegt:
 - Sicherheitsabstaende und Rueckzugsebenen
 - Sicherheitsabstand / Rueckzugsebene Z als Pflichtwert fuer sichere Anfahrten und Generatorvalidierung
 - `XRI` als Pflichtwert fuer Innen-Gewinde und Innen-Abspanen; unplausible Innen-Rueckzugswerte werden generatorseitig abgewiesen
+- `XRI` ist fuer Innenbearbeitung eine harte Sicherheitsgrenze: wenn ein
+  Innengewinde, Inneneinstich oder Innen-Abspanen einen kleineren X-Wert als
+  `XRI` anfahren muesste, wird kein G-Code erzeugt
 - Rohteilgeometrie
 - Nullpunkt und Bezug
 - maximale Drehzahlen
 - Werkzeugdatenbank
 - Maschinenprofil, Spannfutter und Spannart
 - explizite Koordinatensystemwahl fuer Werkzeugwechsel- und Parkpositionen (`Werkstueckkoordinaten` oder `Maschinenkoordinaten / G53`)
+- vor jedem expliziten `T.. M6` wird derselbe definierte Werkzeugwechselpunkt angefahren
 
 ## Reiter "Planen"
 
@@ -195,7 +205,7 @@ Hier wird eine zuvor definierte Kontur bearbeitet:
 
 - Auswahl der Kontur ueber ihren Namen
 - innen oder aussen
-- Schruppen oder Schlichten
+- Schruppen, Schlichten oder Schruppen + Schlichten
 - Werkzeug
 - Zustellung, Vorschub und Drehzahl
 
@@ -216,6 +226,8 @@ Die Generatorausgabe dokumentiert zusaetzlich:
 Sicherheitsstand fuer Innen-Abspanen:
 
 - `XRI` ist fuer Innen-Abspanen verpflichtend
+- `XRI` ist nicht nur Rueckzugsebene, sondern eine harte Untergrenze fuer alle
+  intern angeforderten X-Werte
 - interne `G71`-Starts werden nicht mehr aus `X0/Z0` abgeleitet
 - Anfahrt und Rueckzug verwenden fuer Innenkonturen `XRI/ZRI`
 - der Schlicht-Einfahrweg fuer aktive Schneidenradiuskorrektur wird so erzeugt, dass LinuxCNC die Kompensation sauber annehmen kann
@@ -251,6 +263,8 @@ Gewinde-Stand:
 - separates Feld `Gewindestart Z`
 - separate Auswahl fuer Rechts- und Linksgewinde
 - `XRI`-Pflicht und Plausibilitaetspruefung fuer Innengewinde
+- Innengewinde werden abgewiesen, sobald der benoetigte X-Wert die harte
+  Sicherheitsgrenze `XRI` unterschreiten wuerde
 - Vorschau und Generator fuer:
   - Aussengewinde rechts
   - Aussengewinde links

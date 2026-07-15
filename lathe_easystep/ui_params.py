@@ -2,12 +2,32 @@ from __future__ import annotations
 
 from typing import Dict
 
-from qtpy import QtWidgets
+from qtpy import QtCore, QtWidgets
 
 from .model import OpType
 
 
 def setup_param_maps(handler) -> None:
+    # Performance: setup_param_maps() wurde bisher bei JEDEM Feld-Edit, jedem
+    # Stepwechsel und jedem Tabwechsel komplett neu aufgebaut - jedesmal ueber
+    # 100 einzelne _get_widget_by_name()-Aufrufe mit eigener Baumsuche. Das war
+    # die Hauptursache fuer traege Tab-/Stepwechsel und kurzzeitig blockierte
+    # Panel-Reaktion. Widgets verschwinden nach dem UI-Aufbau nicht mehr, daher
+    # reicht ein einmaliger Aufbau; nur falls beim ersten Versuch (z. B. sehr
+    # frueh im Startup) noch Widgets fehlen, wird beim naechsten Aufruf erneut
+    # versucht (selbstheilend), bis alle gefunden sind.
+    existing = getattr(handler, "param_widgets", None)
+    if isinstance(existing, dict) and existing and all(
+        widget is not None
+        for widgets in existing.values()
+        for widget in widgets.values()
+    ):
+        return
+
+    try:
+        handler._log("[LatheEasyStep][debug] setup_param_maps: (re)building widget map", level="debug")
+    except Exception:
+        pass
     handler.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {
         OpType.FACE: {
             "tool": handler._get_widget_by_name("face_tool"),
@@ -143,3 +163,140 @@ def setup_param_maps(handler) -> None:
             "optional_stop_before_undercut": handler._get_widget_by_name("parting_optional_stop_before_undercut"),
         },
     }
+
+
+def collect_params(handler, op_type: str) -> Dict[str, object]:
+    handler._setup_param_maps()
+    widgets = handler.param_widgets.get(op_type, {})
+    params: Dict[str, object] = {}
+    for key, widget in widgets.items():
+        if widget is None:
+            continue
+        try:
+            if isinstance(widget, QtWidgets.QSpinBox):
+                params[key] = float(widget.value())
+            elif isinstance(widget, QtWidgets.QDoubleSpinBox):
+                params[key] = float(widget.value())
+            elif isinstance(widget, QtWidgets.QComboBox):
+                if key == "slice_strategy":
+                    idx = widget.currentIndex()
+                    data = widget.itemData(idx, QtCore.Qt.UserRole) if idx >= 0 else None
+                    if isinstance(data, str) and data:
+                        params[key] = data
+                    elif isinstance(data, (int, float)):
+                        params[key] = int(float(data))
+                    elif idx >= 0:
+                        # itemData not yet populated but a real selection exists:
+                        # fall back to the legacy 1-based numeric convention.
+                        params[key] = idx + 1
+                    # idx < 0 (no selection at all): leave slice_strategy unset
+                    # instead of fabricating an invalid 0 - gcode_roughing.py
+                    # cannot tell that apart from a real (but wrong) strategy
+                    # code and would silently disable roughing.
+                else:
+                    data = widget.currentData()
+                    if data is not None:
+                        params[key] = data
+                    else:
+                        params[key] = float(widget.currentIndex())
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                text = widget.text().strip()
+                if text == "":
+                    continue
+                # try float, else keep as string
+                try:
+                    params[key] = float(text.replace(",", "."))
+                except Exception:
+                    params[key] = text
+            elif isinstance(widget, QtWidgets.QAbstractButton):
+                params[key] = float(widget.isChecked())
+            else:
+                # Fallback: only record if we can safely read something
+                if hasattr(widget, "value"):
+                    params[key] = float(widget.value())
+                elif hasattr(widget, "text"):
+                    text = str(widget.text()).strip()
+                    if text != "":
+                        params[key] = text
+        except Exception:
+            # Never let a broken widget mapping wipe the whole params dict
+            continue
+    # Kontur-Segmente separat aus Tabelle einsammeln
+    if op_type == OpType.CONTOUR:
+        params["segments"] = handler._collect_contour_segments()
+        if getattr(handler, "contour_name", None):
+            name = handler.contour_name.text().strip()
+            if not name:
+                name = handler._fallback_contour_name(handler._contour_count())
+                # UI optional anreichern, damit Nutzer den vergebenen Namen sieht
+                try:
+                    handler.contour_name.setText(name)
+                except Exception:
+                    pass
+            params["name"] = name
+    elif op_type == OpType.ABSPANEN:
+        contour_name = handler._current_parting_contour_name()
+        params["contour_name"] = contour_name
+        params["source_path"] = handler._resolve_contour_path(contour_name)
+    elif op_type == OpType.FACE:
+        # Defaults für FACE, da slicer.py keine harten Defaults hat
+        defaults = {
+            "retract": 0.5,
+            "depth_max": 0.4,
+            "feed": 0.2,
+            "spindle": 1300.0,
+            "tool": 1,
+            "mode": 0,
+            "edge_type": 0,
+            "edge_size": 0.0,
+            "finish_allow_z": 0.05,
+            "start_x": 40.0,
+            "start_z": 1.0,
+            "end_x": -1.0,
+            "end_z": 0.0,
+            "coolant": False,
+        }
+        for key, default in defaults.items():
+            if key not in params or params[key] is None or params[key] == "":
+                params[key] = default
+    elif op_type == OpType.KEYWAY:
+        defaults = {
+            "tool": 1,
+            "feed": 200.0,
+            "plunge_feed": 200.0,
+            "slot_count": 1,
+            "slot_start_angle": 0.0,
+            "slot_angle_step": 0.0,
+            "slot_width": 3.0,
+            "cutting_width": 3.0,
+            "top_clearance": 1.0,
+            "depth_per_pass": 0.1,
+            "mode": 0,
+            "radial_side": 0,
+            "coolant": 0,
+        }
+        for key, default in defaults.items():
+            if key not in params or params[key] is None or params[key] == "":
+                params[key] = default
+    elif op_type == OpType.ABSPANEN:
+        defaults = {
+            "undercut_mode": "finish_only",
+            "output_preference": "auto",
+            "undercut_tool": 0,
+            "undercut_spindle": 0.0,
+            "undercut_feed": 0.0,
+            "optional_stop_before_undercut": False,
+        }
+        for key, default in defaults.items():
+            if key not in params or params[key] is None or params[key] == "":
+                params[key] = default
+    elif op_type == OpType.THREAD:
+        defaults = {
+            "relief_mode": "off",
+            "relief_norm": "DIN 76-A",
+            "optional_stop_before": False,
+        }
+        for key, default in defaults.items():
+            if key not in params or params[key] is None or params[key] == "":
+                params[key] = default
+    return params

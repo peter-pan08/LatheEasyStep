@@ -23,7 +23,14 @@ def load_ui_static_map() -> dict[str, dict[str, object]]:
             prop_name = prop.get("name") or ""
             string_elem = prop.find("string")
             if string_elem is not None:
-                entry[prop_name] = (string_elem.text or "").strip()
+                text = (string_elem.text or "").strip()
+                # Leere Platzhalter-Strings (z. B. bei Labels, deren Inhalt zur
+                # Laufzeit dynamisch gesetzt wird wie Diagramm-/Tool-Previews)
+                # sind keine zu uebersetzenden Texte und duerfen nicht als
+                # fehlender Uebersetzungsschluessel gemeldet oder mit dem
+                # rohen Schluessel ueberschrieben werden.
+                if text:
+                    entry[prop_name] = text
         items = []
         for item in widget.findall("item"):
             text = ""

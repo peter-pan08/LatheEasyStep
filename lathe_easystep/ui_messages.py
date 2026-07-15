@@ -7,10 +7,15 @@ from .translations import TRANSLATIONS
 from .ui_helpers import current_language as _lang, tab_label as _tab
 
 OP_FIELDS = {
-    OpType.FACE: {"depth_max", "feed", "spindle", "tool", "safe_z"},
-    OpType.THREAD: {"pitch", "length", "major_diameter", "spindle", "tool", "safe_z", "thread_start_z"},
+    OpType.FACE: {
+        "depth_max", "feed", "spindle", "tool", "safe_z", "mode",
+        "start_x", "start_z", "end_x", "end_z", "finish_allow_z", "retract", "edge_size",
+    },
+    OpType.THREAD: {
+        "pitch", "length", "major_diameter", "spindle", "tool", "safe_z", "thread_start_z",
+    },
     OpType.GROOVE: {"feed", "safe_z", "tool", "width", "depth"},
-    OpType.DRILL: {"feed", "safe_z", "tool", "depth"},
+    OpType.DRILL: {"feed", "safe_z", "tool", "depth", "dwell", "peck_depth"},
     OpType.KEYWAY: {"depth_per_pass", "tool", "feed"},
     OpType.ABSPANEN: {"depth_per_pass", "tool", "undercut_tool"},
 }
@@ -43,20 +48,32 @@ def _normalize_op_type(op_type: str | None) -> str | None:
     return lookup.get(op_type.strip().upper(), op_type)
 
 
-def format_user_error(handler, exc: Exception, *, fallback_title: str = "") -> str:
+def parse_error_location(exc: Exception) -> dict:
+    """Zerlegt eine generatorseitige ValueError-Meldung (Qt-frei, testbar) in
+    Step-Nummer, Operationstyp, Feldname und den restlichen Detailtext, damit
+    sowohl die Nachrichtenformatierung als auch die UI-Navigation ('zum
+    betroffenen Step/Feld springen') dieselbe Analyse verwenden."""
     text = str(exc or "").strip()
-    lang = _lang(handler)
     op_match = re.search(r"Operation\s+(\d+)\s+\(([^)]+)\):\s*(.*)", text)
     op_type = None
     op_number = None
     detail = text
     if op_match:
-        op_number = op_match.group(1)
+        op_number = int(op_match.group(1))
         op_type = op_match.group(2)
         detail = op_match.group(3).strip()
-
     field_match = re.search(r"'([A-Za-z0-9_]+)'", detail)
     field_key = field_match.group(1) if field_match else None
+    return {"op_number": op_number, "op_type": op_type, "field_key": field_key, "detail": detail}
+
+
+def format_user_error(handler, exc: Exception, *, fallback_title: str = "") -> str:
+    lang = _lang(handler)
+    location = parse_error_location(exc)
+    op_type = location["op_type"]
+    op_number = location["op_number"]
+    detail = location["detail"]
+    field_key = location["field_key"]
     tab = _tab(handler, op_type)
     field = _field(handler, field_key) if _field_allowed_for_tab(op_type, field_key) else ""
 

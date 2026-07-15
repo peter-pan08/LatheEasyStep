@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+PANEL_WIDGET_NAMES = (
+    'LatheConversationalPanel',
+    'lathe_easystep',
+    'lathe_easystep_panel',
+    'easystep',
+    'lathe-easystep',
+    'lathe-easystep_panel',
+    'lathe-easystep-panel',
+    'MainWindow',
+    'VCPWindow',
+)
+
 UI_TEXT_KEYS = {
     "label_prog_npv": "text.label_prog_npv",
     "label_prog_unit": "text.label_prog_unit",
@@ -260,7 +272,66 @@ UI_TOOLTIP_KEYS = {
     "groove_finish": "tooltip.groove_finish",
     "groove_reduced_feed_start_x": "tooltip.groove_reduced_feed_start_x",
     "groove_reduced_feed": "tooltip.groove_reduced_feed",
-    "groove_reduced_rpm": "tooltip.groove_reduced_rpm"
+    "groove_reduced_rpm": "tooltip.groove_reduced_rpm",
+    "face_start_x": "tooltip.face_start_x",
+    "face_start_z": "tooltip.face_start_z",
+    "face_end_x": "tooltip.face_end_x",
+    "face_end_z": "tooltip.face_end_z",
+    "face_mode": "tooltip.face_mode",
+    "face_finish_direction": "tooltip.face_finish_direction",
+    "face_depth_max": "tooltip.face_depth_max",
+    "face_finish_allow_x": "tooltip.face_finish_allow_x",
+    "face_finish_allow_z": "tooltip.face_finish_allow_z",
+    "face_edge_type": "tooltip.face_edge_type",
+    "face_edge_size": "tooltip.face_edge_size",
+    "face_safe_z": "tooltip.face_safe_z",
+    "face_feed": "tooltip.face_feed",
+    "face_pause_enabled": "tooltip.face_pause_enabled",
+    "face_pause_distance": "tooltip.face_pause_distance",
+    "face_spindle": "tooltip.face_spindle",
+    "face_tool": "tooltip.face_tool",
+    "face_coolant": "tooltip.face_coolant",
+    "face_depth_per_pass": "tooltip.face_depth_per_pass",
+    "drill_tool": "tooltip.drill_tool",
+    "drill_spindle": "tooltip.drill_spindle",
+    "drill_coolant": "tooltip.drill_coolant",
+    "drill_mode": "tooltip.drill_mode",
+    "drill_diameter": "tooltip.drill_diameter",
+    "drill_depth": "tooltip.drill_depth",
+    "drill_feed": "tooltip.drill_feed",
+    "drill_safe_z": "tooltip.drill_safe_z",
+    "drill_dwell": "tooltip.drill_dwell",
+    "drill_peck_depth": "tooltip.drill_peck_depth",
+    "contour_start_x": "tooltip.contour_start_x",
+    "contour_start_z": "tooltip.contour_start_z",
+    "contour_coord_mode": "tooltip.contour_coord_mode",
+    "contour_name": "tooltip.contour_name",
+    "contour_add_segment": "tooltip.contour_add_segment",
+    "contour_delete_segment": "tooltip.contour_delete_segment",
+    "contour_move_up": "tooltip.contour_move_up",
+    "contour_move_down": "tooltip.contour_move_down",
+    "contour_edge_type": "tooltip.contour_edge_type",
+    "contour_edge_size": "tooltip.contour_edge_size",
+    "contour_arc_side": "tooltip.contour_arc_side",
+    "key_mode": "tooltip.key_mode",
+    "key_radial_side": "tooltip.key_radial_side",
+    "key_tool": "tooltip.key_tool",
+    "key_coolant": "tooltip.key_coolant",
+    "key_slot_count": "tooltip.key_slot_count",
+    "key_slot_start_angle": "tooltip.key_slot_start_angle",
+    "key_slot_angle_step": "tooltip.key_slot_angle_step",
+    "key_start_diameter": "tooltip.key_start_diameter",
+    "key_start_z": "tooltip.key_start_z",
+    "key_nut_length": "tooltip.key_nut_length",
+    "key_nut_depth": "tooltip.key_nut_depth",
+    "key_slot_width": "tooltip.key_slot_width",
+    "key_depth_per_pass": "tooltip.key_depth_per_pass",
+    "key_plunge_feed": "tooltip.key_plunge_feed",
+    "key_cutting_width": "tooltip.key_cutting_width",
+    "key_top_clearance": "tooltip.key_top_clearance",
+    "key_use_c_axis": "tooltip.key_use_c_axis",
+    "key_use_c_axis_switch": "tooltip.key_use_c_axis_switch",
+    "key_c_axis_switch_p": "tooltip.key_c_axis_switch_p"
 }
 
 COMBO_ITEM_REGISTRY = {
@@ -508,6 +579,10 @@ COMBO_ITEM_REGISTRY = {
         [
             "finish",
             "combo.parting_mode.finish"
+        ],
+        [
+            "rough_finish",
+            "combo.parting_mode.rough_finish"
         ]
     ],
     "parting_slice_strategy": [

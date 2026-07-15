@@ -6,6 +6,8 @@ import re
 
 from qtpy import QtCore, QtGui
 
+from .gcode_utils import is_internal_side
+
 
 def tool_combo_label(_handler, tool, max_comment: int = 32) -> str:
     comment = (tool.comment or "").strip() or "kein Kommentar"
@@ -19,10 +21,14 @@ def tool_combo_label(_handler, tool, max_comment: int = 32) -> str:
 def operation_side_hint(_handler, op):
     params = op.params or {}
     if op.op_type == _handler.OpType.FACE:
-        try:
-            idx = int(float(params.get("finish_direction", 0)))
-        except Exception:
-            idx = 0
+        raw = params.get("finish_direction", 0)
+        if isinstance(raw, str):
+            idx = 1 if raw.strip().lower() == "inside_out" else 0
+        else:
+            try:
+                idx = int(float(raw))
+            except Exception:
+                idx = 0
         return "outside" if idx == 0 else "inside"
     if op.op_type == _handler.OpType.GROOVE:
         try:
@@ -34,17 +40,9 @@ def operation_side_hint(_handler, op):
         if idx == 1:
             return "inside"
     if op.op_type == _handler.OpType.ABSPANEN:
-        try:
-            idx = int(float(params.get("side", 0)))
-        except Exception:
-            idx = 0
-        return "outside" if idx == 0 else "inside"
+        return "inside" if is_internal_side(params.get("side", 0)) else "outside"
     if op.op_type == _handler.OpType.THREAD:
-        try:
-            idx = int(float(params.get("orientation", 0)))
-        except Exception:
-            idx = 0
-        return "outside" if idx == 0 else "inside"
+        return "inside" if is_internal_side(params.get("orientation", 0)) else "outside"
     return None
 
 

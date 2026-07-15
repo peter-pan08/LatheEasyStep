@@ -136,6 +136,10 @@ def sync_form_to_operation(handler, idx: int) -> None:
         return
     op = handler.model.operations[idx]
     previous_params = dict(op.params or {})
+    try:
+        handler._log(f"[LatheEasyStep][debug] sync_form_to_operation: idx={idx} op_type={op.op_type}", level="debug")
+    except Exception:
+        pass
     if op.op_type == OpType.PROGRAM_HEADER:
         op.params = handler._collect_program_header()
     else:
@@ -145,7 +149,14 @@ def sync_form_to_operation(handler, idx: int) -> None:
     for key, value in previous_params.items():
         if isinstance(key, str) and key.startswith("__") and key not in op.params:
             op.params[key] = value
-    handler.model.update_geometry(op)
+    try:
+        handler.model.update_geometry(op)
+    except Exception as exc:
+        try:
+            handler._log(f"[LatheEasyStep][debug] update_geometry failed for idx={idx} op_type={op.op_type}: {exc!r}", level="debug")
+        except Exception:
+            pass
+        raise
     description = handler._describe_operation(op, idx + 1)
     if handler.list_ops:
         item = handler.list_ops.item(idx)

@@ -53,6 +53,7 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+*.cps
 
 # --- Local generated program files (outside source control) ---
 *.step.json
