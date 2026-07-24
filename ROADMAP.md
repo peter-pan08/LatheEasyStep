@@ -3,92 +3,101 @@
 Stand: 2026-07-24
 
 LatheEasyStep soll ein werkstattnahes, konversationelles Drehpanel fuer
-LinuxCNC werden. Die Roadmap beschreibt die Release-Ziele. Konkrete offene
-Arbeitspunkte stehen in der [TODO.md](TODO.md), erledigte Aenderungen im
-[CHANGELOG.md](CHANGELOG.md).
+LinuxCNC werden. Die Roadmap beschreibt Release-Ziele und Abhaengigkeiten.
+Die vollstaendige Aufgabenliste steht in der [TODO.md](TODO.md), reale
+Verifikation in
+[doc/REALTEST_FRAGEN_2026-07-15.md](doc/REALTEST_FRAGEN_2026-07-15.md).
 
 ## Ausgangsstand
 
 - `main`: Version 0.7.0 als lauffaehige Basis
-- `dev`: Entwicklungsstand fuer die kommende 0.8.0
-- neue Funktionen und Generatoraenderungen werden zuerst auf `dev` getestet
-- Sicherheits- und Generatorlogik wird an LinuxCNC-Verhalten, Backplot und
-  realen Trockenlaeufen gemessen
+- `dev`: Entwicklungsstand fuer 0.8.0, acht Commits vor `main`
+- aktueller Teststand: `331 passed, 3 skipped`
+- UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
+- Deutsch, Englisch und Spanisch besitzen jeweils 1.020 identische,
+  nichtleere Sprachschluessel
+- G53-Werkzeugwechsel, erster Werkzeugwechsel, Tooltips, Sprachumschaltung,
+  Slice-/Frontview, Bohren-Anfahrt, G76-Plausibilitaet und `rough_finish`
+  wurden praktisch bestaetigt oder umgesetzt
 
-Der aktuelle `dev`-Umfang ist wegen der neuen Sicherheits-, Kontur-,
-Freistich-, Gewinde- und UI-Funktionen als Entwicklung zu 0.8.0 einzuordnen,
-nicht als kleine Patchversion 0.7.1.
+Der Umfang auf `dev` ist als Entwicklung zu Version 0.8.0 einzuordnen, nicht
+als kleine Patchversion 0.7.1.
 
 ## 0.8.0-alpha - Sicherheits- und Realtest-Gate
 
-Ziel: Der Generator darf keine offensichtlich unsicheren, leeren oder
-widerspruechlich gewarnten Bearbeitungsablaeufe akzeptieren.
+Ziel: Keine bekannte Operation darf unsichere, leere oder widerspruechlich
+gewarnte Fahrwege erzeugen.
 
-Umfang:
+Verbindliche Aufgaben:
 
-- sichere Anfahrt zwischen aufeinanderfolgenden Operationen
-- leere Schruppoperationen als Fehler abbrechen
-- Innen-Schruppen Parallel-Z mit vorhandenem Bohrungsdurchmesser verifizieren
-- ZRA/ZRI-Auslegung fuer relative und absolute Werte festlegen
-- Innen- und Aussenbearbeitung getrennt pruefen
-- Referenzprogramme regenerieren
-- vollstaendige Test-Suite und echte PyQt5-Tests
-- LinuxCNC-Parser, Backplot und Trockenlauf der Sicherheitsfaelle
+- LES-001 sichere Anfahrt zwischen Operationen
+- LES-002 leere Schruppoperationen abbrechen
+- LES-003 Innen-Schruppen Parallel-Z verifizieren
+- LES-005 Innen-Schlichtanfahrt und Rueckzug absichern
 
 Abnahmekriterien:
 
-- kein bekannter sicherheitskritischer P0-Punkt offen
-- keine diagonale Eilgangbewegung durch bekanntes Rohmaterial
-- kein erfolgreich erzeugter Schruppstep ohne reale Schnittbewegung
+- kein offener P0-Punkt
+- kein diagonaler Eilgang allein aufgrund von `_is_at_safe`
+- kein erfolgreicher Roughing-Step ohne reale Schnittbewegung
+- Innen-Schruppen besitzt einen bestaetigten Backplot- und Trockenlauffall
 - Warnung und ausgegebener Fahrweg widersprechen sich nicht
+- komplette Testsuite, Referenzprogramme und LinuxCNC-Parser laufen erfolgreich
 
 ## 0.8.0 - Belastbare Kontur- und Innenbearbeitung
 
-Ziel: Die angebotenen Standardkonturen sind innen und aussen nachvollziehbar
+Ziel: Die angebotenen Konturfaelle sind innen und aussen nachvollziehbar
 nutzbar und verwenden in Vorschau und G-Code dieselbe Geometrie.
 
-Umfang:
+Verbindliche Aufgaben:
 
-- zylindrische Innenkontur
-- Innenstufe
-- Innenkonus
-- Innenradius
-- Innenkontur mit Freistich
-- Innen-Schruppen mit anschliessendem Schlichten
-- lokale DIN-Freistiche an geeigneten Kontursegmenten
-- identische Freistichgeometrie in Vorschau, Subroutine und Schlichtweg
-- Linien und Boegen bis zur finalen G1/G2/G3-Ausgabe als Primitive erhalten
-- G96/G97 pro Operation in UI, Save/Load und Generator
-- G76-Referenzfaelle fuer M12x1.75 und M30x3.5
-- verbleibende Sichtbarkeits- und Innenkontur-Regressionen
+- LES-006 Rueckzugsstrategie je Bearbeitungsart
+- LES-010 lokale DIN-Freistichgeometrie
+- LES-011 einheitliche Freistichdarstellung
+- LES-012 G1/G2/G3-Primitive durchgaengig erhalten
+- LES-013 G96/G97 pro Operation
+- LES-015 Innenkontur-Testmatrix
+- LES-016 Sichtbarkeitsregressionen
+- LES-017 alte `slicer.py`-Parallelimplementierung entfernen
+- LES-019 fehlende DIN-76-Presets
+- LES-030 LinuxCNC-Simulationsmatrix
 
 Abnahmekriterien:
 
-- alle angebotenen 0.8.0-Konturfaelle besitzen Referenzprogramme
-- Vorschau und ausgegebener Konturweg stimmen geometrisch ueberein
-- Innen- und Aussenbearbeitung sind getrennt getestet
-- alle Referenzprogramme werden von LinuxCNC ohne Generator- oder Parserfehler
-  angenommen
+- zylindrische Innenkontur, Innenstufe, Innenkonus, Innenradius und
+  Innenfreistich besitzen Referenzfaelle
+- Vorschau, Subroutine und Schlichtweg verwenden dieselben Primitive
+- lokale Freistiche funktionieren auch mitten in einer laengeren Kontur
+- keine produktiv ungenutzte Generator-Kopie wird von Tests als Referenz benutzt
+- alle angebotenen 0.8.0-Faelle werden von LinuxCNC ohne Parserfehler angenommen
 
 ## 0.9.0 - Bedienung und technische Konsolidierung
 
 Ziel: Die funktionale Basis wird leichter wartbar, besser testbar und im
 Werkstattalltag eindeutiger.
 
-Umfang:
+Aufgabenbereiche:
 
-- Handler schrittweise weiter verkleinern
-- Gewinde-, Tooltip-, Programmkopf- und Widget-Logik in getrennte Module
-  auslagern
-- strikte ID-only-UI- und Spracharchitektur abschliessen
-- Step-Kommentare und Exportnummerierung normalisieren
-- Werkzeugdaten fuer Werkzeugwechsel zentral normalisieren
-- Bewegungsposition und Modalzustaende schrittweise zentral verwalten
-- redundante Bewegungen reduzieren, ohne die robuste explizite Ausgabe zu
-  verlieren
+- LES-018 optionale G70-Wiederverwendung
+- LES-020 weitere Handler-Extraktionen
+- LES-021 verbleibende UI-/Python-Defaulttexte
+- LES-022 zentraler Bewegungs- und Modalzustand
+- LES-023 Step-Kommentare und Exportnummerierung
+- LES-024 Vorschau-/Step-UI und Controllergrenzen
+- LES-025 Dirty-State-/Refresh-Audit
+- LES-026 Verhalten bei doppelten Steps
+- LES-027 Embedded-/Standalone-Performance
+- LES-028 normalisierte Werkzeug- und G76-Daten
+- LES-029 alte JSON-Sprachkataloge pruefen
+- LES-031 redundante Bewegungen und Modals
+- LES-032 Werkzeuggeometrie und Tooltable-Plausibilitaet
+- LES-033 reale Gewindevorschau
+- LES-034 fachlich getrennte Preview-Pipeline
+- LES-035 Embedded-/Standalone-Paritaet
 
-Nicht Bestandteil der ersten 0.9.0-Arbeiten ist ein Komplettumbau aller
-UI-Dateien in einem Schritt. Jede Extraktion wird einzeln getestet.
+Die bereits erledigte Trennung der acht Bearbeitungsreiter wird nicht erneut
+geplant. Offen bleiben Vorschau, Step-Verwaltung und saubere Schnittstellen
+zwischen den Modulen.
 
 ## 1.0.0 - Werkstattgeeigneter dokumentierter Stand
 
@@ -98,7 +107,7 @@ fachlich verifiziert ist.
 
 Voraussetzungen:
 
-- keine offenen sicherheitskritischen Punkte
+- keine offenen P0- oder P1-Aufgaben
 - jede angebotene Bearbeitungsart besitzt mindestens ein Referenzprogramm
 - Innen- und Aussenvarianten sind getrennt getestet
 - Save/Load-Roundtrips fuer aktuelle und unterstuetzte aeltere Dateien
@@ -107,11 +116,11 @@ Voraussetzungen:
 - konsistente Vorschau- und G-Code-Geometrie
 - definierte Maschinenprofile, Rueckzugsebenen und Futter-Sperrzonen
 - verstaendliche Fehlermeldungen statt fragwuerdiger G-Code-Ausgabe
-- Release-Tag, konsistentes Changelog und aktualisierte Bedienhinweise
+- reproduzierbarer Teststand, Release-Tag, Changelog und Bedienhinweise
 
-## Nach 1.0 / spaetere Erweiterungen
+## Nach 1.0
 
-- vollstaendige Aufteilung der monolithischen `lathe_easystep.ui`
 - weitergehende Keilnut- und Verzahnungsfunktionen
-- zusaetzliche Maschinenprofile und Werkzeugbibliotheken
-- weitere Automatisierung von LinuxCNC-Simulations- und Referenztests
+- weitere Maschinen-, Futter- und Werkzeugprofile
+- automatisierte LinuxCNC-Simulationslaeufe
+- zusaetzliche Abspanstrategien
