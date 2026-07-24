@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Docs: `TODO.md`, `ROADMAP.md`, `README.md` und `DEV.md` auf den Stand 24.07.2026 synchronisiert: erledigte ZRA/ZRI- und G76-Pruefpunkte aus dem offenen Plan entfernt, UI-Teilung und vollstaendige de/en/es-Kataloge dokumentiert, `slicer.py`-Bereinigung und alle verbleibenden Sicherheits-, Kontur-, UI-, Preview-, Werkzeug- und Architekturaufgaben eindeutig priorisiert
 - Docs: `doc/REALTEST_FRAGEN_2026-07-15.md` ausgewertet (Nutzerantworten zu 15 Realtest-Fragen) und `TODO.md` entsprechend bereinigt:
   - Erledigt/durch Antwort geschlossen: G53-Werkzeugwechsel (F1: "funktioniert"), Bewegung nach M6 (F2: "nein, alles korrekt"), Tooltips (F4: "scheinen alle zu funktionieren"), Sprachumschaltung (F5: "gerade alle ok"), Vorschau/Slice/Frontview (F6: "sieht alles ok aus" - nach den Absturz-/Freeze-Fixes dieser Session), G76-Masssystem (F12: "generierte Werte scheinen zu passen")
   - `safe_z`/`ZRA`/`ZRI` absolut vs. relativ bei ABSPANEN (F10): Nutzer bestaetigt, dass die Regel in der Praxis beachtet wird und Abweichungen bereits beim Generieren gemeldet werden - aus der bereits dokumentierten "Blockiert"-Liste entfernt, da ohne konkretes Gegenbeispiel kein Aenderungsbedarf ersichtlich ist
