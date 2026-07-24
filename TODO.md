@@ -1,8 +1,59 @@
 # TODO LatheEasyStep
 
-Stand: 2026-07-15
+Stand: 2026-07-24
 
-Nur offene Punkte. Erledigtes steht im `CHANGELOG.md`, nicht hier.
+Diese Datei enthaelt nur offene, konkret bearbeitbare Punkte. Erledigtes wird
+in das `CHANGELOG.md` verschoben. Die Release-Ziele und Meilensteine stehen
+in der [ROADMAP.md](ROADMAP.md).
+
+Aufwand:
+
+- `S`: wenige Stunden bis etwa ein Tag
+- `M`: ein bis drei Entwicklungstage
+- `L`: mehrere Tage mit Tests und Simulation
+- `XL`: groessere Architekturarbeit in mehreren Etappen
+
+Prioritaeten:
+
+- `P0`: Sicherheit, falsche Fahrwege oder ungueltige Programmausgabe
+- `P1`: hoher praktischer Nutzen und fachliche Vollstaendigkeit
+- `P2`: Wartbarkeit, Bedienkomfort und langfristige Architektur
+
+## Priorisierte Entwicklungsreihenfolge
+
+Die nachfolgende Tabelle ist der Arbeitsindex. Die ausfuehrlichen technischen
+Notizen und Checklisten bleiben in den anschliessenden Abschnitten erhalten.
+
+| ID | Prioritaet | Aufgabe | Nutzen | Aufwand | Ziel-Meilenstein |
+|---|---|---|---|---|---|
+| LES-001 | P0 | Sichere Anfahrt zwischen aufeinanderfolgenden Operationen | sehr hoch | M | 0.8.0-alpha |
+| LES-002 | P0 | Leere Schruppoperationen als Generatorfehler abbrechen | sehr hoch | S | 0.8.0-alpha |
+| LES-003 | P0 | Innen-Schruppen Parallel-Z fachlich verifizieren und reparieren | sehr hoch | L | 0.8.0-alpha |
+| LES-004 | P0 | ZRA/ZRI relativ/absolut im Sicherheits- und Abspan-Generator vereinheitlichen | sehr hoch | M | 0.8.0-alpha |
+| LES-005 | P0 | Innen-Schlichtanfahrt, Schneidenradiuskorrektur und Rueckzug absichern | sehr hoch | L | 0.8.0 |
+| LES-010 | P1 | DIN-Freistich relativ zum markierten Kontursegment erzeugen | hoch | L | 0.8.0 |
+| LES-011 | P1 | Freistich in Vorschau, Subroutine und Schlichtweg identisch darstellen | hoch | M-L | 0.8.0 |
+| LES-012 | P1 | Konturprimitive in allen relevanten move-based Pfaden bis zur G2/G3-Ausgabe erhalten | hoch | L | 0.8.0 |
+| LES-013 | P1 | G96/G97-Bedienfelder pro Operation ergaenzen | mittel-hoch | M | 0.8.0 |
+| LES-014 | P1 | G76-Masssystem mit M12x1.75 und M30x3.5 dokumentiert verifizieren | hoch | M | 0.8.0 |
+| LES-015 | P1 | Weitere Innenkonturformen als Regression und LinuxCNC-Referenzfaelle absichern | hoch | M | 0.8.0 |
+| LES-016 | P1 | Verbleibende UI-Sichtbarkeitsregeln testen | mittel | S-M | 0.8.0 |
+| LES-020 | P2 | Handler in kleinen, einzeln getesteten Paketen weiter verkleinern | mittel | M je Paket | 0.9.0 |
+| LES-021 | P2 | Strikte UI-/Sprachtrennung vervollstaendigen | mittel | M-L | 0.9.0 |
+| LES-022 | P2 | Zentralen Bewegungs- und Modalzustand einfuehren | langfristig hoch | XL | 0.9.0 |
+| LES-023 | P2 | Step-Kommentare und Exportnummerierung normalisieren | mittel | M | 0.9.0 |
+| LES-024 | P2 | Monolithische UI erst nach funktionaler Stabilisierung modularisieren | langfristig mittel | XL | nach 0.9.0 |
+
+## Verbindliche Arbeitsreihenfolge
+
+1. Sicherheitsanfahrt und leere Schruppoperationen
+2. Innen-Schruppen und ZRA/ZRI-Auslegung
+3. Innen-Schlichtanfahrt und Rueckzug
+4. lokale Freistichgeometrie
+5. gemeinsame Geometrie fuer Vorschau und G-Code
+6. G96/G97-UI, G76-Verifikation und weitere Regressionen
+7. erst danach groessere Architekturumbauten
+
 
 ## Externe Verifikation / Nutzerantworten
 
