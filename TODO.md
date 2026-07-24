@@ -80,30 +80,8 @@ Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 
 ### LES-003 Innen-Schruppen Parallel-Z verifizieren
 
-Die Intervall-Ueberlappung in `rough_turn_parallel_x()` ist behoben.
-Realtest-Frage 9 beantwortet (Zustellrichtung klein->gross bestaetigt
-korrekt: "die Bohrung ist das was an Material abgetragen ist und frei ist,
-der Rest zum groesseren Durchmesser muss ja erst abgespant werden").
-
-Real bestaetigt und behoben (Nutzer-Testprogramm, Kommentar im generierten
-Code: "Fallback-Grund: automatische Entscheidung -> Move-based"): Innen-
-Abspanen nutzte bei vielen realen Innenkonturen NICHT den `G71`-Zyklus (wie
-Aussendrehen), sondern die grobe bewegungsbasierte Ersatzloesung - sichtbar
-an ungleichmaessigen, teils winzigen Zustellungen. Root Cause:
-`is_monotonic_z_decreasing()` (`gcode_utils.py`) akzeptierte nur FALLENDE
-Z-Werte fuer die G71-Eignungspruefung (`parallel_z`-Strategie in
-`gcode_roughing.py`) - anders als bei X (`is_monotonic_x()` prueft BEIDE
-Richtungen) gab es keine "Z steigend"-Variante. Innenkonturen werden aber
-haeufig vom tiefsten Punkt zur Bohrungsoeffnung definiert (Z steigt
-monoton) - eine geometrisch einwandfreie, aber bisher als "nicht
-zyklustauglich" abgelehnte Konturrichtung. Neue symmetrische Pruefung
-`is_monotonic_z()` (faellt ODER steigt, analog zu `is_monotonic_x()`)
-ergaenzt; mit dem realen Testprogramm des Nutzers verifiziert (`ausdrehen`-
-Kontur erzeugt jetzt einen sauberen `G71`-Aufruf statt 10 ungleichmaessiger
-Move-based-Passes). Die `G71`-Startkoordinate (`X{stock_x} Z{safe_z}`)
-brauchte keine Anpassung - sie referenziert bereits (wie beim laengst
-funktionierenden Aussendrehen) die Rohteil-/Sicherheitsgrenze, nicht den
-exakten ersten Konturpunkt, und bleibt bei beiden Konturrichtungen korrekt.
+G71-Zyklus fuer Innenkonturen und Zustellrichtung sind behoben/bestaetigt
+(siehe CHANGELOG.md). Offen bleiben:
 
 - [ ] vorhandenen Bohrungsdurchmesser als Materialgrenze verwenden
 - [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, nicht als Schnittbahn
@@ -177,37 +155,9 @@ move-based Pfade linearisieren Geometrie teilweise noch.
 
 ### LES-013 G96/G97 pro Operation
 
-Real bestaetigter Architekturfehler (Nutzer-Feedback): G96/G97 war eine
-globale Programmkopf-Einstellung, obwohl die Wahl fachlich pro Operation
-getroffen werden muss (z. B. Aussendrehen mit CSS, aber ein danach folgendes
-Bohren zwingend mit Festdrehzahl). Zusaetzlich verwendete `G96` unter `S`
-bisher denselben Zahlenwert wie die Drehzahl (`spindle`) - physikalisch
-falsch, da G96 unter `S` die Schnittgeschwindigkeit Vc (m/min) erwartet,
-nicht U/min.
-
-Umgesetzt:
-- [x] Combo G97/G96 in Planen, Abspanen, Einstich/Abstich und Gewinde (neue
-  Felder `<prefix>_spindle_mode`/`<prefix>_cutting_speed`, dynamisch ueber
-  `ui_advanced.py` ergaenzt, analog zu bereits bestehenden Mustern wie
-  `parting_undercut_mode`). Bohren bewusst ausgenommen (Nutzerentscheidung:
-  Werkzeugdurchmesser aendert sich beim Bohren nicht, CSS ist dort ohne
-  fachlichen Nutzen)
-- [x] Schnittgeschwindigkeit (Vc, m/min) und Drehzahl (U/min) werden
-  kontextabhaengig ein-/ausgeblendet (`update_spindle_mode_visibility()`)
-- [x] `G96 D<max_rpm> S<Vc>` statt der bisherigen (falschen) Wiederverwendung
-  der Drehzahl; ohne gueltige Vc faellt der Generator sicher auf `G97` mit
-  Warnhinweis zurueck statt eine falsche Zahl als Vc zu senden
-- [x] Save/Load: `spindle_mode`/`cutting_speed` sind normale `op.params`-
-  Schluessel und werden ueber den bestehenden generischen Persistenzpfad
-  automatisch mitgespeichert/geladen; alte Programme ohne diese Schluessel
-  fallen unveraendert auf Festdrehzahl/G97 zurueck (kein Sonderfall noetig)
-- [x] Sichtbarkeitsregeln mit echtem PyQt5 getestet
-  (`tests/test_per_operation_spindle_mode_ui.py`)
-- [x] globale `program_spindle_mode`-Combo entfernt; `program_spindle_max_rpm`
-  bleibt als programmweite CSS-Sicherheitsobergrenze erhalten und ist jetzt
-  immer sichtbar (keine sinnvolle Bedingung mehr ohne globale Modus-Combo)
-
-Noch offen (bewusst nicht ungeprueft umgesetzt - siehe Analyse im Changelog):
+G96/G97 ist jetzt pro Operation waehlbar (Planen, Abspanen, Einstich/Abstich,
+Gewinde; Bohren bewusst ausgenommen) mit korrekter Schnittgeschwindigkeit Vc
+statt Drehzahl unter `S` (siehe CHANGELOG.md). Offen bleibt:
 
 - [ ] bei CSS sicher mit G97 anfahren und G96 erst an der Bearbeitungsposition
   aktivieren: erfordert eine physikalisch verifizierte Vc->Drehzahl-Umrechnung
@@ -224,23 +174,13 @@ Noch offen (bewusst nicht ungeprueft umgesetzt - siehe Analyse im Changelog):
 - [ ] Innenkontur mit Freistich
 - [ ] Schruppen mit anschliessendem Schlichten
 - [ ] Werkzeugradiuskorrektur, Konturseite und Konturstart je Fall pruefen
-- [ ] Realtest-Frage 11 abschliessen
 
 ### LES-016 UI-Sichtbarkeitsregressionen
 
-Bereits abgedeckt: Planen, Bohren, Subspindel, Rohteilform, Rueckzugsmodus,
-Abspanen-Schruppen/Schlichten/Schruppen+Schlichten (inkl. der bisher
-ungetesteten "Freistich separat"-Teilregel), Einstich/Abstich (beide Zweige:
-Werkzeugbreite-Checkbox und Abstich- vs. Einstich-Modus) und das einzige
-bestehende globale G96/G97-Feld (`program_spindle_mode` blendet
-"CSS Max-RPM" jetzt korrekt nur bei G96/CSS ein - Funktion neu ergaenzt,
-da bisher keine Sichtbarkeitsregel dafuer existierte, siehe
-`update_spindle_mode_visibility()` in `ui_visibility.py`).
-
-Nach Audit (siehe Recherche zu dieser Aufgabe) bestehen fuer die folgenden
-Punkte AKTUELL KEINE Sichtbarkeitsregeln im Code - hier fehlt nicht ein Test,
-sondern eine Produktentscheidung, welche Felder ueberhaupt bedingt ein-/
-ausgeblendet werden sollen, bevor eine Regression sinnvoll ist:
+Fuer die folgenden Punkte bestehen AKTUELL KEINE Sichtbarkeitsregeln im Code
+- hier fehlt nicht ein Test, sondern eine Produktentscheidung, welche Felder
+ueberhaupt bedingt ein-/ausgeblendet werden sollen, bevor eine Regression
+sinnvoll ist:
 
 - [ ] Kontur: keine bedingte Sichtbarkeit vorhanden (Kantengroesse nutzt nur
   `setEnabled`, keine Kontur-Sichtbarkeitsregel identifiziert)
@@ -300,27 +240,12 @@ Jede Extraktion einzeln mit vollem Testlauf und echtem `uic.loadUi` pruefen.
 
 ### LES-023 Step-Kommentare normalisieren
 
-Erledigt: `_insert_loaded_operation()` und `_handle_add_operation()` frischten
-eine bereits nummeriert aussehende, aber veraltete `comment`-Vorsilbe (z. B.
-"5. Innenabspanen ..." aus einer per "Step speichern" gesicherten Datei, die
-spaeter an anderer Position per "Step laden" wieder eingefuegt wird) bisher
-NICHT auf - nur ein komplett leerer Kommentar wurde neu erzeugt. Beide Stellen
-erzeugen die Nummer jetzt ueber `_looks_like_generated_step_comment()` neu,
-sobald der bestehende Kommentar wie eine maschinell nummerierte Beschreibung
-aussieht; ein bewusst individueller Kommentar ohne Nummern-Vorsilbe bleibt
-weiterhin unangetastet (siehe `tests/test_auto_comment_on_creation.py`).
-`renumber_operations()` (Verschieben/Loeschen) aktualisierte alle Kommentare
-bereits zuvor unconditional.
-
-Weiterhin offen (groessere Architekturfrage, nicht nur ein Bugfix):
+Groessere Architekturfrage, nicht nur ein Bugfix (Detailfix siehe CHANGELOG.md):
 
 - [ ] laufende Nummer nur beim Gesamtprogrammexport erzeugen, nicht dauerhaft in `params["comment"]` speichern
 - [ ] Konturen bewusst mitzaehlen oder als nicht ausfuehrbare Geometrie markieren
 
 ### LES-024 Restliche UI-Modularisierung
-
-Erledigt: Shell sowie Program, Face, Contour, Parting, Thread, Groove, Drill und
-Keyway als Teil-UIs.
 
 - [ ] Vorschau/Schnittansicht in eigene UI-Struktur auslagern
 - [ ] Step-Liste und Programmverwaltung auslagern
@@ -376,13 +301,9 @@ Keyway als Teil-UIs.
 
 ### LES-036 Kantenform "Radius" beim Planen
 
-Real bestaetigter Bug (Realtest): Planen mit Kantenform "Fase" schlug im
-Generator fehl, weil `edge_type` weiterhin ueber `int(float(...))` gelesen
-wurde statt ueber `resolve_enum_index()` wie `mode`. Behoben. "Radius" ist in
-der Combo waehlbar, im Generator (`gcode_face.py`) aber nach wie vor nicht
-umgesetzt - waehlt der Nutzer "Radius", bricht die Erzeugung jetzt mit einer
-klaren Fehlermeldung ab, statt (vor diesem Fix) still wie "Keine" behandelt
-zu werden.
+"Radius" ist in der Combo waehlbar, im Generator (`gcode_face.py`) aber nach
+wie vor nicht umgesetzt - waehlt der Nutzer "Radius", bricht die Erzeugung
+mit einer klaren Fehlermeldung ab (siehe CHANGELOG.md).
 
 - [ ] Radius-Eckengeometrie fuer Planen umsetzen (Kontur-Reiter hat mit dem
   Fase/Radius-Freistich in `contour_logic.py` bereits eine funktionierende,
@@ -397,9 +318,6 @@ zu werden.
 Noch unbeantwortet in der Realtest-Datei:
 
 - Frage 7: Startzeit und Reaktionszeit -> LES-027
-- Frage 9: Materialmodell Innen-Schruppen -> LES-003
-- Frage 11: weitere Innenkonturformen -> LES-005/LES-015
-- Frage 13: doppelte Operationen -> LES-026
 
 Norm-/Systemabhaengige Blocker:
 
