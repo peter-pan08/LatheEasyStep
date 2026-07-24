@@ -11,7 +11,7 @@ Verifikation in
 ## Ausgangsstand
 
 - `main`: Version 0.7.0 als lauffaehige Basis
-- `dev`: Entwicklungsstand fuer 0.8.0, acht Commits vor `main`
+- `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
 - aktueller Teststand: `331 passed, 3 skipped`
 - UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.020 identische,
