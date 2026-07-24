@@ -10,7 +10,7 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 ## Aktuell verifizierte Basis
 
 - `main`: Version 0.7.0 als lauffaehige Basis
-- `dev`: Entwicklungsstand fuer 0.8.0, acht Commits vor `main`
+- `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
 - Teststand: `331 passed, 3 skipped`
 - UI-Shell und acht Reiter-Teil-UIs sind getrennt und werden ueber
   `lathe_easystep/ui_split.py` geladen
