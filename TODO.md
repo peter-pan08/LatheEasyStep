@@ -36,15 +36,15 @@ Prioritaeten:
 | ID | Prio | Aufgabe | Nutzen | Aufwand | Ziel |
 |---|---|---|---|---|---|
 | LES-001 | P0 | Sichere Anfahrt zwischen aufeinanderfolgenden Operationen | sehr hoch | M | 0.8.0-alpha |
-| LES-003 | P0 | Innen-Schruppen Parallel-Z fachlich verifizieren und reparieren | sehr hoch | L | 0.8.0-alpha |
+| LES-003 | P0 | Innen-Schruppen Parallel-Z abschliessend verifizieren | sehr hoch | L | 0.8.0-alpha |
 | LES-005 | P0 | Innen-Schlichtanfahrt und Rueckzug fuer weitere Konturformen absichern | sehr hoch | M-L | 0.8.0-alpha |
 | LES-006 | P1 | Rueckzugsstrategie und Achsreihenfolge je Bearbeitungsart festlegen | hoch | M | 0.8.0 |
 | LES-010 | P1 | Lokale DIN-Freistichgeometrie am markierten Segment erzeugen | hoch | L | 0.8.0 |
 | LES-011 | P1 | Freistich in Vorschau, Subroutine und Schlichtweg identisch darstellen | hoch | M-L | 0.8.0 |
 | LES-012 | P1 | Konturprimitive bis zur finalen G1/G2/G3-Ausgabe erhalten | hoch | L | 0.8.0 |
-| LES-013 | P1 | G96/G97-Bedienfelder pro Operation und sichere CSS-Umschaltung | mittel-hoch | M | 0.8.0 |
-| LES-015 | P1 | Weitere Innenkonturformen als Regression und Realtest absichern | hoch | M | 0.8.0 |
-| LES-016 | P1 | Verbleibende UI-Sichtbarkeitsregeln testen | mittel | S-M | 0.8.0 |
+| LES-013 | P1 | Sichere CSS-Umschaltung nach per-Operation-G96/G97 | mittel-hoch | S-M | 0.8.0 |
+| LES-015 | P1 | Innenkontur-Testmatrix automatisieren und in LinuxCNC verifizieren | hoch | M-L | 0.8.0 |
+| LES-016 | P1 | UI-Sichtbarkeitsregeln fachlich festlegen und testen | mittel | S-M | 0.8.0 |
 | LES-019 | P1 | Verifizierte DIN-76-Presets fuer M2, M2.5 und M3.5 ergaenzen | mittel | S-M | 0.8.0 |
 | LES-030 | P1 | Neue Generatorfunktionen systematisch in LinuxCNC simulieren | hoch | M-L | 0.8.0 |
 | LES-018 | P2 | G70-Wiederverwendung fuer separaten Schlichtstep pruefen | mittel | M-L | 0.9.0 |
@@ -59,7 +59,7 @@ Prioritaeten:
 | LES-033 | P2 | Gewindevorschau aus realen Gewindeparametern ableiten | mittel | M-L | 0.9.0 |
 | LES-034 | P2 | Preview-Pipeline fachlich in Werkstueck, Werkzeugweg und Hilfsgeometrie trennen | mittel | L | 0.9.0 |
 | LES-035 | P2 | Embedded- und Standalone-Verhalten weiter angleichen | mittel | M | 0.9.0 |
-| LES-036 | P1 | Kantenform "Radius" beim Planen umsetzen | mittel | M | 0.9.0 |
+| LES-036 | P1 | Kantenform "Radius" beim Planen umsetzen | mittel | M | 0.8.0 |
 
 ## P0 - Sicherheits- und Generatorblocker
 
@@ -78,55 +78,44 @@ Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 - [ ] Warnung und tatsaechlicher Fahrweg duerfen sich nicht widersprechen
 - [ ] Regressionen fuer Rohteil- und Chuck-No-Go-Faelle ergaenzen
 
-### LES-003 Innen-Schruppen Parallel-Z verifizieren
+### LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 
-Die Intervall-Ueberlappung in `rough_turn_parallel_x()` ist behoben.
-Realtest-Frage 9 beantwortet (Zustellrichtung klein->gross bestaetigt
-korrekt: "die Bohrung ist das was an Material abgetragen ist und frei ist,
-der Rest zum groesseren Durchmesser muss ja erst abgespant werden").
+Behoben und per Regression abgesichert sind die ueberlappenden Z-Intervalle
+im Move-based-Pfad sowie die G71-Eignungspruefung fuer monoton steigende
+Innenkonturen (`is_monotonic_z()`). Das reale Nutzerbeispiel erzeugt damit
+einen `G71`-Aufruf statt ungleichmaessiger Move-based-Passes. Offen bleibt die
+vollstaendige Verifikation von Materialgrenze, Aufmass und realem Fahrweg.
 
-Real bestaetigt und behoben (Nutzer-Testprogramm, Kommentar im generierten
-Code: "Fallback-Grund: automatische Entscheidung -> Move-based"): Innen-
-Abspanen nutzte bei vielen realen Innenkonturen NICHT den `G71`-Zyklus (wie
-Aussendrehen), sondern die grobe bewegungsbasierte Ersatzloesung - sichtbar
-an ungleichmaessigen, teils winzigen Zustellungen. Root Cause:
-`is_monotonic_z_decreasing()` (`gcode_utils.py`) akzeptierte nur FALLENDE
-Z-Werte fuer die G71-Eignungspruefung (`parallel_z`-Strategie in
-`gcode_roughing.py`) - anders als bei X (`is_monotonic_x()` prueft BEIDE
-Richtungen) gab es keine "Z steigend"-Variante. Innenkonturen werden aber
-haeufig vom tiefsten Punkt zur Bohrungsoeffnung definiert (Z steigt
-monoton) - eine geometrisch einwandfreie, aber bisher als "nicht
-zyklustauglich" abgelehnte Konturrichtung. Neue symmetrische Pruefung
-`is_monotonic_z()` (faellt ODER steigt, analog zu `is_monotonic_x()`)
-ergaenzt; mit dem realen Testprogramm des Nutzers verifiziert (`ausdrehen`-
-Kontur erzeugt jetzt einen sauberen `G71`-Aufruf statt 10 ungleichmaessiger
-Move-based-Passes). Die `G71`-Startkoordinate (`X{stock_x} Z{safe_z}`)
-brauchte keine Anpassung - sie referenziert bereits (wie beim laengst
-funktionierenden Aussendrehen) die Rohteil-/Sicherheitsgrenze, nicht den
-exakten ersten Konturpunkt, und bleibt bei beiden Konturrichtungen korrekt.
-
-- [ ] vorhandenen Bohrungsdurchmesser als Materialgrenze verwenden
-- [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, nicht als Schnittbahn
+- [ ] vorhandenen Bohrungsdurchmesser als Materialgrenze verwenden und mit
+  mindestens einem Rohr-/Bohrungsreferenzteil pruefen
+- [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, niemals als
+  Schnittbahn; Regression muss jeden G1/G71-Profilwert gegen diese Grenze
+  pruefen
 - [ ] Schlichtaufmass X/Z fuer Innenkonturen korrekt ausrichten
 - [ ] G71/G72-Vorzeichen und Konturstart fuer Innenbearbeitung pruefen
-- [ ] Backplot und Trockenlauf mit einem konkreten Referenzteil dokumentieren (P0 - vor Praxiseinsatz zwingend)
-- [ ] `examples.py` fehlt bisher ein Referenzbeispiel mit Innen-Abspanen
-  (`side=inside`) - deshalb ist der `G71`-vs-Move-based-Fallback fuer
-  Innenkonturen nicht durch den regulaeren `regenerate_all_ngc.py`-Diff-
-  Workflow abgedeckt; ein Beispiel ergaenzen, sobald ein passendes,
-  verifiziertes Referenzteil feststeht
+- [ ] automatisierte Faelle fuer monoton steigende UND fallende Z-Konturen
+  sowie Innen-/Aussenbearbeitung pflegen
+- [ ] `examples.py` um ein verifiziertes Innen-Abspanen-Beispiel
+  (`side=inside`) ergaenzen und in `regenerate_all_ngc.py` aufnehmen
+- [ ] LinuxCNC-Parser, Backplot und Trockenlauf mit diesem Referenzteil
+  dokumentieren (P0 - vor Praxiseinsatz zwingend)
 
 ### LES-005 Innen-Schlichtanfahrt und Rueckzug
 
-Ein Einfahrweg fuer aktive Schneidenradiuskorrektur existiert bereits. Die
-Funktion gilt erst nach Pruefung weiterer Innenkonturen als abgeschlossen.
+Ein Einfahrweg fuer aktive Schneidenradiuskorrektur existiert bereits.
+Realtest-Frage 11 ist beantwortet: Innenstufe, Innenkonus und Innenradius
+wirken korrekt; der Innenfreistich bleibt als bekannter Fehler unter
+LES-010/LES-011 offen. Die Antwort schliesst die Nutzerfrage, ersetzt aber
+nicht die reproduzierbare Generator- und LinuxCNC-Verifikation.
 
 - [ ] zuerst auf nachweislich freien Innendurchmesser fahren
 - [ ] axial auf Konturstart fahren, bevor der Schnittdurchmesser angefahren wird
 - [ ] Schneidenradiuskorrektur nur auf ausreichend langem Einfahrweg aktivieren
 - [ ] Konturstart vorne und hinten getrennt testen
 - [ ] nach dem Schnitt zuerst radial und danach axial freifahren
-- [ ] Innenstufe, Innenkonus, Innenradius und Innenfreistich testen
+- [ ] Innenstufe, Innenkonus und Innenradius als automatisierte Regressionen
+  plus LinuxCNC-Backplot absichern
+- [ ] Innenfreistich nach Umsetzung von LES-010/LES-011 separat abnehmen
 
 ## P1 - Fachliche Vollstaendigkeit fuer 0.8.0
 
@@ -164,94 +153,85 @@ Segment der gesamten Kontur liegt.
 - [ ] Vorschau, Kontur-Subroutine und ausgeschriebenen Schlichtweg vergleichen
 - [ ] Save/Load-Roundtrip der Segment-Features testen
 
-### LES-012 Konturprimitive erhalten
+### LES-012 Konturprimitive und G2/G3 erhalten
 
-Der explizite Schlichtweg kann Radien bereits als G2/G3 ausgeben. Verbleibende
-move-based Pfade linearisieren Geometrie teilweise noch.
+Der explizite Schlichtweg kann Radien als G2/G3 ausgeben. Der reale
+LinuxCNC-Fehler bei Boegen mit echtem X-Zentrumsversatz ist behoben:
+Im Durchmessermodus G7 wird die X-Differenz zum Zentrum fuer den radialen
+`I`-Wert halbiert. Regressionen decken den direkten Schlichtpfad und die
+G71/G72-Kontur-Subroutine ab. Verbleibende Move-based-Pfade linearisieren
+Geometrie teilweise noch.
 
 - [ ] Linien und Boegen bis zur Ausgabe als Primitive fuehren
 - [ ] Radien nicht in reine G1-Punktlisten umwandeln
-- [ ] G18-Boegen mit korrektem G2/G3 und I/K ausgeben
 - [ ] Arc-Intersections im Move-based Roughing vertiefen
 - [ ] Vorschau und Generator auf dieselbe Primitive-Quelle umstellen
+- [ ] mindestens einen Referenzbogen mit `I != 0` dauerhaft in
+  `examples.py`/`ngc/` halten
+- [ ] fuer direkten Schlichtweg UND G71/G72-Subroutine im Test nachweisen,
+  dass Start- und Endradius zum ausgegebenen I/K-Zentrum uebereinstimmen
+- [ ] denselben Nichtnull-I-Fall im LinuxCNC-Parser und Backplot bestaetigen
 
-### LES-013 G96/G97 pro Operation
+### LES-013 Sichere CSS-Umschaltung
 
-Real bestaetigter Architekturfehler (Nutzer-Feedback): G96/G97 war eine
-globale Programmkopf-Einstellung, obwohl die Wahl fachlich pro Operation
-getroffen werden muss (z. B. Aussendrehen mit CSS, aber ein danach folgendes
-Bohren zwingend mit Festdrehzahl). Zusaetzlich verwendete `G96` unter `S`
-bisher denselben Zahlenwert wie die Drehzahl (`spindle`) - physikalisch
-falsch, da G96 unter `S` die Schnittgeschwindigkeit Vc (m/min) erwartet,
-nicht U/min.
+G96/G97 ist pro Operation fuer Planen, Abspanen, Einstich/Abstich und Gewinde
+umgesetzt; Bohren bleibt bewusst bei G97. `G96 S` verwendet jetzt Vc in
+m/min, `D` die programmweite Maximaldrehzahl. Sichtbarkeit, Save/Load und
+Rueckwaertskompatibilitaet sind getestet; die fruehere globale
+`program_spindle_mode`-Combo ist entfernt.
 
-Umgesetzt:
-- [x] Combo G97/G96 in Planen, Abspanen, Einstich/Abstich und Gewinde (neue
-  Felder `<prefix>_spindle_mode`/`<prefix>_cutting_speed`, dynamisch ueber
-  `ui_advanced.py` ergaenzt, analog zu bereits bestehenden Mustern wie
-  `parting_undercut_mode`). Bohren bewusst ausgenommen (Nutzerentscheidung:
-  Werkzeugdurchmesser aendert sich beim Bohren nicht, CSS ist dort ohne
-  fachlichen Nutzen)
-- [x] Schnittgeschwindigkeit (Vc, m/min) und Drehzahl (U/min) werden
-  kontextabhaengig ein-/ausgeblendet (`update_spindle_mode_visibility()`)
-- [x] `G96 D<max_rpm> S<Vc>` statt der bisherigen (falschen) Wiederverwendung
-  der Drehzahl; ohne gueltige Vc faellt der Generator sicher auf `G97` mit
-  Warnhinweis zurueck statt eine falsche Zahl als Vc zu senden
-- [x] Save/Load: `spindle_mode`/`cutting_speed` sind normale `op.params`-
-  Schluessel und werden ueber den bestehenden generischen Persistenzpfad
-  automatisch mitgespeichert/geladen; alte Programme ohne diese Schluessel
-  fallen unveraendert auf Festdrehzahl/G97 zurueck (kein Sonderfall noetig)
-- [x] Sichtbarkeitsregeln mit echtem PyQt5 getestet
-  (`tests/test_per_operation_spindle_mode_ui.py`)
-- [x] globale `program_spindle_mode`-Combo entfernt; `program_spindle_max_rpm`
-  bleibt als programmweite CSS-Sicherheitsobergrenze erhalten und ist jetzt
-  immer sichtbar (keine sinnvolle Bedingung mehr ohne globale Modus-Combo)
+Noch offen ist ausschliesslich die sichere Aktivierungssequenz:
 
-Noch offen (bewusst nicht ungeprueft umgesetzt - siehe Analyse im Changelog):
-
-- [ ] bei CSS sicher mit G97 anfahren und G96 erst an der Bearbeitungsposition
-  aktivieren: erfordert eine physikalisch verifizierte Vc->Drehzahl-Umrechnung
-  fuer die sichere Anfahr-Drehzahl (welcher Durchmesser gilt waehrend der
-  Anfahrt?), dafuer gibt es noch keine etablierte Konvention im Projekt -
-  keine Zahl raten, sondern gemeinsam entscheiden
+- [ ] festlegen, welcher reale Durchmesser fuer die feste Anfahrdrehzahl gilt
+- [ ] sichere Anfahrdrehzahl aus Vc, Durchmesser und Maximaldrehzahl berechnen
+  und Grenz-/Nullfaelle eindeutig behandeln
+- [ ] Anfahrt mit G97 ausgeben und G96 erst an einer definierten,
+  fachlich sicheren Bearbeitungsposition aktivieren
+- [ ] Operationsfolge G96 -> G97 (Bohren) -> G96 als Regression testen;
+  weder Drehzahl noch Vc duerfen zwischen den Operationen verwechselt werden
+- [ ] Save/Load eines gemischten G96/G97-Programms mit echtem PyQt5 testen
+- [ ] resultierende Modalsequenz in LinuxCNC-Parser und Backplot bestaetigen
 
 ### LES-015 Innenkontur-Testmatrix
+
+Realtest-Frage 11 ist beantwortet: Innenstufe, Innenkonus und Innenradius
+erscheinen korrekt, der Freistich ist der bekannte offene LES-010/LES-011-Fall.
+Offen ist deshalb keine weitere Grundsatzantwort, sondern eine reproduzierbare
+Test- und Referenzmatrix.
 
 - [ ] zylindrische Innenkontur
 - [ ] Innenstufe
 - [ ] Innenkonus
-- [ ] Innenradius
-- [ ] Innenkontur mit Freistich
+- [ ] Innenradius mit `I != 0`
+- [ ] Innenkontur mit Freistich nach Umsetzung von LES-010/LES-011
 - [ ] Schruppen mit anschliessendem Schlichten
-- [ ] Werkzeugradiuskorrektur, Konturseite und Konturstart je Fall pruefen
-- [ ] Realtest-Frage 11 abschliessen
+- [ ] Konturstart vorne und hinten sowie steigende/fallende Z-Reihenfolge
+- [ ] Werkzeugradiuskorrektur, Konturseite und sichere Ein-/Ausfahrt je Fall
+- [ ] Vorschau, erzeugten G-Code und LinuxCNC-Backplot je Referenz vergleichen
 
-### LES-016 UI-Sichtbarkeitsregressionen
+### LES-016 UI-Sichtbarkeitsregeln
 
-Bereits abgedeckt: Planen, Bohren, Subspindel, Rohteilform, Rueckzugsmodus,
-Abspanen-Schruppen/Schlichten/Schruppen+Schlichten (inkl. der bisher
-ungetesteten "Freistich separat"-Teilregel), Einstich/Abstich (beide Zweige:
-Werkzeugbreite-Checkbox und Abstich- vs. Einstich-Modus) und das einzige
-bestehende globale G96/G97-Feld (`program_spindle_mode` blendet
-"CSS Max-RPM" jetzt korrekt nur bei G96/CSS ein - Funktion neu ergaenzt,
-da bisher keine Sichtbarkeitsregel dafuer existierte, siehe
-`update_spindle_mode_visibility()` in `ui_visibility.py`).
+Bereits abgedeckt sind Planen, Bohren, Subspindel, Rohteilform,
+Rueckzugsmodus, Abspanen-Schruppen/Schlichten/Schruppen+Schlichten,
+Freistich-"separat", Einstich/Abstich sowie die per-Operation-G96/G97-Felder
+fuer Planen, Abspanen, Einstich/Abstich und Gewinde. Die fruehere globale
+`program_spindle_mode`-Combo existiert nicht mehr;
+`program_spindle_max_rpm` bleibt als globale CSS-Grenze immer sichtbar.
 
-Nach Audit (siehe Recherche zu dieser Aufgabe) bestehen fuer die folgenden
-Punkte AKTUELL KEINE Sichtbarkeitsregeln im Code - hier fehlt nicht ein Test,
-sondern eine Produktentscheidung, welche Felder ueberhaupt bedingt ein-/
-ausgeblendet werden sollen, bevor eine Regression sinnvoll ist:
+Fuer die folgenden Punkte fehlt zuerst eine fachliche Produktentscheidung;
+erst danach ist ein Sichtbarkeitstest sinnvoll:
 
-- [ ] Kontur: keine bedingte Sichtbarkeit vorhanden (Kantengroesse nutzt nur
-  `setEnabled`, keine Kontur-Sichtbarkeitsregel identifiziert)
-- [ ] Gewinde: keine bedingte Sichtbarkeit vorhanden (z. B. koennte
-  `thread_relief_norm` sinnvollerweise nur bei `thread_relief_mode == "suggest"`
-  sichtbar sein - aktuell immer sichtbar; haengt am per-Operation-Signalpfad
-  `_handle_param_change`, noch nicht auditiert)
-- [ ] Innen/Aussen: `side`/`lage`/`orientation` werden nirgends zum Ein-/
-  Ausblenden anderer Felder verwendet (nur als G-Code-Parameter bzw. fuer die
-  Einstich-Diagrammgrafik) - siehe auch LES-013 fuer die groessere,
-  zusammenhaengende Aufgabe (G96/G97 pro Operation auf allen Reitern)
+- [ ] Kontur: entscheiden und dokumentieren, ob `setEnabled` fuer
+  Kantengroesse ausreicht oder Felder wirklich ausgeblendet werden sollen
+- [ ] Gewinde: entscheiden, ob `thread_relief_norm` nur bei
+  `thread_relief_mode == "suggest"` sichtbar sein soll
+- [ ] Innen/Aussen: je Operation festlegen, ob `side`/`lage`/
+  `orientation` weitere Felder bedingt ein- oder ausblenden
+- [ ] jede neu eingefuehrte Regel mit echtem PyQt5 fuer beide Zweige testen
+- [ ] Sprachumschaltung und Save/Load duerfen Sichtbarkeit und technische
+  `currentData()`-Werte nicht veraendern
+- [ ] falls keine fachlich sinnvolle Regel benoetigt wird, den jeweiligen
+  Unterpunkt begruendet schliessen statt kuenstliche UI-Logik einzubauen
 
 ### LES-019 Fehlende DIN-76-Presets
 
@@ -264,9 +244,31 @@ ausgeblendet werden sollen, bevor eine Regression sinnvoll ist:
 
 - [ ] alle Referenzprogramme nach Generatoraenderungen regenerieren
 - [ ] Planen, Bohren, Gewinde, Einstich, Abspanen innen/aussen und Konturen pruefen
+- [ ] Nichtnull-I-Boegen unter G7 im direkten Schlichtweg und in
+  G71/G72-Subroutinen auf Parserfehler und korrekten Backplot pruefen
+- [ ] Innen-G71 mit monoton steigendem und fallendem Z sowie vorhandener
+  Bohrung als Materialgrenze pruefen
+- [ ] gemischte Operationsfolge G96 -> G97 -> G96 inklusive D/S-Einheiten
+  und Aktivierungsposition pruefen
 - [ ] Parserfehler, Backplot, Werkzeugwechsel und Parkbewegungen dokumentieren
-- [ ] relevante Faelle als reale Trockenlaeufe bestaetigen
+- [ ] relevante Sicherheits- und Materialabtragsfaelle als reale Trockenlaeufe bestaetigen
 - [ ] Maschinenprofile und Futter-Sperrzonen mit Beispielen verifizieren
+
+### LES-036 Kantenform "Radius" beim Planen
+
+Die String-ID-Auswertung fuer die Planen-Kantenform ist repariert: "Fase"
+funktioniert wieder. "Radius" ist im UI waehlbar, im Generator aber noch nicht
+umgesetzt und wird deshalb derzeit mit einer klaren Fehlermeldung abgewiesen.
+Da die Option sichtbar angeboten wird, gehoert die Umsetzung als P1 in 0.8.0.
+
+- [ ] Radius-Eckengeometrie fuer den 90-Grad-Planen-Spezialfall umsetzen
+- [ ] Durchmesser-/Radiusumrechnung fuer X sowie G2/G3-I/K eindeutig herleiten
+- [ ] String-IDs und alte numerische Save-Dateien weiterhin unterstuetzen
+- [ ] Vorschau und G-Code aus derselben Geometrie ableiten
+- [ ] Grenzfaelle pruefen: Radius 0, zu grosser Radius, Schruppen,
+  Schlichten und Schruppen+Schlichten
+- [ ] echten PyQt5-Roundtrip sowie LinuxCNC-Parser/Backplot testen
+- [ ] Realtest am Panel nach Umsetzung dokumentieren
 
 ## P2 - Bedienung, Wartbarkeit und Architektur
 
@@ -374,32 +376,20 @@ Keyway als Teil-UIs.
 - [ ] keine globalen Host-Widgets im Embedded-Betrieb binden
 - [ ] Real-Qt-Smoke-Test fuer beide Startarten pflegen
 
-### LES-036 Kantenform "Radius" beim Planen
-
-Real bestaetigter Bug (Realtest): Planen mit Kantenform "Fase" schlug im
-Generator fehl, weil `edge_type` weiterhin ueber `int(float(...))` gelesen
-wurde statt ueber `resolve_enum_index()` wie `mode`. Behoben. "Radius" ist in
-der Combo waehlbar, im Generator (`gcode_face.py`) aber nach wie vor nicht
-umgesetzt - waehlt der Nutzer "Radius", bricht die Erzeugung jetzt mit einer
-klaren Fehlermeldung ab, statt (vor diesem Fix) still wie "Keine" behandelt
-zu werden.
-
-- [ ] Radius-Eckengeometrie fuer Planen umsetzen (Kontur-Reiter hat mit dem
-  Fase/Radius-Freistich in `contour_logic.py` bereits eine funktionierende,
-  aber allgemeine 3-Punkt-Fillet-Berechnung - fuer den Spezialfall Planen
-  ggf. wiederverwendbar, sofern die Radius/Durchmesser-Umrechnung fuer den
-  einfacheren 90°-Eckfall aus Anfahrpunkt/Endpunkt/Aussenkontur korrekt
-  uebertragen wird)
-- [ ] Realtest nach Umsetzung: Planen mit Radius am echten Panel pruefen
-
 ## Offene externe Antworten und Blocker
 
 Noch unbeantwortet in der Realtest-Datei:
 
 - Frage 7: Startzeit und Reaktionszeit -> LES-027
-- Frage 9: Materialmodell Innen-Schruppen -> LES-003
-- Frage 11: weitere Innenkonturformen -> LES-005/LES-015
-- Frage 13: doppelte Operationen -> LES-026
+
+Bereits beantwortet und nicht mehr als offene Nutzerentscheidung zu fuehren:
+
+- Frage 9: Zustellrichtung Innen-Schruppen klein -> gross bestaetigt;
+  technische Restverifikation bleibt LES-003
+- Frage 11: Innenstufe/-konus/-radius augenscheinlich korrekt, Freistich offen;
+  Regressionen bleiben LES-005/LES-010/LES-011/LES-015
+- Frage 13: doppelte Operationen sind erlaubt und erzeugen eine Warnung;
+  Verhalten ist umgesetzt und getestet
 
 Norm-/Systemabhaengige Blocker:
 
@@ -410,13 +400,19 @@ Norm-/Systemabhaengige Blocker:
 
 ## Verbindlicher Abschluss jeder Generatoraenderung
 
-1. fokussierte Regressionen
-2. kompletter `pytest -q`-Lauf
+1. fokussierte Regression, die den alten Fehler reproduziert und mit dem Fix besteht
+2. kompletter `pytest -q`-Lauf; neue oder geaenderte Skips muessen begruendet werden
 3. `python3 regenerate_all_ngc.py`
 4. Diff der Referenzprogramme fachlich pruefen
-5. echter PyQt5-Test bei UI-Aenderungen
-6. LinuxCNC-Parser/Backplot bei geaenderten Fahrwegen
-7. `TODO.md`, `ROADMAP.md`, `README.md`, `DEV.md` und `CHANGELOG.md` synchron halten
+5. echter PyQt5-Test bei UI-, Sichtbarkeits- oder Save/Load-Aenderungen
+6. LinuxCNC-Parser und Backplot bei geaenderten Fahrwegen oder Modals
+7. bei G2/G3 mindestens ein Fall mit `I != 0`; Start-/Endradius zum
+   ausgegebenen Zentrum muessen uebereinstimmen, direkt und in Zyklus-Subs
+8. bei Innenbearbeitung steigende/fallende Konturrichtung, Materialgrenze,
+   XRI-Verwendung sowie Ein-/Rueckzug getrennt pruefen
+9. bei sicherheitsrelevanten Fahrwegen realen Trockenlauf dokumentieren
+10. `TODO.md`, `ROADMAP.md`, `README.md`, `DEV.md` und
+    `CHANGELOG.md` synchron halten
 
 ## Spaetere Erweiterungen nach stabiler 1.0-Basis
 
