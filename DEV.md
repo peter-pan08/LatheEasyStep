@@ -8,53 +8,59 @@ Ziel ist:
 - minimale Überraschungen an der Maschine
 
 ## Release-Stand
-- `v0.7.0` markiert den abgeschlossenen Refactor-Stand fuer Vorschau-Geometrie,
-  Kontur-Logik, G-Code-Einstiegsmodule und die aktuelle Regressionstest-Basis.
-- Neue Umbauten werden wieder unter `Unreleased` im Changelog gesammelt und
-  zuerst auf `dev` verifiziert.
-- Stand `2026-07-14` auf `dev`: Freistich-/Hinterschnitt-Backend, Generator-Transparenz,
-  Dirty-State/Warnlogik, Preview-Docking, Groove/Abstich-Split, explizite
-  Toolchange-/Park-Koordinatensysteme, erweiterte Gewinde-UI/-Generatorlogik,
-  robustere Tooltip-Erzwingung, erweiterte Sicherheitslogik und
-  zusaetzliche Validierungen sind implementiert. Zusaetzlich wurden die
-  UI-/Spracharchitektur weiter geschaerft, neue Visibility-Regressionen
-  aufgebaut und die Test-Infrastruktur fuer echte PyQt5-Tests gegen die
-  Stub-Suite gehaertet.
-- Seit `2026-07-15` gilt zusaetzlich: `XRI` ist fuer Innenbearbeitung eine
-  harte Sicherheitsgrenze. Generatoren fuer Innengewinde, Inneneinstich und
-  Innen-Abspanen duerfen keinen kleineren X-Wert mehr emittieren.
+
+- `v0.7.0` ist die lauffaehige Basis auf `main`.
+- `dev` ist der Entwicklungsstand fuer `v0.8.0` und liegt am 24. Juli 2026
+  acht Commits vor `main`.
+- Aktueller Teststand: `331 passed, 3 skipped`.
+- Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
+  Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
+  Rechts-/Linksgewinde, `rough_finish`, Realtest-Fixes und die geteilte UI.
+- `lathe_easystep.ui` ist die Shell; die acht Bearbeitungsreiter liegen unter
+  `lathe_easystep/ui_parts/` und werden durch `ui_split.py` geladen.
+- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.020 identische,
+  nichtleere und eindeutige Schluessel.
+- Offene Arbeiten und Release-Zuordnung werden verbindlich in
+  `TODO.md` und `ROADMAP.md` gepflegt.
 
 ---
 
 ## Architektur-Überblick
+
 - `lathe_easystep_handler.py`
-  - Nur noch "Kleber": QtVCP-`HandlerClass`, deren Methoden ueberwiegend an
-    Funktionen in `lathe_easystep/*.py` delegieren, plus Widget-Bootstrapping.
-  - Stand 2026-07-14: 4965 Zeilen (vorher 7501). Reduktion kam aus dem
-    Entfernen von ueber 1100 Zeilen totem, laengst durch `preview_geometry.py`/
-    `contour_logic.py` ersetztem Code sowie dem Ausgliedern von
-    `LathePreviewWidget` und `WidgetResolver` (siehe unten). Reines
-    Delegieren ist der Zielzustand; neue substanzielle Logik gehoert in ein
-    Modul unter `lathe_easystep/`, nicht in den Handler.
+  - QtVCP-`HandlerClass`, Widget-Bootstrapping und verbleibende Klebelogik
+  - neue substanzielle Fachlogik gehoert in Module unter `lathe_easystep/`
+- `lathe_easystep.ui`
+  - Shell fuer Step-Liste, Tab-Container und Vorschau
+- `lathe_easystep/ui_parts/*.ui`
+  - getrennte Bearbeitungsreiter fuer Program, Face, Contour, Parting, Thread,
+    Groove, Drill und Keyway
+- `lathe_easystep/ui_split.py`
+  - laedt die Teil-UIs beim Start in die Shell
+- `lathe_easystep/gcode_*.py`, `contour_logic.py`, `contour_features.py`
+  - produktive Generator- und Geometrielogik
 - `slicer.py`
-  - Geometrische Auswertung
-  - Abspanstrategien
-  - G-Code-Erzeugung
+  - veraltete Parallelimplementierung; von der produktiven Anwendung nicht
+    importiert, aber noch von `regenerate_ngc.py` und Legacy-Tests verwendet
+  - soll nach Migration dieser Verbraucher entfernt werden
 
 UI und Toolpath-Logik sind bewusst getrennt.
 
 ## UI-/Spracharchitektur
-- Zielzustand ist eine strikte Trennung zwischen Anzeige und Logik:
-  sichtbare Texte kommen ausschliesslich aus `.lng`-Dateien, fachliche Logik
-  arbeitet ausschliesslich mit technischen IDs und Werten.
-- `currentText()` ist in fachlicher Logik nicht mehr die Regel, sondern nur
-  noch an wenigen bewusst auditierten Fallback-/Debug-Stellen zulaessig.
-- Neue Regression `tests/test_ui_visibility_guards.py` friert diese noch
-  erlaubten Stellen ein, damit keine neuen textabhaengigen Logikpfade
-  unbemerkt hinzukommen.
-- Die strikte UI-/Sprachtrennung ist noch NICHT vollstaendig abgeschlossen:
-  verbleibende sichtbare Textquellen in Python und `.ui` sind als offene
-  Architekturarbeit in `TODO.md` dokumentiert.
+
+- Fachliche Logik arbeitet mit technischen IDs und `currentData()`, nicht mit
+  lokalisierten Anzeigetexten.
+- Die aktiven Kataloge liegen unter `lathe_easystep/languages/*.lng`.
+- Deutsch, Englisch und Spanisch besitzen aktuell jeweils 1.020 identische,
+  nichtleere und eindeutige Schluessel.
+- Sprachumschaltung und Tooltips wurden im eingebetteten Panel praktisch
+  bestaetigt.
+- Noch offen sind sichtbare Defaulttexte in Python, `lathe_easystep.ui` und
+  `ui_parts/*.ui`. Diese werden zur Laufzeit ueberschrieben, verletzen aber
+  noch den angestrebten reinen Key-/ID-Zustand.
+- `lathe_easystep/i18n/*.json` wird vom aktiven `.lng`-Loader nicht
+  verwendet; verbleibende Verwendungen muessen vor einer Entfernung auditiert
+  werden.
 
 ## Test-Hinweise
 - Es gibt zwei Testwelten:
@@ -170,10 +176,10 @@ Radien werden **nicht** als einfache Polylines verstanden, sondern als:
 - mit berechneten Tangentialpunkten
 - und eindeutigem Kreismittelpunkt
 
-Der aktuelle Stand erzeugt intern echte Arc-Geometrie, die Ausgabe erfolgt derzeit noch linearisiert.
-Geplante Erweiterung:
-- echte Arc-Primitiven
-- G2/G3-Ausgabe (G18-Ebene)
+Der aktuelle Stand erzeugt intern echte Arc-Geometrie. Der explizite
+Schlichtweg erhaelt Radien bereits als G2/G3 in der G18-Ebene. Offen bleiben
+move-based Roughing-/Fallback-Pfade, die Geometrie teilweise noch
+linearisieren, sowie vollstaendige Arc-Intersections.
 
 ---
 
@@ -185,7 +191,7 @@ Geplante Erweiterung:
 ---
 
 ## Abspanlogik
-- Aktuell: Schruppen parallel Z
+- Unterstuetzte Strategien: zyklusbasiert oder move-based, parallel zur jeweils gewaehlten Achsrichtung
 - Kontur wird entlang X-Linien ausgewertet
 - Sichere Anfahrt, Lead-in, Lead-out und Retract werden explizit erzeugt
 - Rückzug X/Z erfolgt simultan (kein sequentielles „hochziehen“)
@@ -254,6 +260,7 @@ Geplante Erweiterung:
   - Optionalstop vor Werkzeugwechsel
   - Persistenz der neuen Expertenoptionen
 - Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
+- Aktueller Gesamtstand: `331 passed, 3 skipped`.
 - Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
 - Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 
@@ -286,13 +293,20 @@ Geplante Erweiterung:
 ---
 
 ## Bekannte technische Baustellen
-- Preview-Pipeline trennt aktuell Werkstueckkontur, Bearbeitungsbild und Hilfsgeometrie nicht strikt genug
-- Preview soll im Zweifel zu wenig statt zu viel zeigen; keine impliziten Verbindungen oder Fantasie-Hilfslinien
-- Gewinde-Vorschau ist derzeit nur symbolisch und muss spaeter aus den realen Gewindeparametern geometrisch abgeleitet werden
-- Native Arc-Intersections in Move-based Roughing sind noch nicht vollstaendig fachlich ausgereizt
-- G2/G3-Ausgabe kann fuer weitere Roughing-/Preview-Pfade noch vertieft werden
-- Werkzeuggeometrie (Nasenradius, Lage, Schneidenlaenge)
-- Tooltable-Integration mit tieferen Plausibilitaetspruefungen fuer Innen/Aussen-Werkzeuge
+
+Die vollstaendige und priorisierte Liste steht in `TODO.md`. Technisch
+besonders relevant sind derzeit:
+
+- unsichere direkte Diagonalanfahrt bei gesetztem `_is_at_safe`
+- fehlender harter Abbruch bei vollstaendig leeren Schruppoperationen
+- weitere Verifikation von Innen-Schruppen und Innen-Schlichten
+- lokale DIN-Freistiche innerhalb laengerer Konturen
+- Primitive-/Arc-Erhalt in verbleibenden move-based Pfaden
+- produktiv ungenutzte Parallelimplementierung in `slicer.py`
+- sichtbare Defaulttexte in UI-/Python-Quellen trotz vollstaendiger Kataloge
+- Werkzeuggeometrie und tiefere Tooltable-Plausibilitaet
+- noch symbolische Gewindevorschau
+- fachliche Trennung der Preview-Pipeline
 
 ---
 
