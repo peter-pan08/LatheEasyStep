@@ -33,10 +33,10 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Soll auch vor dem ERSTEN `M6` immer erst der definierte Werkzeugwechselpunkt angefahren werden?
   - Oder nur vor Folgewechseln?
-- Antwort: erster wechsel funktioniert jetzt wie gewünscht
-#- Status: umgesetzt - Ursache gefunden und behoben (Vorab-Validierung in
-#  `generate_program_gcode()` mutierte `_current_tool` und pollute damit den
-#  echten Erzeugungsdurchlauf; siehe Changelog "erster Werkzeugwechsel")
+- Antwort: erster Wechsel funktioniert jetzt wie gewuenscht
+- Status: umgesetzt - Ursache gefunden und behoben (Vorab-Validierung in
+  `generate_program_gcode()` mutierte `_current_tool` und beeinflusste damit
+  den echten Erzeugungsdurchlauf; siehe Changelog "erster Werkzeugwechsel")
 
 ## B. UI / Panel / Embedded-Betrieb
 
@@ -83,6 +83,7 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
   - Subjektiv ok oder zu traege?
   - Falls moeglich: Startzeit bis GUI sichtbar, auffaellige Reiter/Funktionen notieren.
 - Antwort:
+- Status: offen; Messung bleibt unter LES-027 eingeplant
 
 ## C. Generator / reale Fahrwege
 
@@ -95,8 +96,8 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
   - Danach auf aeussere Safe-Plane?
   - Eigene Bohr-Sonderregel?
 - Antwort: ist gerade ok
-#- Status: umgesetzt - Bohren nutzt jetzt denselben `emit_approach()`-Helfer wie
-#  Abspanen/Einstich statt einer eigenen, abweichenden Anfahrlogik
+- Status: bestaetigt; Bohren nutzt jetzt denselben `emit_approach()`-Helfer wie
+  Abspanen/Einstich statt einer eigenen, abweichenden Anfahrlogik
 
 ### 9. Innen-Schruppen Parallel-Z Materialmodell
 - Test:
@@ -118,11 +119,10 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Ist fuer `ABSPANEN` der rohe Wert korrekt oder muss wirklich `ZA + ZRI` bzw. `ZA + ZRA` verwendet werden?
 - Antwort: augenscheinlich wird diese regel beachtet, wird schon meim generieren des programm gemeldet.
-- Status: als "kein Aenderungsbedarf ersichtlich" aus der Blockiert-Liste in
-  TODO.md entfernt. Der rohe Wert wird technisch weiterhin ohne `*_absolute`-
-  Beruecksichtigung verwendet (siehe Code-Kommentar in `gcode_roughing.py`) -
-  falls doch einmal ein konkretes Gegenbeispiel auftaucht, bitte hier erneut
-  vermerken.
+- Status: beantwortet; im Realtest ist kein konkreter Fehler erkennbar.
+  Relative und absolute Rueckzugswerte bleiben als automatisierte
+  Generatorregression unter LES-003/LES-006 erhalten. Bei einem konkreten
+  Gegenbeispiel wird dieser Punkt erneut geoeffnet.
 
 ### 11. Innenkonturformen
 - Test:
@@ -133,7 +133,7 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Welche Form ist generatorseitig korrekt, welche nicht?
   - Bitte je Fall Problemstelle / Step / G-Code-Zeile nennen.
-- Antwort:es ist scheinbar alles, bis auf den freistich ok
+- Antwort: es ist scheinbar alles, bis auf den Freistich ok
 - Status: Innenstufe/Innenkonus/Innenradius bestaetigt korrekt. Der Freistich
   (DIN-Freistich mitten in einer Kontur) ist der bereits unter LES-010/LES-011
   dokumentierte, bekannte offene Punkt (Freistich-Splicing nur am Anfang/Ende
@@ -155,14 +155,12 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Soll `Step laden` identische Operationen mehrfach einfuegen duerfen?
   - Oder soll bei Dubletten gewarnt / ersetzt werden?
-- Antwort:grundsätzlich erlaubt, mit warnung
-#- Status: nicht durch Nutzerantwort beantwortet. Die in `TODO.md` bereits
-#  dokumentierte Empfehlung ("Duplikate erlauben, aber bei gleichem Typ und
-#  identischen Bearbeitungsparametern warnen") ist umgesetzt und mit Tests
-#  abgesichert (`lathe_easystep/checks.py::_check_duplicate_operations`,
-#  `tests/test_duplicate_operation_check.py`): mehrfach geladene, fachlich
-#  identische Operationen werden nicht geloescht oder automatisch veraendert,
-#  sondern nur als Warnung im Vorschau-/Programmcheck gemeldet (LES-026)
+- Antwort: grundsaetzlich erlaubt, mit Warnung
+- Status: entschieden und umgesetzt. Identische Operationen werden nicht
+  geloescht oder automatisch veraendert, sondern ueber
+  `lathe_easystep/checks.py::_check_duplicate_operations` als Warnung im
+  Vorschau-/Programmcheck gemeldet; abgesichert durch
+  `tests/test_duplicate_operation_check.py`.
 
 ### 14. `rough_finish` im UI
 - Frage:
@@ -187,3 +185,76 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
   der Frage erwaehnte fehlende Strategie selbst war zum Zeitpunkt der
   Untersuchung bereits durch den Nutzer im Panel korrigiert (`slice_strategy`
   stand in der aktuellen Test.lse bereits korrekt auf "parallel_z")
+
+## E. Naechste verbindliche Abnahmetests
+
+Diese Punkte pruefen gezielt die seit dem ersten Realtest neu geaenderten oder
+noch offenen Generatorpfade. Sie sind erst abgeschlossen, wenn Ergebnis und
+verwendete Referenzdatei dokumentiert sind.
+
+### 16. G2/G3-Bogen mit echtem X-Zentrumsversatz
+
+- Voraussetzung:
+  - Kontur mit `I != 0` im Durchmessermodus G7
+  - einmal direkter Schlichtweg, einmal G71/G72-Kontur-Subroutine
+- Test:
+  - beide Programme mit LinuxCNC parsen und im Backplot kontrollieren
+  - auf die fruehere Meldung
+    `Radius to end of arc differs from radius to start` achten
+  - Bogenstart, Bogenende und Drehrichtung mit der Sollkontur vergleichen
+- Erfolgreich, wenn:
+  - kein Radius-/Parserfehler entsteht
+  - direkter Pfad und Zyklus-Sub dieselbe Geometrie zeigen
+- Antwort:
+- Status: offen -> LES-012/LES-030
+
+### 17. Innen-G71 mit steigender und fallender Z-Kontur
+
+- Voraussetzung:
+  - vorhandene Bohrung als freie Materialgrenze
+  - zwei gleichwertige Innenkonturen mit umgekehrter Punktreihenfolge
+- Test:
+  - kontrollieren, dass beide Faelle G71 statt eines unbegruendeten
+    Move-based-Fallbacks verwenden
+  - Zustellung vom freien Bohrungsdurchmesser zur Fertigkontur pruefen
+  - sicherstellen, dass XRI nur Einfahr-/Rueckzugsebene und keine Schnittbahn ist
+  - Anfahrt, Schlichtaufmass und Rueckzug im Backplot vergleichen
+- Erfolgreich, wenn:
+  - beide Konturrichtungen denselben Materialabtrag erzeugen
+  - Parser, Backplot und anschliessender Trockenlauf unauffaellig sind
+- Antwort:
+- Status: offen -> LES-003/LES-005/LES-015/LES-030
+
+### 18. Gemischtes Programm G96 -> G97 -> G96
+
+- Voraussetzung:
+  - erste Drehoperation mit CSS
+  - Bohren mit Festdrehzahl
+  - anschliessende Dreh-/Gewindeoperation wieder mit CSS
+- Test:
+  - `G96 S` muss Vc in m/min enthalten, `G97 S` die Drehzahl in U/min
+  - `D` muss die programmweite CSS-Maximaldrehzahl enthalten
+  - Save/Load darf die drei Operationsmodi und Werte nicht vertauschen
+  - nach Umsetzung der sicheren CSS-Anfahrt: G97 waehrend der Anfahrt,
+    G96 erst an der festgelegten Bearbeitungsposition
+- Erfolgreich, wenn:
+  - keine Operation Werte oder Modalzustand der vorherigen Operation erbt
+  - LinuxCNC-Parser und Backplot die erwartete Umschaltfolge zeigen
+- Antwort:
+- Status: offen -> LES-013/LES-030
+
+### 19. Planen mit Kantenform Radius
+
+- Voraussetzung:
+  - erst nach Umsetzung von LES-036
+- Test:
+  - Radius in Schruppen, Schlichten und Schruppen+Schlichten erzeugen
+  - Preview, G-Code und Backplot vergleichen
+  - kleinen, maximal gueltigen und ungueltig grossen Radius pruefen
+  - Save/Load mit String-ID sowie einer alten numerischen Datei pruefen
+- Erfolgreich, wenn:
+  - gueltige Radien als korrekte G2/G3-Geometrie erscheinen
+  - ungueltige Radien vor der G-Code-Ausgabe klar abgewiesen werden
+- Antwort:
+- Status: offen -> LES-036/LES-030
+
