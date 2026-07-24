@@ -31,7 +31,7 @@ gewarnte Fahrwege erzeugen.
 Verbindliche Aufgaben:
 
 - LES-001 sichere Anfahrt zwischen Operationen
-- LES-003 Innen-Schruppen Parallel-Z verifizieren
+- LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 - LES-005 Innen-Schlichtanfahrt und Rueckzug absichern
 
 Abnahmekriterien:
@@ -39,7 +39,10 @@ Abnahmekriterien:
 - kein offener P0-Punkt
 - kein diagonaler Eilgang allein aufgrund von `_is_at_safe`
 - kein erfolgreicher Roughing-Step ohne reale Schnittbewegung
-- Innen-Schruppen besitzt einen bestaetigten Backplot- und Trockenlauffall
+- Innen-Schruppen besitzt einen bestaetigten Referenz-, Backplot- und
+  Trockenlauffall fuer monoton steigende und fallende Z-Konturen
+- mindestens ein G7-Bogen mit `I != 0` wird sowohl im direkten Schlichtweg
+  als auch in der G71/G72-Subroutine vom LinuxCNC-Parser akzeptiert
 - Warnung und ausgegebener Fahrweg widersprechen sich nicht
 - komplette Testsuite, Referenzprogramme und LinuxCNC-Parser laufen erfolgreich
 
@@ -54,11 +57,12 @@ Verbindliche Aufgaben:
 - LES-010 lokale DIN-Freistichgeometrie
 - LES-011 einheitliche Freistichdarstellung
 - LES-012 G1/G2/G3-Primitive durchgaengig erhalten
-- LES-013 G96/G97 pro Operation
-- LES-015 Innenkontur-Testmatrix
-- LES-016 Sichtbarkeitsregressionen
+- LES-013 sichere CSS-Umschaltung nach per-Operation-G96/G97
+- LES-015 automatisierte Innenkontur-Testmatrix
+- LES-016 fachlich definierte UI-Sichtbarkeitsregeln
 - LES-019 fehlende DIN-76-Presets
 - LES-030 LinuxCNC-Simulationsmatrix
+- LES-036 Kantenform "Radius" beim Planen
 
 Abnahmekriterien:
 
@@ -67,6 +71,10 @@ Abnahmekriterien:
 - Vorschau, Subroutine und Schlichtweg verwenden dieselben Primitive
 - lokale Freistiche funktionieren auch mitten in einer laengeren Kontur
 - keine produktiv ungenutzte Generator-Kopie wird von Tests als Referenz benutzt
+- G96/G97-Wechsel zwischen Operationen verwechseln weder Vc noch Drehzahl;
+  CSS wird erst an der fachlich festgelegten Position aktiviert
+- die im UI angebotene Planen-Kantenform "Radius" besitzt Generator-,
+  Preview-, Save/Load- und LinuxCNC-Referenztests
 - alle angebotenen 0.8.0-Faelle werden von LinuxCNC ohne Parserfehler angenommen
 
 ## 0.9.0 - Bedienung und technische Konsolidierung
@@ -110,7 +118,9 @@ Voraussetzungen:
 - konsistente Vorschau- und G-Code-Geometrie
 - definierte Maschinenprofile, Rueckzugsebenen und Futter-Sperrzonen
 - verstaendliche Fehlermeldungen statt fragwuerdiger G-Code-Ausgabe
-- reproduzierbarer Teststand, Release-Tag, Changelog und Bedienhinweise
+- reproduzierbarer Teststand; jeder Skip ist begruendet und kein
+  sicherheitsrelevanter Generatorfall wird im regulaeren Lauf uebersprungen
+- Release-Tag, Changelog und Bedienhinweise
 
 ## Nach 1.0
 
