@@ -2,7 +2,7 @@ Lathe EasyStep
 ==============
 
 Current Version: `0.7.0+unreleased`
-Status Date: `2026-07-14`
+Status Date: `2026-07-24`
 Primary Test Branch: `dev`
 
 Deutsch
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.7.0 + Unreleased, 14. Juli 2026
+Stand: Version 0.7.0 + Unreleased, 24. Juli 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -40,7 +40,9 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Refactor-Basis inkl. Freistich-/Sicherheitsausbau, Dirty-State, Preview-Docking, Groove-Fix, expliziter Toolchange-Koordinatenlogik, erweiterter Gewindelogik, `XRI`-Sicherheitslogik fuer Innenbearbeitung und UI-Anbindung ist mit `202 passed` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `331 passed, 3 skipped` validiert
+- `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
+- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.020 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
 Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
@@ -364,13 +366,18 @@ editiert werden koennen.
 
 ## Aktuelle Prioritaeten
 
-Die naechsten sinnvollen Arbeiten im Projekt sind:
+Die vollstaendige, priorisierte Aufgabenliste steht in der
+[TODO.md](TODO.md), die Release-Zuordnung in der [ROADMAP.md](ROADMAP.md).
 
-1. reale Werkstattablaeufe und Maschinenprofile an echter Maschine weiter verifizieren
-2. Werkzeug-/Operations-Plausibilitaet ueber tiefere Tooldaten weiter schaerfen
-3. Preview- und Roughing-Geometrie weiter an echte Arc-Schnitte annaehern
-4. Embedded- und Standalone-Verhalten weiter angleichen
-5. Dokumentation und Referenzprogramme bei kuenftigen Erweiterungen synchron halten
+Aktuelle Reihenfolge:
+
+1. sichere Anfahrt zwischen aufeinanderfolgenden Operationen
+2. leere Schruppoperationen als Fehler abbrechen
+3. Innen-Schruppen und Innen-Schlichten an weiteren Konturformen verifizieren
+4. lokale DIN-Freistichgeometrie und gemeinsame Vorschau-/G-Code-Primitive
+5. veraltete `slicer.py`-Parallelimplementierung entfernen
+6. G96/G97-UI, Sichtbarkeitstests und LinuxCNC-Referenzmatrix
+7. anschliessend Handler-, UI-, Sprach- und Modalarchitektur konsolidieren
 
 ## Regressionstests und Smoke-Test
 
@@ -393,48 +400,27 @@ Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
 
 Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
-- `slicer.py` dient jetzt weitgehend als Kompatibilitaetsschicht, enthaelt aber noch Altbestand und sollte langfristig weiter ausgeduennt werden
-- die neue Modulstruktur ist funktional, aber noch nicht in allen Bereichen in kleinere, fachlich scharf getrennte Teilmodule zerlegt
-- die Schnittansicht ist funktional, aber die visuelle Darstellung komplexer Endgeometrien ist noch nicht in allen Faellen endgueltig abgestimmt
-- reale Maschinen- und Kollisionsfaelle muessen weiterhin an Beispielteilen und Trockenlaeufen verifiziert werden
+- `emit_approach()` kann bei gesetztem `_is_at_safe` einen neuen Zielpunkt noch direkt diagonal anfahren
+- leere Schruppoperationen werden noch nicht in allen Faellen als Generatorfehler abgebrochen
+- Innen-Schruppen, Innenstufen, Innenkonen, Innenradien und Innenfreistiche brauchen weitere Realtests
+- lokale DIN-Freistiche funktionieren noch nicht an beliebigen Segmenten einer laengeren Kontur
+- `slicer.py` ist eine produktiv ungenutzte Parallelimplementierung, die noch von Legacy-Tests verwendet wird
+- sichtbare Defaulttexte stehen trotz vollstaendiger Sprachkataloge noch in Python- und UI-Quellen
+- reale Maschinen- und Kollisionsfaelle muessen weiterhin per Backplot und Trockenlauf verifiziert werden
 
-## Geplante Modulaufteilung
+## Aktuelle Modulstruktur
 
-Fuer den Stand `0.7.0` ist bereits ein grosser Teil der Logik aus
-`lathe_easystep_handler.py` und `slicer.py` in eigene Module ausgelagert
-worden. Die sinnvolle Zielstruktur ist:
+Die acht Bearbeitungsreiter sind bereits aus der Shell geloest:
 
-Gemeinsam verwendete Querschnittsfunktionen liegen bereits in
-`ui_helpers.py` und `gcode_utils.py`. Neue UI- oder Generator-Module sollen
-diese Helfer erweitern, statt lokale Kopien derselben Lookup-, Sprach- oder
-Sicherheitslogik anzulegen.
+- `lathe_easystep.ui`: Shell, Step-Liste, Tab-Container und Vorschau
+- `lathe_easystep/ui_parts/*.ui`: Program, Face, Contour, Parting, Thread,
+  Groove, Drill und Keyway
+- `lathe_easystep/ui_split.py`: Laufzeit-Lader der Teil-UIs
+- `lathe_easystep/*.py`: Fach-, UI-, Persistenz-, Vorschau- und Generatorlogik
 
-```text
-lathe_easystep/
-  model.py
-  tools.py
-  persistence.py
-  storage.py
-  ui_program.py
-  ui_operations.py
-  ui_preview.py
-  gcode/
-    program.py
-    safety.py
-    face.py
-    contour.py
-    roughing.py
-    drill.py
-    thread.py
-    groove.py
-    keyway.py
-  preview/
-    widget.py
-    geometry.py
-  ui/
-    handler.py
-    translations.py
-```
+Offen bleiben die weitere Trennung von Vorschau und Step-Verwaltung, klare
+Controllergrenzen sowie der Abbau von `lathe_easystep_handler.py` und der
+ungenutzten Parallelimplementierung in `slicer.py`.
 
 English
 -------
@@ -454,7 +440,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.7.0, July 8, 2026.
+Current documented state: Version 0.7.0 + Unreleased, July 24, 2026.
 
 The project is still under active development, but it is no longer just an
 early prototype:
@@ -464,7 +450,9 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current refactor baseline is validated with `171 passed`
+- the current development baseline is validated with `331 passed, 3 skipped`
+- `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
+- the German, English and Spanish catalogs each contain the same 1,020 non-empty translation keys
 
 ## Branch Status
 
@@ -607,13 +595,18 @@ Current behaviour:
 
 ## Current Priorities
 
-The next meaningful work areas are:
+The complete prioritized backlog is maintained in [TODO.md](TODO.md), with
+release milestones in [ROADMAP.md](ROADMAP.md).
 
-1. continue splitting handler logic into dedicated modules
-2. make preview handling more robust
-3. keep embedded and standalone behaviour aligned
-4. keep documentation and status files in sync
-5. verify real machine workflows further
+Current order:
+
+1. make operation-to-operation approach moves safe
+2. reject empty roughing operations
+3. verify internal roughing and finishing on additional contour forms
+4. complete local DIN-relief geometry and shared preview/G-code primitives
+5. remove the obsolete parallel implementation in `slicer.py`
+6. add per-operation G96/G97 UI and extend LinuxCNC reference tests
+7. then consolidate handler, UI, translation and modal-state architecture
 
 ## Regression and Smoke Test
 
@@ -634,9 +627,12 @@ The checked-in reference programs under `ngc/` currently cover:
 
 ## Known Limitations
 
-The current state is usable, but not yet the final technical structure.
+The current state is usable, but not yet technically complete.
 
-- `slicer.py` now acts largely as a compatibility layer, but it still contains legacy code and should be reduced further over time
-- the new module structure is functional, but not every area has been split into the smallest clean domain modules yet
-- the section view works, but the visual representation of complex final geometry is not yet fully finalized in every case
-- real machine clearance and collision behaviour still need verification on practical dry runs
+- `emit_approach()` can still emit a direct diagonal target move when `_is_at_safe` is set
+- empty roughing operations are not rejected in every case
+- internal steps, tapers, radii and reliefs need additional real-machine verification
+- local DIN reliefs do not yet work on arbitrary segments inside longer contours
+- `slicer.py` is an unused parallel implementation still referenced by legacy tests
+- UI and Python sources still contain visible defaults despite complete language catalogs
+- real-machine clearance and collision behaviour still require backplot and dry-run verification
