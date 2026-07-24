@@ -223,6 +223,7 @@ def generate_groove_gcode(
         settings,
         spindle_mode=op.params.get("spindle_mode"),
         spindle_max_rpm=op.params.get("spindle_max_rpm"),
+        cutting_speed=op.params.get("cutting_speed"),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     p = op.params

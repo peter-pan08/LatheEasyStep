@@ -85,9 +85,11 @@ from lathe_easystep.ui_visibility import (
     update_face_visibility,
     update_program_visibility,
     update_retract_visibility,
+    update_spindle_mode_visibility,
     update_subspindle_visibility,
 )
 from lathe_easystep.ui_flow import (
+    _looks_like_generated_step_comment,
     build_gcode_lines,
     describe_operation,
     handle_generate_gcode,
@@ -2265,6 +2267,8 @@ class HandlerClass:
                 self._update_subspindle_visibility()
             elif name == "program_shape":
                 self._update_program_visibility()
+            elif name.endswith("_spindle_mode"):
+                self._update_spindle_mode_visibility()
             if self._loaded_tools and name in {
                 'face_tool', 'thread_tool', 'groove_tool', 'drill_tool', 'parting_tool', 'key_tool',
                 'contour_tool', 'taper_tool', 'boring_tool'
@@ -2286,6 +2290,7 @@ class HandlerClass:
             self._update_retract_visibility()
             self._update_subspindle_visibility()
             self._update_face_visibility()
+            self._update_spindle_mode_visibility()
             self._update_contour_edge_controls()
             
             # Force repaint of main widgets
@@ -3162,6 +3167,7 @@ class HandlerClass:
             self._update_retract_visibility()
             self._update_subspindle_visibility()
             self._update_face_visibility()
+            self._update_spindle_mode_visibility()
 
     # ---- Parameter-Mapping --------------------------------------------
     def _setup_param_maps(self):
@@ -4537,12 +4543,11 @@ class HandlerClass:
                     self._log("[LatheEasyStep] add operation cancelled: no step file selected", level="info")
                     return
                 self.model.add_operation(op)
-                # Der Kommentar wird sonst erst beim naechsten sync_form_to_operation()
-                # (Stepwechsel/Speichern) gesetzt. Wird dieser neue Step vorher nie
-                # erneut ausgewaehlt (z. B. direkt der naechste Step wird hinzugefuegt),
-                # blieb params["comment"] dauerhaft leer (siehe reale Test.lse: Innen-
-                # Einstich-Step ohne jeden Kommentar).
-                if not str(op.params.get("comment") or "").strip():
+                # Kommentar leer -> Erstbefuellung; sieht er bereits wie eine
+                # maschinell nummerierte Beschreibung aus -> Nummer auffrischen
+                # (gleiche Regel wie _insert_loaded_operation(), LES-023). Ein
+                # bewusst individueller Kommentar bleibt unangetastet.
+                if _looks_like_generated_step_comment(op.params.get("comment")):
                     op.params["comment"] = self._describe_operation(op, len(self.model.operations))
                 try:
                     self._mark_program_structure_dirty(operation_indices={len(self.model.operations) - 1})
@@ -4635,7 +4640,13 @@ class HandlerClass:
     def _insert_loaded_operation(self, op: Operation):
         self.model.update_geometry(op)
         self.model.add_operation(op)
-        if not str(op.params.get("comment") or "").strip():
+        # Kommentar neu erzeugen, wenn er leer ist ODER bereits wie eine
+        # maschinell nummerierte Beschreibung aussieht ("5. Innenabspanen
+        # ..."): eine per "Step speichern" gesicherte Datei enthaelt genau so
+        # einen Kommentar mit der zum Speicherzeitpunkt gueltigen, jetzt
+        # potenziell falschen Nummer. Ein bewusst individueller Kommentar ohne
+        # nummerierte Vorsilbe bleibt dagegen erhalten (LES-023).
+        if _looks_like_generated_step_comment(op.params.get("comment")):
             op.params["comment"] = self._describe_operation(op, len(self.model.operations))
         try:
             self._clear_dirty_operation(len(self.model.operations) - 1)
@@ -4891,6 +4902,11 @@ class HandlerClass:
             self._update_selected_operation(force=True)
         except Exception:
             pass
+        if name.endswith("_spindle_mode"):
+            try:
+                self._update_spindle_mode_visibility()
+            except Exception:
+                pass
         try:
             if op.op_type == OpType.PROGRAM_HEADER:
                 self._mark_dirty(program=True)
@@ -4937,6 +4953,9 @@ class HandlerClass:
 
     def _update_subspindle_visibility(self, *args, **kwargs):
         update_subspindle_visibility(self, *args, **kwargs)
+
+    def _update_spindle_mode_visibility(self, *args, **kwargs):
+        update_spindle_mode_visibility(self, *args, **kwargs)
 
     def _update_face_visibility(self):
         update_face_visibility(self)

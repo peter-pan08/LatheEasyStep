@@ -54,6 +54,21 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
                     widget.setCurrentIndex(-1)
                 widget.blockSignals(False)
                 continue
+            if key == "tool":
+                # Werkzeug-Combos werden aus der geladenen Werkzeugtabelle neu
+                # aufgebaut (siehe populate_tool_combos()); ihre Item-Reihenfolge
+                # ist die Werkzeugnummer-Sortierung, kein stabiler Index. Wurde
+                # die Combo noch nicht (oder mit einer anderen Tabelle) befuellt,
+                # darf int(val) NICHT als Positions-Index missverstanden werden -
+                # das wuerde ein falsches Werkzeug zeigen, ohne dass es auffaellt.
+                # Ohne Treffer bleibt die Combo auf dem "bitte waehlen"-Platzhalter.
+                try:
+                    data_idx = widget.findData(val)
+                except Exception:
+                    data_idx = -1
+                widget.setCurrentIndex(data_idx if data_idx >= 0 else 0)
+                widget.blockSignals(False)
+                continue
             handled = False
             try:
                 data_idx = widget.findData(val)

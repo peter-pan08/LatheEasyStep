@@ -40,9 +40,9 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `331 passed, 3 skipped` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `364 passed, 7 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
-- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.020 identische, nichtleere Sprachschluessel
+- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
 Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
@@ -372,12 +372,13 @@ Die vollstaendige, priorisierte Aufgabenliste steht in der
 Aktuelle Reihenfolge:
 
 1. sichere Anfahrt zwischen aufeinanderfolgenden Operationen
-2. leere Schruppoperationen als Fehler abbrechen
-3. Innen-Schruppen und Innen-Schlichten an weiteren Konturformen verifizieren
-4. lokale DIN-Freistichgeometrie und gemeinsame Vorschau-/G-Code-Primitive
-5. veraltete `slicer.py`-Parallelimplementierung entfernen
-6. G96/G97-UI, Sichtbarkeitstests und LinuxCNC-Referenzmatrix
-7. anschliessend Handler-, UI-, Sprach- und Modalarchitektur konsolidieren
+2. Innen-Schruppen und Innen-Schlichten an weiteren Konturformen verifizieren
+   (G71-Zyklus fuer Innenkonturen behoben, Backplot-/Realverifikation offen)
+3. lokale DIN-Freistichgeometrie und gemeinsame Vorschau-/G-Code-Primitive
+4. G96/G97 pro Operation ist umgesetzt (Planen/Abspanen/Einstich/Gewinde);
+   offen bleibt die sichere CSS-Umschaltung (G97-Anfahrt, G96 erst an
+   Bearbeitungsposition) und die LinuxCNC-Referenzmatrix
+5. anschliessend Handler-, UI-, Sprach- und Modalarchitektur konsolidieren
 
 ## Regressionstests und Smoke-Test
 
@@ -401,11 +402,8 @@ Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
 Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
 - `emit_approach()` kann bei gesetztem `_is_at_safe` einen neuen Zielpunkt noch direkt diagonal anfahren
-- leere Schruppoperationen werden noch nicht in allen Faellen als Generatorfehler abgebrochen
 - Innen-Schruppen, Innenstufen, Innenkonen, Innenradien und Innenfreistiche brauchen weitere Realtests
 - lokale DIN-Freistiche funktionieren noch nicht an beliebigen Segmenten einer laengeren Kontur
-- `slicer.py` ist eine produktiv ungenutzte Parallelimplementierung, die noch von Legacy-Tests verwendet wird
-- sichtbare Defaulttexte stehen trotz vollstaendiger Sprachkataloge noch in Python- und UI-Quellen
 - reale Maschinen- und Kollisionsfaelle muessen weiterhin per Backplot und Trockenlauf verifiziert werden
 
 ## Aktuelle Modulstruktur
@@ -419,8 +417,7 @@ Die acht Bearbeitungsreiter sind bereits aus der Shell geloest:
 - `lathe_easystep/*.py`: Fach-, UI-, Persistenz-, Vorschau- und Generatorlogik
 
 Offen bleiben die weitere Trennung von Vorschau und Step-Verwaltung, klare
-Controllergrenzen sowie der Abbau von `lathe_easystep_handler.py` und der
-ungenutzten Parallelimplementierung in `slicer.py`.
+Controllergrenzen sowie der weitere Abbau von `lathe_easystep_handler.py`.
 
 English
 -------
@@ -450,9 +447,9 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current development baseline is validated with `331 passed, 3 skipped`
+- the current development baseline is validated with `364 passed, 7 skipped`
 - `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
-- the German, English and Spanish catalogs each contain the same 1,020 non-empty translation keys
+- the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 
 ## Branch Status
 
@@ -601,12 +598,14 @@ release milestones in [ROADMAP.md](ROADMAP.md).
 Current order:
 
 1. make operation-to-operation approach moves safe
-2. reject empty roughing operations
-3. verify internal roughing and finishing on additional contour forms
-4. complete local DIN-relief geometry and shared preview/G-code primitives
-5. remove the obsolete parallel implementation in `slicer.py`
-6. add per-operation G96/G97 UI and extend LinuxCNC reference tests
-7. then consolidate handler, UI, translation and modal-state architecture
+2. verify internal roughing and finishing on additional contour forms
+   (G71 cycle for internal contours fixed, backplot/real-machine
+   verification still open)
+3. complete local DIN-relief geometry and shared preview/G-code primitives
+4. per-operation G96/G97 is implemented (facing/turning/parting/threading);
+   still open: safe CSS switching (approach on G97, activate G96 only at
+   the cutting position) and the LinuxCNC reference matrix
+5. then consolidate handler, UI, translation and modal-state architecture
 
 ## Regression and Smoke Test
 
@@ -630,9 +629,6 @@ The checked-in reference programs under `ngc/` currently cover:
 The current state is usable, but not yet technically complete.
 
 - `emit_approach()` can still emit a direct diagonal target move when `_is_at_safe` is set
-- empty roughing operations are not rejected in every case
 - internal steps, tapers, radii and reliefs need additional real-machine verification
 - local DIN reliefs do not yet work on arbitrary segments inside longer contours
-- `slicer.py` is an unused parallel implementation still referenced by legacy tests
-- UI and Python sources still contain visible defaults despite complete language catalogs
 - real-machine clearance and collision behaviour still require backplot and dry-run verification

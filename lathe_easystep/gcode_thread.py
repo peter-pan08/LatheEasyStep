@@ -139,6 +139,7 @@ def generate_thread_gcode(
         settings,
         spindle_mode=op.params.get("spindle_mode"),
         spindle_max_rpm=op.params.get("spindle_max_rpm"),
+        cutting_speed=op.params.get("cutting_speed"),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     lines.extend(comments)
@@ -150,9 +151,14 @@ def generate_thread_gcode(
         safe_x = resolve_internal_safe_x(settings)
         if safe_x is None:
             raise ValueError("Innengewinde erfordert ein gueltiges XRI im Programmkopf.")
-        emit_approach(lines, safe_x, safe_z, settings)
-        if abs(start_z - safe_z) > 1e-9:
-            lines.append(f"G0 Z{start_z:.3f}")
+        # Direkt auf (XRI, start_z) anfahren statt zusaetzlich ueber das
+        # eigene "Sicherheits-Z"-Feld des Gewinde-Steps zu routen: XRI ist per
+        # Definition bei JEDER Z-Position innerhalb der Bohrung sicher, ein
+        # zusaetzlicher Zwischenstopp bei einem ggf. abweichenden safe_z
+        # erzeugte sonst einen unnoetigen Rueckzug (Z wird zwischenzeitlich
+        # groesser/weiter vom Material weg, bevor wieder auf start_z
+        # zugefahren wird) - real beobachtet und gemeldet.
+        emit_approach(lines, safe_x, start_z, settings)
         if abs(approach_x - safe_x) > 1e-9:
             lines.append(f"G0 X{approach_x:.3f}")
     else:

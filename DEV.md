@@ -12,13 +12,13 @@ Ziel ist:
 - `v0.7.0` ist die lauffaehige Basis auf `main`.
 - `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
   die stabile, lauffaehige Basis.
-- Aktueller Teststand: `331 passed, 3 skipped`.
+- Aktueller Teststand: `364 passed, 7 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
   Rechts-/Linksgewinde, `rough_finish`, Realtest-Fixes und die geteilte UI.
 - `lathe_easystep.ui` ist die Shell; die acht Bearbeitungsreiter liegen unter
   `lathe_easystep/ui_parts/` und werden durch `ui_split.py` geladen.
-- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.020 identische,
+- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische,
   nichtleere und eindeutige Schluessel.
 - Offene Arbeiten und Release-Zuordnung werden verbindlich in
   `TODO.md` und `ROADMAP.md` gepflegt.
@@ -39,11 +39,6 @@ Ziel ist:
   - laedt die Teil-UIs beim Start in die Shell
 - `lathe_easystep/gcode_*.py`, `contour_logic.py`, `contour_features.py`
   - produktive Generator- und Geometrielogik
-- `slicer.py`
-  - veraltete Parallelimplementierung; von der produktiven Anwendung nicht
-    importiert, aber noch von `regenerate_ngc.py` und Legacy-Tests verwendet
-  - soll nach Migration dieser Verbraucher entfernt werden
-
 UI und Toolpath-Logik sind bewusst getrennt.
 
 ## UI-/Spracharchitektur
@@ -51,16 +46,19 @@ UI und Toolpath-Logik sind bewusst getrennt.
 - Fachliche Logik arbeitet mit technischen IDs und `currentData()`, nicht mit
   lokalisierten Anzeigetexten.
 - Die aktiven Kataloge liegen unter `lathe_easystep/languages/*.lng`.
-- Deutsch, Englisch und Spanisch besitzen aktuell jeweils 1.020 identische,
+- Deutsch, Englisch und Spanisch besitzen aktuell jeweils 1.022 identische,
   nichtleere und eindeutige Schluessel.
 - Sprachumschaltung und Tooltips wurden im eingebetteten Panel praktisch
   bestaetigt.
-- Noch offen sind sichtbare Defaulttexte in Python, `lathe_easystep.ui` und
-  `ui_parts/*.ui`. Diese werden zur Laufzeit ueberschrieben, verletzen aber
-  noch den angestrebten reinen Key-/ID-Zustand.
-- `lathe_easystep/i18n/*.json` wird vom aktiven `.lng`-Loader nicht
-  verwendet; verbleibende Verwendungen muessen vor einer Entfernung auditiert
-  werden.
+- `lathe_easystep/ui_static.py::load_ui_static_map()` scannte fuer die
+  automatische Sprachumschaltung von "statischen" Widgets nur die
+  Shell-Datei `lathe_easystep.ui`; seit der Aufteilung der acht Reiter in
+  `ui_parts/*.ui` wurden deren Labels/Tooltips/Combo-Eintraege trotz
+  vollstaendiger `.lng`-Uebersetzungen nie mehr angewendet. Behoben (LES-021):
+  die Funktion scannt jetzt zusaetzlich alle `ui_parts/*.ui`-Dateien.
+- `lathe_easystep/i18n/*.json` war vom aktiven `.lng`-Loader nie verwendet
+  worden; nach Audit (keine verbleibenden Referenzen in Code, Tests oder
+  `.ui`-Dateien) entfernt (LES-029).
 
 ## Test-Hinweise
 - Es gibt zwei Testwelten:
@@ -225,7 +223,7 @@ linearisieren, sowie vollstaendige Arc-Intersections.
   - sequentielle Endbewegung
 - Werkzeugwechsel- und Parkpositionen koennen explizit als Werkstueck- oder Maschinenkoordinaten erzeugt werden; fuer Maschinenkoordinaten wird `G53` direkt an der Bewegung ausgegeben
 - Vor jedem expliziten `T.. M6` wird derselbe Werkzeugwechselpfad erzwungen; der erste reale Wechsel faehrt den Wechselpunkt jetzt nicht mehr aus Versehen aus
-- Spindelmodus kann generatorseitig zwischen `G97` und `G96` unterscheiden; fuer `G96` ist ein Max-RPM-Wert vorgesehen.
+- Spindelmodus (`G97`/`G96`) ist pro Operation waehlbar (Planen, Abspanen, Einstich/Abstich, Gewinde - Bohren bewusst ausgenommen, da sich der Werkzeugdurchmesser dort nicht aendert); `G96` nutzt eine eigene Schnittgeschwindigkeit Vc (m/min) statt der Drehzahl unter `S`, `program_spindle_max_rpm` bleibt als programmweite Sicherheitsobergrenze im Programmkopf erhalten.
 - Werkzeugwechsel kann jetzt optional einen `M1` vor dem Wechsel ausgeben; Gewinde und separater Hinterschnitt koennen ebenfalls optional gestoppt werden.
 - Legacy-Dateien mit gemischter XT-/ZT-Altlogik bleiben weiterhin les- und generierbar.
 
@@ -260,7 +258,7 @@ linearisieren, sowie vollstaendige Arc-Intersections.
   - Optionalstop vor Werkzeugwechsel
   - Persistenz der neuen Expertenoptionen
 - Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
-- Aktueller Gesamtstand: `331 passed, 3 skipped`.
+- Aktueller Gesamtstand: `364 passed, 7 skipped`.
 - Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
 - Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 
@@ -298,12 +296,9 @@ Die vollstaendige und priorisierte Liste steht in `TODO.md`. Technisch
 besonders relevant sind derzeit:
 
 - unsichere direkte Diagonalanfahrt bei gesetztem `_is_at_safe`
-- fehlender harter Abbruch bei vollstaendig leeren Schruppoperationen
 - weitere Verifikation von Innen-Schruppen und Innen-Schlichten
 - lokale DIN-Freistiche innerhalb laengerer Konturen
 - Primitive-/Arc-Erhalt in verbleibenden move-based Pfaden
-- produktiv ungenutzte Parallelimplementierung in `slicer.py`
-- sichtbare Defaulttexte in UI-/Python-Quellen trotz vollstaendiger Kataloge
 - Werkzeuggeometrie und tiefere Tooltable-Plausibilitaet
 - noch symbolische Gewindevorschau
 - fachliche Trennung der Preview-Pipeline

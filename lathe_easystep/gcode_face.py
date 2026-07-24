@@ -6,6 +6,7 @@ from .gcode_utils import resolve_enum_index
 from .model import Operation
 
 FACE_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
+FACE_EDGE_TYPE_INDEX = {"none": 0, "chamfer": 1, "radius": 2}
 
 
 def generate_face_gcode(
@@ -54,7 +55,14 @@ def generate_face_gcode(
     spindle = req_float("spindle")
     tool_num = require_tool(p, "FACE")
 
-    edge_type = req_int("edge_type")
+    if "edge_type" not in p:
+        raise ValueError("Missing parameter: 'edge_type'")
+    edge_type = resolve_enum_index(p.get("edge_type"), FACE_EDGE_TYPE_INDEX, default=0)
+    if edge_type == 2:
+        raise ValueError(
+            "Kantenform 'Radius' ist fuer Planen noch nicht implementiert - "
+            "bitte 'Fase' oder 'Keine' waehlen (LES-036)."
+        )
     edge_size = req_float("edge_size")
 
     coolant_enabled = opt_bool("coolant")
@@ -75,6 +83,7 @@ def generate_face_gcode(
     append_tool_and_spindle(
         lines, tool_num, spindle, settings,
         spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
+        cutting_speed=p.get("cutting_speed"),
     )
     coolant_mode = p.get("coolant_mode", coolant_enabled)
     emit_coolant(lines, coolant_mode)

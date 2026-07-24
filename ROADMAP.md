@@ -12,9 +12,9 @@ Verifikation in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- aktueller Teststand: `331 passed, 3 skipped`
+- aktueller Teststand: `364 passed, 7 skipped`
 - UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
-- Deutsch, Englisch und Spanisch besitzen jeweils 1.020 identische,
+- Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,
   nichtleere Sprachschluessel
 - G53-Werkzeugwechsel, erster Werkzeugwechsel, Tooltips, Sprachumschaltung,
   Slice-/Frontview, Bohren-Anfahrt, G76-Plausibilitaet und `rough_finish`
@@ -31,7 +31,6 @@ gewarnte Fahrwege erzeugen.
 Verbindliche Aufgaben:
 
 - LES-001 sichere Anfahrt zwischen Operationen
-- LES-002 leere Schruppoperationen abbrechen
 - LES-003 Innen-Schruppen Parallel-Z verifizieren
 - LES-005 Innen-Schlichtanfahrt und Rueckzug absichern
 
@@ -58,7 +57,6 @@ Verbindliche Aufgaben:
 - LES-013 G96/G97 pro Operation
 - LES-015 Innenkontur-Testmatrix
 - LES-016 Sichtbarkeitsregressionen
-- LES-017 alte `slicer.py`-Parallelimplementierung entfernen
 - LES-019 fehlende DIN-76-Presets
 - LES-030 LinuxCNC-Simulationsmatrix
 
@@ -80,15 +78,11 @@ Aufgabenbereiche:
 
 - LES-018 optionale G70-Wiederverwendung
 - LES-020 weitere Handler-Extraktionen
-- LES-021 verbleibende UI-/Python-Defaulttexte
 - LES-022 zentraler Bewegungs- und Modalzustand
 - LES-023 Step-Kommentare und Exportnummerierung
 - LES-024 Vorschau-/Step-UI und Controllergrenzen
-- LES-025 Dirty-State-/Refresh-Audit
-- LES-026 Verhalten bei doppelten Steps
 - LES-027 Embedded-/Standalone-Performance
 - LES-028 normalisierte Werkzeug- und G76-Daten
-- LES-029 alte JSON-Sprachkataloge pruefen
 - LES-031 redundante Bewegungen und Modals
 - LES-032 Werkzeuggeometrie und Tooltable-Plausibilitaet
 - LES-033 reale Gewindevorschau

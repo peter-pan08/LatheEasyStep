@@ -129,6 +129,7 @@ def apply_program_header_to_handler(
     handler._update_program_visibility()
     handler._update_retract_visibility()
     handler._update_subspindle_visibility()
+    handler._update_spindle_mode_visibility()
 
 
 def sync_form_to_operation(handler, idx: int) -> None:

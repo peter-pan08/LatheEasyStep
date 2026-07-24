@@ -159,7 +159,7 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
                 {"name": "radius_chamfer"},
                 path=[
                     {"type": "line", "p1": (40.0, 0.0), "p2": (32.0, -8.0)},
-                    {"type": "arc", "p1": (32.0, -8.0), "p2": (26.0, -16.0), "c": (26.0, -8.0), "ccw": False},
+                    {"type": "arc", "p1": (32.0, -8.0), "p2": (26.0, -16.0), "c": (26.0, -11.4375), "ccw": False},
                     {"type": "line", "p1": (26.0, -16.0), "p2": (20.0, -28.0)},
                 ],
             ),

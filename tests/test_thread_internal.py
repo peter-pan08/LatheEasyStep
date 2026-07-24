@@ -191,15 +191,34 @@ class TestInternalThreadGCode:
             )
 
     def test_internal_thread_approach_uses_xri_and_zri_safe_position(self):
+        """Reale Fehlermeldung: die Anfahrt fuhr ueber das eigene
+        'Sicherheits-Z'-Feld des Gewinde-Steps (hier 3.0) als Zwischenstopp,
+        obwohl bereits XRI (radial sicher bei jeder Z-Position) erreicht war -
+        das erzeugte einen unnoetigen Rueckzug (Z 1.0 -> 3.0 -> -6.0) vor dem
+        eigentlichen Einfahren. Die Anfahrt geht jetzt direkt von der
+        globalen sicheren Position auf (XRI, start_z)."""
         m = ProgramModel()
         m.operations = [_make_thread_op(orientation=1, thread_start_z=-6.0, safe_z=3.0)]
         m.program_settings = _thread_settings()
         lines = m.generate_gcode()
         assert "G0 Z4.000" in lines
         assert "G0 X7.000" in lines
-        assert "G0 X7.000 Z3.000" in lines
-        assert "G0 Z-6.000" in lines
+        assert "G0 X7.000 Z-6.000" in lines
+        assert "G0 X7.000 Z3.000" not in lines
         assert "G0 X8.068" in lines
+
+    def test_internal_thread_approach_does_not_retreat_past_start_z(self):
+        """Realer Bugreport: Anfahrt fuhr eine 'quasi sichere' Position an und
+        entfernte sich danach nochmal in Z vom Material, bevor sie einfuhr.
+        Der eigene 'Sicherheits-Z'-Wert des Steps (hier 5.0, deutlich weiter
+        vorn als start_z=-6.0) darf nach der globalen sicheren Anfahrt keinen
+        zusaetzlichen Zwischenstopp mehr erzeugen."""
+        m = ProgramModel()
+        m.operations = [_make_thread_op(orientation=1, thread_start_z=-6.0, safe_z=5.0)]
+        m.program_settings = _thread_settings()
+        lines = m.generate_gcode()
+        assert "G0 X7.000 Z5.000" not in lines
+        assert "G0 X7.000 Z-6.000" in lines
 
     def test_internal_thread_rejects_unplausible_xri(self):
         m = ProgramModel()

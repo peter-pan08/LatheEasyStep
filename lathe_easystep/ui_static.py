@@ -7,43 +7,50 @@ import xml.etree.ElementTree as ET
 from qtpy import QtWidgets
 
 
+def _ui_source_paths() -> list[Path]:
+    base = Path(__file__).resolve().parent.parent
+    paths = [base / "lathe_easystep.ui"]
+    paths.extend(sorted((base / "lathe_easystep" / "ui_parts").glob("*.ui")))
+    return paths
+
+
 @lru_cache(maxsize=1)
 def load_ui_static_map() -> dict[str, dict[str, object]]:
-    ui_path = Path(__file__).resolve().parent.parent / "lathe_easystep.ui"
-    tree = ET.parse(ui_path)
-    root = tree.getroot()
     mapping: dict[str, dict[str, object]] = {}
 
-    for widget in root.iter("widget"):
-        name = widget.get("name") or ""
-        if not name:
-            continue
-        entry = mapping.setdefault(name, {})
-        for prop in widget.findall("property"):
-            prop_name = prop.get("name") or ""
-            string_elem = prop.find("string")
-            if string_elem is not None:
-                text = (string_elem.text or "").strip()
-                # Leere Platzhalter-Strings (z. B. bei Labels, deren Inhalt zur
-                # Laufzeit dynamisch gesetzt wird wie Diagramm-/Tool-Previews)
-                # sind keine zu uebersetzenden Texte und duerfen nicht als
-                # fehlender Uebersetzungsschluessel gemeldet oder mit dem
-                # rohen Schluessel ueberschrieben werden.
-                if text:
-                    entry[prop_name] = text
-        items = []
-        for item in widget.findall("item"):
-            text = ""
-            for prop in item.findall("property"):
-                if (prop.get("name") or "") != "text":
-                    continue
+    for ui_path in _ui_source_paths():
+        tree = ET.parse(ui_path)
+        root = tree.getroot()
+        for widget in root.iter("widget"):
+            name = widget.get("name") or ""
+            if not name:
+                continue
+            entry = mapping.setdefault(name, {})
+            for prop in widget.findall("property"):
+                prop_name = prop.get("name") or ""
                 string_elem = prop.find("string")
                 if string_elem is not None:
                     text = (string_elem.text or "").strip()
-            if text != "":
-                items.append(text)
-        if items:
-            entry["items"] = items
+                    # Leere Platzhalter-Strings (z. B. bei Labels, deren Inhalt zur
+                    # Laufzeit dynamisch gesetzt wird wie Diagramm-/Tool-Previews)
+                    # sind keine zu uebersetzenden Texte und duerfen nicht als
+                    # fehlender Uebersetzungsschluessel gemeldet oder mit dem
+                    # rohen Schluessel ueberschrieben werden.
+                    if text:
+                        entry[prop_name] = text
+            items = []
+            for item in widget.findall("item"):
+                text = ""
+                for prop in item.findall("property"):
+                    if (prop.get("name") or "") != "text":
+                        continue
+                    string_elem = prop.find("string")
+                    if string_elem is not None:
+                        text = (string_elem.text or "").strip()
+                if text != "":
+                    items.append(text)
+            if items:
+                entry["items"] = items
     return mapping
 
 

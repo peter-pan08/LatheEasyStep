@@ -124,6 +124,10 @@ def handle_selection_change(handler, row: int) -> None:
             handler._update_retract_visibility()
         except Exception:
             pass
+        try:
+            handler._update_spindle_mode_visibility()
+        except Exception:
+            pass
         handler._refresh_preview()
         handler._active_form_operation_index = row
     finally:
