@@ -58,30 +58,30 @@ Notizen und Checklisten bleiben in den anschliessenden Abschnitten erhalten.
 ## Externe Verifikation / Nutzerantworten
 
 Reale LinuxCNC-/QtVCP-Tests und offene Nutzerentscheidungen sind in
-`doc/REALTEST_FRAGEN_2026-07-15.md` gesammelt, damit sie gezielt beantwortet
-und danach hier abgeschlossen werden koennen.
+`doc/REALTEST_FRAGEN_2026-07-15.md` gesammelt. Bereits beantwortete und
+umgesetzte Punkte sind dort mit "Status: umgesetzt" markiert und im
+Changelog dokumentiert. Noch unbeantwortet/offen bleiben:
+
+- Frage 7: Startzeit/Reaktionszeit des Panels (subjektiv ok oder zu traege?).
+- Frage 9: Materialmodell fuer Innen-Schruppen Parallel-Z (Zustellrichtung
+  von klein zu gross korrekt? konkretes Gegenbeispiel noetig, falls nicht).
+- Frage 11: Welche Innenkonturformen (Innenstufe, Innenkonus, Innenradius,
+  Innenkontur mit Freistich) sind generatorseitig korrekt, welche nicht?
+- Frage 13: Soll "Step laden" identische Operationen mehrfach einfuegen
+  duerfen, oder soll bei Dubletten gewarnt/ersetzt werden? (Eine unverbindliche
+  Warnung existiert bereits ueber `_check_duplicate_operations()` - die Frage
+  ist, ob das ausreicht oder mehr gewuenscht ist.)
 
 ## Blockiert auf verifizierte Fachdaten/Domainwissen
 
 - Materialmodell / Schlichtaufmass-Richtung fuer Innenkonturen beim
   `G71`/`G72`-Zyklus (`strategy_code == "parallel_x"` in `gcode_roughing.py`):
   Vorzeichen ist fuer Aussenbearbeitung per Test bestaetigt, fuer
-  Innenbearbeitung ungetestet. Braucht Backplot oder jemanden mit Kenntnis der
-  G71/G72-Auslegung dieses Projekts, bevor hier etwas geaendert wird.
+  Innenbearbeitung ungetestet (siehe Realtest-Frage 9, noch unbeantwortet).
+  Braucht Backplot oder jemanden mit Kenntnis der G71/G72-Auslegung dieses
+  Projekts, bevor hier etwas geaendert wird.
 - Fehlende DIN-Freistich-Presets fuer `M2`, `M2.5`, `M3.5` ergaenzen. Braucht
   eine verifizierte DIN-76-Referenztabelle, keine Schaetzung.
-- `safe_z` in `generate_abspanen_gcode()` (`gcode_roughing.py`) wird aus dem
-  rohen `ZRA`/`ZRI`-Wert gebildet und ignoriert dabei das `*_absolute`-Flag.
-  Bei relativem `ZRI`/`ZRA` (z. B. `0.0`, `absolute=False`) muesste der Wert
-  vermutlich `ZA + ZRI` sein (siehe die bereits korrekt implementierte, analoge
-  Logik in `gcode_safety._safe_axis_value()`, dort auch so kommentiert und fuer
-  `get_safe_position()`/`emit_approach()` verwendet). Ein Versuch, beide
-  Stellen zu vereinheitlichen, brach 21 bestehende Tests, die den rohen Wert
-  als korrekt voraussetzen - ob das Testverhalten oder die aktuelle
-  `generate_abspanen_gcode`-Logik der eigentliche Fehler ist, braucht Klaerung
-  mit jemandem, der die ZRA/ZRI-Auslegung dieses Projekts kennt, bevor daran
-  etwas geaendert wird (gleiche Vorsicht wie beim bereits dokumentierten
-  G71/G72-Materialmodell-Punkt oben).
 - DIN-Freistich-Features (`din_relief`) in Kontur-Segmenten erzeugen nur dann
   Geometrie, wenn ihr Segment das absolut erste/letzte Segment der GESAMTEN
   Kontur ist (`contour_logic.py`, `anchor_mode`-Pruefung mit `idx == 0`/
@@ -104,26 +104,45 @@ und danach hier abgeschlossen werden koennen.
   weiterhin ein einzelner diagonaler Move statt der sicheren Sequenz
   ausgegeben wird. Betrifft grundsaetzlich jede Operation, die denselben
   Sicherheits-Helfer nutzt - Aenderung braucht sorgfaeltige Pruefung des
-  Blast-Radius, nicht nur einen Punkt-Fix fuer Abspanen.
+  Blast-Radius, nicht nur einen Punkt-Fix fuer Abspanen/Bohren.
 
 ## Offene Code-Aufgaben
 
-- `lathe_easystep_handler.py` weiter verkleinern (aktuell 4965 Zeilen, vorher
-  7501). Naechste Kandidaten mit substanzieller Eigenlogik statt reinem
-  Delegieren: `_collect_program_header`, `_collect_contour_segments`,
-  `_apply_thread_preset`/`_populate_thread_standard_options` (-> z. B. neues
-  `ui_thread.py`), Widget-Bootstrapping (`_get_widget_by_name`,
-  `_resolve_core_widgets_strict`, `_register_known_widgets`), Tooltip-
-  Erzwingung (`_set_tooltip_deep`, `_fallback_tooltip_text` -> z. B. neues
-  `ui_tooltips.py`). Jede Extraktion einzeln mit vollem Testlauf und echtem
-  PyQt5 (`uic.loadUi`) gegenpruefen, nicht alles in einem Schritt.
+- `XRI` darf nur als sichere Einfahr-/Rueckzugsebene fuer Innenbearbeitung
+  verwendet werden, nicht als Ersatz fuer die eigentlichen Schruppbahnen (aktuell
+  an einigen Stellen vermischt - haengt mit dem noch unbeantworteten
+  Materialmodell-Punkt fuer Innen-Schruppen zusammen, siehe oben).
+- Leere Schruppoperationen (kein einziger Schnitt erzeugt) sollten als
+  Generatorfehler behandelt werden und die Programmerzeugung abbrechen, statt
+  nur eine Warnung auszugeben - damit ein leeres/fehlerhaftes Schruppen nicht
+  unbemerkt durchrutscht.
+- `lathe_easystep_handler.py` weiter verkleinern. Naechste Kandidaten mit
+  substanzieller Eigenlogik statt reinem Delegieren: `_collect_program_header`,
+  `_collect_contour_segments`, `_apply_thread_preset`/
+  `_populate_thread_standard_options` (-> z. B. neues `ui_thread.py`),
+  Widget-Bootstrapping (`_get_widget_by_name`, `_resolve_core_widgets_strict`,
+  `_register_known_widgets`), Tooltip-Erzwingung (`_set_tooltip_deep`,
+  `_fallback_tooltip_text` -> z. B. neues `ui_tooltips.py`). Jede Extraktion
+  einzeln mit vollem Testlauf und echtem PyQt5 (`uic.loadUi`) gegenpruefen.
+- Veraltetes, dupliziertes Modul `slicer.py` (2496 Zeilen, eigene Kopien von
+  `Segment`/`rough_turn_parallel_x`/etc. statt Wiederverwendung von
+  `lathe_easystep/gcode_roughing.py` & Co.) wird von der echten Anwendung
+  (`lathe_easystep_handler.py`) NICHT mehr importiert - nur noch von
+  `regenerate_ngc.py` (Dev-Skript) und den Legacy-Tests `tests/test_slicer.py`/
+  `tests/test_slicer_extra.py`. Enthaelt vermutlich denselben
+  merge-Intervalle-Bug, der in `gcode_roughing.py` gerade behoben wurde (siehe
+  Changelog), aber unabhaengig davon, da beide Module nicht denselben Code
+  teilen. Klaeren: `slicer.py` entfernen und `regenerate_ngc.py`/Legacy-Tests
+  auf die echten Module (`gcode_roughing.py` etc.) umstellen, oder bewusst als
+  Referenzimplementierung behalten? Falls behalten: mindestens denselben
+  Merge-Fix nachziehen, damit die Legacy-Tests nicht ploetzlich denselben
+  Fehler wieder als "korrekt" festschreiben.
 - Diagonale Eilgangbewegungen aus noch im Material stehenden Positionen fuer
   Abspanen/Kontur/Gewinde-Zustellung pruefen (Einstich/Groove-Zyklus bereits
   geprueft und sicher, da X dort vor jeder Z-Bewegung bereits zurueckgezogen ist).
 - Werkzeugradiuskorrektur, Konturseite, `G71`-Parameter und Konturstart fuer
   weitere Innenkonturformen verifizieren (Innenstufe, Innenkonus, Innenradius,
-  Innenkontur mit Freistich) - bisher nur fuer die getesteten Grundfaelle
-  (Innen-Abspanen, Innengewinde) abgesichert.
+  Innenkontur mit Freistich) - siehe Realtest-Frage 11, noch unbeantwortet.
 - Freistich/Hinterschnitt in der Vorschau geometrisch darstellen (bisher nicht
   implementiert); Vorschau muss Aussenfreistich, Innenfreistich sowie Lage am
   Gewindeanfang/-ende unterscheiden.
@@ -138,14 +157,17 @@ und danach hier abgeschlossen werden koennen.
   Feld fuer Schnittgeschwindigkeit/max. Drehzahl in Planen, Abspanen,
   Einstich/Abstich, Gewinde, Bohren). Der Generator unterstuetzt das bereits
   (`spindle_mode`/`spindle_max_rpm` pro Operation mit Fallback auf den
-  Programmkopf) - es fehlt nur die UI-Verdrahtung. Braucht Sichtpruefung am
-  echten Panel, da mehrere `QFormLayout`-Bloecke manuell erweitert werden
-  muessen (siehe Zeilen-Kollisions-Bug in der Historie).
+  Programmkopf, inkl. `G96 D<max_rpm>`-Drehzahlbegrenzung) - es fehlt nur die
+  UI-Verdrahtung. Braucht Sichtpruefung am echten Panel, da mehrere
+  `QFormLayout`-Bloecke manuell erweitert werden muessen (siehe
+  Zeilen-Kollisions-Bug in der Historie).
 - Regressionstests fuer weitere Innen-Abspanen-Konturformen ergaenzen
   (zylindrische Innenkontur, Innenstufe, Innenkonus, Innenradius, Innenkontur
   mit Freistich, Innen-Schruppen mit anschliessendem Schlichten).
 - Alle neuen Generatorfunktionen zusaetzlich in LinuxCNC-Simulation
-  verifizieren, sobald ein System dafuer verfuegbar ist.
+  verifizieren, sobald ein System dafuer verfuegbar ist. G76 fuer M12x1.75/
+  M30x3.5 wurde bereits per Simulation geprueft und als plausibel bestaetigt
+  (Realtest-Frage 12).
 
 ## Offene Architekturaufgaben fuer UI-Textsystem
 
@@ -159,9 +181,10 @@ und danach hier abgeschlossen werden koennen.
 - Bootstrap-/Hilfswidgets ohne sichtbaren Fallbacktext erzeugen:
   statt sprachlicher Platzhalter in Python muessen sie mit IDs/Keys starten und
   erst ueber das Sprachsystem sichtbaren Text erhalten.
-- `.ui`-Datei weiter entkoppeln:
-  sichtbare Defaulttexte dort nur noch als technische Schluessel/IDs oder leer;
-  keine deutschsprachigen Ausgangstexte mehr als scheinbare Fallbacks.
+- `.ui`-Dateien (inkl. der neuen `ui_parts/*.ui`-Teildateien) weiter
+  entkoppeln: sichtbare Defaulttexte dort nur noch als technische
+  Schluessel/IDs oder leer; keine deutschsprachigen Ausgangstexte mehr als
+  scheinbare Fallbacks.
 - Sprachsystem ohne implizites Default-Deutsch vollstaendig durchziehen:
   fehlt ein Eintrag, muss sichtbar der Key/die ID erscheinen, nicht ein
   Python-/`.ui`-Fallback.
@@ -173,7 +196,7 @@ und danach hier abgeschlossen werden koennen.
 - Innenbearbeitung braucht eigene Sicherheits- und Bewegungslogik und darf
   nicht als Aussenbearbeitung gespiegelt werden.
 - Tooltip-Funktion gilt erst dann als erledigt, wenn sie im eingebetteten
-  Panel praktisch funktioniert.
+  Panel praktisch funktioniert (laut Realtest-Frage 4 aktuell der Fall).
 - Wo eine Codeaenderung ohne echtes LinuxCNC/QtVCP-System oder ohne
   verifizierte Normquelle nicht risikofrei verifiziert werden kann, wird nicht
   geraten - der offene Punkt bleibt sichtbar dokumentiert statt stillschweigend
@@ -210,18 +233,15 @@ und danach hier abgeschlossen werden koennen.
 
 - [ ] Bögen bis zur finalen G-Code-Ausgabe als Bögen erhalten.
 
-- [ ] G76-Parameter vor der Ausgabe vollständig normalisieren und validieren.
+- [ ] G76-Parameter vor der Ausgabe vollständig normalisieren und validieren
+  (eine Plausibilitaetspruefung fuer abweichende Preset-/Manuellwerte
+  existiert bereits, siehe `checks.py`).
 
-- [ ] Redundante Befehle und Nullbewegungen vermeiden.
-
-### Innen-Schruppen mit Parallel-Z reparieren
-
-- [ ] Materialbereich zwischen vorhandener Bohrung und Fertigkontur berechnen /
-  [ ] Zustellung von kleinem zu groesserem Durchmesser: die Vorzeichen-/
-  Richtungskorrektheit fuer Innenbearbeitung ist NICHT verifiziert - siehe
-  den bereits bestehenden Punkt "Materialmodell / Schlichtaufmass-Richtung
-  fuer Innenkonturen" oben. Nicht ohne Backplot/Fachwissen aendern.
-- [ ] Leere Schruppoperationen als Generatorfehler behandeln und die Programmerzeugung abbrechen.
+- [ ] Redundante Befehle und Nullbewegungen vermeiden. Teilweise behoben:
+  Schlicht-Rueckzug auf bereits erreichtes `safe_z` sowie sich
+  ueberschneidende Schrupp-Intervalle in `rough_turn_parallel_x()` (siehe
+  Changelog) - eine systematische, durchgaengige Pruefung ueber alle
+  Operationstypen fehlt weiterhin.
 
 ### Schlichtmodus korrekt auswerten
 
@@ -239,14 +259,6 @@ und danach hier abgeschlossen werden koennen.
 - [ ] Fuer Boegen korrekt `G2` oder `G3` mit `I/K` ausgeben.
 - [ ] Vorschau, Kontur-Subroutine und ausgeschriebener Schlichtweg muessen dieselbe Geometrie verwenden.
 
-### Innen-Schlichtanfahrt und -Rueckzug korrigieren
-
-- [ ] Innenbearbeitung zuerst auf einen nachweislich freien Durchmesser fahren.
-- [ ] Fuer die axiale Einfahrt `XRI` beziehungsweise eine daraus abgeleitete freie Position verwenden.
-- [ ] Schneidenradiuskorrektur nicht auf einem unkontrollierten Einfahrweg aktivieren.
-- [ ] Korrekte Einfahrbewegung fuer Konturstart hinten und vorne getrennt behandeln.
-- [ ] Nach dem Schnitt zuerst radial freifahren und danach axial zurueckziehen.
-
 ### Lokale Freistichgeometrie erzeugen
 
 Siehe auch den Punkt "DIN-Freistich-Features (`din_relief`)..." unter
@@ -261,18 +273,8 @@ bereits (`_check_din_relief_feature_position()`).
 - [ ] Aussen- und Innenfreistich getrennt behandeln.
 - [ ] Freistich in Vorschau, Subroutine und Schlichtweg identisch darstellen.
 
-### G76-Masssystem verifizieren
-
-- [ ] Klaeren, welche G76-Parameter unter aktivem `G7` radial und welche im Durchmesser angegeben werden.
-- [ ] Insbesondere `I`, `J` und `K` fuer Innen- und Aussengewinde pruefen.
-- [ ] M12x1.75 und M30x3.5 als isolierte LinuxCNC-Simulationsfaelle testen.
-- [ ] Presetwert, Vorschaugeometrie und ausgegebener G76-Wert dokumentiert aufeinander abbilden.
-
 ### Bewegungs- und Modalbereinigung
 
-- [ ] Doppelte identische G0-Saetze entfernen (Stichprobe an Test.lse zeigt
-  aktuell keine exakten Duplikate mehr, aber keine systematische Pruefung
-  ueber alle Operationstypen).
 - [ ] Aktuelle X/Z-Position generatorseitig mitfuehren (grössere
   Architekturaenderung - jede Move-Emission muesste durch eine zentrale
   Stelle laufen, die die Position kennt; aktuell wird pro Funktion lokal
@@ -294,42 +296,12 @@ bereits (`_check_din_relief_feature_position()`).
   siehe Gewinde-/Preset-Normalisierung oben - Warnung existiert, vollstaendige
   Normalisierung noch nicht).
 
-
 ## UI modularisieren
 
 ### Ziel
-Die bisherige monolithische `lathe_easystep.ui` in logisch getrennte Teil-UI-Dateien aufteilen.
+Die ehemals monolithische `lathe_easystep.ui` weiter in klar getrennte Teil-UI-Dateien vervollstaendigen. Die Shell + Reiter-Teilung ist erledigt und aktiv (`lathe_easystep/ui_parts/*.ui` + `ui_split.py`, per Test bestaetigt); offen bleiben Vorschau/Step-Verwaltung und die saubere Modularchitektur.
 
 ### Aufteilung
-
-- [ ] `ui_program_header.ui`
-  - Programmkopf
-  - Rohteil
-  - Sicherheitseinstellungen
-  - Maschinenprofil
-  - Werkzeugwechselposition
-  - Spannfutter
-
-- [ ] `ui_face.ui`
-  - Planen
-
-- [ ] `ui_contour.ui`
-  - Konturerstellung
-
-- [ ] `ui_roughing.ui`
-  - Abspanen
-
-- [ ] `ui_thread.ui`
-  - Gewinde
-
-- [ ] `ui_groove.ui`
-  - Einstich / Abstich
-
-- [ ] `ui_drill.ui`
-  - Bohren
-
-- [ ] `ui_keyway.ui`
-  - Nutenstoßen
 
 - [ ] `ui_preview.ui`
   - Vorschau
@@ -349,8 +321,6 @@ Die bisherige monolithische `lathe_easystep.ui` in logisch getrennte Teil-UI-Dat
 
 ### Laden
 
-- [ ] Hauptfenster lädt nur die einzelnen Module.
-- [ ] Module werden zentral registriert.
 - [ ] Module kommunizieren ausschließlich über definierte Schnittstellen.
 
 ### Ziel

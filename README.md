@@ -89,6 +89,7 @@ Lathe EasyStep ist als QTVCP-Panel aufgebaut. Die zugehoerigen Dateien in
 diesem Verzeichnis sind:
 
 - `lathe_easystep.ui`
+- `lathe_easystep/ui_parts/`
 - `lathe_easystep_handler.py`
 
 ### Einbau als eingebettetes Panel in die LinuxCNC-INI
@@ -127,6 +128,12 @@ qtvcp -d -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui
 
 Voraussetzung ist eine LinuxCNC-/QTVCP-Installation, in der `qtvcp` im `PATH`
 liegt.
+
+Zur UI-Struktur:
+
+- `lathe_easystep.ui` ist die Start-Shell des Panels.
+- Die einzelnen Reiterinhalte liegen getrennt in `lathe_easystep/ui_parts/*.ui`.
+- Der Handler laedt diese Teil-UIs beim Start in die vorhandenen Tab-Container nach.
 
 ## Grundsaetzlicher Workflow
 

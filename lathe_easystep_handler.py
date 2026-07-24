@@ -171,6 +171,7 @@ from lathe_easystep.presets import (
 from lathe_easystep.translations import TRANSLATIONS
 from lathe_easystep.ui_registry import COMBO_ITEM_REGISTRY, PANEL_WIDGET_NAMES, TAB_TITLE_KEYS, UI_TEXT_KEYS, UI_TOOLTIP_KEYS
 from lathe_easystep.ui_static import apply_ui_static_translations
+from lathe_easystep.ui_split import load_split_tab_uis
 
 # Module logger for non-instantiated contexts
 _LOGGER = logging.getLogger(__name__)

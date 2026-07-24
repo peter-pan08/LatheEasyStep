@@ -1,0 +1,421 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>tabFace</class>
+ <widget class="QWidget" name="tabFace">
+  <attribute name="title">
+   <string>Planen</string>
+  </attribute>
+  <layout class="QFormLayout" name="formLayoutFace">
+   <property name="verticalSpacing">
+    <number>8</number>
+   </property>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_face_start_x">
+     <property name="text">
+      <string>Start-X (Roh-Ø)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDoubleSpinBox" name="face_start_x">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>50.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_face_start_z">
+     <property name="text">
+      <string>Start-Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDoubleSpinBox" name="face_start_z">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_face_end_x">
+     <property name="text">
+      <string>End-X</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QDoubleSpinBox" name="face_end_x">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>30.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_face_end_z">
+     <property name="text">
+      <string>End-Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QDoubleSpinBox" name="face_end_z">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_face_mode">
+     <property name="text">
+      <string>Strategie</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QComboBox" name="face_mode">
+     <item>
+      <property name="text">
+       <string>Schruppen</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Schlichten</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Schruppen + Schlichten</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_face_finish_direction">
+     <property name="text">
+      <string>Schlichtrichtung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="QComboBox" name="face_finish_direction">
+     <item>
+      <property name="text">
+       <string>Außen → Innen</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Innen → Außen</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="label_face_depth_max">
+     <property name="text">
+      <string>max. Zustellung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QDoubleSpinBox" name="face_depth_max">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>1.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_face_finish_allow_x">
+     <property name="text">
+      <string>Schlichtaufmaß X</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QDoubleSpinBox" name="face_finish_allow_x">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.500000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="QLabel" name="label_face_finish_allow_z">
+     <property name="text">
+      <string>Schlichtaufmaß Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QDoubleSpinBox" name="face_finish_allow_z">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.100000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="0">
+    <widget class="QLabel" name="label_face_edge_type">
+     <property name="text">
+      <string>Kantenform</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="QComboBox" name="face_edge_type">
+     <item>
+      <property name="text">
+       <string>Keine</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Fase</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Radius</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="11" column="0">
+    <widget class="QLabel" name="label_face_edge_size">
+     <property name="text">
+      <string>Kantengröße</string>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="1">
+    <widget class="QDoubleSpinBox" name="face_edge_size">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="0">
+    <widget class="QLabel" name="label_3">
+     <property name="text">
+      <string>Sicherheits-Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="1">
+    <widget class="QDoubleSpinBox" name="face_safe_z">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>2.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="0">
+    <widget class="QLabel" name="label_4">
+     <property name="text">
+      <string>Vorschub</string>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="1">
+    <widget class="QDoubleSpinBox" name="face_feed">
+     <property name="suffix">
+      <string> mm/U</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.200000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="14" column="0">
+    <widget class="QLabel" name="label_face_pause">
+     <property name="text">
+      <string>Vorschubunterbrechung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="14" column="1">
+    <widget class="QCheckBox" name="face_pause_enabled">
+     <property name="text">
+      <string>aktivieren</string>
+     </property>
+    </widget>
+   </item>
+   <item row="15" column="0">
+    <widget class="QLabel" name="label_face_pause_distance">
+     <property name="text">
+      <string>Unterbrechungsabstand</string>
+     </property>
+    </widget>
+   </item>
+   <item row="15" column="1">
+    <widget class="QDoubleSpinBox" name="face_pause_distance">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>1.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="16" column="0">
+    <widget class="QLabel" name="label_face_spindle">
+     <property name="text">
+      <string>Drehzahl</string>
+     </property>
+    </widget>
+   </item>
+   <item row="16" column="1">
+    <widget class="QDoubleSpinBox" name="face_spindle">
+     <property name="suffix">
+      <string> U/min</string>
+     </property>
+     <property name="minimum">
+      <double>50.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>6000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>800.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="17" column="0">
+    <widget class="QLabel" name="label_face_tool">
+     <property name="text">
+      <string>Werkzeug</string>
+     </property>
+    </widget>
+   </item>
+   <item row="17" column="1">
+    <layout class="QHBoxLayout" name="layout_face_tool_row">
+     <item>
+      <widget class="QComboBox" name="face_tool">
+                   </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="face_tool_img">
+       <property name="minimumSize">
+        <size>
+         <width>96</width>
+         <height>96</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Tool Preview</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="18" column="0">
+    <widget class="QLabel" name="label_face_coolant">
+     <property name="text">
+      <string>Kühlung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="18" column="1">
+    <widget class="QCheckBox" name="face_coolant">
+     <property name="text">
+      <string>Kühlmittel einschalten</string>
+     </property>
+    </widget>
+   </item>
+   <item row="19" column="0">
+    <widget class="QLabel" name="label_face_depth_per_pass">
+     <property name="text">
+      <string>Zustellung pro Schnitt</string>
+     </property>
+    </widget>
+   </item>
+   <item row="19" column="1">
+    <widget class="QDoubleSpinBox" name="face_depth_per_pass">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.200000000000000</double>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LathePreviewWidget</class>
+   <extends>QWidget</extends>
+   <header>lathe_easystep_handler</header>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
+</ui>

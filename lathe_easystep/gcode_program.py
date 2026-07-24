@@ -193,9 +193,23 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
                 require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
                 if op.op_type in [OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL]:
                     require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
+            # gcode_for_operation() dient hier NUR der Vorab-Validierung (fruehes
+            # ValueError bei fehlenden/falschen Parametern). Es mutiert aber
+            # intern denselben settings-Dict (u. a. _current_tool/_is_at_safe/
+            # _active_retract_mode ueber append_tool_and_spindle() & Co.) - die
+            # needs_step_*_pause_sub-Flags MUESSEN aus dieser Pruefung erhalten
+            # bleiben (sie werden unten fuer die Subroutinen-Definitionen
+            # gebraucht), aber die Werkzeug-/Positions-Laufzeittracker duerfen
+            # NICHT in den echten Erzeugungsdurchlauf durchsickern - sonst
+            # erkennt dieser den ERSTEN echten Werkzeugwechsel faelschlich als
+            # "Werkzeug schon aktiv" und faehrt den Werkzeugwechselpunkt nicht
+            # an (realer Bugreport: "erster Wechsel leider nicht am
+            # Werkzeugwechselpunkt").
             gcode_for_operation(op, settings)
         except ValueError as e:
             raise ValueError(f"Operation {i+1} ({op.op_type}): {str(e)}") from e
+    for _key in ("_current_tool", "_is_at_safe", "_active_retract_mode"):
+        settings.pop(_key, None)
 
     class SubAllocator:
         def __init__(self, start: int = 100):

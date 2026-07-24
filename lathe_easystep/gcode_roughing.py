@@ -22,7 +22,7 @@ from .gcode_utils import (
     validate_internal_x_limit,
 )
 
-PARTING_MODE_INDEX = {"rough": 0, "finish": 1}
+PARTING_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
 
 
 @dataclass(frozen=True)
@@ -344,16 +344,25 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
         x_cut = x_lo if external else x_hi
-        z_intervals: List[Tuple[float, float, Segment]] = []
+        z_intervals_raw: List[Tuple[float, float]] = []
         for s in segs:
             hit = intersect_segment_with_x_band(s, x_cut - 1e-3, x_cut + 1e-3)
             if hit:
-                z_intervals.append((hit[0], hit[1], s))
+                z_intervals_raw.append(hit)
+        # Ohne Merge lieferten sich beruehrende/ueberlappende Segmente (z. B. eine
+        # senkrechte Bohrungswand, die exakt am selben X endet, an dem eine
+        # angrenzende Fase/Radius-Uebergangskontur startet) mehrere, sich
+        # ueberschneidende Z-Intervalle fuer dasselbe X-Band - das Werkzeug fuhr
+        # denselben Tiefenbereich mehrfach an (real reproduziert: Innenkontur mit
+        # Fase am Bohrungsgrund erzeugte doppelte/near-zero Schnittbewegungen).
+        # rough_turn_parallel_z() (Pendant fuer die andere Strategie) mergt seine
+        # Intervalle bereits per merge_intervals() - hier fehlte der Aufruf.
+        z_intervals = merge_intervals(z_intervals_raw)
         if not z_intervals:
             lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
             continue
         lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
-        for (za, zb, _seg) in z_intervals:
+        for (za, zb) in z_intervals:
             if abs(zb - za) < 1e-9:
                 continue
             if not allow_undercut and min_x is not None and max_x is not None:

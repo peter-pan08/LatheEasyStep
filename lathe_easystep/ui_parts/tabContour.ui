@@ -1,0 +1,235 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>tabContour</class>
+ <widget class="QWidget" name="tabContour">
+  <attribute name="title">
+   <string>Kontur</string>
+  </attribute>
+  <layout class="QFormLayout" name="formLayoutContour">
+   <property name="verticalSpacing">
+    <number>8</number>
+   </property>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_contour_start_x">
+     <property name="text">
+      <string>Start X</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDoubleSpinBox" name="contour_start_x">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_contour_start_z">
+     <property name="text">
+      <string>Start Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDoubleSpinBox" name="contour_start_z">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_contour_coord_mode">
+     <property name="text">
+      <string>Koordinaten</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QComboBox" name="contour_coord_mode">
+     <item>
+      <property name="text">
+       <string>Absolut</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Inkremental</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_contour_name">
+     <property name="text">
+      <string>Konturname</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QLineEdit" name="contour_name" />
+   </item>
+   <item row="5" column="0" colspan="2">
+    <widget class="QTableWidget" name="contour_segments">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <column>
+      <property name="text">
+       <string>Typ</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>X</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Z</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Kante</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Maß</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Arc</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item row="6" column="0" colspan="2">
+    <layout class="QHBoxLayout" name="layoutContourButtons">
+     <item>
+      <widget class="QPushButton" name="contour_add_segment">
+       <property name="text">
+        <string>Segment +</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="contour_delete_segment">
+       <property name="text">
+        <string>Segment -</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="contour_move_up">
+       <property name="text">
+        <string>▲</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="contour_move_down">
+       <property name="text">
+        <string>▼</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="label_contour_edge_type">
+     <property name="text">
+      <string>Kante</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QComboBox" name="contour_edge_type">
+     <item>
+      <property name="text">
+       <string>Keine</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Fase</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Radius</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_contour_edge_size">
+     <property name="text">
+      <string>Kantenmaß</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QDoubleSpinBox" name="contour_edge_size">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="QLabel" name="label_contour_arc_side">
+     <property name="text">
+      <string>Bogenseite</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QComboBox" name="contour_arc_side">
+     <item>
+      <property name="text">
+       <string>Auto</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Außen</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Innen</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LathePreviewWidget</class>
+   <extends>QWidget</extends>
+   <header>lathe_easystep_handler</header>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
+</ui>

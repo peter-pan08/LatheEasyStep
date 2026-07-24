@@ -1,0 +1,354 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>tabKeyway</class>
+ <widget class="QWidget" name="tabKeyway">
+  <attribute name="title">
+   <string>Keilnut</string>
+  </attribute>
+  <layout class="QFormLayout" name="formLayoutKeyway">
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_30">
+     <property name="text">
+      <string>Modus</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="key_mode">
+     <item>
+      <property name="text">
+       <string>Axial (Z)</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Face (X)</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_31">
+     <property name="text">
+      <string>Radialseite</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QComboBox" name="key_radial_side">
+     <item>
+      <property name="text">
+       <string>Außen (Welle)</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Innen (Bohrung)</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_key_tool">
+     <property name="text">
+      <string>Werkzeug</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QComboBox" name="key_tool" />
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_key_coolant">
+     <property name="text">
+      <string>Kühlung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QComboBox" name="key_coolant">
+     <item>
+      <property name="text">
+       <string>Aus</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Ein</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_32">
+     <property name="text">
+      <string>Nutanzahl</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QSpinBox" name="key_slot_count">
+     <property name="minimum">
+      <number>1</number>
+     </property>
+     <property name="maximum">
+      <number>360</number>
+     </property>
+     <property name="value">
+      <number>1</number>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_33">
+     <property name="text">
+      <string>Startwinkel (°)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="QDoubleSpinBox" name="key_slot_start_angle">
+     <property name="minimum">
+      <double>-360.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>360.000000000000000</double>
+     </property>
+     <property name="suffix">
+      <string> °</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="label_key_slot_angle_step">
+     <property name="text">
+      <string>Winkelversatz (°)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QDoubleSpinBox" name="key_slot_angle_step">
+     <property name="minimum">
+      <double>-360.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>360.000000000000000</double>
+     </property>
+     <property name="decimals">
+      <number>4</number>
+     </property>
+     <property name="suffix">
+      <string> °</string>
+     </property>
+     <property name="toolTip">
+      <string>0 = automatische Gleichverteilung über 360°. Sonst Winkelabstand der Nutmitten, z. B. 3 Nuten mit 30° = Nutmitten bei 0°, 30°, 60°.</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_34">
+     <property name="text">
+      <string>Startdurchmesser</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QDoubleSpinBox" name="key_start_diameter">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>30.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="QLabel" name="label_35">
+     <property name="text">
+      <string>Start Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QDoubleSpinBox" name="key_start_z">
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="0">
+    <widget class="QLabel" name="label_36">
+     <property name="text">
+      <string>Nutlänge</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="QDoubleSpinBox" name="key_nut_length">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>30.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="0">
+    <widget class="QLabel" name="label_37">
+     <property name="text">
+      <string>Nuttiefe</string>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="1">
+    <widget class="QDoubleSpinBox" name="key_nut_depth">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>3.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="0">
+    <widget class="QLabel" name="label_key_slot_width">
+     <property name="text">
+      <string>Nutbreite</string>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="1">
+    <widget class="QDoubleSpinBox" name="key_slot_width">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>3.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="0">
+    <widget class="QLabel" name="label_39">
+     <property name="text">
+      <string>Zustellung pro Schnitt</string>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="1">
+    <widget class="QDoubleSpinBox" name="key_depth_per_pass">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.100000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="14" column="0">
+    <widget class="QLabel" name="label_40">
+     <property name="text">
+      <string>Vorschub</string>
+     </property>
+    </widget>
+   </item>
+   <item row="14" column="1">
+    <widget class="QDoubleSpinBox" name="key_plunge_feed">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>200.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="15" column="0">
+    <widget class="QLabel" name="label_key_cutting_width">
+     <property name="text">
+      <string>Schneidenbreite</string>
+     </property>
+    </widget>
+   </item>
+   <item row="15" column="1">
+    <widget class="QDoubleSpinBox" name="key_cutting_width">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>3.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="16" column="0">
+    <widget class="QLabel" name="label_38">
+     <property name="text">
+      <string>Kopffreiheit (aktuell ohne Wirkung)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="16" column="1">
+    <widget class="QDoubleSpinBox" name="key_top_clearance">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>1.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="17" column="0">
+    <widget class="QLabel" name="label_41">
+     <property name="text">
+      <string>C-Achse benutzen</string>
+     </property>
+    </widget>
+   </item>
+   <item row="17" column="1">
+    <widget class="QCheckBox" name="key_use_c_axis">
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="18" column="0">
+    <widget class="QLabel" name="label_42">
+     <property name="text">
+      <string>C-Achse Schalter</string>
+     </property>
+    </widget>
+   </item>
+   <item row="18" column="1">
+    <widget class="QCheckBox" name="key_use_c_axis_switch">
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="19" column="0">
+    <widget class="QLabel" name="label_43">
+     <property name="text">
+      <string>C-Achse Schalter P</string>
+     </property>
+    </widget>
+   </item>
+   <item row="19" column="1">
+    <widget class="QSpinBox" name="key_c_axis_switch_p">
+     <property name="maximum">
+      <number>99</number>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LathePreviewWidget</class>
+   <extends>QWidget</extends>
+   <header>lathe_easystep_handler</header>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
+</ui>

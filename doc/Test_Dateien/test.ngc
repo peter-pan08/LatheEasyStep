@@ -15,7 +15,7 @@ G54
 (Rohteil Z-Bereich: 1.000 bis -80.000 mm)
 (=== END SICHERHEITSPARAMETER ===)
 
-(WARN: DIN-Freistich in Kontur 'abdrehen' Segment 3 erzeugt keine Geometrie: das Feature sitzt nicht am Ende der GESAMTEN Kontur, sondern mittendrin z. B. gefolgt von weiterem Wellenprofil.)
+(WARN: DIN-Freistich in Kontur 'abdrehen' Segment 3 erzeugt keine Geometrie: das Feature sitzt nicht am Ende der GESAMTEN Kontur, sondern mittendrin z. B. gefolgt von weiterem Wellenprofil .)
 
 
 (=== Subroutine Definitions ===)
@@ -237,6 +237,8 @@ G0 Z6.000
 G0 X52.000
 M5
 M9
+(Toolchange move)
+G53 G0 X70.000 Z100.000
 T01 M6
 G0 X52.000 Z6.000
 
@@ -363,7 +365,8 @@ G0 X52.000 Z6.000
 G97 S600 M3
 M8
 (Anfahren vor Zyklus)
-G0 X0.000 Z2.000
+G0 Z2.000
+G0 X0.000
 (G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
 G17
 F0.120

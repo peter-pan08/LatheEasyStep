@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtWidgets
 from .ui_advanced import ensure_advanced_widgets
+from .ui_split import load_split_tab_uis
 
 
 def bootstrap_widget_refs(handler) -> None:
@@ -167,6 +168,12 @@ def finalize_ui_ready(handler) -> None:
     handler._log(f"[LatheEasyStep] _finalize_ui_ready pass {handler._finalize_pass}", level="info")
     try:
         try:
+            handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
+            load_split_tab_uis(handler)
+            handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
+        except Exception as exc:
+            handler._log(f"[LatheEasyStep] split UI load failed: {exc}", level="warning")
+        try:
             handler._register_known_widgets()
             handler._rebuild_widget_name_cache()
         except Exception:
@@ -311,6 +318,7 @@ def _dock_preview_below_scroll(handler) -> None:
     if container is None:
         container = QtWidgets.QWidget(scroll.parentWidget())
         container.setObjectName("previewDockContainer")
+        container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum)
         dock_layout = QtWidgets.QVBoxLayout(container)
         dock_layout.setContentsMargins(0, 0, 0, 0)
         dock_layout.setSpacing(6)
@@ -319,11 +327,21 @@ def _dock_preview_below_scroll(handler) -> None:
             controls.addStretch(1)
             controls.addWidget(button)
             dock_layout.addLayout(controls)
-        dock_layout.addWidget(preview)
-        dock_layout.addWidget(preview_slice)
+        preview_row = QtWidgets.QHBoxLayout()
+        preview_row.setContentsMargins(0, 0, 0, 0)
+        preview_row.setSpacing(8)
+        preview_row.addWidget(preview, 3)
+        preview_row.addWidget(preview_slice, 2)
+        dock_layout.addLayout(preview_row)
         try:
-            preview.setMinimumHeight(220)
+            preview.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+            preview_slice.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+            preview.setMinimumHeight(140)
+            preview.setMaximumHeight(220)
             preview_slice.setMinimumHeight(140)
+            preview_slice.setMaximumHeight(220)
+            preview_slice.setMinimumWidth(240)
+            container.setMaximumHeight(260)
         except Exception:
             pass
         right_layout.insertWidget(1, container, 1)
