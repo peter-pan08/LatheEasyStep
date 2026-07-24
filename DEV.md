@@ -10,8 +10,8 @@ Ziel ist:
 ## Release-Stand
 
 - `v0.7.0` ist die lauffaehige Basis auf `main`.
-- `dev` ist der Entwicklungsstand fuer `v0.8.0` und liegt am 24. Juli 2026
-  acht Commits vor `main`.
+- `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
+  die stabile, lauffaehige Basis.
 - Aktueller Teststand: `331 passed, 3 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
