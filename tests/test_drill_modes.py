@@ -16,7 +16,9 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import build_drill_path
-from slicer import gcode_for_drill, Operation, OpType, DRILL_MODE_MAP
+from lathe_easystep.gcode_program import gcode_for_drill
+from lathe_easystep.gcode_drill import DRILL_MODE_MAP
+from lathe_easystep.model import Operation, OpType
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,69 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Kontur_Radius_Fase)
+(Masseinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X150.000 Z300.000 Werkstueckkoordinaten)
+(Rueckzugsebenen: XRA=40.000 XRI=0.000)
+(               ZRA=2.000 ZRI=-60.000)
+(Rohteil Aussendurchmesser: 40.000 mm)
+(Rohteil Z-Bereich: 0.000 bis -55.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+
+
+(=== Subroutine Definitions ===)
+o100 sub
+G1 X40.000 Z0.000
+G1 X32.000 Z-8.000
+G2 X26.000 Z-16.000 I-6.000 K0.000
+G1 X20.000 Z-28.000
+o100 endsub
+(=== End Subroutines ===)
+
+(Werkzeug T02)
+G0 Z2.000
+G0 X80.000
+M5
+M9
+(Toolchange move)
+G0 X150.000 Z300.000
+T02 M6
+G0 X80.000 Z2.000
+
+
+
+(Step 2: abspanen)
+(ABSPANEN)
+G97 S1100 M3
+F0.180
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: finish_only)
+(ABSPANEN Rough - parallel Z)
+G0 X40.000 Z2.000
+G71 Q100 X40.000 Z2.000 D0.750
+(Schlichtschnitt Kontur)
+G0 Z2.000
+G0 X80.000
+G0 X40.000 Z2.000
+G1 X40.000 Z0.000 F0.180
+G1 X32.000 Z-8.000 F0.180
+G1 X26.000 Z-16.000 F0.180
+G1 X20.000 Z-28.000 F0.180
+G0 Z2.000
+G0 X80.000
+G0 Z2.000
+
+(Werkzeugwechselpunkt am Ende)
+G0 X150.000 Z300.000
+
+M5
+M9
+M30
+%
