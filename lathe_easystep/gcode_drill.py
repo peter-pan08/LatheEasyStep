@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List
 
-from .gcode_safety import get_approach_warnings, get_safe_position
-from .gcode_utils import sanitize_comment_text
 from .model import Operation
 
 
@@ -28,23 +26,6 @@ def generate_drill_gcode(
     emit_coolant: Callable[[List[str], object], None],
     emit_approach: Callable[[List[str], float, float, Dict[str, object] | None], None],
 ) -> List[str]:
-    def emit_drill_approach(lines: List[str], start_x: float, start_z: float) -> None:
-        for warning in get_approach_warnings(settings, (start_x, start_z)):
-            lines.append(f"(WARN: {sanitize_comment_text(warning)})")
-        safe = get_safe_position(settings)
-        if safe and settings is not None:
-            x_safe, z_safe = safe
-            eps = 1e-9
-            if not settings.get("_is_at_safe"):
-                lines.append(f"G0 Z{z_safe:.3f}")
-                lines.append(f"G0 X{x_safe:.3f}")
-            if abs(start_z - z_safe) > eps:
-                lines.append(f"G0 Z{start_z:.3f}")
-            lines.append(f"G0 X{start_x:.3f}")
-            settings["_is_at_safe"] = False
-            return
-        emit_approach(lines, start_x, start_z, settings)
-
     settings = settings or {}
     path = op.path or []
     if not path:
@@ -88,7 +69,13 @@ def generate_drill_gcode(
         retract = safe_z
 
     lines.append("(Anfahren vor Zyklus)")
-    emit_drill_approach(lines, x_start, safe_z)
+    # Nutzte zuvor eine eigene, dupliziert-und-abweichende Anfahrlogik (generische
+    # sichere Position ueber Z/X, danach nochmal separat auf x_start/safe_z -
+    # teils redundante Bewegungen). Verwendet jetzt denselben Sicherheits-Helfer
+    # wie jede andere Operation (Abspanen, Einstich), damit Anfahrt und die
+    # bereits als korrekt bestaetigte Rueckzugssequenz (emit_safe_retract_for_op)
+    # strukturell zueinander passen.
+    emit_approach(lines, x_start, safe_z, settings)
     lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
     lines.append("G17")
     lines.append(f"F{feed:.3f}")

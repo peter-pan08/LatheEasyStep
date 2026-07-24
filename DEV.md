@@ -82,6 +82,9 @@ Ausgegliederte Handler-Bestandteile (frueher direkt im Handler definiert):
 - `lathe_easystep/ui_params.py`
   - `setup_param_maps()` (mit Cache, siehe Performance-Hinweis unten) und
     `collect_params()` fuer die generische Feld-Sammlung pro Operationstyp.
+- `lathe_easystep/ui_split.py`
+  - Laufzeit-Lader fuer die ausgelagerten Reiter-UIs aus
+    `lathe_easystep/ui_parts/`
 
 Gemeinsame Querschnittslogik:
 - `lathe_easystep/ui_helpers.py`

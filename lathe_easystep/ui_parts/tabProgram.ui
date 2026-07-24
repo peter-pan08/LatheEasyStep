@@ -1,0 +1,957 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>tabProgram</class>
+ <widget class="QWidget" name="tabProgram">
+  <attribute name="title">
+   <string>Programm</string>
+  </attribute>
+  <layout class="QFormLayout" name="formLayoutProgram">
+   <property name="verticalSpacing">
+    <number>8</number>
+   </property>
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_language">
+     <property name="text">
+      <string>Sprache</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QComboBox" name="program_language">
+     <item>
+      <property name="text">
+       <string>Deutsch</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>English</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_prog_npv">
+     <property name="text">
+      <string>Nullpunktverschiebung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="program_npv">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <item>
+      <property name="text">
+       <string>G54</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G55</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G56</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G57</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G58</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G59</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G59.1</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G59.2</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G59.3</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_prog_unit">
+     <property name="text">
+      <string>Maßeinheit</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QComboBox" name="program_unit">
+     <item>
+      <property name="text">
+       <string>mm</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>inch</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_prog_shape">
+     <property name="text">
+      <string>Rohteilform</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QComboBox" name="program_shape">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <item>
+      <property name="text">
+       <string>Zylinder</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Rohr</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Rechteck</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>N-Eck</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_prog_xa">
+     <property name="text">
+      <string>XA Außendurchmesser (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QDoubleSpinBox" name="program_xa">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_prog_xi">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>XI Innendurchmesser (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QDoubleSpinBox" name="program_xi">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_prog_za">
+     <property name="text">
+      <string>ZA Anfangsmaß (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="QDoubleSpinBox" name="program_za">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="label_prog_zi">
+     <property name="text">
+      <string>ZI Endmaß (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QDoubleSpinBox" name="program_zi">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-2000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_prog_zb">
+     <property name="text">
+      <string>ZB Bearbeitungsmaß (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QDoubleSpinBox" name="program_zb">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-2000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="QLabel" name="label_prog_w">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>Breite W (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QDoubleSpinBox" name="program_w">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="0">
+    <widget class="QLabel" name="label_prog_l">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>Länge L (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="QDoubleSpinBox" name="program_l">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-2000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>2000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="0">
+    <widget class="QLabel" name="label_prog_n">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>Kantenanzahl N</string>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="1">
+    <widget class="QSpinBox" name="program_n">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="minimum">
+      <number>3</number>
+     </property>
+     <property name="maximum">
+      <number>20</number>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="0">
+    <widget class="QLabel" name="label_prog_sw">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>Schlüsselweite SW (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="1">
+    <widget class="QDoubleSpinBox" name="program_sw">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="0">
+    <widget class="QLabel" name="label_prog_retract_mode">
+     <property name="text">
+      <string>Rückzug</string>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="1">
+    <widget class="QComboBox" name="program_retract_mode">
+     <item>
+      <property name="text">
+       <string>einfach</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>erweitert</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>alle</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="14" column="0">
+    <widget class="QLabel" name="label_prog_xra">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>XRA äußere Rückzugsebene (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="14" column="1">
+    <layout class="QHBoxLayout" name="layout_prog_xra">
+     <item>
+      <widget class="QCheckBox" name="program_xra_absolute">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>Wenn aktiviert, wird XRA als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+       </property>
+       <property name="text">
+        <string>XRA als Absolut</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="program_xra">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="suffix">
+        <string> mm</string>
+       </property>
+       <property name="maximum">
+        <double>2000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="15" column="0">
+    <widget class="QLabel" name="label_prog_xri">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>XRI innere Rückzugsebene (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="15" column="1">
+    <layout class="QHBoxLayout" name="layout_prog_xri">
+     <item>
+      <widget class="QCheckBox" name="program_xri_absolute">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>Wenn aktiviert, wird XRI als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+       </property>
+       <property name="text">
+        <string>XRI als Absolut</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="program_xri">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="suffix">
+        <string> mm</string>
+       </property>
+       <property name="maximum">
+        <double>2000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="16" column="0">
+    <widget class="QLabel" name="label_prog_zra">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>ZRA äußere Rückzugsebene (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="16" column="1">
+    <layout class="QHBoxLayout" name="layout_prog_zra">
+     <item>
+      <widget class="QCheckBox" name="program_zra_absolute">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>Wenn aktiviert, wird ZRA als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+       </property>
+       <property name="text">
+        <string>ZRA als Absolut</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="program_zra">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="suffix">
+        <string> mm</string>
+       </property>
+       <property name="maximum">
+        <double>2000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="17" column="0">
+    <widget class="QLabel" name="label_prog_zri">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>ZRI innere Rückzugsebene (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="17" column="1">
+    <layout class="QHBoxLayout" name="layout_prog_zri">
+     <item>
+      <widget class="QCheckBox" name="program_zri_absolute">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>Wenn aktiviert, wird ZRI als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+       </property>
+       <property name="text">
+        <string>ZRI als Absolut</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="program_zri">
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="suffix">
+        <string> mm</string>
+       </property>
+       <property name="maximum">
+        <double>2000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="18" column="0">
+    <widget class="QLabel" name="label_prog_xt">
+     <property name="text">
+      <string>Werkzeugwechsel XT (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="18" column="1">
+    <layout class="QHBoxLayout" name="layout_prog_xt">
+     <item>
+      <widget class="QCheckBox" name="program_xt_absolute">
+       <property name="toolTip">
+        <string>Wenn aktiviert, wird XT als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: absolut).</string>
+       </property>
+       <property name="text">
+        <string>XT als Absolut</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="program_xt">
+       <property name="toolTip">
+        <string>Werkzeugwechselpunkt X relativ zur Maschinenkoordinate (z. B. G53).</string>
+       </property>
+       <property name="suffix">
+        <string> mm</string>
+       </property>
+       <property name="maximum">
+        <double>2000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="19" column="0">
+    <widget class="QLabel" name="label_prog_zt">
+     <property name="text">
+      <string>Werkzeugwechsel ZT (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="19" column="1">
+    <layout class="QHBoxLayout" name="layout_prog_zt">
+     <item>
+      <widget class="QCheckBox" name="program_zt_absolute">
+       <property name="toolTip">
+        <string>Wenn aktiviert, wird ZT als absolute Zielposition verwendet; sonst als inkrementelles Delta (Standard: inkrementell).</string>
+       </property>
+       <property name="text">
+        <string>ZT als Absolut</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="program_zt">
+       <property name="toolTip">
+        <string>Werkzeugwechselpunkt Z relativ zur Maschinenkoordinate (z. B. G53).</string>
+       </property>
+       <property name="suffix">
+        <string> mm</string>
+       </property>
+       <property name="maximum">
+        <double>2000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="20" column="0" colspan="2">
+    <widget class="QLabel" name="label_retract_hint">
+     <property name="styleSheet">
+      <string>color: gray; font-size: 10px;</string>
+     </property>
+     <property name="text">
+      <string>Hinweis: Aktiviert = Absolut, deaktiviert = Inkremental (Standard).</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="21" column="0">
+    <widget class="QLabel" name="label_prog_sc">
+     <property name="text">
+      <string>Sicherheitsabstand SC (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="21" column="1">
+    <widget class="QDoubleSpinBox" name="program_sc">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="maximum">
+      <double>100.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>1.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="22" column="0">
+    <widget class="QLabel" name="label_prog_s1">
+     <property name="visible">
+      <bool>true</bool>
+     </property>
+     <property name="text">
+      <string>max. Drehzahl S1 (U/min)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="22" column="1">
+    <widget class="QDoubleSpinBox" name="program_s1">
+     <property name="visible">
+      <bool>true</bool>
+     </property>
+     <property name="suffix">
+      <string> U/min</string>
+     </property>
+     <property name="maximum">
+      <double>30000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>1500.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="23" column="0">
+    <widget class="QLabel" name="label_prog_s3">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>max. Drehzahl S3 (U/min)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="23" column="1">
+    <widget class="QDoubleSpinBox" name="program_s3">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="suffix">
+      <string> U/min</string>
+     </property>
+     <property name="maximum">
+      <double>30000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>3000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="24" column="0">
+    <widget class="QCheckBox" name="program_has_subspindle">
+     <property name="text">
+      <string>Gegenspindel vorhanden</string>
+     </property>
+    </widget>
+   </item>
+   <item row="25" column="0">
+    <widget class="QLabel" name="label_prog_name">
+     <property name="text">
+      <string>Programmname</string>
+     </property>
+    </widget>
+   </item>
+   <item row="25" column="1">
+    <widget class="QLineEdit" name="program_name" />
+   </item>
+   <item row="26" column="0">
+    <widget class="QLabel" name="label_prog_chuck_size">
+     <property name="text">
+      <string>Spannfutter</string>
+     </property>
+    </widget>
+   </item>
+   <item row="26" column="1">
+    <widget class="QComboBox" name="program_chuck_size">
+     <item>
+      <property name="text">
+       <string>Kein Futter</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>80 mm</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>100 mm</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>125 mm</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>160 mm</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>200 mm</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>250 mm</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="27" column="0">
+    <widget class="QLabel" name="label_prog_chuck_part_type">
+     <property name="text">
+      <string>Werkstücktyp</string>
+     </property>
+    </widget>
+   </item>
+   <item row="27" column="1">
+    <widget class="QComboBox" name="program_chuck_part_type">
+     <item>
+      <property name="text">
+       <string>Welle (Vollmaterial)</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Rohr</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="28" column="0">
+    <widget class="QLabel" name="label_prog_chuck_grip_mode">
+     <property name="text">
+      <string>Spannart</string>
+     </property>
+    </widget>
+   </item>
+   <item row="28" column="1">
+    <widget class="QComboBox" name="program_chuck_grip_mode">
+     <item>
+      <property name="text">
+       <string>Außen gespannt</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Innen gespannt</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="29" column="0">
+    <widget class="QLabel" name="label_prog_chuck_profile">
+     <property name="text">
+      <string>Spannprofil</string>
+     </property>
+    </widget>
+   </item>
+   <item row="29" column="1">
+    <widget class="QComboBox" name="program_chuck_profile">
+     <item>
+      <property name="text">
+       <string>3-Backen Standard</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Softjaws</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Innenausdrehen</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="30" column="0">
+    <widget class="QLabel" name="label_prog_chuck_x_min">
+     <property name="text">
+      <string>No-Go X min (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="30" column="1">
+    <widget class="QDoubleSpinBox" name="program_chuck_x_min">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-2000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>2000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="31" column="0">
+    <widget class="QLabel" name="label_prog_chuck_x_max">
+     <property name="text">
+      <string>No-Go X max (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="31" column="1">
+    <widget class="QDoubleSpinBox" name="program_chuck_x_max">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-2000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>2000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="32" column="0">
+    <widget class="QLabel" name="label_prog_chuck_z_limit">
+     <property name="text">
+      <string>No-Go Z Grenze (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="32" column="1">
+    <widget class="QDoubleSpinBox" name="program_chuck_z_limit">
+     <property name="suffix">
+      <string> mm</string>
+     </property>
+     <property name="minimum">
+      <double>-2000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>2000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="33" column="0">
+    <widget class="QLabel" name="label_tool_table_path">
+     <property name="text">
+      <string>Tooltabelle</string>
+     </property>
+    </widget>
+   </item>
+   <item row="33" column="1">
+    <layout class="QHBoxLayout" name="horizontalLayoutTool">
+     <item>
+      <widget class="QLineEdit" name="tool_table_path">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>Keine geladen</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_load_tool_table">
+       <property name="text">
+        <string>Laden…</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="34" column="0">
+    <widget class="QLabel" name="label_prog_machine_profile">
+     <property name="text">
+      <string>Maschinenprofil</string>
+     </property>
+    </widget>
+   </item>
+   <item row="34" column="1">
+    <widget class="QComboBox" name="program_machine_profile">
+     <item>
+      <property name="text">
+       <string>Manuell</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Werkstatt 125 Standard</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Werkstatt 100 Soft</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Werkstatt 200 Innen</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LathePreviewWidget</class>
+   <extends>QWidget</extends>
+   <header>lathe_easystep_handler</header>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
+</ui>
