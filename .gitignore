@@ -60,8 +60,6 @@ Thumbs.db
 *.lse
 
 # --- Repo cleanup scope (user-selected) ---
-tests/
-ngc/*.ngc
 *_REPORT.md
 *_SUMMARY.md
 IMPLEMENTATION_*.md

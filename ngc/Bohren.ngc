@@ -1,0 +1,52 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Bohren)
+(Masseinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X150.000 Z300.000 Werkstueckkoordinaten)
+(Rueckzugsebenen: XRA=40.000 XRI=0.000)
+(               ZRA=2.000 ZRI=-60.000)
+(Rohteil Aussendurchmesser: 40.000 mm)
+(Rohteil Z-Bereich: 0.000 bis -55.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+
+(Werkzeug T07)
+G0 Z2.000
+G0 X80.000
+M5
+M9
+(Toolchange move)
+G0 X150.000 Z300.000
+T07 M6
+G0 X80.000 Z2.000
+
+
+(Step 1: drill)
+(STEP: Loch bohren)
+G97 S1500 M3
+M9
+(Anfahren vor Zyklus)
+G0 X0.000 Z2.000
+(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
+G17
+F0.100
+G81 X0.000 Z-30.000 R2.000 F0.100
+G80
+G0 Z2.000
+G18
+G0 Z2.000
+G0 X80.000
+
+(Werkzeugwechselpunkt am Ende)
+G0 X150.000 Z300.000
+
+M5
+M9
+M30
+%

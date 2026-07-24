@@ -1,0 +1,50 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Gewinde)
+(Masseinheit: mm)
+G18 G7 G90 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X150.000 Z300.000 Werkstueckkoordinaten)
+(Rueckzugsebenen: XRA=40.000 XRI=0.000)
+(               ZRA=2.000 ZRI=-60.000)
+(Rohteil Aussendurchmesser: 40.000 mm)
+(Rohteil Z-Bereich: 0.000 bis -55.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+
+(Werkzeug T03)
+G0 Z2.000
+G0 X80.000
+M5
+M9
+(Toolchange move)
+G0 X150.000 Z300.000
+T03 M6
+G0 X80.000 Z2.000
+
+
+(Step 1: thread)
+(STEP: Gewinde schneiden)
+G97 S500 M3
+M9
+(Gewindetyp: Aussen)
+(Gewinderichtung: Rechtsgewinde)
+(Gewindestart/-ende Z: 0.000 -> -30.000)
+(Anfahren vor Gewinde)
+G0 X10.092 Z2.000
+G0 Z0.000
+G76 P1.5000 Z-30.000 I-0.0920 J0.1840 R1.5000 K1.8402 Q29.5000 H1 E0.0000 L0
+G0 Z2.000
+G0 X80.000
+
+(Werkzeugwechselpunkt am Ende)
+G0 X150.000 Z300.000
+
+M5
+M9
+M30
+%
