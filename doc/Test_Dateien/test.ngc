@@ -30,6 +30,17 @@ G3 X40.000 Z-37.000 I0.000 K-2.000
 G1 X40.000 Z-45.000
 G1 X50.000 Z-60.000
 o100 endsub
+o101 sub
+G1 X10.000 Z-44.000
+G1 X11.400 Z-44.000
+G1 X12.000 Z-43.400
+G1 X12.000 Z-10.500
+G3 X13.000 Z-10.000 I1.000 K0.000
+G1 X16.000 Z-10.000
+G1 X16.000 Z-1.000
+G3 X18.000 Z0.000 I2.000 K-0.000
+G1 X19.200 Z0.000
+o101 endsub
 o<step_line_pause> sub
 (Step line pause helper)
 G4 P[#7]
@@ -229,9 +240,6 @@ G1 X-1.000 Z0.000
 o102 endsub
 (=== End Subroutines ===)
 
-
-
-
 (Werkzeug T01)
 G0 Z6.000
 G0 X52.000
@@ -242,9 +250,12 @@ G53 G0 X70.000 Z100.000
 T01 M6
 G0 X52.000 Z6.000
 
+
+
+
 (Step 3: face | T1: DCMT Aussendrehen)
-(STEP: 3. Planen Schruppen Z 0.0->0.0 mit Kuehlung 1)
-G97 S800 M3
+(STEP: 4. Planen Schruppen Z 0.0->0.0 mit Kuehlung 1)
+G96 D2500 S180.0 M3
 M8
 F0.200
 (Anfahren vor Zyklus)
@@ -319,7 +330,6 @@ G0 X52.000 Z6.000
 (STEP: 7. Gewinde Aussengewinde Rechts P 3.50; Z 0.0->-30.0 8)
 G97 S500 M3
 M8
-(Normgewinde: M30)
 (Gewindetyp: Aussen)
 (Gewinderichtung: Rechtsgewinde)
 (Gewindestart/-ende Z: 0.000 -> -30.000)
@@ -362,11 +372,11 @@ T10 M6
 G0 X52.000 Z6.000
 
 (Step 8: drill | T10: ER25 Aufnahme)
+(STEP: 9. Bohren G73 Spanbruchbohren Z 0.0->-45.0 10)
 G97 S600 M3
 M8
 (Anfahren vor Zyklus)
-G0 Z2.000
-G0 X0.000
+G0 X0.000 Z2.000
 (G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
 G17
 F0.120
@@ -396,52 +406,10 @@ F0.150
 (Ausgabe bevorzugen: auto)
 (Hinterschnitt-Modus: ignore)
 (Aufmass X/Z: 0.100/0.030)
-(Fallback-Grund: automatische Entscheidung -> Move-based)
-(ABSPANEN Rough - parallel Z - Move-based)
-G0 Z0.000
-G0 X9.300
-(Pass 1: X-band [10.000,11.000])
-(Pass 2: X-band [11.000,12.000])
-G0 X12.000 Z0.000
-G1 Z-43.400 F0.150
-G1 X12.000 Z-43.401 F0.150
-G0 X9.300 Z-43.401
-G0 X12.000 Z0.000
-G1 Z-10.500 F0.150
-G1 X12.000 Z-43.400 F0.150
-G0 X9.300 Z-43.400
-G0 X12.000 Z0.000
-G1 Z-10.500 F0.150
-G1 X12.000 Z-10.500 F0.150
-G0 X9.300 Z-10.500
-(Pass 3: X-band [12.000,13.000])
-G0 X13.000 Z0.000
-G1 Z-10.000 F0.150
-G1 X13.000 Z-10.000 F0.150
-G0 X9.300 Z-10.000
-(Pass 4: X-band [13.000,14.000])
-(Pass 5: X-band [14.000,15.000])
-(Pass 6: X-band [15.000,16.000])
-G0 X16.000 Z0.000
-G1 Z-1.000 F0.150
-G1 X16.000 Z-10.000 F0.150
-G0 X9.300 Z-10.000
-G0 X16.000 Z0.000
-G1 Z-0.999 F0.150
-G1 X16.000 Z-1.000 F0.150
-G0 X9.300 Z-1.000
-(Pass 7: X-band [16.000,17.000])
-G0 X17.000 Z0.000
-G1 Z-0.499 F0.150
-G1 X17.000 Z-0.501 F0.150
-G0 X9.300 Z-0.501
-(Pass 8: X-band [17.000,18.000])
-G0 X18.000 Z0.000
-G1 Z0.000 F0.150
-G1 X18.000 Z-0.001 F0.150
-G0 X9.300 Z-0.001
-(Pass 9: X-band [18.000,19.000])
-(Pass 10: X-band [19.000,19.200])
+(ABSPANEN Rough - parallel Z)
+(WARN: Startpunkt X10.000 Z0.000 liegt im Rohteil)
+G0 X10.000 Z0.000
+G71 Q101 X10.000 Z0.000 D1.000
 G0 X9.300
 G0 Z1.000
 
@@ -510,8 +478,8 @@ M8
 (Gewinderichtung: Rechtsgewinde)
 (Gewindestart/-ende Z: -10.000 -> -30.000)
 (Anfahren vor Gewinde)
-G0 X9.300 Z2.000
-G0 Z-10.000
+(WARN: Startpunkt X9.300 Z-10.000 liegt im Rohteil)
+G0 X9.300 Z-10.000
 G0 X9.320
 G76 P1.7500 Z-30.000 I0.5400 J0.2200 R1.5000 K2.1400 Q29.5000 H1 E0.0000 L0
 G0 Z1.000

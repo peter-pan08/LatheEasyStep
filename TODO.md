@@ -11,10 +11,10 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand: `331 passed, 3 skipped`
+- Teststand: `364 passed, 7 skipped`
 - UI-Shell und acht Reiter-Teil-UIs sind getrennt und werden ueber
   `lathe_easystep/ui_split.py` geladen
-- `de.lng`, `en.lng` und `es.lng` enthalten jeweils 1.020 identische,
+- `de.lng`, `en.lng` und `es.lng` enthalten jeweils 1.022 identische,
   nichtleere und eindeutige Sprachschluessel
 - derzeit keine offenen GitHub-Issues; diese Datei ist der Aufgabenbestand
 
@@ -36,7 +36,6 @@ Prioritaeten:
 | ID | Prio | Aufgabe | Nutzen | Aufwand | Ziel |
 |---|---|---|---|---|---|
 | LES-001 | P0 | Sichere Anfahrt zwischen aufeinanderfolgenden Operationen | sehr hoch | M | 0.8.0-alpha |
-| LES-002 | P0 | Leere Schruppoperationen als Generatorfehler abbrechen | sehr hoch | S | 0.8.0-alpha |
 | LES-003 | P0 | Innen-Schruppen Parallel-Z fachlich verifizieren und reparieren | sehr hoch | L | 0.8.0-alpha |
 | LES-005 | P0 | Innen-Schlichtanfahrt und Rueckzug fuer weitere Konturformen absichern | sehr hoch | M-L | 0.8.0-alpha |
 | LES-006 | P1 | Rueckzugsstrategie und Achsreihenfolge je Bearbeitungsart festlegen | hoch | M | 0.8.0 |
@@ -46,25 +45,21 @@ Prioritaeten:
 | LES-013 | P1 | G96/G97-Bedienfelder pro Operation und sichere CSS-Umschaltung | mittel-hoch | M | 0.8.0 |
 | LES-015 | P1 | Weitere Innenkonturformen als Regression und Realtest absichern | hoch | M | 0.8.0 |
 | LES-016 | P1 | Verbleibende UI-Sichtbarkeitsregeln testen | mittel | S-M | 0.8.0 |
-| LES-017 | P1 | Veraltete `slicer.py`-Parallelimplementierung entfernen | hoch | M | 0.8.0 |
 | LES-019 | P1 | Verifizierte DIN-76-Presets fuer M2, M2.5 und M3.5 ergaenzen | mittel | S-M | 0.8.0 |
 | LES-030 | P1 | Neue Generatorfunktionen systematisch in LinuxCNC simulieren | hoch | M-L | 0.8.0 |
 | LES-018 | P2 | G70-Wiederverwendung fuer separaten Schlichtstep pruefen | mittel | M-L | 0.9.0 |
 | LES-020 | P2 | Handler in kleinen Paketen weiter verkleinern | mittel | M je Paket | 0.9.0 |
-| LES-021 | P2 | Verbleibende UI-/Python-Defaulttexte beseitigen | mittel | M-L | 0.9.0 |
 | LES-022 | P2 | Zentralen Bewegungs- und Modalzustand einfuehren | langfristig hoch | XL | 0.9.0 |
-| LES-023 | P2 | Step-Kommentare und Exportnummerierung normalisieren | mittel | M | 0.9.0 |
+| LES-023 | P2 | Nummer nur bei Export erzeugen statt dauerhaft speichern (Rest) | gering-mittel | S-M | 0.9.0 |
 | LES-024 | P2 | Restliche UI-Modularisierung und Controllergrenzen abschliessen | mittel | L | 0.9.0 |
-| LES-025 | P2 | Verbleibende Dirty-State-/Refresh-Pfade pruefen | mittel | S-M | 0.9.0 |
-| LES-026 | P2 | Verhalten bei doppelten geladenen Steps festlegen | mittel | S | 0.9.0 |
 | LES-027 | P2 | Start- und Reaktionszeit im Embedded-Betrieb messen | mittel | S | 0.9.0 |
 | LES-028 | P2 | Werkzeug- und G76-Parameter vor Ausgabe zentral normalisieren | mittel-hoch | M | 0.9.0 |
-| LES-029 | P2 | Alte `i18n/*.json`-Dateien auf Nutzung pruefen und ggf. entfernen | niedrig-mittel | S | 0.9.0 |
 | LES-031 | P2 | Redundante Bewegungen und Modalbefehle systematisch bereinigen | mittel | M-L | 0.9.0 |
 | LES-032 | P2 | Werkzeuggeometrie und Tooltable-Plausibilitaet vertiefen | hoch | L | 0.9.0 |
 | LES-033 | P2 | Gewindevorschau aus realen Gewindeparametern ableiten | mittel | M-L | 0.9.0 |
 | LES-034 | P2 | Preview-Pipeline fachlich in Werkstueck, Werkzeugweg und Hilfsgeometrie trennen | mittel | L | 0.9.0 |
 | LES-035 | P2 | Embedded- und Standalone-Verhalten weiter angleichen | mittel | M | 0.9.0 |
+| LES-036 | P1 | Kantenform "Radius" beim Planen umsetzen | mittel | M | 0.9.0 |
 
 ## P0 - Sicherheits- und Generatorblocker
 
@@ -83,30 +78,43 @@ Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 - [ ] Warnung und tatsaechlicher Fahrweg duerfen sich nicht widersprechen
 - [ ] Regressionen fuer Rohteil- und Chuck-No-Go-Faelle ergaenzen
 
-### LES-002 Leere Schruppoperationen abbrechen
-
-Aktuell koennen Durchgaenge ohne Schnittbereich nur als Kommentar
-`no cut region` erscheinen; auch ein komplett fehlender Roughing-Pfad kann
-nahezu leeren G-Code liefern.
-
-- [ ] tatsaechlich erzeugte Schruppschnitte zaehlen
-- [ ] bei `rough` und `rough_finish` ohne Schnittbewegung `ValueError` ausgeben
-- [ ] betroffenen Step und Eingabebereich im UI anzeigen
-- [ ] `finish` ohne Schruppschnitt weiterhin als erlaubten Einzelschnitt behandeln
-- [ ] Regression fuer leere Innen- und Aussenschruppoperation erstellen
-
 ### LES-003 Innen-Schruppen Parallel-Z verifizieren
 
-Die Intervall-Ueberlappung in `rough_turn_parallel_x()` ist behoben. Offen
-bleiben Materialmodell, Zustellrichtung und Aufmass fuer Innenbearbeitung.
+Die Intervall-Ueberlappung in `rough_turn_parallel_x()` ist behoben.
+Realtest-Frage 9 beantwortet (Zustellrichtung klein->gross bestaetigt
+korrekt: "die Bohrung ist das was an Material abgetragen ist und frei ist,
+der Rest zum groesseren Durchmesser muss ja erst abgespant werden").
+
+Real bestaetigt und behoben (Nutzer-Testprogramm, Kommentar im generierten
+Code: "Fallback-Grund: automatische Entscheidung -> Move-based"): Innen-
+Abspanen nutzte bei vielen realen Innenkonturen NICHT den `G71`-Zyklus (wie
+Aussendrehen), sondern die grobe bewegungsbasierte Ersatzloesung - sichtbar
+an ungleichmaessigen, teils winzigen Zustellungen. Root Cause:
+`is_monotonic_z_decreasing()` (`gcode_utils.py`) akzeptierte nur FALLENDE
+Z-Werte fuer die G71-Eignungspruefung (`parallel_z`-Strategie in
+`gcode_roughing.py`) - anders als bei X (`is_monotonic_x()` prueft BEIDE
+Richtungen) gab es keine "Z steigend"-Variante. Innenkonturen werden aber
+haeufig vom tiefsten Punkt zur Bohrungsoeffnung definiert (Z steigt
+monoton) - eine geometrisch einwandfreie, aber bisher als "nicht
+zyklustauglich" abgelehnte Konturrichtung. Neue symmetrische Pruefung
+`is_monotonic_z()` (faellt ODER steigt, analog zu `is_monotonic_x()`)
+ergaenzt; mit dem realen Testprogramm des Nutzers verifiziert (`ausdrehen`-
+Kontur erzeugt jetzt einen sauberen `G71`-Aufruf statt 10 ungleichmaessiger
+Move-based-Passes). Die `G71`-Startkoordinate (`X{stock_x} Z{safe_z}`)
+brauchte keine Anpassung - sie referenziert bereits (wie beim laengst
+funktionierenden Aussendrehen) die Rohteil-/Sicherheitsgrenze, nicht den
+exakten ersten Konturpunkt, und bleibt bei beiden Konturrichtungen korrekt.
 
 - [ ] vorhandenen Bohrungsdurchmesser als Materialgrenze verwenden
-- [ ] Zustellung von kleinem zu groesserem Durchmesser verifizieren
 - [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, nicht als Schnittbahn
 - [ ] Schlichtaufmass X/Z fuer Innenkonturen korrekt ausrichten
 - [ ] G71/G72-Vorzeichen und Konturstart fuer Innenbearbeitung pruefen
-- [ ] Backplot und Trockenlauf mit einem konkreten Referenzteil dokumentieren
-- [ ] Realtest-Frage 9 abschliessen
+- [ ] Backplot und Trockenlauf mit einem konkreten Referenzteil dokumentieren (P0 - vor Praxiseinsatz zwingend)
+- [ ] `examples.py` fehlt bisher ein Referenzbeispiel mit Innen-Abspanen
+  (`side=inside`) - deshalb ist der `G71`-vs-Move-based-Fallback fuer
+  Innenkonturen nicht durch den regulaeren `regenerate_all_ngc.py`-Diff-
+  Workflow abgedeckt; ein Beispiel ergaenzen, sobald ein passendes,
+  verifiziertes Referenzteil feststeht
 
 ### LES-005 Innen-Schlichtanfahrt und Rueckzug
 
@@ -169,13 +177,43 @@ move-based Pfade linearisieren Geometrie teilweise noch.
 
 ### LES-013 G96/G97 pro Operation
 
-Der Generator unterstuetzt `spindle_mode` und `spindle_max_rpm` bereits.
+Real bestaetigter Architekturfehler (Nutzer-Feedback): G96/G97 war eine
+globale Programmkopf-Einstellung, obwohl die Wahl fachlich pro Operation
+getroffen werden muss (z. B. Aussendrehen mit CSS, aber ein danach folgendes
+Bohren zwingend mit Festdrehzahl). Zusaetzlich verwendete `G96` unter `S`
+bisher denselben Zahlenwert wie die Drehzahl (`spindle`) - physikalisch
+falsch, da G96 unter `S` die Schnittgeschwindigkeit Vc (m/min) erwartet,
+nicht U/min.
 
-- [ ] Combo G97/G96 in Planen, Abspanen, Einstich/Abstich, Gewinde und Bohren
-- [ ] Schnittgeschwindigkeit und maximale Drehzahl kontextabhaengig anzeigen
-- [ ] Save/Load und Altdaten-Fallback testen
-- [ ] Sichtbarkeitsregeln mit echtem PyQt5 testen
-- [ ] bei CSS gegebenenfalls sicher mit G97 anfahren und G96 erst an der Bearbeitungsposition aktivieren
+Umgesetzt:
+- [x] Combo G97/G96 in Planen, Abspanen, Einstich/Abstich und Gewinde (neue
+  Felder `<prefix>_spindle_mode`/`<prefix>_cutting_speed`, dynamisch ueber
+  `ui_advanced.py` ergaenzt, analog zu bereits bestehenden Mustern wie
+  `parting_undercut_mode`). Bohren bewusst ausgenommen (Nutzerentscheidung:
+  Werkzeugdurchmesser aendert sich beim Bohren nicht, CSS ist dort ohne
+  fachlichen Nutzen)
+- [x] Schnittgeschwindigkeit (Vc, m/min) und Drehzahl (U/min) werden
+  kontextabhaengig ein-/ausgeblendet (`update_spindle_mode_visibility()`)
+- [x] `G96 D<max_rpm> S<Vc>` statt der bisherigen (falschen) Wiederverwendung
+  der Drehzahl; ohne gueltige Vc faellt der Generator sicher auf `G97` mit
+  Warnhinweis zurueck statt eine falsche Zahl als Vc zu senden
+- [x] Save/Load: `spindle_mode`/`cutting_speed` sind normale `op.params`-
+  Schluessel und werden ueber den bestehenden generischen Persistenzpfad
+  automatisch mitgespeichert/geladen; alte Programme ohne diese Schluessel
+  fallen unveraendert auf Festdrehzahl/G97 zurueck (kein Sonderfall noetig)
+- [x] Sichtbarkeitsregeln mit echtem PyQt5 getestet
+  (`tests/test_per_operation_spindle_mode_ui.py`)
+- [x] globale `program_spindle_mode`-Combo entfernt; `program_spindle_max_rpm`
+  bleibt als programmweite CSS-Sicherheitsobergrenze erhalten und ist jetzt
+  immer sichtbar (keine sinnvolle Bedingung mehr ohne globale Modus-Combo)
+
+Noch offen (bewusst nicht ungeprueft umgesetzt - siehe Analyse im Changelog):
+
+- [ ] bei CSS sicher mit G97 anfahren und G96 erst an der Bearbeitungsposition
+  aktivieren: erfordert eine physikalisch verifizierte Vc->Drehzahl-Umrechnung
+  fuer die sichere Anfahr-Drehzahl (welcher Durchmesser gilt waehrend der
+  Anfahrt?), dafuer gibt es noch keine etablierte Konvention im Projekt -
+  keine Zahl raten, sondern gemeinsam entscheiden
 
 ### LES-015 Innenkontur-Testmatrix
 
@@ -190,26 +228,30 @@ Der Generator unterstuetzt `spindle_mode` und `spindle_max_rpm` bereits.
 
 ### LES-016 UI-Sichtbarkeitsregressionen
 
-Bereits abgedeckt: Planen, Bohren, Subspindel, Rohteilform und Rueckzugsmodus.
+Bereits abgedeckt: Planen, Bohren, Subspindel, Rohteilform, Rueckzugsmodus,
+Abspanen-Schruppen/Schlichten/Schruppen+Schlichten (inkl. der bisher
+ungetesteten "Freistich separat"-Teilregel), Einstich/Abstich (beide Zweige:
+Werkzeugbreite-Checkbox und Abstich- vs. Einstich-Modus) und das einzige
+bestehende globale G96/G97-Feld (`program_spindle_mode` blendet
+"CSS Max-RPM" jetzt korrekt nur bei G96/CSS ein - Funktion neu ergaenzt,
+da bisher keine Sichtbarkeitsregel dafuer existierte, siehe
+`update_spindle_mode_visibility()` in `ui_visibility.py`).
 
-- [ ] Kontur
-- [ ] Abspanen
-- [ ] Gewinde
-- [ ] Innen/Aussen
-- [ ] Schruppen/Schlichten/Schruppen+Schlichten
-- [ ] G96/G97
+Nach Audit (siehe Recherche zu dieser Aufgabe) bestehen fuer die folgenden
+Punkte AKTUELL KEINE Sichtbarkeitsregeln im Code - hier fehlt nicht ein Test,
+sondern eine Produktentscheidung, welche Felder ueberhaupt bedingt ein-/
+ausgeblendet werden sollen, bevor eine Regression sinnvoll ist:
 
-### LES-017 `slicer.py` bereinigen
-
-Die produktive Anwendung importiert `slicer.py` nicht mehr. Das Modul enthaelt
-dennoch eigene Kopien produktiver Schrupp- und Geometriefunktionen und wird
-noch von `regenerate_ngc.py` und Legacy-Tests verwendet.
-
-- [ ] `regenerate_ngc.py` auf produktive Module umstellen
-- [ ] `tests/test_slicer.py` und `tests/test_slicer_extra.py` migrieren
-- [ ] fehlende Regressionen in die produktiven Modul-Tests uebernehmen
-- [ ] `slicer.py` danach entfernen
-- [ ] verhindern, dass Tests veralteten Parallelcode als Referenz festschreiben
+- [ ] Kontur: keine bedingte Sichtbarkeit vorhanden (Kantengroesse nutzt nur
+  `setEnabled`, keine Kontur-Sichtbarkeitsregel identifiziert)
+- [ ] Gewinde: keine bedingte Sichtbarkeit vorhanden (z. B. koennte
+  `thread_relief_norm` sinnvollerweise nur bei `thread_relief_mode == "suggest"`
+  sichtbar sein - aktuell immer sichtbar; haengt am per-Operation-Signalpfad
+  `_handle_param_change`, noch nicht auditiert)
+- [ ] Innen/Aussen: `side`/`lage`/`orientation` werden nirgends zum Ein-/
+  Ausblenden anderer Felder verwendet (nur als G-Code-Parameter bzw. fuer die
+  Einstich-Diagrammgrafik) - siehe auch LES-013 fuer die groessere,
+  zusammenhaengende Aufgabe (G96/G97 pro Operation auf allen Reitern)
 
 ### LES-019 Fehlende DIN-76-Presets
 
@@ -248,18 +290,6 @@ Jede Extraktion einzeln mit vollem Testlauf und echtem `uic.loadUi` pruefen.
 - [ ] Widget-Bootstrapping
 - [ ] Tooltip-Erzwingung nach `ui_tooltips.py`
 
-### LES-021 UI-/Sprachquellen vervollstaendigen
-
-Die drei `.lng`-Kataloge sind vollstaendig synchron. Offen sind die sichtbaren
-Defaulttexte in Python und den UI-Dateien.
-
-- [ ] sichtbare `QLabel`-, `setText`-, `setToolTip`- und `addItem`-Strings auditieren
-- [ ] Tabellenkoepfe und Dialogtexte ausschliesslich aus Sprachkeys beziehen
-- [ ] deutschsprachige Defaulttexte in Shell und `ui_parts/*.ui` durch Keys oder leere Werte ersetzen
-- [ ] Bootstrap-Widgets ohne sprachlichen Python-Fallback erzeugen
-- [ ] fehlende Keys weiterhin sichtbar als Key/ID anzeigen
-- [ ] Sprachumschaltung nach jeder UI-Erweiterung mit de/en/es testen
-
 ### LES-022 Zentraler Bewegungs- und Modalzustand
 
 - [ ] aktuelle X/Z-Position bei jeder Move-Emission mitfuehren
@@ -270,10 +300,22 @@ Defaulttexte in Python und den UI-Dateien.
 
 ### LES-023 Step-Kommentare normalisieren
 
-- [ ] laufende Nummer nur beim Gesamtprogrammexport erzeugen
+Erledigt: `_insert_loaded_operation()` und `_handle_add_operation()` frischten
+eine bereits nummeriert aussehende, aber veraltete `comment`-Vorsilbe (z. B.
+"5. Innenabspanen ..." aus einer per "Step speichern" gesicherten Datei, die
+spaeter an anderer Position per "Step laden" wieder eingefuegt wird) bisher
+NICHT auf - nur ein komplett leerer Kommentar wurde neu erzeugt. Beide Stellen
+erzeugen die Nummer jetzt ueber `_looks_like_generated_step_comment()` neu,
+sobald der bestehende Kommentar wie eine maschinell nummerierte Beschreibung
+aussieht; ein bewusst individueller Kommentar ohne Nummern-Vorsilbe bleibt
+weiterhin unangetastet (siehe `tests/test_auto_comment_on_creation.py`).
+`renumber_operations()` (Verschieben/Loeschen) aktualisierte alle Kommentare
+bereits zuvor unconditional.
+
+Weiterhin offen (groessere Architekturfrage, nicht nur ein Bugfix):
+
+- [ ] laufende Nummer nur beim Gesamtprogrammexport erzeugen, nicht dauerhaft in `params["comment"]` speichern
 - [ ] Konturen bewusst mitzaehlen oder als nicht ausfuehrbare Geometrie markieren
-- [ ] Kommentare aus aktuellen normalisierten Stepdaten erzeugen
-- [ ] Umsortieren ohne gespeicherte Alt-Nummern testen
 
 ### LES-024 Restliche UI-Modularisierung
 
@@ -285,20 +327,6 @@ Keyway als Teil-UIs.
 - [ ] je Modul Controller, Tooltips, Sprach-IDs und Validierung zuordnen
 - [ ] direkte Widgetzugriffe zwischen Modulen durch definierte Schnittstellen ersetzen
 - [ ] Embedded- und Standalone-Laden testen
-
-### LES-025 Dirty-State und Refresh
-
-- [ ] verbleibende UI-Refresh-Pfade auf ungewollte Dirty-Markierung pruefen
-- [ ] Laden, Sprachumschaltung und reine Vorschauaktualisierung duerfen nicht markieren
-- [ ] echte Parameter- und Strukturanderungen muessen markieren
-
-### LES-026 Doppelte Steps
-
-Eine unverbindliche Warnung ueber `_check_duplicate_operations()` existiert.
-
-- [ ] entscheiden: nur warnen, ersetzen oder Duplikate erlauben
-- [ ] Empfehlung: Duplikate erlauben, aber bei gleicher Quelldatei und identischen Parametern warnen
-- [ ] Realtest-Frage 13 abschliessen
 
 ### LES-027 Performance
 
@@ -313,14 +341,6 @@ Eine unverbindliche Warnung ueber `_check_duplicate_operations()` existiert.
 - [ ] G76-Parameter vor Ausgabe vollstaendig normalisieren und validieren
 - [ ] bestaetigtes G7-Masssystem nicht erneut als offenen Fachfehler behandeln
 - [ ] Preset- und manuelle Werte nachvollziehbar vergleichen
-
-### LES-029 Alte i18n-Dateien
-
-Der aktive Loader verwendet `languages/*.lng`.
-
-- [ ] pruefen, ob `lathe_easystep/i18n/*.json` noch irgendwo verwendet wird
-- [ ] falls ungenutzt entfernen
-- [ ] andernfalls Zweck und Synchronisationsregel dokumentieren
 
 ### LES-031 Redundante Ausgabe
 
@@ -353,6 +373,24 @@ Der aktive Loader verwendet `languages/*.lng`.
 - [ ] Widget-Binding, Tooltips, Dialoge und Dateipfade vergleichen
 - [ ] keine globalen Host-Widgets im Embedded-Betrieb binden
 - [ ] Real-Qt-Smoke-Test fuer beide Startarten pflegen
+
+### LES-036 Kantenform "Radius" beim Planen
+
+Real bestaetigter Bug (Realtest): Planen mit Kantenform "Fase" schlug im
+Generator fehl, weil `edge_type` weiterhin ueber `int(float(...))` gelesen
+wurde statt ueber `resolve_enum_index()` wie `mode`. Behoben. "Radius" ist in
+der Combo waehlbar, im Generator (`gcode_face.py`) aber nach wie vor nicht
+umgesetzt - waehlt der Nutzer "Radius", bricht die Erzeugung jetzt mit einer
+klaren Fehlermeldung ab, statt (vor diesem Fix) still wie "Keine" behandelt
+zu werden.
+
+- [ ] Radius-Eckengeometrie fuer Planen umsetzen (Kontur-Reiter hat mit dem
+  Fase/Radius-Freistich in `contour_logic.py` bereits eine funktionierende,
+  aber allgemeine 3-Punkt-Fillet-Berechnung - fuer den Spezialfall Planen
+  ggf. wiederverwendbar, sofern die Radius/Durchmesser-Umrechnung fuer den
+  einfacheren 90°-Eckfall aus Anfahrpunkt/Endpunkt/Aussenkontur korrekt
+  uebertragen wird)
+- [ ] Realtest nach Umsetzung: Planen mit Radius am echten Panel pruefen
 
 ## Offene externe Antworten und Blocker
 

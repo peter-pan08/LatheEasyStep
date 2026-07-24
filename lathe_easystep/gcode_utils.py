@@ -177,6 +177,23 @@ def is_monotonic_z_decreasing(path: List[Point]) -> bool:
     return all(z1 >= z2 for (_, z1), (_, z2) in zip(path, path[1:]))
 
 
+def is_monotonic_z_increasing(path: List[Point]) -> bool:
+    if len(path) < 2:
+        return True
+    return all(z1 <= z2 for (_, z1), (_, z2) in zip(path, path[1:]))
+
+
+def is_monotonic_z(path: List[Point]) -> bool:
+    """Wie is_monotonic_x(): eine Kontur ist G71-tauglich (parallel_z), wenn
+    Z durchgehend faellt ODER durchgehend steigt - nicht nur fallend. Innen-
+    konturen werden haeufig vom tiefsten Punkt zur Bohrungsoeffnung definiert
+    (Z steigt monoton), was geometrisch genauso gueltig ist wie die bei
+    Aussenkonturen uebliche Richtung (Z faellt monoton). Fehlte bisher als
+    Gegenstueck zu is_monotonic_z_decreasing() und verwarf dadurch sonst
+    zyklustaugliche Innenkonturen faelschlich als "nicht G71-tauglich"."""
+    return is_monotonic_z_decreasing(path) or is_monotonic_z_increasing(path)
+
+
 def is_monotonic_x_decreasing(path: List[Point]) -> bool:
     if len(path) < 2:
         return True
@@ -305,7 +322,9 @@ __all__ = [
     "is_monotonic_x",
     "is_monotonic_x_decreasing",
     "is_monotonic_x_increasing",
+    "is_monotonic_z",
     "is_monotonic_z_decreasing",
+    "is_monotonic_z_increasing",
     "is_internal_side",
     "is_left_hand",
     "primitives_to_points",

@@ -192,6 +192,7 @@ def append_tool_and_spindle(
     *,
     spindle_mode: object | None = None,
     spindle_max_rpm: object | None = None,
+    cutting_speed: object | None = None,
 ):
     if tool_value is None and settings is not None:
         tool_num = get_tool_number(settings)
@@ -225,28 +226,40 @@ def append_tool_and_spindle(
                     x_safe, z_safe = safe
                     lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
                     settings["_is_at_safe"] = True
+    # Op-spezifischer Drehzahlmodus hat Vorrang; ohne Angabe gilt weiterhin
+    # der globale Programmkopf-Wert (Rueckwaertskompatibilitaet).
+    if spindle_mode is not None:
+        effective_mode = str(spindle_mode or "fixed").strip().lower()
+    else:
+        effective_mode = str((settings or {}).get("spindle_mode", "fixed") or "fixed").strip().lower()
+    if effective_mode in ("css", "g96"):
+        # G96 (CSS) erwartet unter S die Schnittgeschwindigkeit Vc (m/min),
+        # NICHT die Drehzahl - beide Werte duerfen nicht verwechselt werden,
+        # auch wenn im Festdrehzahl-Modus (G97) dasselbe Feld "spindle" die
+        # Drehzahl traegt. Fehlt cutting_speed (z. B. weil der Aufrufer den
+        # neuen Parameter noch nicht befuellt), wird sicherheitshalber G97
+        # mit der Drehzahl verwendet statt eine falsche Zahl als Vc zu senden.
+        vc = float_or_none(cutting_speed)
+        if spindle_max_rpm is not None:
+            max_rpm = float_or_none(spindle_max_rpm)
+        else:
+            max_rpm = float_or_none((settings or {}).get("spindle_max_rpm"))
+        if vc and vc > 0 and max_rpm and max_rpm > 0:
+            lines.append(f"G96 D{int(round(max_rpm))} S{vc:.1f} M3")
+            return
+        rpm = float_or_none(spindle_value)
+        if rpm and rpm > 0:
+            if not (vc and vc > 0):
+                lines.append("(WARN: CSS angefordert, aber Schnittgeschwindigkeit fehlt - nutze G97)")
+            else:
+                lines.append("(WARN: CSS angefordert, aber spindle_max_rpm fehlt - nutze G97)")
+            lines.append(f"G97 S{int(round(rpm))} M3")
+        return
     rpm = float_or_none(spindle_value)
     if rpm and rpm > 0:
         rpm_value = int(round(rpm))
         if rpm_value > 0:
-            # Op-spezifischer Drehzahlmodus hat Vorrang; ohne Angabe gilt weiterhin
-            # der globale Programmkopf-Wert (Rueckwaertskompatibilitaet).
-            if spindle_mode is not None:
-                effective_mode = str(spindle_mode or "fixed").strip().lower()
-            else:
-                effective_mode = str((settings or {}).get("spindle_mode", "fixed") or "fixed").strip().lower()
-            if spindle_max_rpm is not None:
-                max_rpm = float_or_none(spindle_max_rpm)
-            else:
-                max_rpm = float_or_none((settings or {}).get("spindle_max_rpm"))
-            if effective_mode in ("css", "g96"):
-                if max_rpm and max_rpm > 0:
-                    lines.append(f"G96 D{int(round(max_rpm))} S{rpm_value} M3")
-                else:
-                    lines.append("(WARN: CSS angefordert, aber spindle_max_rpm fehlt - nutze G97)")
-                    lines.append(f"G97 S{rpm_value} M3")
-            else:
-                lines.append(f"G97 S{rpm_value} M3")
+            lines.append(f"G97 S{rpm_value} M3")
 
 
 def nose_compensation_command(tool_info: Dict[str, object] | None, external: bool) -> Optional[str]:

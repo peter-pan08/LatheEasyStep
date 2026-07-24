@@ -1,6 +1,6 @@
 # Realtest-Fragen LatheEasyStep
 
-Stand: 2026-07-15
+Stand: 2026-07-24
 
 Diese Datei ist fuer Punkte gedacht, die ich lokal nicht risikofrei verifizieren
 kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
@@ -33,10 +33,10 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Soll auch vor dem ERSTEN `M6` immer erst der definierte Werkzeugwechselpunkt angefahren werden?
   - Oder nur vor Folgewechseln?
-- Antwort: erster wechsel leider nicht am werkzeugwechselpunkt
-- Status: umgesetzt - Ursache gefunden und behoben (Vorab-Validierung in
-  `generate_program_gcode()` mutierte `_current_tool` und pollute damit den
-  echten Erzeugungsdurchlauf; siehe Changelog "erster Werkzeugwechsel")
+- Antwort: erster wechsel funktioniert jetzt wie gewünscht
+#- Status: umgesetzt - Ursache gefunden und behoben (Vorab-Validierung in
+#  `generate_program_gcode()` mutierte `_current_tool` und pollute damit den
+#  echten Erzeugungsdurchlauf; siehe Changelog "erster Werkzeugwechsel")
 
 ## B. UI / Panel / Embedded-Betrieb
 
@@ -94,9 +94,9 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
   - Nur axial auf Z?
   - Danach auf aeussere Safe-Plane?
   - Eigene Bohr-Sonderregel?
-- Antwort: die anfahrt sollte so sein wie die abfahrt. abfahrt ist gut
-- Status: umgesetzt - Bohren nutzt jetzt denselben `emit_approach()`-Helfer wie
-  Abspanen/Einstich statt einer eigenen, abweichenden Anfahrlogik
+- Antwort: ist gerade ok
+#- Status: umgesetzt - Bohren nutzt jetzt denselben `emit_approach()`-Helfer wie
+#  Abspanen/Einstich statt einer eigenen, abweichenden Anfahrlogik
 
 ### 9. Innen-Schruppen Parallel-Z Materialmodell
 - Test:
@@ -104,7 +104,13 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Ist die Zustellrichtung von kleinem zu groesserem Durchmesser fachlich korrekt?
   - Falls nicht: welches konkrete Gegenbeispiel?
-- Antwort:
+- Antwort: natürlich, denn die bohrung ist das was an material abgetragen wird und was frei ist, der rest zum größeren durchmesser muss ja erst abgespant werden.
+- Status: Zustellrichtung bestaetigt korrekt. Bei der Untersuchung zusaetzlich
+  einen realen, schwerwiegenden Bug gefunden und behoben: Innen-Abspanen nutzte
+  fuer viele Innenkonturen (vom Bohrungsgrund zur Oeffnung definiert, Z steigt
+  monoton) keinen `G71`-Zyklus, sondern eine grobe Move-based-Ersatzloesung,
+  weil die G71-Eignungspruefung nur fallende Z-Werte akzeptierte. Siehe
+  Changelog/TODO LES-003 fuer Details (`is_monotonic_z()` ergaenzt)
 
 ### 10. `safe_z` / ZRA/ZRI relativ vs. absolut bei `ABSPANEN`
 - Test:
@@ -127,7 +133,12 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Welche Form ist generatorseitig korrekt, welche nicht?
   - Bitte je Fall Problemstelle / Step / G-Code-Zeile nennen.
-- Antwort:
+- Antwort:es ist scheinbar alles, bis auf den freistich ok
+- Status: Innenstufe/Innenkonus/Innenradius bestaetigt korrekt. Der Freistich
+  (DIN-Freistich mitten in einer Kontur) ist der bereits unter LES-010/LES-011
+  dokumentierte, bekannte offene Punkt (Freistich-Splicing nur am Anfang/Ende
+  der GESAMTEN Kontur unterstuetzt, nicht an beliebiger Segmentposition) -
+  keine neue Erkenntnis, aber durch den Realtest bestaetigt/priorisiert
 
 ### 12. G76-Masssystem
 - Test:
@@ -144,7 +155,14 @@ kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
 - Frage:
   - Soll `Step laden` identische Operationen mehrfach einfuegen duerfen?
   - Oder soll bei Dubletten gewarnt / ersetzt werden?
-- Antwort:
+- Antwort:grundsätzlich erlaubt, mit warnung
+#- Status: nicht durch Nutzerantwort beantwortet. Die in `TODO.md` bereits
+#  dokumentierte Empfehlung ("Duplikate erlauben, aber bei gleichem Typ und
+#  identischen Bearbeitungsparametern warnen") ist umgesetzt und mit Tests
+#  abgesichert (`lathe_easystep/checks.py::_check_duplicate_operations`,
+#  `tests/test_duplicate_operation_check.py`): mehrfach geladene, fachlich
+#  identische Operationen werden nicht geloescht oder automatisch veraendert,
+#  sondern nur als Warnung im Vorschau-/Programmcheck gemeldet (LES-026)
 
 ### 14. `rough_finish` im UI
 - Frage:

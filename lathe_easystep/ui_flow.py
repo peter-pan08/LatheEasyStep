@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 
 from qtvcp.core import Action
@@ -12,6 +13,20 @@ from .ui_helpers import translate as _tr
 from .ui_messages import format_user_error, parse_error_location
 
 _ERROR_HIGHLIGHT_STYLE = "border: 2px solid #d9534f; background-color: #fff3f3;"
+
+_GENERATED_STEP_COMMENT_RE = re.compile(r"^\d+\.\s")
+
+
+def _looks_like_generated_step_comment(comment: object) -> bool:
+    """True fuer leere Kommentare und fuer bereits maschinell nummerierte
+    Beschreibungen ("5. Innenabspanen ..."), deren fuehrende Zahl beim
+    Einfuegen an anderer Position veralten kann. Ein bewusst individueller
+    Kommentar ohne diese Nummerierung gilt nicht als generiert und bleibt
+    beim Einfuegen/Hinzufuegen unangetastet (LES-023)."""
+    text = str(comment or "").strip()
+    if not text:
+        return True
+    return bool(_GENERATED_STEP_COMMENT_RE.match(text))
 _ERROR_HIGHLIGHT_DURATION_MS = 4000
 
 
@@ -165,6 +180,14 @@ def handle_new_program(handler):
         handler._op_row_user_selected = False
         try:
             handler._clear_dirty_state()
+        except Exception:
+            pass
+        try:
+            # Werkzeugtabelle bleibt ueber "Neues Programm" hinweg geladen;
+            # Combos ggf. erst jetzt verfuegbarer Reiter-Widgets werden mit
+            # der bereits geladenen Tabelle aufgefrischt.
+            if handler.tools:
+                handler._populate_tool_combos(handler.tools)
         except Exception:
             pass
         handler._refresh_operation_list(select_index=-1)

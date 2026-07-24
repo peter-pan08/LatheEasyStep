@@ -374,36 +374,58 @@ def test_parting_undercut_combined_hides_undercut_tool_widgets():
     assert handler.parting_optional_stop_before_undercut.visible is False
 
 
-def test_spindle_mode_visibility_hides_css_max_rpm_for_fixed_rpm():
+def test_spindle_mode_visibility_shows_rpm_field_for_fixed_mode():
+    """LES-013: G96/G97 ist pro Operation waehlbar (Planen/Abspanen/
+    Einstich/Gewinde). Bei Festdrehzahl (G97) zeigt die Combo das
+    Drehzahlfeld, nicht das Schnittgeschwindigkeitsfeld."""
     handler = SimpleNamespace(
         w={},
-        program_spindle_mode=_ComboByIndex(idx=0, data="fixed"),
-        program_spindle_max_rpm=_BoolWidget(),
-        label_program_spindle_max_rpm=_BoolWidget(),
+        face_spindle_mode=_ComboByIndex(idx=0, data="fixed"),
+        face_spindle=_BoolWidget(),
+        label_face_spindle=_BoolWidget(),
+        face_cutting_speed=_BoolWidget(),
+        label_face_cutting_speed=_BoolWidget(),
     )
 
     from lathe_easystep.ui_visibility import update_spindle_mode_visibility
 
     update_spindle_mode_visibility(handler)
 
-    assert handler.program_spindle_max_rpm.visible is False
-    assert handler.label_program_spindle_max_rpm.visible is False
+    assert handler.face_spindle.visible is True
+    assert handler.label_face_spindle.visible is True
+    assert handler.face_cutting_speed.visible is False
+    assert handler.label_face_cutting_speed.visible is False
 
 
-def test_spindle_mode_visibility_shows_css_max_rpm_for_css():
+def test_spindle_mode_visibility_shows_cutting_speed_field_for_css_mode():
     handler = SimpleNamespace(
         w={},
-        program_spindle_mode=_ComboByIndex(idx=1, data="css"),
-        program_spindle_max_rpm=_BoolWidget(),
-        label_program_spindle_max_rpm=_BoolWidget(),
+        parting_spindle_mode=_ComboByIndex(idx=1, data="css"),
+        parting_spindle=_BoolWidget(),
+        label_parting_spindle=_BoolWidget(),
+        parting_cutting_speed=_BoolWidget(),
+        label_parting_cutting_speed=_BoolWidget(),
     )
 
     from lathe_easystep.ui_visibility import update_spindle_mode_visibility
 
     update_spindle_mode_visibility(handler)
 
-    assert handler.program_spindle_max_rpm.visible is True
-    assert handler.label_program_spindle_max_rpm.visible is True
+    assert handler.parting_spindle.visible is False
+    assert handler.label_parting_spindle.visible is False
+    assert handler.parting_cutting_speed.visible is True
+    assert handler.label_parting_cutting_speed.visible is True
+
+
+def test_spindle_mode_visibility_skips_tabs_without_the_widget():
+    """Fehlt eine Reiter-Combo (z. B. weil noch nicht angehaengt), darf das
+    keine Exception werfen - nur die Reiter mit vorhandener Combo werden
+    aktualisiert."""
+    handler = SimpleNamespace(w={}, _get_widget_by_name=lambda name: None)
+
+    from lathe_easystep.ui_visibility import update_spindle_mode_visibility
+
+    update_spindle_mode_visibility(handler)
 
 
 class _Sender:

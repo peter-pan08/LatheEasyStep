@@ -13,7 +13,7 @@ from .gcode_utils import (
     is_internal_side,
     is_monotonic_x,
     is_monotonic_x_decreasing,
-    is_monotonic_z_decreasing,
+    is_monotonic_z,
     require,
     require_positive,
     require_tool,
@@ -117,7 +117,15 @@ def _emit_finish_primitives(lines: List[str], primitives: List[Dict[str, object]
             x2, z2 = float(p2[0]), float(p2[1])
             cx, cz = float(c[0]), float(c[1])
             _ensure_linear_at(x1, z1)
-            i = cx - (cur_x if cur_x is not None else x1)
+            # I ist in LinuxCNC/Fanuc-Lathe-Dialekten IMMER ein Radiuswert,
+            # auch im Durchmessermodus (G7), in dem X/Z-Koordinaten selbst
+            # Durchmesser sind. Die Kontur-Primitive speichern ihr Zentrum
+            # aber konsistent im Durchmessermass (wie alle anderen X-Werte
+            # auch) - die X-Differenz zum Zentrum muss daher fuer I halbiert
+            # werden, K (Z, nicht durchmesserskaliert) bleibt unveraendert.
+            # Ohne diese Umrechnung lehnt LinuxCNC den Bogen mit "Radius to
+            # end of arc differs from radius to start" ab (real bestaetigt).
+            i = (cx - (cur_x if cur_x is not None else x1)) / 2.0
             k = cz - (cur_z if cur_z is not None else z1)
             g = "G3" if pr.get("ccw") else "G2"
             lines.append(f"{g} X{x2:.3f} Z{z2:.3f} I{i:.3f} K{k:.3f} F{feed:.3f}")
@@ -144,6 +152,7 @@ def _emit_relief_pass(
     append_tool_and_spindle(
         lines, relief_tool, relief_spindle, settings,
         spindle_mode=op_params.get("spindle_mode"), spindle_max_rpm=op_params.get("spindle_max_rpm"),
+        cutting_speed=op_params.get("cutting_speed"),
     )
     lines.append("(Hinterschnitt separat)")
     emit_approach(lines, feature_points[0][0], safe_z, settings)
@@ -300,7 +309,10 @@ def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: in
             x2, z2 = float(p2[0]), float(p2[1])
             cx, cz = float(c[0]), float(c[1])
             _ensure_at(x1, z1)
-            i = cx - (cur_x if cur_x is not None else x1)
+            # Siehe Kommentar in _emit_finish_primitives(): I ist immer ein
+            # Radiuswert, auch im Durchmessermodus - die X-Differenz zum
+            # (im Durchmessermass gespeicherten) Zentrum muss halbiert werden.
+            i = (cx - (cur_x if cur_x is not None else x1)) / 2.0
             k = cz - (cur_z if cur_z is not None else z1)
             g = "G3" if pr.get("ccw") else "G2"
             lines.append(f"{g} X{x2:.3f} Z{z2:.3f} I{i:.3f} K{k:.3f}")
@@ -468,6 +480,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     append_tool_and_spindle(
         lines, tool_num, spindle, settings,
         spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
+        cutting_speed=p.get("cutting_speed"),
     )
     lines.append(f"F{feed:.3f}")
     contour_variants = None
@@ -540,6 +553,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     can_use_cycles = output_preference != "prefer_explicit"
     rough_done = False
     cycle_finish_done = False
+    roughing_section_start = len(lines)
 
     # mode_idx == 1 (reiner Schlichtstep) darf NIE einen G71/G72-Schruppzyklus
     # erzeugen - ein separater Schruppstep (typischerweise mit eigenem
@@ -573,7 +587,12 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
             lines.extend(rough_lines)
     elif strategy_code == "parallel_z" and mode_idx in (0, 2):
-        can_use_g71 = is_monotonic_z_decreasing(rough_cycle_path) and is_monotonic_x(rough_cycle_path)
+        # is_monotonic_z() (nicht nur "fallend") laesst auch Innenkonturen zu,
+        # die vom tiefsten Punkt zur Bohrungsoeffnung definiert sind (Z steigt
+        # monoton) - eine geometrisch gueltige, bei Innenbearbeitung uebliche
+        # Richtung, die zuvor faelschlich als "nicht G71-tauglich" verworfen
+        # wurde (siehe TODO LES-003).
+        can_use_g71 = is_monotonic_z(rough_cycle_path) and is_monotonic_x(rough_cycle_path)
         if can_use_cycles and can_use_g71:
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
@@ -602,6 +621,22 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             if rough_lines:
                 rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
             lines.extend(rough_lines)
+    if mode_idx in (0, 2):
+        # LES-002: ein Schruppstep (oder der Schrupp-Anteil von "Schruppen +
+        # Schlichten"), der keinen einzigen echten Schnittbefehl erzeugt (egal
+        # ob wegen fehlender Bearbeitungsrichtung, einer nicht zyklustauglichen
+        # Kontur ohne Schnittbereich in jedem Band, oder aus anderen Gruenden),
+        # darf nicht als scheinbar gueltiges, aber leeres Programm durchgehen -
+        # das war zuvor bestenfalls ein Kommentar/eine Warnung im G-Code, die
+        # beim realen Abfahren leicht uebersehen wird.
+        roughing_lines = lines[roughing_section_start:]
+        has_cut = any(ln.startswith(("G1 ", "G71", "G72")) for ln in roughing_lines)
+        if not has_cut:
+            raise ValueError(
+                "Abspanen-Schruppen erzeugt keinen einzigen Schnitt - Programmerzeugung "
+                "abgebrochen. Bitte Bearbeitungsrichtung (Parallel X/Z), Kontur und "
+                "Aufmass fuer diesen Step pruefen."
+            )
     if relief_mode == "separate" and feature_path:
         _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
     if mode_idx in (1, 2) and not cycle_finish_done:
@@ -639,9 +674,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             lines.append(f"G0 Z{safe_z:.3f}")
         if compensation_command and not nose_disabled:
             lines.append("G40")
-    elif mode_idx == 0 and strategy_code is None:
-        lines.append("(WARN: Abspanen-Schruppen ohne Bearbeitungsrichtung ist deaktiviert)")
-        lines.append("(      Bitte in 'Abspanen -> Bearbeitungsrichtung' Parallel X oder Parallel Z wählen.)")
     return lines
 
 

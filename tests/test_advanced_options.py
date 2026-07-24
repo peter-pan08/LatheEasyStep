@@ -24,11 +24,14 @@ def test_css_and_custom_park_position_are_emitted():
     )
     operations = [
         Operation(OpType.PROGRAM_HEADER, {"program_name": "CSSPark"}),
-        Operation(OpType.THREAD, {"tool": 3, "spindle": 500.0, "pitch": 1.5, "length": 12.0, "major_diameter": 10.0}),
+        Operation(
+            OpType.THREAD,
+            {"tool": 3, "spindle": 500.0, "pitch": 1.5, "length": 12.0, "major_diameter": 10.0, "cutting_speed": 90.0},
+        ),
     ]
     lines = generate_program_gcode(operations, settings)
     text = "\n".join(lines)
-    assert "G96 D3200 S500 M3" in text
+    assert "G96 D3200 S90.0 M3" in text
     park_idx = lines.index("(Parkposition am Ende)")
     assert lines[park_idx + 1] == "G53 G0 X111.000"
     assert lines[park_idx + 2] == "G53 G0 Z222.000"

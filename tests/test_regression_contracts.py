@@ -311,7 +311,11 @@ def test_operation_specific_spindle_mode_overrides_program_header():
     """TODO Prioritaet A #10 / B #6: Drehzahlmodus soll pro Step waehlbar sein.
     Der Generator unterstuetzt das jetzt ueber op.params['spindle_mode'] /
     ['spindle_max_rpm'], mit Fallback auf den globalen Programmkopf-Wert, wenn
-    ein Step nichts Eigenes angibt (Rueckwaertskompatibilitaet)."""
+    ein Step nichts Eigenes angibt (Rueckwaertskompatibilitaet).
+
+    G96 (CSS) erwartet unter S die Schnittgeschwindigkeit Vc (m/min), nicht
+    die Drehzahl - beide Werte sind bewusst unterschiedlich gewaehlt, damit
+    ein Test, der die beiden Felder verwechselt, fehlschlagen wuerde."""
     settings = make_program_settings()
     settings["spindle_mode"] = "fixed"  # Programmkopf: G97 als Default
     operations = [
@@ -322,14 +326,15 @@ def test_operation_specific_spindle_mode_overrides_program_header():
                 "mode": 0, "tool": 1, "spindle": 1800.0, "feed": 0.12, "depth_max": 0.2,
                 "start_z": 0.0, "end_z": 0.0, "start_x": 42.0, "end_x": 0.0,
                 "finish_allow_z": 0.0, "retract": 1.0, "edge_type": 0, "edge_size": 0.0,
-                "spindle_mode": "css", "spindle_max_rpm": 2500.0,
+                "spindle_mode": "css", "spindle_max_rpm": 2500.0, "cutting_speed": 220.0,
             },
             path=[(42.0, 0.0), (0.0, 0.0)],
         ),
     ]
     gcode = "\n".join(generate_program_gcode(operations, settings))
-    assert "G96 D2500 S1800 M3" in gcode
+    assert "G96 D2500 S220.0 M3" in gcode
     assert "G97 S1800 M3" not in gcode
+    assert "S1800" not in gcode
 
 
 def test_operation_without_spindle_mode_falls_back_to_program_header():
@@ -344,12 +349,37 @@ def test_operation_without_spindle_mode_falls_back_to_program_header():
                 "mode": 0, "tool": 1, "spindle": 1500.0, "feed": 0.12, "depth_max": 0.2,
                 "start_z": 0.0, "end_z": 0.0, "start_x": 42.0, "end_x": 0.0,
                 "finish_allow_z": 0.0, "retract": 1.0, "edge_type": 0, "edge_size": 0.0,
+                "cutting_speed": 180.0,
             },
             path=[(42.0, 0.0), (0.0, 0.0)],
         ),
     ]
     gcode = "\n".join(generate_program_gcode(operations, settings))
-    assert "G96 D3000 S1500 M3" in gcode
+    assert "G96 D3000 S180.0 M3" in gcode
+
+
+def test_css_mode_without_cutting_speed_falls_back_to_g97_with_warning():
+    """Ohne Schnittgeschwindigkeit darf G96 NICHT die Drehzahl als Vc
+    missbrauchen (physikalisch falsch - `m/min` vs. `U/min`) - stattdessen
+    sicherer Fallback auf G97 mit einer Warnung im Kommentar."""
+    settings = make_program_settings()
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {"program_name": "CssWithoutVc"}),
+        Operation(
+            OpType.FACE,
+            {
+                "mode": 0, "tool": 1, "spindle": 1500.0, "feed": 0.12, "depth_max": 0.2,
+                "start_z": 0.0, "end_z": 0.0, "start_x": 42.0, "end_x": 0.0,
+                "finish_allow_z": 0.0, "retract": 1.0, "edge_type": 0, "edge_size": 0.0,
+                "spindle_mode": "css", "spindle_max_rpm": 2500.0,
+            },
+            path=[(42.0, 0.0), (0.0, 0.0)],
+        ),
+    ]
+    gcode = "\n".join(generate_program_gcode(operations, settings))
+    assert "G97 S1500 M3" in gcode
+    assert "G96" not in gcode
+    assert "Schnittgeschwindigkeit fehlt" in gcode
 
 
 def test_string_valued_combo_params_do_not_crash_generation():

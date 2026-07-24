@@ -20,6 +20,7 @@ def handle_global_change(handler, *args, **kwargs):
     handler._update_retract_visibility()
     handler._update_subspindle_visibility()
     handler._update_face_visibility()
+    handler._update_spindle_mode_visibility()
     if sender_name and sender_name != "program_language" and not getattr(handler, "_ui_loading", False):
         try:
             handler._mark_dirty(program=True)
@@ -360,6 +361,51 @@ def update_subspindle_visibility(handler, *args, **kwargs):
         handler.label_prog_s3.setVisible(has_sub)
     if handler.program_s3:
         handler.program_s3.setVisible(has_sub)
+
+
+_SPINDLE_MODE_OPERATION_PREFIXES = ("face", "parting", "groove", "thread")
+
+
+def update_spindle_mode_visibility(handler, *args, **kwargs):
+    """LES-013: G96/G97 ist pro Operation waehlbar (Planen/Abspanen/Einstich/
+    Gewinde - Bohren bewusst ausgenommen, da sich der Werkzeugdurchmesser
+    beim Bohren nicht aendert und CSS dort keinen Zweck erfuellt). Je nach
+    gewaehltem Modus wird entweder das Drehzahlfeld (U/min, G97) oder das
+    Schnittgeschwindigkeitsfeld (Vc, m/min, G96) angezeigt - nie beide
+    gleichzeitig, damit nicht faelschlich eine Drehzahl als Vc (oder
+    umgekehrt) interpretiert werden kann."""
+    for prefix in _SPINDLE_MODE_OPERATION_PREFIXES:
+        _update_spindle_mode_visibility_for_prefix(handler, prefix)
+
+
+def _update_spindle_mode_visibility_for_prefix(handler, prefix: str) -> None:
+    mode_combo = getattr(handler, f"{prefix}_spindle_mode", None)
+    if mode_combo is None:
+        try:
+            mode_combo = handler._get_widget_by_name(f"{prefix}_spindle_mode")
+        except Exception:
+            mode_combo = None
+    if mode_combo is None:
+        return
+    try:
+        mode_value = str(mode_combo.currentData() or "").strip().lower()
+    except Exception:
+        mode_value = ""
+    is_css = mode_value == "css"
+    for attr_name, visible in (
+        (f"{prefix}_spindle", not is_css),
+        (f"label_{prefix}_spindle", not is_css),
+        (f"{prefix}_cutting_speed", is_css),
+        (f"label_{prefix}_cutting_speed", is_css),
+    ):
+        widget = getattr(handler, attr_name, None)
+        if widget is None:
+            try:
+                widget = handler._get_widget_by_name(attr_name)
+            except Exception:
+                widget = None
+        if widget is not None:
+            widget.setVisible(visible)
 
 
 def update_face_visibility(handler):

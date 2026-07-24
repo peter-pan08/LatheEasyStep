@@ -47,6 +47,7 @@ def ensure_advanced_widgets(handler) -> None:
         return
 
     _ensure_program_widgets(handler, root)
+    _ensure_face_widgets(handler, root)
     _ensure_parting_widgets(handler, root)
     _ensure_thread_widgets(handler, root)
     _ensure_groove_widgets(handler, root)
@@ -160,13 +161,12 @@ def _ensure_program_widgets(handler, root) -> None:
     layout = _form_layout(root, "tabProgram", "formLayoutProgram")
     if layout is None:
         return
-    _ensure_row(
-        handler,
-        layout,
-        "label_program_spindle_mode",
-        "Spindelmodus",
-        _combo([("Festdrehzahl (G97)", "fixed"), ("CSS (G96)", "css")], "program_spindle_mode"),
-    )
+    # LES-013: G96/G97 ist keine Programm-globale Einstellung mehr, sondern
+    # pro Operation waehlbar (Planen/Abspanen/Einstich/Gewinde) - eine
+    # Festdrehzahl-Bohrung braucht z. B. nie CSS, waehrend ein Aussendrehen
+    # in derselben Ablaufreihenfolge davon profitieren kann. Die globale
+    # Combo entfaellt daher hier; die Maximaldrehzahl bleibt als
+    # programmweite Sicherheitsobergrenze fuer alle CSS-Operationen erhalten.
     _ensure_row(
         handler,
         layout,
@@ -232,6 +232,26 @@ def _ensure_program_widgets(handler, root) -> None:
     )
 
 
+def _ensure_face_widgets(handler, root) -> None:
+    layout = _form_layout(root, "tabFace", "formLayoutFace")
+    if layout is None:
+        return
+    _ensure_row(
+        handler,
+        layout,
+        "label_face_spindle_mode",
+        "Spindelmodus",
+        _combo([("Festdrehzahl (G97)", "fixed"), ("CSS (G96)", "css")], "face_spindle_mode"),
+    )
+    _ensure_row(
+        handler,
+        layout,
+        "label_face_cutting_speed",
+        "Schnittgeschwindigkeit Vc",
+        _double_spin("face_cutting_speed", " m/min", minimum=0.0, maximum=2000.0, value=180.0, decimals=0),
+    )
+
+
 def _ensure_parting_widgets(handler, root) -> None:
     layout = _form_layout(root, "tabParting", "formLayoutParting")
     if layout is None:
@@ -293,6 +313,20 @@ def _ensure_parting_widgets(handler, root) -> None:
         "Optionalstop Hinterschnitt",
         _check("parting_optional_stop_before_undercut", "M1 vor separatem Hinterschnitt"),
     )
+    _ensure_row(
+        handler,
+        layout,
+        "label_parting_spindle_mode",
+        "Spindelmodus",
+        _combo([("Festdrehzahl (G97)", "fixed"), ("CSS (G96)", "css")], "parting_spindle_mode"),
+    )
+    _ensure_row(
+        handler,
+        layout,
+        "label_parting_cutting_speed",
+        "Schnittgeschwindigkeit Vc",
+        _double_spin("parting_cutting_speed", " m/min", minimum=0.0, maximum=2000.0, value=150.0, decimals=0),
+    )
 
 
 def _ensure_thread_widgets(handler, root) -> None:
@@ -320,6 +354,20 @@ def _ensure_thread_widgets(handler, root) -> None:
         "Optionalstop Gewinde",
         _check("thread_optional_stop_before", "M1 vor Gewinde"),
     )
+    _ensure_row(
+        handler,
+        layout,
+        "label_thread_spindle_mode",
+        "Spindelmodus",
+        _combo([("Festdrehzahl (G97)", "fixed"), ("CSS (G96)", "css")], "thread_spindle_mode"),
+    )
+    _ensure_row(
+        handler,
+        layout,
+        "label_thread_cutting_speed",
+        "Schnittgeschwindigkeit Vc",
+        _double_spin("thread_cutting_speed", " m/min", minimum=0.0, maximum=2000.0, value=100.0, decimals=0),
+    )
 
 
 def _ensure_groove_widgets(handler, root) -> None:
@@ -332,6 +380,20 @@ def _ensure_groove_widgets(handler, root) -> None:
         "label_groove_process_type",
         "Betriebsart",
         _combo([("Einstich", "groove"), ("Abstich", "parting")], "groove_process_type"),
+    )
+    _ensure_row(
+        handler,
+        layout,
+        "label_groove_spindle_mode",
+        "Spindelmodus",
+        _combo([("Festdrehzahl (G97)", "fixed"), ("CSS (G96)", "css")], "groove_spindle_mode"),
+    )
+    _ensure_row(
+        handler,
+        layout,
+        "label_groove_cutting_speed",
+        "Schnittgeschwindigkeit Vc",
+        _double_spin("groove_cutting_speed", " m/min", minimum=0.0, maximum=2000.0, value=120.0, decimals=0),
     )
 
 

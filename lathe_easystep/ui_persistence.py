@@ -282,7 +282,14 @@ def handle_load_program(handler) -> None:
         handler._rebuild_all_operation_geometry()
 
         try:
-            handler._auto_load_tool_table()
+            # Werkzeug-Combos moeglicherweise erst jetzt (lazy) angelegter
+            # Reiter-Widgets mit der bereits geladenen Werkzeugtabelle neu
+            # befuellen - _auto_load_tool_table() ist nach dem ersten Aufruf
+            # (Programmstart) dauerhaft gesperrt und wuerde hier nichts tun.
+            if handler.tools:
+                handler._populate_tool_combos(handler.tools)
+            else:
+                handler._auto_load_tool_table()
         except Exception:
             pass
 

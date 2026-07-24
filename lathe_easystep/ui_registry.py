@@ -48,6 +48,14 @@ UI_TEXT_KEYS = {
     "label_language": "text.label_language",
     "label_program_spindle_mode": "text.label_program_spindle_mode",
     "label_program_spindle_max_rpm": "text.label_program_spindle_max_rpm",
+    "label_face_spindle_mode": "text.label_program_spindle_mode",
+    "label_face_cutting_speed": "text.label_cutting_speed",
+    "label_parting_spindle_mode": "text.label_program_spindle_mode",
+    "label_parting_cutting_speed": "text.label_cutting_speed",
+    "label_groove_spindle_mode": "text.label_program_spindle_mode",
+    "label_groove_cutting_speed": "text.label_cutting_speed",
+    "label_thread_spindle_mode": "text.label_program_spindle_mode",
+    "label_thread_cutting_speed": "text.label_cutting_speed",
     "label_program_park_mode": "text.label_program_park_mode",
     "label_program_toolchange_coords": "text.label_program_toolchange_coords",
     "label_program_park_coords": "text.label_program_park_coords",
@@ -234,6 +242,14 @@ UI_TOOLTIP_KEYS = {
     "program_chuck_z_limit": "tooltip.program_chuck_z_limit",
     "program_spindle_mode": "tooltip.program_spindle_mode",
     "program_spindle_max_rpm": "tooltip.program_spindle_max_rpm",
+    "face_spindle_mode": "tooltip.program_spindle_mode",
+    "face_cutting_speed": "tooltip.cutting_speed",
+    "parting_spindle_mode": "tooltip.program_spindle_mode",
+    "parting_cutting_speed": "tooltip.cutting_speed",
+    "groove_spindle_mode": "tooltip.program_spindle_mode",
+    "groove_cutting_speed": "tooltip.cutting_speed",
+    "thread_spindle_mode": "tooltip.program_spindle_mode",
+    "thread_cutting_speed": "tooltip.cutting_speed",
     "program_park_mode": "tooltip.program_park_mode",
     "program_toolchange_coords": "tooltip.program_toolchange_coords",
     "program_park_coords": "tooltip.program_park_coords",
@@ -488,6 +504,46 @@ COMBO_ITEM_REGISTRY = {
         ]
     ],
     "program_spindle_mode": [
+        [
+            "fixed",
+            "combo.program_spindle_mode.fixed"
+        ],
+        [
+            "css",
+            "combo.program_spindle_mode.css"
+        ]
+    ],
+    "face_spindle_mode": [
+        [
+            "fixed",
+            "combo.program_spindle_mode.fixed"
+        ],
+        [
+            "css",
+            "combo.program_spindle_mode.css"
+        ]
+    ],
+    "parting_spindle_mode": [
+        [
+            "fixed",
+            "combo.program_spindle_mode.fixed"
+        ],
+        [
+            "css",
+            "combo.program_spindle_mode.css"
+        ]
+    ],
+    "groove_spindle_mode": [
+        [
+            "fixed",
+            "combo.program_spindle_mode.fixed"
+        ],
+        [
+            "css",
+            "combo.program_spindle_mode.css"
+        ]
+    ],
+    "thread_spindle_mode": [
         [
             "fixed",
             "combo.program_spindle_mode.fixed"
