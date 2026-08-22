@@ -391,6 +391,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             continue
         step_num += 1
         settings["_active_retract_mode"] = _active_retract_mode_for_op(op)
+        if op.op_type == OpType.DRILL:
+            drill_diameter = float_or_none(op.params.get("diameter"))
+            if drill_diameter is not None and drill_diameter > 0.0:
+                settings["_last_drill_diameter"] = drill_diameter
         op_tool = get_tool_number(op.params)
         if op_tool > 0:
             tool_lines: List[str] = []
