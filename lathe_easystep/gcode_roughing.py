@@ -367,9 +367,24 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
         x_cut = x_lo if external else x_hi
+        # Materialreichweite bei DIESER Zustelltiefe, nicht nur ein
+        # hauchduennes Fenster direkt an x_cut: bei x_cut ist noch ueberall
+        # dort Material zu entfernen, wo die ZIELKONTUR ueber x_cut
+        # hinausgeht (extern: Kontur-X <= x_cut, intern: Kontur-X >= x_cut).
+        # Ein schmales Fenster fand fuer die meisten Segmente keinen Treffer
+        # ("no cut region") und wies eine lange, parallel zu X verlaufende
+        # Wand (z. B. eine Bohrungswand) komplett EINEM einzelnen Pass zu,
+        # statt sie ueber mehrere Zustellungen zu verteilen (realer
+        # Bugreport: "keine wirkliche Abspanaufgabe generiert").
+        if external:
+            reach_lo = min_x if min_x is not None else x_cut
+            reach_hi = x_cut
+        else:
+            reach_lo = x_cut
+            reach_hi = max_x if max_x is not None else x_cut
         z_intervals_raw: List[Tuple[float, float]] = []
         for s in segs:
-            hit = intersect_segment_with_x_band(s, x_cut - 1e-3, x_cut + 1e-3)
+            hit = intersect_segment_with_x_band(s, reach_lo, reach_hi)
             if hit:
                 z_intervals_raw.append(hit)
         # Ohne Merge lieferten sich beruehrende/ueberlappende Segmente (z. B. eine
@@ -378,13 +393,14 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
         # ueberschneidende Z-Intervalle fuer dasselbe X-Band - das Werkzeug fuhr
         # denselben Tiefenbereich mehrfach an (real reproduziert: Innenkontur mit
         # Fase am Bohrungsgrund erzeugte doppelte/near-zero Schnittbewegungen).
-        # rough_turn_parallel_z() (Pendant fuer die andere Strategie) mergt seine
-        # Intervalle bereits per merge_intervals() - hier fehlte der Aufruf.
         z_intervals = merge_intervals(z_intervals_raw)
-        if not z_intervals:
-            lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
-            continue
-        lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
+        # Ein nicht-leeres z_intervals kann trotzdem KEINEN einzigen echten
+        # Schnitt ergeben (jedes Intervall zu flach/entartet, oder durch die
+        # allow_undercut-Grenze ausgeschlossen). In dem Fall darf keine
+        # "X-band"-Kopfzeile stehen bleiben, die einen Schnitt suggeriert, wo
+        # in Wirklichkeit keine Bewegung folgt - stattdessen dieselbe
+        # "no cut region"-Meldung wie bei von vornherein leerem z_intervals.
+        pass_lines: List[str] = []
         for (za, zb) in z_intervals:
             if abs(zb - za) < 1e-9:
                 continue
@@ -393,12 +409,12 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
                     continue
                 if (not external) and x_cut > max_x + 1e-6:
                     continue
-            lines.append(f"G0 X{x_cut:.3f} Z{safe_z:.3f}")
+            pass_lines.append(f"G0 X{x_cut:.3f} Z{safe_z:.3f}")
             z_low = min(za, zb)
             z_high = max(za, zb)
             z_entry, z_exit = (z_high, z_low) if z_dir < 0 else (z_low, z_high)
-            lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
-            _emit_segment_with_pauses(lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
+            pass_lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
+            _emit_segment_with_pauses(pass_lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=x_cut, current_z=z_exit, safe_z=safe_z)
             cmd = ["G0"]
             if rx_eff is not None:
@@ -406,7 +422,12 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
             if rz_eff is not None:
                 cmd.append(f"Z{rz_eff:.3f}")
             if len(cmd) > 1:
-                lines.append(" ".join(cmd))
+                pass_lines.append(" ".join(cmd))
+        if not pass_lines:
+            lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
+            continue
+        lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
+        lines.extend(pass_lines)
     return lines
 
 

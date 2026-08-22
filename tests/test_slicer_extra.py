@@ -13,26 +13,42 @@ from lathe_easystep.gcode_roughing import (
 from lathe_easystep_handler import ProgramModel, Operation, OpType
 
 
-def test_parallel_x_allows_undercut_by_default():
-    path = [(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)]
-    # stock at 14, target 6, step 4 -> passes 14-10,10-6
+def test_parallel_x_finds_real_material_not_a_hairline_sliver():
+    """Die Materialreichweite-Baenderung (siehe rough_turn_parallel_x,
+    reach_lo/reach_hi statt eines hauchduennen x_cut+/-1e-3-Fensters) findet
+    fuer ein Band innerhalb der Kontur einen echten, spuerbaren Schnitt -
+    nicht nur einen ~0.001mm-Splitter nahe der Kontur-Kante (das war der
+    vorherige Fensterfehler, den ein frueherer Test hier unbeabsichtigt als
+    'Undercut-Erfolg' interpretierte)."""
+    path = [(12.0, 0.0), (6.0, -8.0)]
     lines = rough_turn_parallel_x(path, external=True, x_stock=14.0, x_target=6.0, step_x=4.0, safe_z=5.0, feed=0.2, allow_undercut=True)
-    # Expect at least one pass with X-band
-    assert any("X-band" in ln for ln in lines)
+    pass_1 = lines.index("(Pass 1: X-band [10.000,14.000])")
+    pass_2_or_end = next((i for i, ln in enumerate(lines) if i > pass_1 and ln.startswith("(Pass")), len(lines))
+    pass_1_g1 = [ln for ln in lines[pass_1:pass_2_or_end] if ln.startswith("G1 ")]
+    # Der Schnitt muss die volle verbleibende Tiefe abdecken (Z-2.667 bis
+    # Z-8.000, gut 5mm) - nicht nur einen ~0.003mm-Splitter am Kontur-Rand
+    # (das lieferte das alte schmale x_cut+/-1e-3-Fenster).
+    assert any("Z-8.000" in ln for ln in pass_1_g1)
+    assert any("Z-2.667" in ln for ln in pass_1_g1)
 
 
-def test_parallel_x_prevents_undercut_when_disabled():
+def test_parallel_x_pass_beyond_contour_extent_has_no_material_regardless_of_flag():
+    """Eine Zustellung, deren x_cut ueber die eigene Kontur-Grenze
+    hinausgeht (echtes Unterschneiden/Undercut), kann mit der korrigierten
+    Materialreichweite-Baenderung strukturell nie einen echten Schnitt
+    finden - dort existieren schlicht keine Kontursegmente mehr. Die
+    allow_undercut-Sperre bleibt als Sicherheitsnetz bestehen, hat bei der
+    korrekten Baenderung aber keinen beobachtbaren Effekt mehr: sie griff
+    zuvor gegen hauchduenne Kanten-Splitter, die es mit dem Fensterfehler-Fix
+    nicht mehr gibt."""
     path = [(10.0, 0.0), (8.0, -2.0)]
-    # stock at 14, target 4, step 3 -> passes: [14-11],[11-8],[8-5]
-    # The last pass would cut at x_lo = 5 which is < min(path_x)=8 -> undercut
     lines_allow = rough_turn_parallel_x(path, external=True, x_stock=14.0, x_target=4.0, step_x=3.0, safe_z=5.0, feed=0.2, allow_undercut=True)
     lines_no = rough_turn_parallel_x(path, external=True, x_stock=14.0, x_target=4.0, step_x=3.0, safe_z=5.0, feed=0.2, allow_undercut=False)
-    # with allow_undercut True we should see at least 1 pass
-    assert any("X-band" in ln for ln in lines_allow)
-    # with allow_undercut False the last pass that would undercut should be skipped - therefore fewer passes
-    count_allow = sum(1 for ln in lines_allow if ln.startswith('(Pass'))
-    count_no = sum(1 for ln in lines_no if ln.startswith('(Pass'))
-    assert count_no <= count_allow
+    assert lines_allow == lines_no
+    # Nur der erste (innerhalb der Kontur liegende) Pass schneidet wirklich;
+    # alle Baender jenseits der Kontur-Grenze (X<=8) melden "no cut region".
+    assert "(Pass 1: X-band [11.000,14.000])" in lines_allow
+    assert sum(1 for ln in lines_allow if "no cut region" in ln) == 3
 
 
 def test_parallel_x_internal_produces_passes():
