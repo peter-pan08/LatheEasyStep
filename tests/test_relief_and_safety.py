@@ -184,37 +184,23 @@ def test_toolchange_has_m5_before_each_m6():
 
 
 def test_validation_warning_comment_sanitizes_parentheses():
+    """_check_drill_before_internal_machining() erzeugt eine Warnung, die
+    selbst ein inneres Klammerpaar enthaelt ("... vor der (ersten) Bohrung
+    ..."). Als LinuxCNC-Kommentar (WARN: ...) muessen verschachtelte Klammern
+    entfernt/ersetzt werden, sonst entsteht ein "nested comment"-Parserfehler."""
     settings = make_program_settings()
-    settings.update({"xa": 50.0, "za": 1.0, "zi": -80.0})
-    contour = Operation(
-        OpType.CONTOUR,
+    settings.update({"xa": 50.0, "za": 1.0, "zi": -80.0, "xri": 9.0, "xri_absolute": True})
+    internal_abspanen = Operation(
+        OpType.ABSPANEN,
         {
-            "name": "abdrehen",
-            "start_x": 27.0,
-            "start_z": 0.0,
-            "segments": [
-                {"mode": "xz", "x": 28.0, "z": 0.0},
-                {"mode": "x", "x": 30.0, "z": 0.0, "z_empty": True, "edge": "radius", "edge_size": 1.5},
-                {
-                    "mode": "z",
-                    "x": 0.0,
-                    "z": -35.0,
-                    "x_empty": True,
-                    "feature": {
-                        "feature_type": "din_relief",
-                        "thread_size": "M30",
-                        "norm": "DIN 76-A",
-                        "side": "external",
-                        "internal": False,
-                        "orientation": "end",
-                    },
-                },
-                {"mode": "x", "x": 40.0, "z": 0.0, "z_empty": True},
-            ],
+            "tool": 11, "side": "inside", "mode": "finish", "spindle": 1200.0,
+            "feed": 0.15, "depth_per_pass": 1.0, "slice_strategy": "parallel_z",
+            "comment": "Innen-Schlichten ohne vorherige Bohrung",
         },
+        path=[(10.0, 0.0), (10.0, -20.0)],
     )
-    lines = generate_program_gcode([Operation(OpType.PROGRAM_HEADER, {}), contour], settings)
-    warning_line = next(line for line in lines if line.startswith("(WARN: DIN-Freistich"))
+    lines = generate_program_gcode([Operation(OpType.PROGRAM_HEADER, {}), internal_abspanen], settings)
+    warning_line = next(line for line in lines if line.startswith("(WARN: Innenbearbeitung"))
     payload = warning_line[len("(WARN: "):-1]
     assert "(" not in payload
     assert ")" not in payload

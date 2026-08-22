@@ -157,20 +157,27 @@ explizit festlegen:
 
 ### LES-010 Lokale DIN-Freistichgeometrie
 
-Freistiche werden derzeit nur erzeugt, wenn das Feature am ersten oder letzten
-Segment der gesamten Kontur liegt.
+Freistiche werden jetzt an JEDEM Segment erzeugt, nicht mehr nur am ersten
+oder letzten Segment der gesamten Kontur (real gegen den LinuxCNC-
+Interpreter verifiziert: sauberer, fehlerfreier Parse eines Freistichs
+mitten in einer Welle, siehe CHANGELOG.md). Aussen- und Innenfreistich sind
+beide bestaetigt korrekt.
 
-- [ ] Segment-zu-Primitive-Zuordnung einfuehren
-- [ ] Freistich relativ zum markierten Segment erzeugen
-- [ ] Nachbarsegmente und lokale Bearbeitungsrichtung auswerten
-- [ ] Freistich mitten in einer laengeren Wellenkontur unterstuetzen
-- [ ] Innen- und Aussenfreistich getrennt behandeln
-- [ ] DIN-76-Geometrie gegen verifizierte Referenz pruefen
+- [ ] DIN-76-Geometrie (Breite/Tiefe je Gewindegroesse) gegen eine
+  verifizierte Norm-Referenz pruefen - die Platzierung ist jetzt korrekt,
+  die hinterlegten Zahlenwerte selbst sind noch nicht extern verifiziert
+  (siehe LES-019, "keine Werte schaetzen")
+- [ ] `examples.py`/`regenerate_all_ngc.py` um ein Referenzbeispiel mit
+  Freistich mitten in der Kontur ergaenzen
 
 ### LES-011 Einheitliche Freistichdarstellung
 
-- [ ] Fertigkontur, Schruppkontur und Feature-Teilkontur aus derselben Geometrie ableiten
-- [ ] Aussen-/Innenfreistich in der Seitenvorschau darstellen
+Fertigkontur und Rough-Kontur verwenden bereits dieselbe Primitiv-Quelle
+(`build_contour_variants()`); die Splicing-Position ist fuer beide identisch
+korrekt.
+
+- [ ] Aussen-/Innenfreistich in der Seitenvorschau darstellen (Vorschau
+  nutzt aktuell ggf. noch eine andere Quelle als der Generator)
 - [ ] Gewindeanfang und Gewindeende unterscheiden
 - [ ] Vorschau, Kontur-Subroutine und ausgeschriebenen Schlichtweg vergleichen
 - [ ] Save/Load-Roundtrip der Segment-Features testen
