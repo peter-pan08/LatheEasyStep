@@ -114,7 +114,13 @@ def test_toolchange_before_internal_op_still_uses_external_safe_planes():
     operations = [
         Operation(OpType.PROGRAM_HEADER, {"program_name": "ToolchangeExternalSafe"}),
         Operation(OpType.DRILL, {"tool": 10, "spindle": 900.0, "feed": 0.08, "mode": 0, "safe_z": 2.0}, path=[(0.0, 0.0), (8.0, 0.0), (8.0, -18.0)]),
-        Operation(OpType.ABSPANEN, {"tool": 11, "side": "inside", "spindle": 1200.0, "feed": 0.12, "depth_per_pass": 1.0, "mode": "rough", "slice_strategy": "parallel_z"}, path=[(10.0, 0.0), (19.2, 0.0)]),
+        # path braucht eine echte Z-Tiefe (nicht nur eine flache Linie), sonst
+        # findet die bewegungsbasierte Innen-Schrupplogik (G71/G72 werden fuer
+        # Innenbearbeitung nicht mehr verwendet) keinen echten Schnittbereich
+        # und die LES-002-Pruefung ("kein Schnitt erzeugt") bricht die
+        # Erzeugung ab - dieser Test prueft nur die Werkzeugwechsel-Anfahrt,
+        # nicht die Roughing-Geometrie selbst.
+        Operation(OpType.ABSPANEN, {"tool": 11, "side": "inside", "spindle": 1200.0, "feed": 0.12, "depth_per_pass": 1.0, "mode": "rough", "slice_strategy": "parallel_z"}, path=[(10.0, 0.0), (19.2, -30.0)]),
     ]
     lines = generate_program_gcode(operations, settings)
     toolchange_idx = lines.index("T11 M6")

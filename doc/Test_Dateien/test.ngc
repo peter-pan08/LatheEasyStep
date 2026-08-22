@@ -255,7 +255,7 @@ G0 X52.000 Z6.000
 
 (Step 3: face | T1: DCMT Aussendrehen)
 (STEP: 4. Planen Schruppen Z 0.0->0.0 mit Kuehlung 1)
-G97 S800 M3
+G96 D2500 S180.0 M3
 M8
 F0.200
 (Anfahren vor Zyklus)

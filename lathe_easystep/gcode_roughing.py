@@ -571,8 +571,16 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     # Werkzeug) hat das Material bereits abgetragen. Ohne diese Schranke
     # wiederholte ein dedizierter Schlichtstep mit gueltiger Strategie
     # unbemerkt die komplette Schruppbearbeitung.
+    # G71/G72 duerfen NUR fuer Aussenbearbeitung verwendet werden: real gegen
+    # den LinuxCNC-Interpreter (rs274, Quelle interp_g7x.cc, Version
+    # 2.10.0~pre1) getestet - der Schruppzyklus erzeugt bei Innenkonturen
+    # (gleiche Kontur wie aussen, nur gespiegelt) NUR EINEN durchgehenden
+    # Schnitt statt der erwarteten Treppenstufen-Passes, waehrend derselbe
+    # Zyklus bei Aussenkonturen korrekt mehrfach zustellt. Kein Fehler in
+    # diesem Generator, sondern eine bestaetigte Einschraenkung der
+    # G7x-Taschenausraeumlogik dieser LinuxCNC-Version fuer Innenbearbeitung.
     if strategy_code == "parallel_x" and mode_idx in (0, 2):
-        if can_use_cycles and is_monotonic_x_decreasing(rough_cycle_path):
+        if can_use_cycles and external and is_monotonic_x_decreasing(rough_cycle_path):
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
             lines.append("(ABSPANEN Rough - parallel X)")
@@ -588,7 +596,9 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             rough_done = True
             cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
         if not rough_done:
-            if output_preference == "prefer_cycle":
+            if not external:
+                lines.append("(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)")
+            elif output_preference == "prefer_cycle":
                 lines.append("(Fallback-Grund: Kontur nicht G72-zyklustauglich)")
             elif output_preference == "prefer_explicit":
                 lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
@@ -604,7 +614,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         # Richtung, die zuvor faelschlich als "nicht G71-tauglich" verworfen
         # wurde (siehe TODO LES-003).
         can_use_g71 = is_monotonic_z(rough_cycle_path) and is_monotonic_x(rough_cycle_path)
-        if can_use_cycles and can_use_g71:
+        if can_use_cycles and external and can_use_g71:
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
             lines.append("(ABSPANEN Rough - parallel Z)")
@@ -617,7 +627,9 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             rough_done = True
             cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
         if not rough_done:
-            if output_preference == "prefer_cycle":
+            if not external:
+                lines.append("(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)")
+            elif output_preference == "prefer_cycle":
                 lines.append("(Fallback-Grund: Kontur nicht G71-zyklustauglich)")
             elif relief_mode == "separate":
                 lines.append("(Fallback-Grund: Hinterschnitt separat)")
