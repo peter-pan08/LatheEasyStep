@@ -114,20 +114,19 @@ def test_resolve_roughing_stock_x_ignores_drilled_diameter_larger_than_target():
     assert _resolve_roughing_stock_x(settings, _BORE_TO_OPENING_PATH, external=False) == 10.0
 
 
-def test_internal_roughing_with_real_bore_contour_still_produces_uneven_passes():
-    """BEKANNTER, NOCH OFFENER BUG (nicht in dieser Session behoben): auch mit
-    korrektem stock_x (siehe Test oben, Bohrdurchmesser statt Konturwert)
-    erzeugt rough_turn_parallel_x() fuer diese reale Innenkontur (mehrere
-    Segmenttypen: flache Anfahrt, Diagonale, lange senkrechte Bohrungswand,
-    Radien) noch KEINEN sinnvollen gleichmaessigen Mehrfachpass: die schmale
-    Fenster-Intersection (x_cut +/- 1e-3 in rough_turn_parallel_x) findet fuer
-    mehrere X-Baender keinen Treffer ("no cut region"), waehrend ein anderes
-    Band die GESAMTE lange Bohrungswand in einem einzigen ~33mm-Schnitt
-    zugeschlagen bekommt - exakt das vom Nutzer real gemeldete Symptom
-    ("keine wirkliche Abspanaufgabe"). Dieser Test dokumentiert den Ist-
-    Zustand bewusst als bekannten, eigenstaendigen offenen Punkt (siehe TODO
-    LES-003) - NICHT als akzeptables Endverhalten. Ein zukuenftiger Fix muss
-    diesen Test durch eine Pruefung auf gleichmaessige Zustellung ersetzen."""
+def test_internal_roughing_with_real_bore_contour_produces_even_stepped_passes():
+    """Realer Bugreport ('keine wirkliche Abspanaufgabe generiert'): mit
+    korrektem stock_x (siehe Test oben, Bohrdurchmesser statt Konturwert) UND
+    der "Materialreichweite"-Baenderung in rough_turn_parallel_x() (statt
+    eines hauchduennen Fensters direkt an x_cut) erzeugt diese reale
+    Innenkontur (flache Anfahrt, Diagonale, lange senkrechte Bohrungswand,
+    Radien) jetzt fuer jedes X-Band bis zur Kontur-Oeffnung einen eigenen,
+    gleichmaessig zugestellten Schnitt - nicht mehr einen einzelnen
+    ~33mm-Schnitt in einem Band und "no cut region" in den uebrigen. Die
+    letzten drei Baender (X17-19.2) melden korrekt "no cut region": dort
+    macht die Kontur (16,-1)->(18,0)->(19.2,0) einen sehr kurzen, steilen
+    Uebergang zur Bohrungsoeffnung, der geometrisch keine eigene Zustellung
+    mehr benoetigt (bereits durch Pass 9 miterfasst)."""
     settings = make_program_settings()
     settings.update({"xi": 0.0, "xri": 6.0, "xri_absolute": True})
     drill = Operation(
@@ -147,5 +146,15 @@ def test_internal_roughing_with_real_bore_contour_still_produces_uneven_passes()
     operations = [Operation(OpType.PROGRAM_HEADER, {}), drill, rough]
     lines = generate_program_gcode(operations, settings)
     text = "\n".join(lines)
-    assert "no cut region" in text
-    assert "G1 X12.000 Z-43.401 F0.150" in text
+    # Passes 1-9 (X8 bis X17) schneiden jeweils einzeln und gleichmaessig -
+    # keiner davon darf mehr fehlen oder als "no cut region" ausfallen.
+    for pass_i in range(1, 10):
+        assert f"(Pass {pass_i}: X-band [" in text
+    # Kein einzelner Riesenschnitt mehr, der die gesamte Bohrungswand
+    # (Z-44 bis Z-10) in einem Pass zusammenfasst.
+    assert "Z-44.000 F0.150\nG1 X13.000" not in text
+    # Die letzten Baender bis zur Oeffnung liefern konsistent "no cut region"
+    # (nicht mehr eine leere "X-band"-Kopfzeile ohne folgenden Schnitt).
+    assert "(Pass 10: no cut region in band X[17.000,18.000])" in text
+    assert "(Pass 11: no cut region in band X[18.000,19.000])" in text
+    assert "(Pass 12: no cut region in band X[19.000,19.200])" in text

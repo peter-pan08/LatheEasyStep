@@ -48,12 +48,17 @@ def test_parallel_x_roughing_merges_touching_wall_and_transition_segments():
     g1_lines = [ln for ln in pass_2_lines if ln.startswith("G1 ")]
     approach_lines = [ln for ln in pass_2_lines if ln.startswith("G0 X12.000")]
     # Ein einziger zusammenhaengender Schnitt durch die volle Tiefe (-43.4 bis
-    # -10.5): genau EINE Anfahrt und zwei G1-Zeilen (Eintauchen + Schnitt),
+    # -10.0): genau EINE Anfahrt und zwei G1-Zeilen (Eintauchen + Schnitt),
     # nicht mehrere sich ueberschneidende Anfahrten/Schnitte im selben Band.
+    # -10.0 (nicht -10.5, dem Ende der senkrechten Wand): die "Material-
+    # reichweite"-Baenderung (siehe rough_turn_parallel_x) erfasst korrekt
+    # auch das kurze anschliessende Uebergangssegment (12,-10.5)->(13,-10),
+    # das bei X>=12 ebenfalls noch Material hat - der Schnitt geht deshalb
+    # bewusst bis -10.0 statt schon bei -10.5 stehenzubleiben.
     assert len(approach_lines) == 1
     assert len(g1_lines) == 2
     combined = " ".join(g1_lines)
-    assert "-43.4" in combined and "-10.5" in combined
+    assert "-43.4" in combined and "-10.000" in combined
 
 
 def test_abspanen_finish_preserves_radius_as_arc():
