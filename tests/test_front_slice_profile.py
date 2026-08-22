@@ -8,7 +8,7 @@ from lathe_easystep.preview_widget import LathePreviewWidget
 
 
 def test_front_slice_profile_keeps_outer_and_inner_hits_at_same_z():
-    widget = object.__new__(LathePreviewWidget)
+    widget = LathePreviewWidget.__new__(LathePreviewWidget)
     widget.slice_z = -5.0
     widget.paths = []
     widget.active_index = None
@@ -27,7 +27,7 @@ def test_front_slice_profile_keeps_outer_and_inner_hits_at_same_z():
 
 
 def test_front_slice_profile_preserves_multiple_thread_diameters_per_side():
-    widget = object.__new__(LathePreviewWidget)
+    widget = LathePreviewWidget.__new__(LathePreviewWidget)
     widget.slice_z = -2.5
     widget.paths = []
     widget.active_index = None

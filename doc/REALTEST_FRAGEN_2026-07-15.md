@@ -1,6 +1,6 @@
 # Realtest-Fragen LatheEasyStep
 
-Stand: 2026-07-24
+Stand: 2026-08-22
 
 Diese Datei ist fuer Punkte gedacht, die ich lokal nicht risikofrei verifizieren
 kann. Bitte die Antworten direkt unter den Fragen eintragen oder jeweils mit
@@ -15,29 +15,13 @@ Datei entfernt und im `CHANGELOG.md` dokumentiert.
 - Frage:
   - Subjektiv ok oder zu traege?
   - Falls moeglich: Startzeit bis GUI sichtbar, auffaellige Reiter/Funktionen notieren.
-- Antwort:
+- Antwort: startzeit momentan wieder über 20 sec, also viel zu lange
 
 ## Naechste verbindliche Abnahmetests
 
 Diese Punkte pruefen gezielt die seit dem ersten Realtest neu geaenderten oder
 noch offenen Generatorpfade. Sie sind erst abgeschlossen, wenn Ergebnis und
 verwendete Referenzdatei dokumentiert sind.
-
-### 16. G2/G3-Bogen mit echtem X-Zentrumsversatz
-
-- Voraussetzung:
-  - Kontur mit `I != 0` im Durchmessermodus G7
-  - einmal direkter Schlichtweg, einmal G71/G72-Kontur-Subroutine
-- Test:
-  - beide Programme mit LinuxCNC parsen und im Backplot kontrollieren
-  - auf die fruehere Meldung
-    `Radius to end of arc differs from radius to start` achten
-  - Bogenstart, Bogenende und Drehrichtung mit der Sollkontur vergleichen
-- Erfolgreich, wenn:
-  - kein Radius-/Parserfehler entsteht
-  - direkter Pfad und Zyklus-Sub dieselbe Geometrie zeigen
-- Antwort:
-- Status: offen -> LES-012/LES-030
 
 ### 17. Innen-G71 mit steigender und fallender Z-Kontur
 
@@ -53,26 +37,17 @@ verwendete Referenzdatei dokumentiert sind.
 - Erfolgreich, wenn:
   - beide Konturrichtungen denselben Materialabtrag erzeugen
   - Parser, Backplot und anschliessender Trockenlauf unauffaellig sind
-- Antwort:
-- Status: offen -> LES-003/LES-005/LES-015/LES-030
-
-### 18. Gemischtes Programm G96 -> G97 -> G96
-
-- Voraussetzung:
-  - erste Drehoperation mit CSS
-  - Bohren mit Festdrehzahl
-  - anschliessende Dreh-/Gewindeoperation wieder mit CSS
-- Test:
-  - `G96 S` muss Vc in m/min enthalten, `G97 S` die Drehzahl in U/min
-  - `D` muss die programmweite CSS-Maximaldrehzahl enthalten
-  - Save/Load darf die drei Operationsmodi und Werte nicht vertauschen
-  - nach Umsetzung der sicheren CSS-Anfahrt: G97 waehrend der Anfahrt,
-    G96 erst an der festgelegten Bearbeitungsposition
-- Erfolgreich, wenn:
-  - keine Operation Werte oder Modalzustand der vorherigen Operation erbt
-  - LinuxCNC-Parser und Backplot die erwartete Umschaltfolge zeigen
-- Antwort:
-- Status: offen -> LES-013/LES-030
+- Antwort: sicherstellen das die aus den punkten generierte kontur beachtet wird, die reihenvolge, aus welcher richtung programiert wurde darf keinen einfluss auf den generierten code haben!
+- Stand 2026-08-22: die geforderte Richtungsunabhaengigkeit ist umgesetzt
+  und automatisiert getestet (`is_monotonic_z()` akzeptiert steigend UND
+  fallend, `test_internal_roughing_never_uses_g71_g72_cycle` prueft beide
+  Punktreihenfolgen der realen Nutzerkontur auf identisches Ergebnis) sowie
+  vom Nutzer am Panel bestaetigt ("innen drehen ... funktioniert"). Die
+  Materialabtrag-Zustellung selbst war zusaetzlich fehlerhaft (siehe
+  CHANGELOG "Innen-Schruppen erzeugt jetzt echte Mehrfachpaesse") und ist
+  jetzt ebenfalls behoben und real bestaetigt.
+- Status: offen, nur noch fuer den ausstehenden LinuxCNC-Backplot/Trockenlauf
+  am realen Referenzteil -> LES-003/LES-015/LES-030
 
 ### 19. Planen mit Kantenform Radius
 
@@ -88,3 +63,33 @@ verwendete Referenzdatei dokumentiert sind.
   - ungueltige Radien vor der G-Code-Ausgabe klar abgewiesen werden
 - Antwort:
 - Status: offen -> LES-036/LES-030
+
+### 20. Automatischer DIN-76-Freistich am Gewindeende
+
+- Voraussetzung:
+  - je ein Aussen- und Innengewinde mit aktivem automatischem DIN-76-Freistich
+  - die zugeordnete Abspan-Kontur muss den Gewindedurchmesser vor und nach dem
+    Gewindeende enthalten
+- Test:
+  - Programm generieren und in LinuxCNC laden
+  - im Backplot pruefen, dass der Freistich um das Gewindeende liegt, nicht am
+    Ende der gesamten Kontur
+  - pruefen, dass die Gewindespur um die angezeigte Ueberdeckung `f` in den
+    Freistich hineinlaeuft
+  - Aussenfreistich muss radial nach innen, Innenfreistich radial nach aussen
+    gehen
+  - Gegenprobe: die passende zylindrische Konturstrecke kuerzen oder entfernen;
+    die Erzeugung muss mit einer Zuordnungsfehlermeldung abbrechen
+- Erfolgreich, wenn:
+  - Parser und Backplot fehlerfrei sind
+  - Vorschau und Backplot dieselbe Freistichlage zeigen
+  - kein Freistich im Vollmaterial oder am Konturende entsteht
+- Antwort:
+- Stand 2026-08-22: Placement-Logik ist umgesetzt und mit `rs274`
+  real gegen den LinuxCNC-Interpreter verifiziert (Freistich am
+  Gewindeende, nicht am Konturende; Aussen-/Innenrichtung korrekt; die
+  zugehoerige Kontur "abdrehen" des Nutzers wurde per echtem Panel-Test
+  bestaetigt: "vorschau und gcode generierung mit freistich ...
+  funktioniert"). Offen bleibt ausschliesslich der reale Trockenlauf mit
+  tatsaechlich geschnittenem Gewinde an der Maschine.
+- Status: offen, nur noch fuer den realen Trockenlauf -> LES-037/LES-030

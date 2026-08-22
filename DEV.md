@@ -155,6 +155,10 @@ Die Kontur ist die **Quelle der Wahrheit** für:
 - Standarddaten liegen zentral in `lathe_easystep/presets/din_relief_presets.py`.
 - Ausbaustufe Stand `2026-07-09`: `M3` bis `M30`.
 - Die Logik behandelt Freistich als Konturfeature der Fertiggeometrie, nicht als eigene Nut-Operation.
+- Ein aktivierter automatischer Gewinde-Freistich wird aus der Gewindeoperation
+  abgeleitet. `thread_overlap` positioniert das G76-Ende innerhalb des
+  Freistichs; nur eine zylindrische Konturstrecke mit passendem Durchmesser
+  darf die Geometrie aufnehmen. Ohne diese Zuordnung wird kein G-Code erzeugt.
 - Bearbeitungsstrategie in `ABSPANEN` ist davon getrennt.
 - Der Kontur-Editor speichert diese Daten jetzt direkt in den Segmentparametern und fuehrt sie durch Save/Load wieder in die UI zurueck.
 

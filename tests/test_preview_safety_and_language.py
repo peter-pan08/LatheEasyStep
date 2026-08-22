@@ -61,7 +61,7 @@ def test_retract_preview_uses_same_incremental_xri_semantics_as_generator():
 
 
 def test_display_x_to_label_reports_diameter_values():
-    preview = object.__new__(LathePreviewWidget)
+    preview = LathePreviewWidget.__new__(LathePreviewWidget)
     preview.x_is_diameter = True
     assert preview._display_x_to_label(12.5) == 25.0
 
@@ -594,8 +594,27 @@ def test_get_widget_by_name_does_not_return_preview_for_non_preview_name():
 
 
 def test_get_widget_by_name_can_still_resolve_preview_widgets():
-    preview = object.__new__(LathePreviewWidget)
-    preview.setObjectName("previewWidget")
+    class _Meta:
+        def className(self):
+            return "LathePreviewWidget"
+
+    class _PreviewLike:
+        def __init__(self):
+            self._name = "previewWidget"
+
+        def objectName(self):
+            return self._name
+
+        def setObjectName(self, value):
+            self._name = value
+
+        def metaObject(self):
+            return _Meta()
+
+        def parentWidget(self):
+            return None
+
+    preview = _PreviewLike()
 
     class _Root:
         def findChild(self, _cls, name, _options=None):

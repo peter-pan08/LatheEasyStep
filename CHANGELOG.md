@@ -1,6 +1,107 @@
 # Changelog
 
 ## [Unreleased]
+- Fix: Die neue sichere Innenanfahrt in `emit_approach()` (axial auf XRI,
+  erst danach radial zustellen, kein diagonaler Schnellgang durch die
+  Bohrung) erzeugte einen bedeutungslosen zusaetzlichen `G0 Z...` auf
+  denselben Z-Wert, sobald der Konturstart bereits auf der sicheren
+  Z-Ebene lag (haeufiger Fall, z. B. bei einem reinen Innen-Schlichtstep).
+  Die Zeile wird jetzt nur noch ausgegeben, wenn sich der Z-Wert tatsaechlich
+  aendert. Verifiziert mit `rs274` (keine Diagonalbewegung, keine
+  Nullbewegung) und gegen den alten Code per manuellem Revert bestaetigt
+  fehlgeschlagen; `tests/test_parting_slice.py::test_internal_finish_with_nose_comp_gets_nonzero_entry_move`
+  auf die korrigierte Sequenz umgestellt
+- Fix: Die axiale Lage der 30°-Flanke wurde faelschlich von Innen/Aussen
+  abgeleitet. Sie folgt jetzt ausschliesslich der Gewinderichtung: Die Flanke
+  liegt immer an der Seite, an der das Gewinde in den Freistich einlaeuft.
+  Das gilt fuer Aussen- und Innengewinde sowie Rechts- und Linksgewinde.
+- Gewinde: Der Reiter hat jetzt die getrennten Eingaben "Gewinde-Vorlauf"
+  und "Gewinde-Auslauf". Sie erzeugen einen G76-Taper vor bzw. nach dem
+  programmierten Gewinde und werden in der Vorschau als schräge An-/Ausläufe
+  dargestellt. LinuxCNC G76 kann technisch nur eine gemeinsame E-Laenge:
+  ein einzelner Wert wird mit `L1` oder `L2` ausgegeben, zwei gleiche Werte
+  mit `L3`; zwei unterschiedliche Werte brechen mit einer klaren Meldung ab,
+  statt einen falschen Taper zu erzeugen.
+- Fix (P0): Ein Innen-Freistich mit dynamischer Werkzeugradiuskorrektur
+  `G41.1` fuehrte LinuxCNC an der konkaven Schulter zu einem Interpreterabbruch
+  ("Straight feed in concave corner ..."). Der nachfolgende Innen-G76-Zyklus
+  wurde dadurch nie erreicht und erschien weder im Backplot noch beim Lauf.
+  Bei integrierten Innenfreistichen wird diese fuer die Form unzulaessige
+  Kompensation jetzt gezielt deaktiviert; der Kontur- und Gewindeschritt wird
+  vollstaendig verarbeitet.
+- Freistich (P0): Automatische DIN-76-Freistiche fuer Aussen- und
+  Innengewinde werden nicht mehr als rechteckige Tasche erzeugt. Die Kontur
+  besteht jetzt aus Ein-/Auslaufflanken, tangentialen G2/G3-Boegen und dem
+  Freistichgrund; dieselbe Primitive-Geometrie wird fuer Schlichten,
+  Kontur-Subroutine und Vorschau verwendet.
+- Korrektur Freistichprofil: `g1` und `g2` werden jetzt entsprechend der
+  DIN-Skizze von der Schulter aus ausgewertet. Die Form ist asymmetrisch:
+  eine 30°-Flanke auf der Gewindeseite, gerader Grund, Schulterradius und
+  radiale Schulter. Die vorherige beidseitig schraege Trapezform war keine
+  DIN-76-Form.
+- Presets: Die automatische DIN-76-1-Auswahl verwendet jetzt je Gewindeseite
+  die Tabellenmasse `dg`, `g1`, `g2`, Kurzform und `r`. Die frueher
+  geschaetzten Tiefen und die fuer Innengewinde faelschlich wiederverwendeten
+  Aussenwerte sind entfernt. M30x3,5 hat damit aussen `dg=d-5`, innen
+  `dg=D+0,5`; M12 innen verwendet Form C/D mit `g2=9,1 mm`.
+- Vorschau: Automatische Gewindefreistiche werden als Bauteilgeometrie aller
+  verknuepften Aussen-/Innenkonturen dargestellt, auch wenn gerade der
+  Gewinde-Step oder ein anderer Reiter aktiv ist. Die Anzeige haengt nicht
+  mehr von der Auswahl eines Abspanen-Steps ab.
+- Verifikation: `doc/Test_Dateien/test.ngc` aus `Test.lse` neu erzeugt;
+  LinuxCNC `rs274 -g` akzeptiert die neuen Freistichboegen bis `M30`.
+- Innenbearbeitung: Move-based-Innen-Schruppen vermeidet jetzt diagonale
+  Schnellgaenge innerhalb der Bohrung und redundante Safe-Moves. Jeder Pass
+  faehrt axial ausschliesslich auf `XRI`, stellt erst dort auf den
+  Schnittdurchmesser zu und zieht danach nur radial auf `XRI` zurueck.
+- Innen-Schlichten und Innengewinde verwenden fuer die Einfahrt ebenfalls
+  immer `Z` auf der freien `XRI`-Ebene, danach `X`; der bisherige direkte
+  diagonale Schnellgang vom Rueckzugspunkt in die Kontur ist entfernt.
+- Referenzprogramm: Das M12-Innengewinde nutzt jetzt ebenfalls den
+  automatischen DIN-76-Freistich; der Innen-Schlichtstep verarbeitet ihn
+  vollstaendig statt ihn zu ignorieren.
+- Fix (P0): Ein Generatorfehler wurde bisher still in ein dreizeiliges
+  Fallback-Programm umgesetzt und anschliessend als erfolgreicher Export
+  gemeldet. Fehler werden jetzt an die UI weitergegeben; die NC-Datei wird
+  nur nach einer vollstaendigen Erzeugung atomar ersetzt. Eine vorhandene
+  Programmdatei bleibt bei einem Fehlschlag unveraendert.
+- Freistich: Reicht die lange DIN-76-Form bis zur folgenden Kontur-Schulter
+  nicht aus, waehlt der Generator jetzt die hinterlegte Kurzform nur dann,
+  wenn sie vollstaendig in die zylindrische Gewindestrecke passt; anderenfalls
+  bleibt der sichere Generierungsabbruch bestehen. Das Referenzprogramm
+  verwendet fuer das M30-Gewinde damit die Kurzform von `Z=-25,3` bis `-34,3`
+  statt eines alten manuellen Freistichs bei `Z=-35`.
+- Fix: Beim Ausblenden eines Freistichs fuer G71/G72 werden die getrennten
+  zylindrischen Teilsegmente wieder zu einer Schruppkontur zusammengefasst.
+  LinuxCNC erhaelt damit keine nicht schneidbare Parallel-Linienfolge mehr
+  (`G7X error: Cannot intersect parallel lines`).
+- Fix (P0): Abspanen verwendet fuer Konturen mit Freistich keine ungeeignete
+  globale Fertigkontur mehr als `G71/G72`-Subroutine. Relief-freie
+  Schruppvarianten erhalten eine eigene Subroutine; bei "voll in Kontur" wird
+  wegen der axial nichtmonotonen U-Geometrie sicher auf Move-based-Ausgabe
+  gewechselt. Damit entsteht kein LinuxCNC-Fehler `G7X error: Not monotonic`.
+- Verifikation: `doc/Test_Dateien/test.ngc` aus `Test.lse` regeneriert und mit
+  `/home/adm1n/linuxcnc/configs/Drehbank/tool.tbl` ueber den lokalen
+  LinuxCNC-Interpreter `rs274 -g` vollstaendig bis `M30` geparst.
+- Freistich (LES-037): Ein aktivierter DIN-76-Gewindefreistich wird jetzt aus
+  Gewindeende, Hand, Durchmesser und der normierten Ueberdeckung `f`
+  abgeleitet. Er wird nur in eine passende zylindrische Aussen-/Innenkontur
+  eingespleisst und dadurch identisch in Vorschau, Kontur-Subroutine,
+  Schruppen und Schlichten verwendet. Fehlt die Konturstrecke, bricht die
+  G-Code-Erzeugung ab statt einen Freistich am Konturende oder im Vollmaterial
+  zu erzeugen. Regressionen decken Aussen- und Innengeometrie sowie den
+  sicheren Abbruch ab.
+- Docs: README und DEV-Dokumentation beschreiben die verbindliche
+  Gewinde-zu-Kontur-Zuordnung; der Realtest-Fragenkatalog enthaelt die
+  LinuxCNC-Abnahme fuer automatischen Aussen- und Innenfreistich.
+- Presets: DIN-76-1-Regelgewinde bis M30 enthalten jetzt Steigung, Freistichbreite fuer Aussen/Innen, Kurzformbreite, normierte Gewindeueberdeckung und Radius. Die bisherige rein groessenbasierte Breiten-Schaetzung wird dadurch fuer vorhandene Regelgewinde ersetzt; M30x3,5 verwendet beispielsweise `g2=12,0 mm`, `f=4,7 mm`, `r=1,6 mm` aussen und `g2=17,7 mm` innen.
+- Performance: Die vollstaendige Sprach-/Widget-Praesentation bleibt Teil der synchronen Startbereitschaft. Ihre statische Uebersetzung indexiert den Widgetbaum jetzt einmal nach `objectName`, statt fuer jeden Schluessel erneut eine rekursive `findChild()`-Suche auszufuehren; das beseitigt die quadratische Startzeit nach der UI-Aufteilung.
+- Safety/Audit (LES-037): Ein Kontur-Freistich ist derzeit nur an ein Kontursegment gebunden, nicht an eine konkrete Gewindeoperation. Im Referenzprogramm liegt das Feature bei `Z=-35`, das Gewinde endet aber bei `Z=-30`; Vorschau und Ausgabe duerfen diese fehlende Zuordnung nicht als korrekt behandeln.
+- Fix (LES-037, P0): Der Gewinde-Generator bricht jetzt vor der Ausgabe mit einer klaren Fehlermeldung ab, wenn die vorgeschlagene DIN-Freistichbreite laenger als das Gewinde ist. Damit wird kein ungueltiger Freistich-Vorschlag erzeugt; die tatsaechliche Freistichgeometrie bleibt weiterhin eine Kontur-Funktion und ist noch unter LES-037 zu vervollstaendigen.
+- Fix: Das Sperren des Programmkopf-Loeschens funktioniert auch ohne Qt-Elternwidget robust. Statt in einem Headless-/Testpfad beim Oeffnen eines Dialogs fehlzuschlagen, wird der Vorgang nachvollziehbar geloggt.
+- Test-Audit: Der kombinierte Gesamtlauf mischt echte Qt- und Stub-Tests im selben Python-Prozess. Die aktuelle globale Import-Umschaltung kann dabei `qtpy`-Rekursionen ausloesen; die Testarten muessen in getrennte, reproduzierbare Laeufe aufgeteilt werden (LES-038).
+- Dokumentation: Nullbytes aus `TODO.md` und `CHANGELOG.md` entfernt. Beide Dateien sind wieder normale Textdateien, so dass Suche, Diff und Changelog-Pruefungen sie vollstaendig verarbeiten.
+- Audit/Plan (P0, real reproduzierbar): Freistich/Relief am Gewindeende muss am Ende der Gewindelaenge und nicht am Ende der Gesamtkontur verankert werden. Der derzeitige Fehlerpfad kann zu einem LinuxCNC-Fehler `not monotonic` fuehren, weil der letzte Freistich-Schritt nach der Gesamtkontur statt hinter dem Gewindeschritt liegt; der Generator muss hier sofort mit einer klaren Fehlermeldung abbrechen, wenn der verbleibende Platz nicht ausreicht
 - Fix (LES-003, P0, schwerwiegend, real bestaetigt - Nutzerhinweis: "es wird keine wirkliche abspahnaufgabe generiert"): Die bewegungsbasierte Ersatzloesung `rough_turn_parallel_x()` (`gcode_roughing.py`, siehe unten fuer den Grund, warum G71/G72 fuer Innenbearbeitung nicht genutzt werden) suchte pro Zustelltiefe nur in einem hauchduennen Fenster (`x_cut +/- 1e-3`) nach Material - bei den meisten X-Baendern einer realen Innenkontur (Anfahrt, Radien, senkrechte Bohrungswand, Uebergaenge) traf dieses Fenster kein Kontursegment ("no cut region"), waehrend ein einzelnes Band zufaellig die GESAMTE lange Bohrungswand in einem einzigen ~33mm-Schnitt erfasste - exakt das gemeldete Symptom. Ersetzt durch eine "Materialreichweite"-Baenderung: pro Zustelltiefe `x_cut` wird jetzt ueberall dort geschnitten, wo die Zielkontur ueber `x_cut` hinausgeht (intern: Kontur-X >= x_cut bis zum Kontur-Maximum; extern: Kontur-X <= x_cut bis zum Kontur-Minimum) - fuer die reale Nutzerkontur ("ausdrehen") ergeben sich jetzt 9 gleichmaessige Einzelzustellungen statt eines Riesenschnitts, die letzten 3 Baender (steiler, kurzer Uebergang zur Bohrungsoeffnung) melden konsistent "no cut region" statt einer irrefuehrenden leeren "X-band"-Kopfzeile (zusaetzlicher Konsistenz-Fix: ein Band, dessen gefundene Intervalle alle entartet/zu flach sind, meldet jetzt ebenfalls "no cut region" statt einer Kopfzeile ohne folgenden Schnitt)
 - Verifikation: der generierte G-Code fuer die reale Bohrungskontur (inkl. vorangehendem Bohren-Step) wurde mit dem echten LinuxCNC-Interpreter `rs274` geparst und ausgefuehrt - fehlerfrei, mit der erwarteten Treppenstufen-Bewegungssequenz (`STRAIGHT_TRAVERSE`/`STRAIGHT_FEED` je Zustellung)
 - Tests: `tests/test_internal_roughing_uses_g71_cycle.py::test_internal_roughing_with_real_bore_contour_produces_even_stepped_passes` (vormals `..._still_produces_uneven_passes`, dokumentierte bewusst den alten Bug) auf das jetzt korrekte Verhalten umgeschrieben; `tests/test_gcode_motion_regressions.py::test_parallel_x_roughing_merges_touching_wall_and_transition_segments` an den jetzt vollstaendigeren zusammenhaengenden Schnitt angepasst (Z-10.0 statt Z-10.5, da die Baenderung ein kurzes Uebergangssegment korrekt mit erfasst); zwei `test_slicer_extra.py`-Tests zum `allow_undercut`-Verhalten neu geschrieben (das alte schmale Fenster lieferte dort nur hauchduenne ~0.001mm-Splitter, die faelschlich als Testerfolg gewertet wurden); alle geaenderten Tests gegen den alten Code per `git stash` auf `gcode_roughing.py` bestaetigt fehlgeschlagen; Stand `368 passed, 7 skipped`

@@ -78,7 +78,7 @@ def test_on_slice_changed_logs_and_syncs_widget():
 
 
 def test_preview_widget_emit_uses_callback_fallback():
-    widget = object.__new__(LathePreviewWidget)
+    widget = LathePreviewWidget.__new__(LathePreviewWidget)
     widget.slice_z = 0.0
     widget.view_mode = "side"
     widget._slice_change_callback_calls = []

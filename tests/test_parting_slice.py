@@ -125,7 +125,15 @@ def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
     }
     g = "\n".join(m.generate_gcode())
     assert "G41.1 D0.8000 L3" in g
-    assert "G0 X50.000 Z2.000" in g
+    # Innenanfahrt darf keinen diagonalen Schnellgang durch die Bohrung
+    # erzeugen: erst axial auf der freien XRI-Ebene (X9.000), erst danach
+    # radial auf den Konturstart (X50.000) - beides bei sicherem Z2.000, kein
+    # zusaetzlicher (Nullbewegungs-)G0 auf dasselbe Z.
+    lines = g.split("\n")
+    approach_idx = lines.index("G0 Z2.000")
+    assert lines[approach_idx + 1] == "G0 X9.000"
+    assert lines[approach_idx + 2] == "G0 X50.000"
+    assert lines[approach_idx + 3] == "G41.1 D0.8000 L3"
     assert "G1 X50.000 Z0.000 F0.200" in g
 
 

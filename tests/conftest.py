@@ -1,8 +1,25 @@
 import sys
 import types
 
+def _clear_stale_qt_modules():
+    for name in list(sys.modules):
+        if name in {"qtpy", "qtvcp", "qtvcp.core"} or name.startswith("qtpy.") or name.startswith("qtvcp.") or name.startswith("lathe_easystep"):
+            sys.modules.pop(name, None)
+
 
 def _install_qt_stubs():
+    try:
+        import PyQt5  # noqa: F401
+        import qtpy  # noqa: F401
+    except Exception:
+        pass
+    else:
+        # Prefer the real Qt stack whenever the interpreter has it. Some tests
+        # intentionally import real PyQt5 widgets; leaving the fake stub in place
+        # or reusing stale modules from earlier tests made the suite order-dependent.
+        _clear_stale_qt_modules()
+        return
+
     if "qtpy" in sys.modules and "qtvcp.core" in sys.modules:
         qtpy = sys.modules["qtpy"]
         if hasattr(qtpy, "QtCore"):

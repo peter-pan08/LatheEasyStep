@@ -114,11 +114,16 @@ def build_thread_path(params: Dict[str, float]) -> List[Point]:
 
     z_dir = 1.0 if left_hand else -1.0
     end_z = start_z + (z_dir * length)
+    lead_in = abs(float(params.get("lead_in", 0.0) or 0.0))
+    lead_out = abs(float(params.get("lead_out", 0.0) or 0.0))
 
     if abs(root_dia - crest_dia) <= 1e-9:
         return [(crest_dia, start_z), (crest_dia, end_z)]
 
-    path: List[Point] = [(crest_dia, start_z)]
+    path: List[Point] = []
+    if lead_in > 1e-9:
+        path.extend([(crest_dia, start_z - z_dir * lead_in), (root_dia, start_z)])
+    path.append((crest_dia, start_z))
     teeth = max(1, int(math.ceil(length / pitch)))
     z = start_z
     for _ in range(teeth):
@@ -137,6 +142,10 @@ def build_thread_path(params: Dict[str, float]) -> List[Point]:
             break
     if (z_dir < 0.0 and path[-1][1] > end_z) or (z_dir > 0.0 and path[-1][1] < end_z):
         path.append((root_dia, end_z))
+    if lead_out > 1e-9:
+        if path[-1] != (root_dia, end_z):
+            path.append((root_dia, end_z))
+        path.append((crest_dia, end_z + z_dir * lead_out))
     return path
 
 

@@ -5,7 +5,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from lathe_easystep.gcode_groove import generate_groove_gcode
 from lathe_easystep.gcode_roughing import generate_abspanen_gcode, rough_turn_parallel_x
+from lathe_easystep.gcode_safety import emit_approach
 from lathe_easystep.gcode_thread import generate_thread_gcode
+from lathe_easystep.contour_logic import thread_relief_spec
 from lathe_easystep.model import OpType, Operation
 
 
@@ -101,6 +103,41 @@ def test_internal_abspanen_without_xi_uses_contour_min_as_start_stock():
     lines = generate_abspanen_gcode(params, path, settings)
     assert any(line.startswith("(Pass ") for line in lines)
     assert any(line.startswith("G1 X") for line in lines)
+
+
+def test_internal_finish_with_din_relief_disables_incompatible_nose_compensation():
+    relief = thread_relief_spec(
+        {"major_diameter": 12.0, "length": 20.0, "thread_start_z": -10.0,
+         "orientation": "internal", "relief_mode": "suggest"}
+    )
+    params = {
+        "tool": 9, "spindle": 500.0, "feed": 0.15, "depth_per_pass": 1.0,
+        "mode": "finish", "side": "inside", "undercut_mode": "full",
+        "_contour_params": {
+            "start_x": 10.0, "start_z": 0.0,
+            "segments": [{"x": 10.0, "z": -40.0}, {"x": 12.0, "z": -40.0}, {"x": 12.0, "z": -10.0}],
+            "auto_thread_reliefs": [relief],
+        },
+    }
+    settings = {
+        "xi": 10.0, "xri": 9.3, "zri": 1.0, "xri_absolute": True, "zri_absolute": True,
+        "tools": {9: {"radius_mm": 0.4, "q": 6}},
+    }
+    lines = generate_abspanen_gcode(params, [(10.0, 0.0), (10.0, -40.0), (12.0, -40.0), (12.0, -10.0)], settings)
+    assert any("Konkavecke" in line for line in lines)
+    assert not any(line.startswith("G41.1") for line in lines)
+
+
+def test_internal_approach_moves_z_on_xri_before_radial_infeed():
+    lines = []
+    emit_approach(
+        lines,
+        10.0,
+        -20.0,
+        {"xri": 9.3, "zri": 1.0, "xri_absolute": True, "zri_absolute": True,
+         "_active_retract_mode": "internal", "_is_at_safe": True},
+    )
+    assert lines == ["G0 Z-20.000", "G0 X10.000"]
 
 
 def test_external_groove_approach_uses_safe_planes_before_plunge():

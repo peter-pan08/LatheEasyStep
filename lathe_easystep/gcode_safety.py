@@ -172,6 +172,25 @@ def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Di
     safe = get_safe_position(settings)
     if safe and settings is not None:
         x_safe, z_safe = safe
+        internal = str(settings.get("_active_retract_mode", "") or "").strip().lower() == "internal"
+        # In der Bohrung darf kein diagonaler Schnellgang vom Rueckzugspunkt
+        # zum Konturstart entstehen. Der Inventor/LinuxCNC-Post faehrt erst
+        # axial auf der freien XRI-Ebene und stellt erst dort radial zu.
+        if internal:
+            if not settings.get("_is_at_safe"):
+                lines.append(f"G0 Z{z_safe:.3f}")
+                lines.append(f"G0 X{x_safe:.3f}")
+            # Nach der (ggf. uebersprungenen) Anfahrt auf die sichere XRI-/
+            # ZRI-Ebene steht das Werkzeug bereits auf z_safe - ein weiterer
+            # G0 auf denselben Z-Wert (haeufig, da der Konturstart oft genau
+            # auf der sicheren Z-Ebene liegt) waere eine bedeutungslose
+            # Nullbewegung.
+            if abs(start_z - z_safe) > 1e-9:
+                lines.append(f"G0 Z{start_z:.3f}")
+            if abs(start_x - x_safe) > 1e-9:
+                lines.append(f"G0 X{start_x:.3f}")
+            settings["_is_at_safe"] = False
+            return
         if settings.get("_is_at_safe"):
             lines.append(f"G0 X{start_x:.3f} Z{start_z:.3f}")
         else:
