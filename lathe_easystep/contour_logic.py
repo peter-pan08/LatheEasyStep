@@ -126,6 +126,10 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
     prim = []
     reliefs: List[List[Dict[str, object]]] = []
     cur = pts[0]
+    # Primitive-Indexbereich [start, end) je Segment - wird gebraucht, um
+    # einen Freistich (din_relief) spaeter an der RICHTIGEN Stelle in `prim`
+    # einzufuegen, statt ihn immer nur vor/nach der GESAMTEN Kontur anzuhaengen.
+    segment_prim_bounds: List[Tuple[int, int]] = []
 
     def _emit_line(p1, p2):
         if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) <= 1e-9:
@@ -145,6 +149,7 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
 
     for i in range(1, len(pts)):
         p_next = pts[i]
+        seg_prim_start = len(prim)
         if 1 <= i < len(pts) - 1:
             seg = segments[i - 1] if (i - 1) < len(segments) else {}
             edge_kind = (seg.get("edge") or "none").strip().lower()
@@ -216,6 +221,7 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
                                 ccw = _cross(v1, v2) < 0.0
                                 _emit_arc(pt1_d, pt2_d, best_d, ccw)
                                 cur = pt2_d
+                                segment_prim_bounds.append((seg_prim_start, len(prim)))
                                 continue
 
             elif edge_kind in ("chamfer", "fase") and edge_size > 1e-9:
@@ -229,36 +235,41 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
                     _emit_line(cur, pc1)
                     _emit_line(pc1, pc2)
                     cur = pc2
+                    segment_prim_bounds.append((seg_prim_start, len(prim)))
                     continue
 
         _emit_line(cur, p_next)
         cur = p_next
+        segment_prim_bounds.append((seg_prim_start, len(prim)))
 
+    # Freistiche (din_relief) duerfen an JEDEM Segment sitzen, nicht nur am
+    # allerersten/-letzten der GESAMTEN Kontur - die Geometrieformel selbst
+    # war bereits generisch (sie hing nur vom Segment-Punktpaar pts[idx]/
+    # pts[idx+1] ab); die frueher harte idx==0/idx==len(segments)-1-Schranke
+    # war eine rein kuenstliche Einschraenkung. Verarbeitung in ABSTEIGENDER
+    # Segmentreihenfolge, damit ein Einfuegen bei hoeherem idx die bereits
+    # ermittelten `segment_prim_bounds` fuer NIEDRIGERE idx nicht verschiebt.
+    relief_specs: List[Tuple[int, str, Dict[str, object]]] = []
     for idx, seg in enumerate(segments):
         feature = segment_feature(seg if isinstance(seg, dict) else {})
         if feature.get("feature_type") != "din_relief":
             continue
+        if idx >= len(segment_prim_bounds):
+            continue
         anchor_mode = str(feature.get("orientation") or "end").strip().lower()
         if anchor_mode not in ("start", "end"):
             anchor_mode = "end"
-        if anchor_mode == "start" and idx != 0:
+        relief_specs.append((idx, anchor_mode, feature))
+
+    for idx, anchor_mode, feature in sorted(relief_specs, key=lambda item: item[0], reverse=True):
+        p_prev = pts[idx]
+        p_anchor = pts[idx + 1] if idx + 1 < len(pts) else pts[idx]
+        relief = _build_relief_primitives(p_prev, p_anchor, feature, prepend=(anchor_mode == "start"))
+        if not relief:
             continue
-        if anchor_mode == "end" and idx != len(segments) - 1:
-            continue
-        if anchor_mode == "start":
-            p_anchor = pts[0]
-            p_next = pts[1] if len(pts) > 1 else pts[0]
-            relief = _build_relief_primitives(p_anchor, p_next, feature, prepend=True)
-            if relief:
-                prim = relief + prim
-                reliefs.append(relief)
-        else:
-            p_prev = pts[-2] if len(pts) > 1 else pts[-1]
-            p_anchor = pts[-1]
-            relief = _build_relief_primitives(p_prev, p_anchor, feature, prepend=False)
-            if relief:
-                prim.extend(relief)
-                reliefs.append(relief)
+        splice_at = segment_prim_bounds[idx][0] if anchor_mode == "start" else segment_prim_bounds[idx][1]
+        prim[splice_at:splice_at] = relief
+        reliefs.append(relief)
 
     feature_primitives = [item for relief in reliefs for item in relief]
     return {
