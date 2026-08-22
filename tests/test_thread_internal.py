@@ -88,6 +88,18 @@ class TestExternalThreadGCode:
         g76_line = [l for l in lines if l.startswith("G76")][0]
         assert "Z-20.000" in g76_line
 
+    def test_thread_lead_in_and_out_use_g76_taper_both_ends(self):
+        op = _make_thread_op(lead_in=2.0, lead_out=2.0)
+        lines = gcode_for_thread(op, _thread_settings())
+        g76_line = next(line for line in lines if line.startswith("G76"))
+        assert "E2.0000 L3" in g76_line
+        assert any("Vorlauf=2.000 Auslauf=2.000" in line for line in lines)
+
+    def test_thread_lead_in_and_out_reject_different_taper_lengths(self):
+        op = _make_thread_op(lead_in=1.0, lead_out=2.0)
+        with pytest.raises(ValueError, match="gemeinsame Taperlaenge"):
+            gcode_for_thread(op, _thread_settings())
+
 
 class TestInternalThreadGCode:
     """Internal threading (orientation=1): boring bar cuts outward."""
@@ -195,15 +207,17 @@ class TestInternalThreadGCode:
         'Sicherheits-Z'-Feld des Gewinde-Steps (hier 3.0) als Zwischenstopp,
         obwohl bereits XRI (radial sicher bei jeder Z-Position) erreicht war -
         das erzeugte einen unnoetigen Rueckzug (Z 1.0 -> 3.0 -> -6.0) vor dem
-        eigentlichen Einfahren. Die Anfahrt geht jetzt direkt von der
-        globalen sicheren Position auf (XRI, start_z)."""
+        eigentlichen Einfahren. Die Anfahrt geht jetzt von der globalen
+        sicheren Position erst axial auf XRI bis start_z und stellt erst dann
+        radial zu."""
         m = ProgramModel()
         m.operations = [_make_thread_op(orientation=1, thread_start_z=-6.0, safe_z=3.0)]
         m.program_settings = _thread_settings()
         lines = m.generate_gcode()
         assert "G0 Z4.000" in lines
         assert "G0 X7.000" in lines
-        assert "G0 X7.000 Z-6.000" in lines
+        assert "G0 Z-6.000" in lines
+        assert "G0 X7.000 Z-6.000" not in lines
         assert "G0 X7.000 Z3.000" not in lines
         assert "G0 X8.068" in lines
 
@@ -218,7 +232,8 @@ class TestInternalThreadGCode:
         m.program_settings = _thread_settings()
         lines = m.generate_gcode()
         assert "G0 X7.000 Z5.000" not in lines
-        assert "G0 X7.000 Z-6.000" in lines
+        assert "G0 Z-6.000" in lines
+        assert "G0 X7.000 Z-6.000" not in lines
 
     def test_internal_thread_rejects_unplausible_xri(self):
         m = ProgramModel()

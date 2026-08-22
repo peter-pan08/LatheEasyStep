@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from lathe_easystep.contour_logic import build_contour_variants, validate_contour_segments_for_profile
+from lathe_easystep.contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec, validate_contour_segments_for_profile
 from lathe_easystep.examples import make_program_settings
 from lathe_easystep.gcode_program import generate_program_gcode
 from lathe_easystep.model import OpType, Operation
@@ -128,8 +128,8 @@ def test_abspanen_relief_finish_only_keeps_relief_for_finish_pass():
     text = "\n".join(lines)
     assert "(Hinterschnitt-Modus: finish_only)" in text
     assert "(Hinterschnitt separat)" not in text
-    assert "X18.800 Z-20.000" in text
-    assert "X18.800 Z-22.000" in text
+    assert "X17.700" in text
+    assert "X17.700 Z-25.200" in text
 
 
 def test_abspanen_relief_separate_emits_separate_section():
@@ -168,6 +168,101 @@ def test_abspanen_relief_separate_emits_separate_section():
     )
     lines = generate_program_gcode([Operation(OpType.PROGRAM_HEADER, {}), contour, abspanen], settings)
     assert "(Hinterschnitt separat)" in "\n".join(lines)
+
+
+def test_full_relief_contour_never_uses_non_monotonic_g71_subroutine():
+    settings = make_program_settings()
+    contour_params = {
+        "name": "full_relief",
+        "start_x": 30.0,
+        "start_z": 0.0,
+        "segments": [
+            {"x": 30.0, "z": -20.0, "feature": {"feature_type": "din_relief", "thread_size": "M10", "internal": False}},
+            {"x": 40.0, "z": -20.0},
+        ],
+    }
+    contour = Operation(OpType.CONTOUR, contour_params, path=build_contour_variants(contour_params)["finish_primitives"])
+    abspanen = Operation(
+        OpType.ABSPANEN,
+        {"tool": 1, "spindle": 1200.0, "feed": 0.15, "depth_per_pass": 0.5,
+         "slice_strategy": "parallel_z", "mode": 0, "contour_name": "full_relief", "undercut_mode": "full"},
+    )
+    text = "\n".join(generate_program_gcode([Operation(OpType.PROGRAM_HEADER, {}), contour, abspanen], settings))
+    assert "G71 Q" not in text
+    assert "Freistich in voller Kontur ist nicht G71-monoton" in text
+
+
+def test_automatic_thread_relief_is_spliced_at_thread_end_for_preview_and_gcode():
+    settings = make_program_settings()
+    contour_params = {
+        "name": "thread_shoulder",
+        "start_x": 30.0,
+        "start_z": 0.0,
+        "segments": [
+            {"x": 30.0, "z": -40.0},
+            {"x": 40.0, "z": -40.0},
+        ],
+    }
+    contour = Operation(OpType.CONTOUR, contour_params, path=build_contour_variants(contour_params)["finish_primitives"])
+    rough_finish = Operation(
+        OpType.ABSPANEN,
+        {
+            "tool": 1, "spindle": 1200.0, "feed": 0.15, "depth_per_pass": 0.5,
+            "slice_strategy": "parallel_z", "mode": 1, "contour_name": "thread_shoulder",
+            "undercut_mode": "full",
+        },
+    )
+    thread = Operation(
+        OpType.THREAD,
+        {
+            "tool": 3, "spindle": 450.0, "pitch": 1.5, "length": 20.0,
+            "major_diameter": 30.0, "relief_mode": "suggest", "relief_norm": "DIN 76-A",
+        },
+    )
+    lines = generate_program_gcode([Operation(OpType.PROGRAM_HEADER, {}), contour, rough_finish, thread], settings)
+    text = "\n".join(lines)
+    # M30: endpoint -20, f=4.7 -> entry -15.3; g2=12 -> exit -27.3.
+    # The DIN profile is sloped and rounded, not a rectangular pocket.
+    assert "G1 X25.000 Z-19.600" in text
+    assert "G2 X28.200 Z-27.300" in text
+    assert "(Gewindeende Z=-20.000; Ueberdeckung f=4.700)" in text
+
+
+def test_automatic_internal_thread_relief_expands_the_bore_at_thread_end():
+    contour_params = {
+        "start_x": 10.0,
+        "start_z": 0.0,
+        "segments": [{"x": 10.0, "z": -30.0}],
+    }
+    feature = thread_relief_spec(
+        {"major_diameter": 10.0, "length": 20.0, "orientation": "internal", "relief_mode": "suggest"}
+    )
+    assert feature is not None
+    contour_params["auto_thread_reliefs"] = [feature]
+    variants = build_contour_variants(contour_params)
+    points = variants["feature_points"]
+    assert any(x > 10.0 for x, _z in points)
+    assert points[0] == (10.0, -16.2)
+    assert points[-1] == (10.0, -24.0)
+
+
+def test_automatic_thread_relief_uses_din_short_form_before_a_near_shoulder():
+    contour_params = {"start_x": 30.0, "start_z": 0.0, "segments": [{"x": 30.0, "z": -35.0}]}
+    feature = thread_relief_spec({"major_diameter": 30.0, "pitch": 3.5, "length": 30.0, "relief_mode": "suggest"})
+    selected = select_thread_relief_for_contour(contour_params, feature)
+    assert selected is not None
+    assert selected["variant"] == "short"
+    assert selected["width"] == 9.0
+    variants = build_contour_variants({**contour_params, "auto_thread_reliefs": [selected]})
+    assert variants["feature_points"][0] == (30.0, -25.3)
+    assert variants["feature_points"][-1] == (30.0, -34.3)
+    assert any(primitive["type"] == "arc" for primitive in variants["feature_primitives"])
+    vertical_rough_lines = [
+        primitive for primitive in variants["rough_primitives"]
+        if primitive["type"] == "line" and primitive["p1"][0] == primitive["p2"][0] == 30.0
+    ]
+    assert len(vertical_rough_lines) == 1
+    assert vertical_rough_lines[0]["p2"] == [30.0, -35.0]
 
 
 def test_toolchange_has_m5_before_each_m6():

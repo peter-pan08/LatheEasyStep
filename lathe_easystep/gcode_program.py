@@ -4,6 +4,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from .checks import validate_program_setup
+from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_drill import generate_drill_gcode
 from .gcode_face import generate_face_gcode
 from .gcode_groove import generate_groove_gcode, groove_sub_definition
@@ -211,6 +212,56 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     for _key in ("_current_tool", "_is_at_safe", "_active_retract_mode"):
         settings.pop(_key, None)
 
+    # A DIN-76 relief belongs to the thread endpoint, not to the final point
+    # of a contour.  Prepare an immutable per-generation contour variant here
+    # so the contour subroutine and every linked rough/finish operation share
+    # exactly the same derived geometry.
+    contour_by_name = {
+        str(op.params.get("name") or "").strip(): op
+        for op in operations
+        if op.op_type == OpType.CONTOUR and isinstance(op.params, dict) and str(op.params.get("name") or "").strip()
+    }
+    automatic_reliefs = []
+    relief_threads: Dict[int, Operation] = {}
+    for thread_op in operations:
+        if thread_op.op_type != OpType.THREAD:
+            continue
+        feature = thread_relief_spec(thread_op.params)
+        if feature is not None:
+            feature["_thread_op_id"] = id(thread_op)
+            relief_threads[id(thread_op)] = thread_op
+            automatic_reliefs.append(feature)
+
+    derived_contours: Dict[str, Tuple[Dict[str, object], Dict[str, List[Dict[str, object]]]]] = {}
+    assigned_reliefs: set[int] = set()
+    for abspanen_op in (op for op in operations if op.op_type == OpType.ABSPANEN):
+        contour_name = str(abspanen_op.params.get("contour_name") or "").strip()
+        contour_op = contour_by_name.get(contour_name)
+        if contour_op is None or not contour_op.params.get("segments"):
+            continue
+        side_internal = is_internal_side(abspanen_op.params.get("side", 0))
+        candidates = [feature for feature in automatic_reliefs if bool(feature.get("internal")) == side_internal]
+        applicable = [selected for feature in candidates if (selected := select_thread_relief_for_contour(contour_op.params, feature)) is not None]
+        if not applicable:
+            continue
+        params = dict(contour_op.params)
+        params["auto_thread_reliefs"] = [dict(feature) for feature in applicable]
+        variants = build_contour_variants(params)
+        derived_contours[contour_name] = (params, variants)
+        for feature in applicable:
+            assigned_reliefs.add(int(feature.get("_source_feature_id", id(feature)) or id(feature)))
+            thread_op = relief_threads.get(int(feature.get("_thread_op_id", 0) or 0))
+            if thread_op is not None:
+                thread_op.params["_derived_relief"] = dict(feature)
+
+    for feature in automatic_reliefs:
+        if id(feature) not in assigned_reliefs:
+            raise ValueError(
+                f"Automatischer DIN-Freistich {feature['thread_size']} konnte keiner passenden "
+                "Aussen-/Innenkontur zugeordnet werden. Die Kontur muss den Gewindedurchmesser "
+                "ueber den vollstaendigen Freistichbereich enthalten."
+            )
+
     class SubAllocator:
         def __init__(self, start: int = 100):
             self.next_id = start
@@ -341,17 +392,19 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         name = str(op.params.get("name") or "").strip()
         if not name or not op.path:
             continue
-        if isinstance(op.path[0], dict):
-            key = ("prims", _contour_key_from_primitives(op.path))
+        derived = derived_contours.get(name)
+        path_for_sub = derived[1]["finish_primitives"] if derived else op.path
+        if isinstance(path_for_sub[0], dict):
+            key = ("prims", _contour_key_from_primitives(path_for_sub))
             if key not in contour_geom_map:
                 contour_geom_map[key] = settings["sub_allocator"].allocate()
-                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_primitives(op.path, contour_geom_map[key])
+                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_primitives(path_for_sub, contour_geom_map[key])
             contour_subs[name] = contour_geom_map[key]
         else:
-            key = ("pts", _contour_key_from_points(op.path))
+            key = ("pts", _contour_key_from_points(path_for_sub))
             if key not in contour_geom_map:
                 contour_geom_map[key] = settings["sub_allocator"].allocate()
-                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_points(op.path, contour_geom_map[key])
+                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_points(path_for_sub, contour_geom_map[key])
             contour_subs[name] = contour_geom_map[key]
 
     settings["contour_subs"] = contour_subs
@@ -406,13 +459,19 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             if contour_name:
                 contour_op = next((o for o in operations if o.op_type == OpType.CONTOUR and o.params.get("name") == contour_name), None)
                 if contour_op and contour_op.path:
-                    if isinstance(contour_op.params, dict):
+                    derived = derived_contours.get(str(contour_name).strip())
+                    if derived:
+                        op.params["_contour_params"] = derived[0]
+                        op.params["_primitives"] = derived[1]["finish_primitives"]
+                        op.path = primitives_to_points(derived[1]["finish_primitives"])
+                    elif isinstance(contour_op.params, dict):
                         op.params["_contour_params"] = dict(contour_op.params)
-                    if isinstance(contour_op.path[0], dict):
+                    if not derived and isinstance(contour_op.path[0], dict):
                         op.params["_primitives"] = contour_op.path
                         op.path = primitives_to_points(contour_op.path)
                     else:
-                        op.path = contour_op.path
+                        if not derived:
+                            op.path = contour_op.path
                 else:
                     op.path = []
         main_flow_lines.append("")

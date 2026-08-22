@@ -42,6 +42,19 @@ def test_all_din_relief_presets_are_structurally_valid():
             assert get_din_relief_preset(size, internal=(side_name == "internal")) is not None
 
 
+def test_m30_relief_contains_norm_width_overlap_and_radius():
+    external = get_din_relief_preset("M30", internal=False)
+    internal = get_din_relief_preset("M30", internal=True)
+    assert external is not None and internal is not None
+    assert external["pitch"] == 3.5
+    assert external["width"] == 12.0
+    assert external["thread_overlap"] == 4.7
+    assert external["radius"] == 1.6
+    assert internal["width"] == 17.7
+    assert external["bottom_width"] == 7.7
+    assert internal["bottom_width"] == 14.0
+
+
 def test_get_thread_with_relief_returns_side_metadata():
     combined = get_thread_with_relief("M20", internal=False)
     assert combined is not None

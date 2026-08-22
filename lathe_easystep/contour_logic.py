@@ -4,6 +4,70 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from .contour_features import primitive_to_points, segment_feature
+from .presets import get_din_relief_preset
+
+
+def _is_internal(value: object) -> bool:
+    return str(value or "").strip().lower() in ("1", "inside", "internal", "innen", "id")
+
+
+def _is_left_hand(value: object) -> bool:
+    return str(value or "").strip().lower() in ("1", "left", "links", "lh")
+
+
+def thread_relief_spec(thread_params: Dict[str, object]) -> Dict[str, object] | None:
+    """Return the contour feature derived from an automatic DIN-76 thread relief.
+
+    ``thread_overlap`` deliberately positions the G76 endpoint *inside* the
+    relief.  The geometry is therefore tied to the thread, never to the end
+    of an arbitrary contour segment.
+    """
+    mode = str(thread_params.get("relief_mode", "off") or "off").strip().lower()
+    if mode not in ("suggest", "suggest_din_relief", "automatic", "auto"):
+        return None
+    try:
+        diameter = float(thread_params.get("major_diameter", 0.0) or 0.0)
+        length = abs(float(thread_params.get("length", 0.0) or 0.0))
+        start_z = float(thread_params.get("thread_start_z", 0.0) or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Automatischer DIN-Freistich: Gewindedaten sind ungueltig.") from exc
+    size = f"M{diameter:g}"
+    internal = _is_internal(thread_params.get("orientation", 0))
+    preset = get_din_relief_preset(size, internal=internal)
+    if preset is None:
+        raise ValueError(f"Automatischer DIN-Freistich: kein DIN-76-Datensatz fuer {size} vorhanden.")
+    overlap = float(preset.get("thread_overlap", 0.0) or 0.0)
+    width = float(preset.get("width", 0.0) or 0.0)
+    depth = float(preset.get("depth", 0.0) or 0.0)
+    if overlap <= 0.0 or width <= 0.0 or depth <= 0.0:
+        raise ValueError(f"Automatischer DIN-Freistich: unvollstaendige DIN-76-Daten fuer {size}.")
+    if overlap > length + 1e-9:
+        raise ValueError(
+            f"Freistich DIN 76 {size}: Gewindeueberdeckung f={overlap:.3f}mm "
+            f"ist laenger als die Gewindelaenge {length:.3f}mm."
+        )
+    z_dir = 1.0 if _is_left_hand(thread_params.get("hand", 0)) else -1.0
+    end_z = start_z + z_dir * length
+    entry_z = end_z - z_dir * overlap
+    exit_z = entry_z + z_dir * width
+    return {
+        "feature_type": "din_relief",
+        "source": "thread_auto",
+        "thread_size": size,
+        "norm": str(thread_params.get("relief_norm", "DIN 76-A") or "DIN 76-A"),
+        "internal": internal,
+        "diameter": diameter,
+        "width": width,
+        "bottom_width": float(preset.get("bottom_width", 0.0) or 0.0),
+        "short_width": float(preset.get("short_width", 0.0) or 0.0),
+        "short_bottom_width": float(preset.get("short_bottom_width", 0.0) or 0.0),
+        "variant": "standard",
+        "depth": depth,
+        "radius": float(preset.get("radius", 0.0) or 0.0),
+        "thread_overlap": overlap,
+        "entry_z": entry_z,
+        "exit_z": exit_z,
+    }
 
 
 def normalize_arc_side(value: object | None) -> str:
@@ -18,6 +82,36 @@ def normalize_arc_side(value: object | None) -> str:
 def build_contour_path(params) -> list:
     variants = build_contour_variants(params)
     return variants["finish_primitives"]
+
+
+def contour_supports_thread_relief(params: Dict[str, object], feature: Dict[str, object]) -> bool:
+    """Whether a contour has the complete cylindrical span required by feature."""
+    probe = dict(params or {})
+    probe["auto_thread_reliefs"] = [dict(feature)]
+    variants = build_contour_variants(probe)
+    return any(item.get("source") == "thread_auto" for item in variants["feature_primitives"])
+
+
+def select_thread_relief_for_contour(params: Dict[str, object], feature: Dict[str, object]) -> Dict[str, object] | None:
+    """Select the DIN long form, or its valid short form, for this contour."""
+    if contour_supports_thread_relief(params, feature):
+        return feature
+    try:
+        short_width = float(feature.get("short_width", 0.0) or 0.0)
+        width = float(feature["width"])
+        entry_z = float(feature["entry_z"])
+        exit_z = float(feature["exit_z"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if short_width <= 0.0 or short_width >= width - 1e-9:
+        return None
+    short_feature = dict(feature)
+    short_feature["_source_feature_id"] = id(feature)
+    short_feature["width"] = short_width
+    short_feature["bottom_width"] = float(feature.get("short_bottom_width", 0.0) or 0.0)
+    short_feature["exit_z"] = entry_z + (1.0 if exit_z >= entry_z else -1.0) * short_width
+    short_feature["variant"] = "short"
+    return short_feature if contour_supports_thread_relief(params, short_feature) else None
 
 
 def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
@@ -271,6 +365,19 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
         prim[splice_at:splice_at] = relief
         reliefs.append(relief)
 
+    # Automatische DIN-76-Freistiche kommen von einer Gewindeoperation. Sie
+    # werden nur in eine passende zylindrische Gewindestrecke eingespleisst;
+    # ein beliebiges Konturende ist bewusst kein zulassiger Ersatzanker.
+    auto_reliefs = []
+    if isinstance(params, dict):
+        auto_reliefs = params.get("auto_thread_reliefs") or []
+    for feature in auto_reliefs:
+        if not isinstance(feature, dict):
+            continue
+        relief = _splice_thread_relief(prim, feature)
+        if relief:
+            reliefs.append(relief)
+
     feature_primitives = [item for relief in reliefs for item in relief]
     return {
         "finish_primitives": prim,
@@ -280,6 +387,111 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
         "rough_points": primitive_to_points(_primitives_without_relief(prim)),
         "feature_points": primitive_to_points(feature_primitives),
     }
+
+
+def _splice_thread_relief(primitives: List[Dict[str, object]], feature: Dict[str, object]) -> List[Dict[str, object]]:
+    """Replace a cylindrical contour span by the derived DIN-76 relief.
+
+    ``g2`` is the full axial span and ``g1`` the lower span.  The two
+    transitions are straight flanks followed by tangential arcs of the DIN
+    radius.  Coordinates remain diameter-programmed externally, while all
+    radius calculations use physical X radii.
+    """
+    try:
+        diameter = float(feature["diameter"])
+        entry_z = float(feature["entry_z"])
+        exit_z = float(feature["exit_z"])
+        depth = abs(float(feature["depth"]))
+        bottom_width = float(feature.get("bottom_width", 0.0) or 0.0)
+        relief_radius = float(feature.get("radius", 0.0) or 0.0)
+    except (KeyError, TypeError, ValueError):
+        return []
+    lo, hi = sorted((entry_z, exit_z))
+    eps = 1e-6
+    for index, primitive in enumerate(primitives):
+        if primitive.get("type") != "line" or primitive.get("feature_type") == "din_relief":
+            continue
+        p1 = primitive.get("p1") or ()
+        p2 = primitive.get("p2") or ()
+        if len(p1) < 2 or len(p2) < 2:
+            continue
+        x1, z1 = float(p1[0]), float(p1[1])
+        x2, z2 = float(p2[0]), float(p2[1])
+        if abs(x1 - x2) > eps or abs(x1 - diameter) > 0.05:
+            continue
+        if min(z1, z2) > lo + eps or max(z1, z2) < hi - eps:
+            continue
+        travel = 1.0 if z2 >= z1 else -1.0
+        first_z, second_z = (entry_z, exit_z) if (exit_z - entry_z) * travel >= 0 else (exit_z, entry_z)
+        width = abs(second_z - first_z)
+        if bottom_width <= eps:
+            # Compatibility for old manually stored features.  Automatic DIN
+            # data always supplies g1 explicitly.
+            bottom_width = width * 0.5
+        if bottom_width >= width - eps:
+            return []
+        x_relief = diameter + (2.0 * depth if bool(feature.get("internal")) else -2.0 * depth)
+        # DIN 76 defines g1 and g2 from the shoulder, not a symmetric
+        # trapezoid.  The thread-side transition is the 30 degree flank with
+        # axial width g2-g1; g1 is the straight relief-ground distance to the
+        # rounded shoulder.
+        flank_width = width - bottom_width
+        if flank_width <= eps:
+            return []
+        # Profile orientation comes from the thread travel, never from
+        # internal/external.  The 30 degree flank is always where the thread
+        # enters the relief; contour segments may be stored in either travel
+        # direction and are reversed only after this geometry is built.
+        thread_z_dir = 1.0 if exit_z >= entry_z else -1.0
+        surface_r, relief_r = diameter / 2.0, x_relief / 2.0
+        radial_dir = 1.0 if surface_r > relief_r else -1.0
+        # The shoulder radius cannot exceed the available radial depth.  This
+        # matters for the very shallow DIN inside forms (dg = D + 0.5).
+        shoulder_radius = min(relief_radius, abs(surface_r - relief_r) * 0.999, bottom_width * 0.999)
+        if shoulder_radius <= eps:
+            return []
+        flank_end = (relief_r, entry_z + thread_z_dir * flank_width)
+        arc_start = (relief_r, exit_z - thread_z_dir * shoulder_radius)
+        arc_end = (relief_r + radial_dir * shoulder_radius, exit_z)
+        arc_center = (relief_r + radial_dir * shoulder_radius, exit_z - thread_z_dir * shoulder_radius)
+        forward_items: List[Dict[str, object]] = []
+        for a, b in (((surface_r, entry_z), flank_end), (flank_end, arc_start)):
+            if math.hypot(b[0] - a[0], b[1] - a[1]) > eps:
+                forward_items.append({"type": "line", "p1": [a[0] * 2.0, a[1]], "p2": [b[0] * 2.0, b[1]]})
+        v1 = (arc_start[0] - arc_center[0], arc_start[1] - arc_center[1])
+        v2 = (arc_end[0] - arc_center[0], arc_end[1] - arc_center[1])
+        forward_items.append({
+            "type": "arc", "p1": [arc_start[0] * 2.0, arc_start[1]],
+            "p2": [arc_end[0] * 2.0, arc_end[1]],
+            "c": [arc_center[0] * 2.0, arc_center[1]],
+            "ccw": (v1[0] * v2[1] - v1[1] * v2[0]) < 0.0,
+        })
+        if math.hypot(surface_r - arc_end[0], exit_z - arc_end[1]) > eps:
+            forward_items.append({"type": "line", "p1": [arc_end[0] * 2.0, arc_end[1]], "p2": [surface_r * 2.0, exit_z]})
+
+        forward_travel = (first_z - entry_z) * thread_z_dir >= -eps
+        if forward_travel:
+            profile_items = forward_items
+        else:
+            profile_items = []
+            for item in reversed(forward_items):
+                reversed_item = dict(item)
+                reversed_item["p1"], reversed_item["p2"] = list(item["p2"]), list(item["p1"])
+                if reversed_item.get("type") == "arc":
+                    reversed_item["ccw"] = not bool(item.get("ccw"))
+                profile_items.append(reversed_item)
+
+        feature_data = {"role": "feature", "feature_type": "din_relief", "source": "thread_auto"}
+        relief = [{**item, **feature_data} for item in profile_items]
+        replacement: List[Dict[str, object]] = []
+        for a, b in (((x1, z1), (diameter, first_z)), ((diameter, second_z), (x2, z2))):
+            if math.hypot(b[0] - a[0], b[1] - a[1]) > eps:
+                replacement.append({"type": "line", "p1": [a[0], a[1]], "p2": [b[0], b[1]]})
+            if a == (x1, z1):
+                replacement.extend(relief)
+        primitives[index:index + 1] = replacement
+        return relief
+    return []
 
 
 def _build_relief_primitives(
@@ -337,7 +549,31 @@ def _build_relief_primitives(
 
 
 def _primitives_without_relief(primitives: List[Dict[str, object]]) -> List[Dict[str, object]]:
-    return [dict(pr) for pr in primitives or [] if str(pr.get("feature_type") or "").strip().lower() != "din_relief"]
+    result: List[Dict[str, object]] = []
+    eps = 1e-9
+    for primitive in primitives or []:
+        if str(primitive.get("feature_type") or "").strip().lower() == "din_relief":
+            continue
+        item = dict(primitive)
+        if item.get("type") != "line" or not result or result[-1].get("type") != "line":
+            result.append(item)
+            continue
+        previous = result[-1]
+        p0, p1 = previous.get("p1"), previous.get("p2")
+        q0, q1 = item.get("p1"), item.get("p2")
+        if not all(isinstance(point, (list, tuple)) and len(point) >= 2 for point in (p0, p1, q0, q1)):
+            result.append(item)
+            continue
+        # Nach dem Ausblenden eines U-foermigen Freistichs liegen zwei
+        # Teilstuecke derselben zylindrischen Linie mit einer Luecke dazwischen.
+        # Fuer die Schruppkontur ist genau diese Luecke wieder die unveraenderte
+        # Zylinderflaeche; verbinden und zusammenfassen, damit G71/G72 keine
+        # parallelen Null-/Folgesegmente erhaelt.
+        if abs(float(p1[0]) - float(q0[0])) <= eps and abs(float(p1[0]) - float(p0[0])) <= eps and abs(float(q1[0]) - float(q0[0])) <= eps:
+            previous["p2"] = [float(q1[0]), float(q1[1])]
+            continue
+        result.append(item)
+    return result
 
 
 def validate_contour_segments_for_profile(params: Dict[str, Any]) -> Tuple[bool, List[str]]:

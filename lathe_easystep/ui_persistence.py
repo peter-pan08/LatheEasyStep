@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import json
 import os
+import tempfile
 
 from qtpy import QtCore, QtWidgets
 
@@ -58,8 +59,20 @@ def write_program_file(handler, file_path: str) -> None:
 def write_gcode_file(handler, file_path: str) -> None:
     gcode_path = handler._normalized_file_path(file_path) or file_path
     lines = handler._build_gcode_lines()
-    with builtins.open(gcode_path, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines))
+    if not isinstance(lines, list) or len(lines) < 4:
+        raise ValueError("G-Code-Erzeugung lieferte kein vollstaendiges Programm; Datei wurde nicht geschrieben.")
+    directory = os.path.dirname(os.path.abspath(gcode_path)) or "."
+    fd, temporary_path = tempfile.mkstemp(prefix=".lathe-easystep-", suffix=".ngc", dir=directory, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+        os.replace(temporary_path, gcode_path)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise
     handler._current_gcode_path = gcode_path
 
 

@@ -68,8 +68,21 @@ def ui_required_keys() -> set[str]:
 
 def apply_ui_static_translations(root_widget, tr, lang: str) -> None:
     static_map = load_ui_static_map()
+    # findChild() is recursive. Calling it once for every translation key made
+    # startup quadratic after the UI split. Build the object-name index once.
+    widgets_by_name = {}
+    try:
+        root_name = root_widget.objectName()
+        if root_name:
+            widgets_by_name[root_name] = root_widget
+        for widget in root_widget.findChildren(QtWidgets.QWidget):
+            name = widget.objectName()
+            if name and name not in widgets_by_name:
+                widgets_by_name[name] = widget
+    except Exception:
+        widgets_by_name = {}
     for object_name, props in static_map.items():
-        widget = root_widget.findChild(QtWidgets.QWidget, object_name)
+        widget = widgets_by_name.get(object_name)
         if widget is None:
             continue
         for prop_name, value in props.items():

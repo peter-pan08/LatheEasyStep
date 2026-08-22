@@ -4583,11 +4583,23 @@ class HandlerClass:
             if idx == 0:
                 parent = self.root_widget or self._find_root_widget()
                 lang = self._current_language_code()
-                QtWidgets.QMessageBox.warning(
-                    parent,
-                    TRANSLATIONS.tr("dialog.delete.title", lang),
-                    TRANSLATIONS.tr("message.delete.program_header_forbidden", lang),
-                )
+                if parent is not None:
+                    try:
+                        QtWidgets.QMessageBox.warning(
+                            parent,
+                            TRANSLATIONS.tr("dialog.delete.title", lang),
+                            TRANSLATIONS.tr("message.delete.program_header_forbidden", lang),
+                        )
+                    except Exception:
+                        self._log(
+                            "[LatheEasyStep] blocked delete of program header without Qt parent",
+                            level="warning",
+                        )
+                else:
+                    self._log(
+                        "[LatheEasyStep] blocked delete of program header without Qt parent",
+                        level="warning",
+                    )
                 return
             self.model.remove_operation(idx)
             try:

@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-07-24
+Stand: 2026-08-22
 
 Diese Datei ist die verbindliche Liste aller offenen Aufgaben. Erledigte Punkte
 werden entfernt und im `CHANGELOG.md` dokumentiert. Release-Ziele und
@@ -11,12 +11,19 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand: `364 passed, 7 skipped`
+- Teststand (Stub-Qt-Lauf, `python3 -m pytest -q`): `368 passed, 7 skipped`.
+  Der kombinierte Gesamtprozess mit echtem PyQt5 ist bis zur Trennung von
+  Stub- und Echt-Qt-Tests unter LES-038 nicht als ein verifizierter
+  Gesamtwert auszuweisen.
 - UI-Shell und acht Reiter-Teil-UIs sind getrennt und werden ueber
   `lathe_easystep/ui_split.py` geladen
 - `de.lng`, `en.lng` und `es.lng` enthalten jeweils 1.022 identische,
   nichtleere und eindeutige Sprachschluessel
 - derzeit keine offenen GitHub-Issues; diese Datei ist der Aufgabenbestand
+- Real am Panel bestaetigt (Nutzertest 2026-08-22): DIN-Freistich mitten in
+  der Kontur (Vorschau UND generierter G-Code) sowie Innen-Schruppen
+  erzeugen jetzt beide sinnvolle, tatsaechlich abtragende Ergebnisse -
+  siehe LES-003/LES-010/LES-011
 
 Aufwand:
 
@@ -47,6 +54,8 @@ Prioritaeten:
 | LES-016 | P1 | UI-Sichtbarkeitsregeln fachlich festlegen und testen | mittel | S-M | 0.8.0 |
 | LES-019 | P1 | Verifizierte DIN-76-Presets fuer M2, M2.5 und M3.5 ergaenzen | mittel | S-M | 0.8.0 |
 | LES-030 | P1 | Neue Generatorfunktionen systematisch in LinuxCNC simulieren | hoch | M-L | 0.8.0 |
+| LES-037 | P0 | Freistich/Relief am Gewindeende verankern, nicht am Konturende; bei zu wenig Platz klar fehlern | sehr hoch | M | 0.8.0-alpha |
+| LES-038 | P2 | Stub- und Echt-Qt-Tests reproduzierbar trennen | mittel | M | 0.9.0 |
 | LES-018 | P2 | G70-Wiederverwendung fuer separaten Schlichtstep pruefen | mittel | M-L | 0.9.0 |
 | LES-020 | P2 | Handler in kleinen Paketen weiter verkleinern | mittel | M je Paket | 0.9.0 |
 | LES-022 | P2 | Zentralen Bewegungs- und Modalzustand einfuehren | langfristig hoch | XL | 0.9.0 |
@@ -131,6 +140,17 @@ nicht die reproduzierbare Generator- und LinuxCNC-Verifikation.
   plus LinuxCNC-Backplot absichern
 - [ ] Innenfreistich nach Umsetzung von LES-010/LES-011 separat abnehmen
 
+### LES-037 Freistich/Relief am Gewindeende verankern
+
+Automatische DIN-Freistiche werden aus der Gewindeoperation abgeleitet und
+nur in eine passende zylindrische Aussen-/Innenkontur eingespleisst. Das
+G76-Ende liegt um die DIN-Ueberdeckung `f` innerhalb der Freistichbreite;
+fehlt die gesamte Konturstrecke, bricht die Erzeugung sicher ab. Vorschau,
+Schlichtweg und Kontur-Subroutine verwenden dieselben Primitive.
+
+- [ ] realen Aussen- und Innengewinde-Fall mit automatischem Freistich im
+  LinuxCNC-Backplot und Trockenlauf abnehmen
+
 ## P1 - Fachliche Vollstaendigkeit fuer 0.8.0
 
 ### LES-006 Rueckzugsstrategie je Bearbeitungsart
@@ -166,12 +186,15 @@ beide bestaetigt korrekt.
 
 Fertigkontur und Rough-Kontur verwenden bereits dieselbe Primitiv-Quelle
 (`build_contour_variants()`); die Splicing-Position ist fuer beide identisch
-korrekt.
+korrekt. Die Seitenvorschau (`ui_preview.py::_collect_paths()`) ruft
+ebenfalls bereits `build_contour_variants()` auf und zeichnet die
+Freistich-Feature-Primitive (`role="feature"`) - Aussen- UND Innenfreistich
+mitten in der Kontur sind damit seit dem Splicing-Fix auch dort korrekt und
+wurden vom Nutzer real am Panel bestaetigt ("vorschau ... funktioniert").
 
-- [ ] Aussen-/Innenfreistich in der Seitenvorschau darstellen (Vorschau
-  nutzt aktuell ggf. noch eine andere Quelle als der Generator)
-- [ ] Gewindeanfang und Gewindeende unterscheiden
-- [ ] Vorschau, Kontur-Subroutine und ausgeschriebenen Schlichtweg vergleichen
+- [ ] Vorschau, Kontur-Subroutine und ausgeschriebenen Schlichtweg fuer
+  denselben Freistich-Fall automatisiert auf identische Koordinaten
+  vergleichen (bisher nur visuell/real bestaetigt, kein Regressionstest)
 - [ ] Save/Load-Roundtrip der Segment-Features testen
 
 ### LES-012 Konturprimitive und G2/G3 erhalten
@@ -285,6 +308,18 @@ Da die Option sichtbar angeboten wird, gehoert die Umsetzung als P1 in 0.8.0.
 
 ## P2 - Bedienung, Wartbarkeit und Architektur
 
+### LES-038 Stub- und Echt-Qt-Tests reproduzierbar trennen
+
+Der kombinierte Lauf mischt zwei inkompatible Importwelten: schnelle Tests
+patchen `qtpy`/`qtvcp` mit Stubs, UI-Tests benoetigen echtes PyQt5 und laden
+`.ui`-Dateien. Das Umschalten in einem gemeinsamen Interpreter ist
+reihenfolgeabhaengig und kann Rekursionen oder falsche Widget-Klassen erzeugen.
+
+- [ ] getrennte Standardbefehle fuer Stub- und Echt-Qt-Tests bereitstellen
+- [ ] beide Laeufe in einem reproduzierbaren Gesamt-Check zusammenfassen
+- [ ] keine Testdatei darf globale Qt-Module fuer spaetere Tests hinterlassen
+- [ ] Gesamt-Check mit frischem Prozess und klarer Fehlermeldung dokumentieren
+
 ### LES-018 G70 fuer separaten Schlichtstep
 
 Der aktuelle explizite Schlichtweg ist fachlich korrekt. Zu pruefen ist nur die
@@ -330,10 +365,19 @@ Groessere Architekturfrage, nicht nur ein Bugfix (Detailfix siehe CHANGELOG.md):
 
 ### LES-027 Performance
 
+Realtest-Frage 7 ist beantwortet, aber alarmierend: "startzeit momentan
+wieder über 20 sec, also viel zu lange" - das Wort "wieder" deutet auf eine
+Regression hin (fruehere Startzeit war offenbar besser). Noch nicht
+root-caused; keine Codeaenderung in dieser Session dazu.
+
+- [ ] Root Cause fuer die aktuell >20s Startzeit finden (Profiling: welcher
+  Schritt dominiert - `.ui`-Laden, Preview-Erstaufbau, Sprachkatalog,
+  Tool-Table-Laden, HAL/Qt-Init?)
+- [ ] pruefen, ob ein frueherer Commit/eine frühere Version schneller war
+  (git bisect auf Startzeit, falls reproduzierbar messbar)
 - [ ] Startzeit bis sichtbares und bedienbares Panel messen
 - [ ] Embedded und Standalone vergleichen
 - [ ] Reiterwechsel, Stepwechsel und Preview-Refresh messen
-- [ ] Realtest-Frage 7 abschliessen
 
 ### LES-028 Eingaben zentral normalisieren
 
@@ -376,9 +420,13 @@ Groessere Architekturfrage, nicht nur ein Bugfix (Detailfix siehe CHANGELOG.md):
 
 ## Offene externe Antworten und Blocker
 
-Noch unbeantwortet in der Realtest-Datei:
-
-- Frage 7: Startzeit und Reaktionszeit -> LES-027
+Alle bisher gestellten Realtest-Fragen sind beantwortet (Frage 7:
+Startzeit >20s, siehe LES-027 - Antwort deutet auf eine Regression hin
+und ist noch nicht root-caused). Fragen 16 und 18 wurden vom Nutzer
+ausdruecklich ohne reale Testpflicht freigegeben ("das kann mit einem
+Testprogramm geregelt werden") und sind durch automatisierte Tests plus
+`rs274`-Verifikation bereits erfuellt - deshalb aus der Realtest-Datei
+entfernt.
 
 Norm-/Systemabhaengige Blocker:
 

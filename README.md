@@ -199,7 +199,7 @@ Unterstuetzt werden:
 - X und Z kombiniert
 - Kanten als Fase oder Radius
 - Innen-/Aussenseite pro Radius
-- Konturfeatures fuer DIN-Freistich / Hinterschnitt am Konturanfang oder -ende
+- manuelle Konturfeatures fuer DIN-Freistich / Hinterschnitt am Konturanfang oder -ende
 
 Aktueller Generatorstand fuer Konturfeatures:
 
@@ -258,8 +258,14 @@ Dieser Reiter dient zum Gewindeschneiden:
 - vollstaendige G76-Parameter
 - Presets fuer metrische Gewinde und Trapezgewinde
 
-Der Generator prueft jetzt zusaetzlich auf fachlich unplausible `G76`-Parameter und kann bei kuenftigen Gewinde-Workflows an DIN-Freistiche gekoppelt werden.
-Optional kann fuer Gewinde jetzt direkt ein DIN-Freistich als Vorschlag kommentiert werden, ohne dass automatisch Geometrie erzeugt wird.
+Der Generator prueft zusaetzlich auf fachlich unplausible `G76`-Parameter.
+Bei aktivem automatischem DIN-Freistich wird die Geometrie aus Gewindeende,
+Hand, Durchmesser und DIN-Datensatz abgeleitet: Das G76-Ende liegt um die
+normierte Ueberdeckung `f` innerhalb des Freistichs. Der Freistich wird in
+eine passende zylindrische Aussen- bzw. Innenkontur eingespleisst und damit
+identisch in Vorschau, Schruppen, Schlichten und Kontur-Subroutine verwendet.
+Ist keine Konturstrecke ueber den gesamten Freistichbereich vorhanden, bricht
+die G-Code-Erzeugung ab; ein Konturende wird niemals als Ersatz verwendet.
 
 Preset-Stand:
 

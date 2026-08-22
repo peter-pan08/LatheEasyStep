@@ -69,6 +69,8 @@ def setup_param_maps(handler) -> None:
             "major_diameter": handler._get_widget_by_name("thread_major_diameter"),
             "pitch": handler._get_widget_by_name("thread_pitch"),
             "length": handler._get_widget_by_name("thread_length"),
+            "lead_in": handler._get_widget_by_name("thread_lead_in"),
+            "lead_out": handler._get_widget_by_name("thread_lead_out"),
             "thread_start_z": handler._get_widget_by_name("thread_start_z"),
             "passes": handler._get_widget_by_name("thread_passes"),
             "safe_z": handler._get_widget_by_name("thread_safe_z"),

@@ -10,8 +10,9 @@ pytest.importorskip("PyQt5")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-for _mod in ("qtpy", "qtpy.QtCore", "qtpy.QtGui", "qtpy.QtWidgets"):
-    sys.modules.pop(_mod, None)
+for _mod in list(sys.modules):
+    if _mod == "qtpy" or _mod.startswith("qtpy.") or _mod.startswith("lathe_easystep"):
+        sys.modules.pop(_mod, None)
 
 from PyQt5 import QtWidgets  # noqa: E402
 

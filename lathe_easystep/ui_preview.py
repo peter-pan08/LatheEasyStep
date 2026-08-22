@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Tuple
 
 from .checks import validate_program_setup
 from .contour_features import normalize_relief_mode
-from .contour_logic import build_contour_variants
+from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
 from .translations import TRANSLATIONS
@@ -196,6 +196,50 @@ def collect_preview_state(
                     active = len(paths) - 1
                     active_operation = Operation(current_type, params, draft_path)
 
+    # A thread relief belongs to the finished component geometry, not to the
+    # currently selected Abspanen form.  Add it once for every linked contour
+    # so the complete program preview remains truthful while another step
+    # (for example the thread itself) is selected.
+    if handler.model.operations:
+        contours = {
+            str((op.params or {}).get("name") or "").strip(): op
+            for op in handler.model.operations
+            if op.op_type == OpType.CONTOUR and isinstance(op.params, dict)
+        }
+        rendered_reliefs = set()
+        for parting_op in handler.model.operations:
+            if parting_op.op_type != OpType.ABSPANEN:
+                continue
+            parting_params = dict(parting_op.params or {})
+            contour_name = str(parting_params.get("contour_name") or "").strip()
+            contour_op = contours.get(contour_name)
+            if contour_op is None or not contour_op.params.get("segments"):
+                continue
+            side_internal = str(parting_params.get("side", 0)).strip().lower() in ("1", "inside", "internal", "innen", "id")
+            key = (contour_name, side_internal)
+            if key in rendered_reliefs:
+                continue
+            contour_params = dict(contour_op.params)
+            reliefs = []
+            for thread_op in handler.model.operations:
+                if thread_op.op_type != OpType.THREAD:
+                    continue
+                try:
+                    relief = thread_relief_spec(thread_op.params)
+                except ValueError:
+                    continue
+                if relief is not None and bool(relief.get("internal")) == side_internal:
+                    selected = select_thread_relief_for_contour(contour_params, relief)
+                    if selected is not None:
+                        reliefs.append(selected)
+            if not reliefs:
+                continue
+            contour_params["auto_thread_reliefs"] = reliefs
+            variants = build_contour_variants(contour_params)
+            if variants.get("feature_primitives"):
+                paths.append([dict(pr, role="feature") for pr in variants["feature_primitives"]])
+                rendered_reliefs.add(key)
+
     prog = handler._collect_program_header() or {}
     prog["__operations"] = list(handler.model.operations)
     try:
@@ -244,13 +288,28 @@ def collect_preview_state(
             None,
         )
         if contour_op is not None and isinstance(contour_op.params, dict) and contour_op.params.get("segments"):
-            variants = build_contour_variants(contour_op.params)
+            contour_params = dict(contour_op.params)
+            side_internal = str(params.get("side", 0)).strip().lower() in ("1", "inside", "internal", "innen", "id")
+            reliefs = []
+            for op in handler.model.operations:
+                if op.op_type != OpType.THREAD:
+                    continue
+                try:
+                    relief = thread_relief_spec(op.params)
+                except ValueError:
+                    continue
+                if relief is not None and bool(relief.get("internal")) == side_internal:
+                    selected = select_thread_relief_for_contour(contour_params, relief)
+                    if selected is not None:
+                        reliefs.append(selected)
+            if reliefs:
+                contour_params["auto_thread_reliefs"] = reliefs
+            variants = build_contour_variants(contour_params)
             relief_mode = normalize_relief_mode(params.get("undercut_mode"))
             if variants.get("rough_primitives") and relief_mode in ("ignore", "finish_only", "separate"):
                 paths.append([dict(pr, role="contour_rough") for pr in variants["rough_primitives"]])
-            if variants.get("feature_primitives") and relief_mode != "ignore":
-                feature_role = "feature_separate" if relief_mode == "separate" else "feature"
-                paths.append([dict(pr, role=feature_role) for pr in variants["feature_primitives"]])
+            # The feature itself was already added above as part geometry.
+            # This branch only adds the optional roughing representation.
 
     return paths, active, prog, active_operation
 

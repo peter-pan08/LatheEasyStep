@@ -230,6 +230,40 @@
      </property>
     </widget>
    </item>
+   <item row="22" column="0">
+    <widget class="QLabel" name="label_thread_lead_in">
+     <property name="text">
+      <string>Gewinde-Vorlauf (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="22" column="1">
+    <widget class="QDoubleSpinBox" name="thread_lead_in">
+     <property name="toolTip">
+      <string>Schräger Gewindeanlauf vor Gewindestart Z</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="23" column="0">
+    <widget class="QLabel" name="label_thread_lead_out">
+     <property name="text">
+      <string>Gewinde-Auslauf (mm)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="23" column="1">
+    <widget class="QDoubleSpinBox" name="thread_lead_out">
+     <property name="toolTip">
+      <string>Schräger Gewindeauslauf nach Gewindeende</string>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+    </widget>
+   </item>
    <item row="11" column="0">
     <widget class="QLabel" name="label_thread_passes">
      <property name="text">

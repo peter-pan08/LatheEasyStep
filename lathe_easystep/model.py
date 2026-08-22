@@ -104,13 +104,11 @@ class ProgramModel:
     def generate_gcode(self) -> List[str]:
         generator = self._gcode_generator
         if generator is None:
-            try:
-                from .gcode_program import generate_program_gcode
-            except Exception:
-                generate_program_gcode = None
+            from .gcode_program import generate_program_gcode
             generator = generate_program_gcode
-
-        if generator:
-            return generator(self.operations, self.program_settings or {})
-
-        return ["%", "(G-Code generation failed - slicer module not found)", "M30", "%"]
+        if not callable(generator):
+            raise RuntimeError("G-Code-Generator ist nicht verfuegbar.")
+        lines = generator(self.operations, self.program_settings or {})
+        if not isinstance(lines, list) or len(lines) < 4:
+            raise RuntimeError("G-Code-Generator lieferte kein vollstaendiges Programm.")
+        return lines

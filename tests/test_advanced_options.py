@@ -1,6 +1,8 @@
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lathe_easystep.examples import make_program_settings
@@ -37,7 +39,7 @@ def test_css_and_custom_park_position_are_emitted():
     assert lines[park_idx + 2] == "G53 G0 Z222.000"
 
 
-def test_thread_relief_suggestion_and_optional_stop_are_emitted():
+def test_automatic_thread_relief_requires_a_matching_contour():
     settings = make_program_settings()
     operations = [
         Operation(OpType.PROGRAM_HEADER, {"program_name": "ThreadRelief"}),
@@ -55,12 +57,29 @@ def test_thread_relief_suggestion_and_optional_stop_are_emitted():
             },
         ),
     ]
-    lines = generate_program_gcode(operations, settings)
-    text = "\n".join(lines)
-    assert "(Vorschlag Freistich: DIN 76-A M10 Aussen B=2.000 T=0.600)" in text
-    m1_idx = lines.index("M1")
-    g76_idx = next(i for i, line in enumerate(lines) if line.startswith("G76 "))
-    assert m1_idx < g76_idx
+    with pytest.raises(ValueError, match="konnte keiner passenden.*Kontur"):
+        generate_program_gcode(operations, settings)
+
+
+def test_thread_relief_suggestion_aborts_when_overlap_exceeds_thread_length():
+    settings = make_program_settings()
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {"program_name": "ThreadReliefTooShort"}),
+        Operation(
+            OpType.THREAD,
+            {
+                "tool": 3,
+                "spindle": 450.0,
+                "pitch": 1.5,
+                "length": 1.0,
+                "major_diameter": 10.0,
+                "relief_mode": "suggest",
+                "relief_norm": "DIN 76-A",
+            },
+        ),
+    ]
+    with pytest.raises(ValueError, match="Gewindeueberdeckung.*Gewindelaenge"):
+        generate_program_gcode(operations, settings)
 
 
 def test_optional_stop_before_toolchange_is_emitted():

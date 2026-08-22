@@ -359,10 +359,12 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
     max_x = max(xs) if xs else None
     cfg = retract_cfg or RetractCfg(None, None, True, True)
     start_rx, start_rz = resolve_retract_targets(cfg, external=external, current_x=x_stock, current_z=safe_z, safe_z=safe_z)
-    if start_rz is not None:
-        lines.append(f"G0 Z{start_rz:.3f}")
-    if start_rx is not None:
-        lines.append(f"G0 X{start_rx:.3f}")
+    already_safe = bool((pause_state or {}).get("_is_at_safe"))
+    if not already_safe:
+        if start_rz is not None:
+            lines.append(f"G0 Z{start_rz:.3f}")
+        if start_rx is not None:
+            lines.append(f"G0 X{start_rx:.3f}")
     z_dir = -1 if (min([p[1] for p in path]) if path else 0) < 0 else 1
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
@@ -409,20 +411,35 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
                     continue
                 if (not external) and x_cut > max_x + 1e-6:
                     continue
-            pass_lines.append(f"G0 X{x_cut:.3f} Z{safe_z:.3f}")
+            # Innenbearbeitung folgt derselben sicheren Achsreihenfolge wie
+            # der Inventor/LinuxCNC-Post: auf XRI axial vorfahren und erst am
+            # Ziel-Z radial in die Bohrung zustellen. Ein diagonaler X/Z-G0
+            # von der tiefen Bohrungsposition zur naechsten Zustellung kann
+            # sonst durch Material laufen.
+            if external:
+                pass_lines.append(f"G0 X{x_cut:.3f} Z{safe_z:.3f}")
+            else:
+                pass_lines.append(f"G0 Z{safe_z:.3f}")
+                pass_lines.append(f"G0 X{x_cut:.3f}")
             z_low = min(za, zb)
             z_high = max(za, zb)
             z_entry, z_exit = (z_high, z_low) if z_dir < 0 else (z_low, z_high)
-            pass_lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
+            if abs(z_entry - safe_z) > 1e-9:
+                pass_lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
             _emit_segment_with_pauses(pass_lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=x_cut, current_z=z_exit, safe_z=safe_z)
-            cmd = ["G0"]
-            if rx_eff is not None:
-                cmd.append(f"X{rx_eff:.3f}")
-            if rz_eff is not None:
-                cmd.append(f"Z{rz_eff:.3f}")
-            if len(cmd) > 1:
-                pass_lines.append(" ".join(cmd))
+            if external:
+                cmd = ["G0"]
+                if rx_eff is not None:
+                    cmd.append(f"X{rx_eff:.3f}")
+                if rz_eff is not None:
+                    cmd.append(f"Z{rz_eff:.3f}")
+                if len(cmd) > 1:
+                    pass_lines.append(" ".join(cmd))
+            elif rx_eff is not None:
+                # XRI ist die harte Freigrenze. Z wird zu Beginn des naechsten
+                # Passes ausschliesslich auf dieser freien X-Position bewegt.
+                pass_lines.append(f"G0 X{rx_eff:.3f}")
         if not pass_lines:
             lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
             continue
@@ -553,6 +570,15 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     tool_info = (settings.get("tools", {}) or {}).get(tool_num)
     compensation_command = nose_compensation_command(tool_info, external)
     nose_disabled = bool(p.get("nose_comp_disabled", False))
+    if not external and feature_path and compensation_command and not nose_disabled:
+        # LinuxCNC rejects dynamic compensation on the concave inside corner
+        # of a DIN thread relief ("Straight feed in concave corner ...").
+        # It aborts program loading before the following G76, making the
+        # internal thread appear to be absent.  The generated contour itself
+        # already contains the finished DIN geometry, so suppress only the
+        # incompatible compensation mode for this case.
+        nose_disabled = True
+        lines.append("(Werkzeugradiuskorrektur Innenfreistich deaktiviert: LinuxCNC-Konkavecke)")
     slice_strategy = p.get("slice_strategy")
     output_preference = _normalize_output_preference(p.get("output_preference", settings.get("output_preference")))
     strategy_code = None
@@ -566,6 +592,13 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     primitives = p.get("_primitives")
     if contour_variants:
         primitives = contour_variants["finish_primitives"]
+        # Die global vorab allokierte Kontur-Subroutine enthaelt immer die
+        # Fertigkontur. Fuer ignore/finish_only/separate muss ein G71/G72 aber
+        # die relief-freie Schruppkontur bekommen; bei full ist ein Zyklus mit
+        # dem U-foermigen Freistich nicht LinuxCNC-monoton. Deshalb wird die
+        # passende lokale Subroutine erzeugt bzw. der Zyklus unten verworfen.
+        if feature_path:
+            contour_sub_num = None
 
     lines.append(f"(Strategie: {strategy_code or 'manuell'})")
     lines.append(f"(Ausgabe bevorzugen: {output_preference})")
@@ -582,7 +615,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         return contour_sub_from_primitives(active_primitives, sub_num) if active_primitives else contour_sub_from_points(active_points, sub_num)
 
     rough_cycle_path = finish_path if relief_mode == "full" else rough_path
-    can_use_cycles = output_preference != "prefer_explicit"
+    # Ein in die Kontur eingespleisster Freistich kehrt axial um und ist damit
+    # fuer LinuxCNC G71/G72 nicht monoton. Explizites Move-based-Schruppen
+    # verarbeitet diese Geometrie dagegen ohne einen ungueltigen Zyklus.
+    can_use_cycles = output_preference != "prefer_explicit" and not (feature_path and relief_mode == "full")
     rough_done = False
     cycle_finish_done = False
     roughing_section_start = len(lines)
@@ -654,6 +690,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 lines.append("(Fallback-Grund: Kontur nicht G71-zyklustauglich)")
             elif relief_mode == "separate":
                 lines.append("(Fallback-Grund: Hinterschnitt separat)")
+            elif feature_path and relief_mode == "full":
+                lines.append("(Fallback-Grund: Freistich in voller Kontur ist nicht G71-monoton)")
             elif pause_enabled and pause_distance > 0.0:
                 lines.append("(Fallback-Grund: Spanbruch/Pausen aktiv)")
             elif output_preference == "prefer_explicit":

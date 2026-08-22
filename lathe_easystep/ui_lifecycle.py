@@ -248,17 +248,15 @@ def finalize_ui_ready(handler) -> None:
         except Exception as exc:
             handler._log(f"[LatheEasyStep] finalize signal setup failed: {exc}", level="warning")
         handler._ensure_core_widgets()
+
         handler._update_parting_contour_choices()
         handler._update_parting_ready_state()
         try:
             handler._apply_tab_titles(handler._current_language_code())
             handler._handle_global_change()
-        except Exception:
-            pass
-        try:
             handler._apply_language_texts()
         except Exception as exc:
-            handler._log(f"[LatheEasyStep] _apply_language_texts in finalize failed: {exc}", level="warning")
+            handler._log(f"[LatheEasyStep] UI presentation failed: {exc}", level="warning")
         for name in ("program_xt_absolute", "program_zt_absolute"):
             widget = handler._get_widget_by_name(name)
             if widget is not None:

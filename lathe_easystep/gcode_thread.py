@@ -2,26 +2,13 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
-from .presets import get_din_relief_preset
+from .contour_logic import thread_relief_spec
 from .model import Operation
 from .gcode_utils import is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
 THREAD_HAND_LABELS: Tuple[str, str] = ("Rechtsgewinde", "Linksgewinde")
-THREAD_RELIEF_SIZE_BY_MAJOR = {
-    3.0: "M3",
-    4.0: "M4",
-    5.0: "M5",
-    6.0: "M6",
-    8.0: "M8",
-    10.0: "M10",
-    12.0: "M12",
-    14.0: "M14",
-    16.0: "M16",
-}
-
-
 def generate_thread_gcode(
     op: Operation,
     settings: Dict[str, object] | None,
@@ -77,6 +64,17 @@ def generate_thread_gcode(
         spring_passes = max(0, int(op.params.get("passes", 1)))
     e_val = float(op.params.get("e", 0.0))
     l_val = int(float(op.params.get("l", 0)))
+    lead_in = abs(float(op.params.get("lead_in", 0.0) or 0.0))
+    lead_out = abs(float(op.params.get("lead_out", 0.0) or 0.0))
+    if lead_in > 0.0 or lead_out > 0.0:
+        if lead_in > 0.0 and lead_out > 0.0 and abs(lead_in - lead_out) > 1e-6:
+            raise ValueError(
+                "G76 unterstuetzt nur eine gemeinsame Taperlaenge E. "
+                "Gewinde-Vorlauf und -Auslauf muessen deshalb gleich sein "
+                "oder es darf nur einer der beiden Werte gesetzt werden."
+            )
+        e_val = lead_in or lead_out
+        l_val = 3 if lead_in > 0.0 and lead_out > 0.0 else (1 if lead_in > 0.0 else 2)
 
     orientation_raw = op.params.get("orientation", 0)
     internal = is_internal_side(orientation_raw)
@@ -111,25 +109,27 @@ def generate_thread_gcode(
     comments.append(f"(Gewindetyp: {orientation_label})")
     comments.append(f"(Gewinderichtung: {hand_label})")
     comments.append(f"(Gewindestart/-ende Z: {start_z:.3f} -> {end_z:.3f})")
+    if lead_in > 0.0 or lead_out > 0.0:
+        comments.append(f"(Gewinde-Taper: Vorlauf={lead_in:.3f} Auslauf={lead_out:.3f} mm; G76 E={e_val:.3f} L={l_val})")
     if pitch_warning:
         comments.append(pitch_warning)
     relief_mode = str(op.params.get("relief_mode", "off") or "off").strip().lower()
     relief_norm = str(op.params.get("relief_norm", "DIN 76-A") or "DIN 76-A").strip()
     if relief_mode in ("suggest", "suggest_din_relief"):
-        relief_size = None
-        for dia, size_name in THREAD_RELIEF_SIZE_BY_MAJOR.items():
-            if abs(major_diameter - dia) <= 0.2:
-                relief_size = size_name
-                break
-        if relief_size:
-            side_key = "internal" if internal else "external"
-            relief_data = get_din_relief_preset(relief_size, internal=(side_key == "internal")) or {}
-            if relief_data:
-                comments.append(
-                    f"(Vorschlag Freistich: {relief_norm} {relief_size} {orientation_label} B={float(relief_data.get('width', 0.0)):.3f} T={float(relief_data.get('depth', 0.0)):.3f})"
-                )
-        else:
-            comments.append("(Hinweis: Kein DIN-Freistich-Vorschlag fuer dieses Gewinde gefunden)")
+        relief_data = op.params.get("_derived_relief")
+        if not isinstance(relief_data, dict):
+            relief_data = thread_relief_spec(op.params)
+        if relief_data:
+            relief_size = str(relief_data["thread_size"])
+            relief_width = float(relief_data["width"])
+            relief_depth = float(relief_data["depth"])
+            comments.append(
+                f"(DIN-Freistich: {relief_norm} {relief_size} {orientation_label} B={relief_width:.3f} T={relief_depth:.3f}"
+                f"{' Kurzform' if relief_data.get('variant') == 'short' else ''})"
+            )
+            comments.append(
+                f"(Gewindeende Z={end_z:.3f}; Ueberdeckung f={float(relief_data['thread_overlap']):.3f})"
+            )
 
     lines: List[str] = []
     append_tool_and_spindle(
