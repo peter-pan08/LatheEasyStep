@@ -39,7 +39,24 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
 
     widgets = handler.param_widgets.get(op.op_type, {})
     for key, widget in widgets.items():
-        if widget is None or key not in op.params:
+        if widget is None:
+            continue
+        if key == "spindle_mode" and key not in op.params:
+            # Aeltere/geladene Operationen ohne gespeicherten spindle_mode
+            # (Parameter existiert erst seit LES-013) duerfen die Combo NICHT
+            # auf dem Wert der zuvor angezeigten Operation stehen lassen -
+            # sonst zeigt z. B. ein Wechsel von einer CSS- zu einer
+            # Festdrehzahl-Operation weiterhin "CSS" und damit das falsche
+            # Feld (Drehzahl/Schnittgeschwindigkeit) an (realer Bugreport:
+            # "die Umschaltung der Anzeige funktioniert nicht zuverlaessig").
+            # Fehlender Wert faellt explizit auf "fixed" (G97) zurueck -
+            # rueckwaertskompatibel zum bisherigen alleinigen Verhalten.
+            widget.blockSignals(True)
+            idx = widget.findData("fixed")
+            widget.setCurrentIndex(idx if idx >= 0 else 0)
+            widget.blockSignals(False)
+            continue
+        if key not in op.params:
             continue
         widget.blockSignals(True)
         val = op.params[key]

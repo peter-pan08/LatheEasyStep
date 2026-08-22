@@ -30,17 +30,6 @@ G3 X40.000 Z-37.000 I0.000 K-2.000
 G1 X40.000 Z-45.000
 G1 X50.000 Z-60.000
 o100 endsub
-o101 sub
-G1 X10.000 Z-44.000
-G1 X11.400 Z-44.000
-G1 X12.000 Z-43.400
-G1 X12.000 Z-10.500
-G3 X13.000 Z-10.000 I0.500 K0.000
-G1 X16.000 Z-10.000
-G1 X16.000 Z-1.000
-G3 X18.000 Z0.000 I1.000 K-0.000
-G1 X19.200 Z0.000
-o101 endsub
 o<step_line_pause> sub
 (Step line pause helper)
 G4 P[#7]
@@ -269,7 +258,7 @@ G0 Z6.000
 (STEP: 5. Abspanen abdrehen, Parallel Z, Ignorieren 1)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
-G97 S1200 M3
+G96 D2500 S150.0 M3
 F0.150
 (Strategie: parallel_z)
 (Ausgabe bevorzugen: auto)
@@ -294,7 +283,7 @@ G0 X52.000 Z6.000
 (STEP: 6. Abspanen abdrehen, Parallel Z, Voll in Kontur 2)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
-G97 S1200 M3
+G96 D2500 S150.0 M3
 F0.150
 (Strategie: parallel_z)
 (Ausgabe bevorzugen: auto)
@@ -400,16 +389,79 @@ G0 X9.300 Z1.000
 (STEP: 10. Abspanen ausdrehen, Parallel Z, Ignorieren 11)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
-G97 S1200 M3
+G96 D2500 S150.0 M3
 F0.150
 (Strategie: parallel_z)
 (Ausgabe bevorzugen: auto)
 (Hinterschnitt-Modus: ignore)
 (Aufmass X/Z: 0.100/0.030)
-(ABSPANEN Rough - parallel Z)
-(WARN: Startpunkt X10.000 Z0.000 liegt im Rohteil)
-G0 X10.000 Z0.000
-G71 Q101 X10.000 Z0.000 D1.000
+(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)
+(ABSPANEN Rough - parallel Z - Move-based)
+G0 Z0.000
+G0 X9.300
+(Pass 1: X-band [10.000,10.400])
+(Pass 2: X-band [10.400,10.800])
+(Pass 3: X-band [10.800,11.200])
+(Pass 4: X-band [11.200,11.600])
+G0 X11.600 Z0.000
+G1 Z-43.799 F0.150
+G1 X11.600 Z-43.801 F0.150
+G0 X9.300 Z-43.801
+(Pass 5: X-band [11.600,12.000])
+G0 X12.000 Z0.000
+G1 Z-10.499 F0.150
+G1 X12.000 Z-43.401 F0.150
+G0 X9.300 Z-43.401
+(Pass 6: X-band [12.000,12.400])
+G0 X12.400 Z0.000
+G1 Z-10.299 F0.150
+G1 X12.400 Z-10.300 F0.150
+G0 X9.300 Z-10.300
+(Pass 7: X-band [12.400,12.800])
+G0 X12.800 Z0.000
+G1 Z-10.099 F0.150
+G1 X12.800 Z-10.100 F0.150
+G0 X9.300 Z-10.100
+(Pass 8: X-band [12.800,13.200])
+(Pass 9: X-band [13.200,13.600])
+(Pass 10: X-band [13.600,14.000])
+(Pass 11: X-band [14.000,14.400])
+(Pass 12: X-band [14.400,14.800])
+(Pass 13: X-band [14.800,15.200])
+(Pass 14: X-band [15.200,15.600])
+(Pass 15: X-band [15.600,16.000])
+G0 X16.000 Z0.000
+G1 Z-0.999 F0.150
+G1 X16.000 Z-10.000 F0.150
+G0 X9.300 Z-10.000
+(Pass 16: X-band [16.000,16.400])
+G0 X16.400 Z0.000
+G1 Z-0.799 F0.150
+G1 X16.400 Z-0.800 F0.150
+G0 X9.300 Z-0.800
+(Pass 17: X-band [16.400,16.800])
+G0 X16.800 Z0.000
+G1 Z-0.599 F0.150
+G1 X16.800 Z-0.601 F0.150
+G0 X9.300 Z-0.601
+(Pass 18: X-band [16.800,17.200])
+G0 X17.200 Z0.000
+G1 Z-0.399 F0.150
+G1 X17.200 Z-0.401 F0.150
+G0 X9.300 Z-0.401
+(Pass 19: X-band [17.200,17.600])
+G0 X17.600 Z0.000
+G1 Z-0.200 F0.150
+G1 X17.600 Z-0.201 F0.150
+G0 X9.300 Z-0.201
+(Pass 20: X-band [17.600,18.000])
+G0 X18.000 Z0.000
+G1 Z0.000 F0.150
+G1 X18.000 Z-0.001 F0.150
+G0 X9.300 Z-0.001
+(Pass 21: X-band [18.000,18.400])
+(Pass 22: X-band [18.400,18.800])
+(Pass 23: X-band [18.800,19.200])
 G0 X9.300
 G0 Z1.000
 
