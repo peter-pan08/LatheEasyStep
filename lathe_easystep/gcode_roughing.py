@@ -9,6 +9,7 @@ from .contour_logic import build_contour_variants
 from .gcode_safety import append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command
 from .gcode_utils import (
     Point,
+    float_or_none,
     get_tool_number,
     is_internal_side,
     is_monotonic_x,
@@ -70,6 +71,16 @@ def _resolve_roughing_stock_x(
     if external:
         return max(stock_x, contour_max_x)
     if stock_x <= 0.0 or stock_x < contour_min_x - 1e-9:
+        # Kein (plausibles) XI im Programmkopf gesetzt - z. B. Rohteil startet
+        # als Vollzylinder und die Bohrung entsteht erst durch einen
+        # vorangehenden Bohren-Step. Ohne echten Freiraum wuerde G71 hier
+        # praktisch nur die Fertigkontur selbst nachfahren (kein Schnitt),
+        # weil kein Materialabstand zum Abtragen bekannt ist. Der zuletzt
+        # gebohrte Durchmesser (siehe gcode_program.py) ist die naechst-
+        # bessere reale Materialgrenze, wenn er kleiner als die Zielkontur ist.
+        drilled = float_or_none(settings.get("_last_drill_diameter"))
+        if drilled is not None and 0.0 < drilled < contour_min_x - 1e-9:
+            return drilled
         return contour_min_x
     return max(stock_x, contour_max_x)
 

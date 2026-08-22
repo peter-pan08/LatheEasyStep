@@ -77,3 +77,63 @@ def test_internal_roughing_opening_to_bore_direction_still_uses_g71_cycle():
     text = "\n".join(lines)
     assert any(line.startswith("G71 ") for line in lines)
     assert "Fallback-Grund: automatische Entscheidung -> Move-based" not in text
+
+
+def test_internal_roughing_uses_drilled_diameter_as_stock_when_xi_unset():
+    """Realer Bugreport: Bei Vollzylinder-Rohteil (kein XI im Programmkopf
+    gesetzt, xi=0.0 - die Bohrung entsteht erst durch einen vorangehenden
+    Bohren-Step) fiel _resolve_roughing_stock_x() auf den kleinsten X-Wert
+    der ZIELKONTUR selbst zurueck (hier 10.0). Der G71-Zyklus 'startete'
+    damit praktisch schon auf der Fertigkontur - kein echter Zustellweg zum
+    Abfahren, sichtbar als 'nur einmal die Kontur nachfahren, keine echte
+    Abspanstrategie'. Der tatsaechlich gebohrte Durchmesser (hier 8.0, aus
+    dem vorangehenden Bohren-Step) muss stattdessen als Materialgrenze
+    verwendet werden, wenn er kleiner als die Zielkontur ist."""
+    settings = make_program_settings()
+    settings.update({"xi": 0.0, "xri": 6.0, "xri_absolute": True})
+    drill = Operation(
+        OpType.DRILL,
+        {"tool": 10, "spindle": 600.0, "feed": 0.12, "mode": 0, "safe_z": 2.0, "diameter": 8.0},
+        path=[(0.0, 2.0), (0.0, -45.0)],
+    )
+    rough = Operation(
+        OpType.ABSPANEN,
+        {
+            "tool": 11, "spindle": 1200.0, "feed": 0.15, "depth_per_pass": 1.0,
+            "side": "inside", "mode": "rough", "slice_strategy": "parallel_z",
+            "finish_allow_x": 0.1, "finish_allow_z": 0.03,
+        },
+        path=_BORE_TO_OPENING_PATH,
+    )
+    operations = [Operation(OpType.PROGRAM_HEADER, {}), drill, rough]
+    lines = generate_program_gcode(operations, settings)
+    g71_lines = [line for line in lines if line.startswith("G71 ")]
+    assert len(g71_lines) == 1
+    assert "X8.000" in g71_lines[0]
+
+
+def test_internal_roughing_ignores_drilled_diameter_larger_than_target():
+    """Kontrollfall: ein gebohrter Durchmesser, der bereits (fehlerhaft)
+    groesser als die Zielkontur waere, darf nicht blind uebernommen werden -
+    Fallback bleibt der bisherige, sichere kleinste Konturwert."""
+    settings = make_program_settings()
+    settings.update({"xi": 0.0, "xri": 6.0, "xri_absolute": True})
+    drill = Operation(
+        OpType.DRILL,
+        {"tool": 10, "spindle": 600.0, "feed": 0.12, "mode": 0, "safe_z": 2.0, "diameter": 15.0},
+        path=[(0.0, 2.0), (0.0, -45.0)],
+    )
+    rough = Operation(
+        OpType.ABSPANEN,
+        {
+            "tool": 11, "spindle": 1200.0, "feed": 0.15, "depth_per_pass": 1.0,
+            "side": "inside", "mode": "rough", "slice_strategy": "parallel_z",
+            "finish_allow_x": 0.1, "finish_allow_z": 0.03,
+        },
+        path=_BORE_TO_OPENING_PATH,
+    )
+    operations = [Operation(OpType.PROGRAM_HEADER, {}), drill, rough]
+    lines = generate_program_gcode(operations, settings)
+    g71_lines = [line for line in lines if line.startswith("G71 ")]
+    assert len(g71_lines) == 1
+    assert "X10.000" in g71_lines[0]

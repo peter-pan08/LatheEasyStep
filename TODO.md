@@ -80,12 +80,10 @@ Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 
 ### LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 
-G71-Zyklus fuer Innenkonturen und Zustellrichtung sind behoben/bestaetigt
-(siehe CHANGELOG.md). Offen bleibt die vollstaendige Verifikation von
-Materialgrenze, Aufmass und realem Fahrweg:
+G71-Zyklus fuer Innenkonturen, Zustellrichtung und Materialgrenze aus dem
+vorangehenden Bohren-Step sind behoben/bestaetigt (siehe CHANGELOG.md).
+Offen bleibt die vollstaendige Verifikation von Aufmass und realem Fahrweg:
 
-- [ ] vorhandenen Bohrungsdurchmesser als Materialgrenze verwenden und mit
-  mindestens einem Rohr-/Bohrungsreferenzteil pruefen
 - [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, niemals als
   Schnittbahn; Regression muss jeden G1/G71-Profilwert gegen diese Grenze
   pruefen
