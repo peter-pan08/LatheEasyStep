@@ -34,7 +34,9 @@ from PyQt5 import QtWidgets, uic  # noqa: E402
 _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 import lathe_easystep_handler  # noqa: E402,F401
+from lathe_easystep.model import OpType, Operation  # noqa: E402
 from lathe_easystep.translations import TRANSLATIONS  # noqa: E402
+from lathe_easystep.ui_operations import load_operation_params_to_form  # noqa: E402
 from lathe_easystep.ui_split import load_split_tab_uis  # noqa: E402
 from lathe_easystep.ui_advanced import ensure_advanced_widgets  # noqa: E402
 from lathe_easystep.ui_visibility import update_spindle_mode_visibility  # noqa: E402
@@ -108,3 +110,49 @@ def test_spindle_mode_visibility_toggles_rpm_vs_cutting_speed_fields(prefix):
     update_spindle_mode_visibility(handler)
     assert rpm_field.isHidden()
     assert not vc_field.isHidden()
+
+
+@pytest.mark.parametrize("prefix", ["face", "parting", "groove", "thread"])
+def test_freshly_created_widgets_are_both_visible_until_visibility_update_runs(prefix):
+    """Realer Bugreport: 'es darf nur einer der beiden Werte sichtbar sein,
+    niemals beide gleichzeitig'. Dokumentiert die Ursache: ensure_advanced_
+    widgets() legt die Felder dynamisch an, Qt-Widgets sind direkt nach dem
+    Erzeugen standardmaessig sichtbar - ohne einen expliziten Aufruf von
+    update_spindle_mode_visibility() DANACH sind Drehzahl- UND
+    Schnittgeschwindigkeitsfeld gleichzeitig sichtbar (siehe Fix in
+    ui_lifecycle.py::_finalize_ui_ready, direkt nach ensure_advanced_widgets)."""
+    handler = _load_handler_with_widgets()
+    rpm_field = handler._get_widget_by_name(f"{prefix}_spindle")
+    vc_field = getattr(handler, f"{prefix}_cutting_speed")
+    assert not rpm_field.isHidden()
+    assert not vc_field.isHidden()
+
+    update_spindle_mode_visibility(handler)
+    assert not rpm_field.isHidden()
+    assert vc_field.isHidden()
+
+
+@pytest.mark.parametrize("prefix", ["face", "parting", "groove", "thread"])
+def test_missing_spindle_mode_resets_to_fixed_instead_of_keeping_stale_value(prefix):
+    """Realer Bugreport: 'die Umschaltung der Anzeige funktioniert nicht
+    zuverlaessig'. Eine Operation ohne gespeicherten spindle_mode (z. B. aus
+    einer alten Datei) liess die Combo bisher auf dem Wert der zuvor
+    angezeigten Operation stehen - schaltet man von einer CSS-Operation auf
+    eine Operation ohne spindle_mode um, blieb faelschlich "CSS" (und damit
+    das Schnittgeschwindigkeitsfeld statt des Drehzahlfelds) sichtbar."""
+    handler = _load_handler_with_widgets()
+    handler.param_widgets = {
+        OpType.FACE: {"spindle_mode": handler.face_spindle_mode},
+        OpType.ABSPANEN: {"spindle_mode": handler.parting_spindle_mode},
+        OpType.GROOVE: {"spindle_mode": handler.groove_spindle_mode},
+        OpType.THREAD: {"spindle_mode": handler.thread_spindle_mode},
+    }
+    handler._setup_param_maps = lambda: None
+    op_type = {"face": OpType.FACE, "parting": OpType.ABSPANEN, "groove": OpType.GROOVE, "thread": OpType.THREAD}[prefix]
+    combo = getattr(handler, f"{prefix}_spindle_mode")
+
+    combo.setCurrentIndex(1)  # simuliert vorherige CSS-Operation
+    assert combo.currentData() == "css"
+
+    load_operation_params_to_form(handler, Operation(op_type, {}))
+    assert combo.currentData() == "fixed"

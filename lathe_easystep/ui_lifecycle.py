@@ -182,6 +182,16 @@ def finalize_ui_ready(handler) -> None:
         handler._ensure_core_widgets()
         ensure_advanced_widgets(handler)
         try:
+            # ensure_advanced_widgets() legt Spindelmodus-/Schnittgeschwindigkeits-
+            # Felder dynamisch an (Qt-Widgets sind nach dem Erzeugen standardmaessig
+            # sichtbar) - ohne diesen Aufruf blieben z. B. Drehzahl- UND
+            # Schnittgeschwindigkeitsfeld gleichzeitig sichtbar, bis zufaellig eine
+            # andere Aktion (Reiterwechsel, globale Aenderung) die Korrektur ausloest
+            # (realer Bugreport: "es darf nur einer der beiden Werte sichtbar sein").
+            handler._update_spindle_mode_visibility()
+        except Exception:
+            pass
+        try:
             if handler.root_widget is not None:
                 handler.root_widget.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
                 top = handler.root_widget.window()
