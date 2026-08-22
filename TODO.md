@@ -80,15 +80,41 @@ Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 
 ### LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 
-G71-Zyklus fuer Innenkonturen, Zustellrichtung und Materialgrenze aus dem
-vorangehenden Bohren-Step sind behoben/bestaetigt (siehe CHANGELOG.md).
-Offen bleibt die vollstaendige Verifikation von Aufmass und realem Fahrweg:
+WICHTIGER BEFUND (real gegen den LinuxCNC-Interpreter verifiziert, Quelle
+`/home/adm1n/linuxcnc-src/src/emc/rs274ngc/interp_g7x.cc`, Version
+2.10.0~pre1 - identisch zur installierten Version): `G71`/`G72` erzeugen bei
+Innenkonturen nur EINEN durchgehenden Schnitt statt echter Treppenstufen-
+Schrupppaesse (empirisch mit `rs274` bestaetigt, sowohl fuer die reale
+Nutzerkontur als auch fuer einen trivialen linearen Innenkegel), waehrend
+identisch aufgebaute Aussenkonturen korrekt mehrfach zustellen. Kein Fehler
+dieses Generators, sondern eine Einschraenkung dieser LinuxCNC-Version fuer
+Innenbearbeitung. `G71`/`G72` werden deshalb jetzt AUSSCHLIESSLICH fuer
+Aussenbearbeitung gewaehlt; Innenbearbeitung nutzt immer die
+bewegungsbasierte Ersatzloesung (`rough_turn_parallel_x()`).
 
+Damit ist aber der eigentliche, urspruenglich gemeldete Fehler
+("keine wirkliche Abspanaufgabe generiert") NICHT geloest, sondern nur die
+falsche Zyklus-Wahl behoben - er liegt jetzt sichtbar in
+`rough_turn_parallel_x()` selbst: die schmale Fenster-Intersection
+(`x_cut +/- 1e-3`) findet fuer mehrere X-Baender keinen Treffer ("no cut
+region"), waehrend ein anderes Band eine lange senkrechte Bohrungswand
+komplett in einem einzigen Schnitt zusammenfasst statt sie ueber mehrere
+Zustellungen zu verteilen (dokumentiert, aber bewusst NICHT behoben, in
+`tests/test_internal_roughing_uses_g71_cycle.py::test_internal_roughing_with_real_bore_contour_still_produces_uneven_passes`).
+Ein Fix braucht eine echte Neuentwicklung der Zustelllogik (fuer jedes
+X-Band den Z-Bereich finden, in dem die Zielkontur ueber diese Tiefe
+hinausgeht, statt nur die Kontur an einem schmalen Fenster zu schneiden) -
+zu risikoreich fuer eine schnelle Aenderung an sicherheitsrelevanter
+Fahrweg-Geometrie.
+
+- [ ] `rough_turn_parallel_x()` neu entwerfen: pro X-Band den vollstaendigen
+  Z-Bereich ermitteln, der bei dieser Tiefe noch Material hat (nicht nur wo
+  die Kontur das schmale Fenster kreuzt), damit Material gleichmaessig ueber
+  mehrere Zustellungen abgetragen wird
+  statt in eine einzelne Bohrungswand komplett auf einmal
 - [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, niemals als
-  Schnittbahn; Regression muss jeden G1/G71-Profilwert gegen diese Grenze
-  pruefen
+  Schnittbahn; Regression muss jeden G1-Profilwert gegen diese Grenze pruefen
 - [ ] Schlichtaufmass X/Z fuer Innenkonturen korrekt ausrichten
-- [ ] G71/G72-Vorzeichen und Konturstart fuer Innenbearbeitung pruefen
 - [ ] automatisierte Faelle fuer monoton steigende UND fallende Z-Konturen
   sowie Innen-/Aussenbearbeitung pflegen
 - [ ] `examples.py` um ein verifiziertes Innen-Abspanen-Beispiel

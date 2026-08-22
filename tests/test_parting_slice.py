@@ -88,9 +88,14 @@ def test_internal_parallel_z_cycle_uses_contour_based_stock_x_when_xi_is_zero():
     ]
     m.program_settings = {"xi": 0.0, "xri": 2.0, "zri": 5.0}
     g = "\n".join(m.generate_gcode())
-    assert "G71 Q" in g
-    assert "G71 Q100 X10.000 Z5.000 D1.000" in g
-    assert "G71 Q100 X0.000 Z0.000 D1.000" not in g
+    # G71/G72 werden fuer Innenbearbeitung nicht mehr verwendet (real gegen
+    # den LinuxCNC-Interpreter bestaetigt: der Zyklus erzeugt dort fuer
+    # Innenkonturen nur einen einzigen durchgehenden Schnitt statt echter
+    # Treppenstufen-Passes) - die bewegungsbasierte Ersatzloesung uebernimmt
+    # weiterhin korrekt den kontur-basierten Materialgrenzwert (10.0, nicht
+    # 0.0), sichtbar am ersten X-Band, das bei diesem Wert beginnt.
+    assert "G71 Q" not in g
+    assert "(Pass 1: X-band [10.000,11.000])" in g
 
 
 def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
@@ -143,10 +148,13 @@ def test_internal_parallel_z_approach_uses_xri_and_zri_safe_position():
     ]
     m.program_settings = {"xi": 0.0, "xri": 9.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
     lines = m.generate_gcode()
-    idx = lines.index("(ABSPANEN Rough - parallel Z)")
+    # G71 wird fuer Innenbearbeitung nicht mehr verwendet (siehe Kommentar im
+    # Test oben) - die sichere XRI-/ZRI-Anfahrt bleibt aber ueber denselben
+    # resolve_retract_targets()-Pfad auch in der bewegungsbasierten
+    # Ersatzloesung erhalten.
+    idx = lines.index("(ABSPANEN Rough - parallel Z - Move-based)")
     assert lines[idx + 1] == "G0 Z4.000"
     assert lines[idx + 2] == "G0 X9.000"
-    assert lines[idx + 3] == "G0 X10.000 Z4.000"
 
 
 def test_internal_parallel_z_rejects_unplausible_xri():
