@@ -6,6 +6,7 @@ from .gcode_utils import resolve_enum_index
 from .model import Operation
 from .face_geometry import face_primitives
 from .gcode_roughing import contour_sub_from_primitives
+from .gcode_safety import activate_pending_css
 from .numeric import finite_float, validate_finite_data
 
 FACE_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
@@ -82,7 +83,7 @@ def generate_face_gcode(
     append_tool_and_spindle(
         lines, tool_num, spindle, settings,
         spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
-        cutting_speed=p.get("cutting_speed"),
+        cutting_speed=p.get("cutting_speed"), css_start_diameter=abs(start_x),
     )
     coolant_mode = p.get("coolant_mode", coolant_enabled)
     emit_coolant(lines, coolant_mode)
@@ -99,6 +100,7 @@ def generate_face_gcode(
 
     lines.append("(Anfahren vor Zyklus)")
     emit_approach(lines, start_x, start_z, settings)
+    activate_pending_css(lines, settings)
     if mode in (0, 2):
         lines.append(
             f"G72 Q{sub_num} X{start_x:.3f} Z{start_z:.3f} D{finish_allow_z:.3f} "

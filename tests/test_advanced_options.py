@@ -33,7 +33,9 @@ def test_css_and_custom_park_position_are_emitted():
     ]
     lines = generate_program_gcode(operations, settings)
     text = "\n".join(lines)
-    assert "G96 D3200 S90.0 M3" in text
+    assert "G97 S2839 M3 (CSS-Anfahrdrehzahl bei X10.092)" in text
+    assert "G96 D3200 S90.0" in text
+    assert text.index("G97 S2839") < text.index("G96 D3200") < text.index("G76 ")
     park_idx = lines.index("(Parkposition am Ende)")
     assert lines[park_idx + 1] == "G53 G0 X111.000"
     assert lines[park_idx + 2] == "G53 G0 Z222.000"

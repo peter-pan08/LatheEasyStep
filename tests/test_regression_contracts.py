@@ -338,9 +338,11 @@ def test_operation_specific_spindle_mode_overrides_program_header():
         ),
     ]
     gcode = "\n".join(generate_program_gcode(operations, settings))
-    assert "G96 D2500 S220.0 M3" in gcode
+    assert "G97 S1667 M3 (CSS-Anfahrdrehzahl bei X42.000)" in gcode
+    assert "G96 D2500 S220.0" in gcode
     assert "G97 S1800 M3" not in gcode
     assert "S1800" not in gcode
+    assert gcode.index("G97 S1667") < gcode.index("G0 Z0.000") < gcode.index("G96 D2500") < gcode.index("G72 Q")
 
 
 def test_operation_without_spindle_mode_falls_back_to_program_header():
@@ -361,7 +363,34 @@ def test_operation_without_spindle_mode_falls_back_to_program_header():
         ),
     ]
     gcode = "\n".join(generate_program_gcode(operations, settings))
-    assert "G96 D3000 S180.0 M3" in gcode
+    assert "G97 S1364 M3 (CSS-Anfahrdrehzahl bei X42.000)" in gcode
+    assert "G96 D3000 S180.0" in gcode
+
+
+def test_mixed_css_fixed_css_sequence_keeps_speed_units_and_activation_positions():
+    settings = make_program_settings()
+    face = {
+        "mode": 0, "tool": 1, "spindle": 1800.0, "feed": 0.12, "depth_max": 0.2,
+        "start_z": 0.0, "end_z": 0.0, "start_x": 40.0, "end_x": 0.0,
+        "finish_allow_z": 0.0, "retract": 1.0, "edge_type": 0, "edge_size": 0.0,
+        "spindle_mode": "css", "spindle_max_rpm": 2500.0, "cutting_speed": 120.0,
+    }
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {"program_name": "MixedSpindleModes"}),
+        Operation(OpType.FACE, dict(face), path=[(40.0, 0.0), (0.0, 0.0)]),
+        Operation(OpType.DRILL, {
+            "tool": 2, "spindle": 900.0, "feed": 0.1, "safe_z": 2.0,
+            "retract": 2.0, "mode": "g81", "diameter": 8.0,
+        }, path=[(0.0, 2.0), (0.0, -12.0)]),
+        Operation(OpType.FACE, {**face, "cutting_speed": 180.0}, path=[(40.0, 0.0), (0.0, 0.0)]),
+    ]
+    gcode = "\n".join(generate_program_gcode(operations, settings))
+    first_css = gcode.index("G96 D2500 S120.0")
+    drill_fixed = gcode.index("G97 S900 M3", first_css)
+    second_css = gcode.index("G96 D2500 S180.0", drill_fixed)
+    assert first_css < drill_fixed < second_css
+    assert "G96 D2500 S900" not in gcode
+    assert gcode.rindex("G0 X40.000", drill_fixed, second_css) < second_css
 
 
 def test_css_mode_without_cutting_speed_falls_back_to_g97_with_warning():

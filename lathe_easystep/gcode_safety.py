@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Optional, Tuple
 
 from .gcode_utils import float_or_none, get_tool_number, sanitize_comment_text
@@ -255,6 +256,7 @@ def append_tool_and_spindle(
     spindle_mode: object | None = None,
     spindle_max_rpm: object | None = None,
     cutting_speed: object | None = None,
+    css_start_diameter: object | None = None,
 ):
     if tool_value is None and settings is not None:
         tool_num = get_tool_number(settings)
@@ -307,7 +309,20 @@ def append_tool_and_spindle(
         else:
             max_rpm = float_or_none((settings or {}).get("spindle_max_rpm"))
         if vc and vc > 0 and max_rpm and max_rpm > 0:
-            lines.append(f"G96 D{int(round(max_rpm))} S{vc:.1f} M3")
+            diameter = float_or_none(css_start_diameter)
+            if diameter is None or diameter <= 0:
+                raise ValueError(
+                    "CSS/G96 erfordert einen positiven ersten Bearbeitungsdurchmesser."
+                )
+            # Vc wird in der UI immer in m/min erfasst, X ist ein Durchmesser.
+            # Die feste Anfahrdrehzahl entspricht deshalb n=1000*Vc/(pi*d)
+            # und wird hart auf die programmweite Maximaldrehzahl begrenzt.
+            start_rpm = min(max_rpm, (1000.0 * vc) / (math.pi * diameter))
+            rpm_value = max(1, int(round(start_rpm)))
+            lines.append(f"G97 S{rpm_value} M3 (CSS-Anfahrdrehzahl bei X{diameter:.3f})")
+            if settings is None:
+                raise ValueError("CSS/G96 erfordert Programmkopf-Einstellungen.")
+            settings["_pending_css"] = (int(round(max_rpm)), vc)
             return
         rpm = float_or_none(spindle_value)
         if rpm and rpm > 0:
@@ -318,10 +333,23 @@ def append_tool_and_spindle(
             lines.append(f"G97 S{int(round(rpm))} M3")
         return
     rpm = float_or_none(spindle_value)
+    if settings is not None:
+        settings.pop("_pending_css", None)
     if rpm and rpm > 0:
         rpm_value = int(round(rpm))
         if rpm_value > 0:
             lines.append(f"G97 S{rpm_value} M3")
+
+
+def activate_pending_css(lines: List[str], settings: Dict[str, object] | None) -> None:
+    """Aktiviert ein vorbereitetes G96 erst an der Bearbeitungsposition."""
+    if settings is None:
+        return
+    pending = settings.pop("_pending_css", None)
+    if pending is None:
+        return
+    max_rpm, vc = pending
+    lines.append(f"G96 D{int(max_rpm)} S{float(vc):.1f}")
 
 
 def nose_compensation_command(tool_info: Dict[str, object] | None, external: bool) -> Optional[str]:
@@ -497,6 +525,7 @@ def get_end_park_lines(settings: Dict[str, object] | None) -> List[str]:
 
 __all__ = [
     "append_tool_and_spindle",
+    "activate_pending_css",
     "emit_approach",
     "emit_safe_retract",
     "emit_safe_retract_for_op",

@@ -6,6 +6,7 @@ from .contour_logic import thread_relief_spec
 from .model import Operation
 from .numeric import finite_float, whole_number, validate_finite_data
 from .gcode_utils import is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
+from .gcode_safety import activate_pending_css
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
@@ -141,6 +142,7 @@ def generate_thread_gcode(
         spindle_mode=op.params.get("spindle_mode"),
         spindle_max_rpm=op.params.get("spindle_max_rpm"),
         cutting_speed=op.params.get("cutting_speed"),
+        css_start_diameter=abs(approach_x),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     lines.extend(comments)
@@ -166,6 +168,7 @@ def generate_thread_gcode(
         emit_approach(lines, approach_x, safe_z, settings)
         if abs(start_z - safe_z) > 1e-9:
             lines.append(f"G0 Z{start_z:.3f}")
+    activate_pending_css(lines, settings)
     lines.append(
         (
             "G76 "

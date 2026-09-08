@@ -4,7 +4,7 @@ from typing import Callable, Dict, List
 
 from .model import Operation
 from .gcode_utils import get_param_float, get_param_int, validate_internal_x_limit
-from .gcode_safety import get_safe_position
+from .gcode_safety import activate_pending_css, get_safe_position
 
 
 def groove_sub_definition() -> List[str]:
@@ -216,16 +216,6 @@ def generate_groove_gcode(
     settings = settings or {}
     require_tool(op.params, "GROOVE")
     lines: List[str] = []
-    append_tool_and_spindle(
-        lines,
-        get_tool_number(op.params),
-        op.params.get("spindle"),
-        settings,
-        spindle_mode=op.params.get("spindle_mode"),
-        spindle_max_rpm=op.params.get("spindle_max_rpm"),
-        cutting_speed=op.params.get("cutting_speed"),
-    )
-    emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     p = op.params
     safe_z = float(p.get("safe_z", 2.0))
     lage = get_param_int(p, ["lage"], 0) or 0
@@ -318,6 +308,17 @@ def generate_groove_gcode(
         raise ValueError("GROOVE: Ueberdeckung ist im Verhaeltnis zur Werkzeugbreite zu gross.")
 
     start_x = a_start if mode == 0 else c_val
+    append_tool_and_spindle(
+        lines,
+        get_tool_number(op.params),
+        op.params.get("spindle"),
+        settings,
+        spindle_mode=op.params.get("spindle_mode"),
+        spindle_max_rpm=op.params.get("spindle_max_rpm"),
+        cutting_speed=op.params.get("cutting_speed"),
+        css_start_diameter=abs(start_x),
+    )
+    emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     lines.append("(Anfahren vor Groove)")
     safe_pos = get_safe_position(settings)
     if safe_pos:
@@ -334,6 +335,7 @@ def generate_groove_gcode(
     else:
         lines.append(f"G0 Z{safe_z:.3f}")
         lines.append(f"G0 X{start_x:.3f}")
+    activate_pending_css(lines, settings)
 
     def macro_arg(value: float, digits: int = 3) -> str:
         if value < 0:
