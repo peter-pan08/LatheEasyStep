@@ -3,6 +3,7 @@ from __future__ import annotations
 from qtpy import QtCore, QtWidgets
 
 from .presets import relief_thread_sizes
+from .ui_visibility import update_thread_relief_visibility
 from .ui_registry import COMBO_ITEM_REGISTRY, UI_TEXT_KEYS, UI_TOOLTIP_KEYS
 
 
@@ -52,6 +53,11 @@ def ensure_advanced_widgets(handler) -> None:
     _ensure_thread_widgets(handler, root)
     _ensure_groove_widgets(handler, root)
     _ensure_status_widgets(handler, root)
+    mode = getattr(handler, "thread_relief_mode", None)
+    if mode is not None and not mode.property("relief_visibility_connected"):
+        mode.currentIndexChanged.connect(lambda *_: update_thread_relief_visibility(handler))
+        mode.setProperty("relief_visibility_connected", True)
+    update_thread_relief_visibility(handler)
 
 
 def _form_layout(root, tab_name: str, layout_name: str):

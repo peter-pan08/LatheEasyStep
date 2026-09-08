@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 from .model import OpType
+from .numeric import finite_float, whole_number
 
 Point = Tuple[float, float]
 
@@ -19,7 +20,7 @@ def require(params: Dict[str, object], keys: List[str], op_label: str) -> None:
 def require_positive(params: Dict[str, object], keys: List[str], op_label: str) -> None:
     for key in keys:
         try:
-            val = float(params.get(key, 0))
+            val = finite_float(params.get(key, 0), key)
             if val <= 0:
                 raise ValueError(f"Fehler in Operation {op_label}: Parameter '{key}' muss > 0 sein (aktuell: {val}). Bitte im Handler/UI bei dieser Operation nachtragen.")
         except (ValueError, TypeError):
@@ -27,16 +28,23 @@ def require_positive(params: Dict[str, object], keys: List[str], op_label: str) 
 
 
 def get_tool_number(params: Dict[str, object]) -> int:
-    return get_param_int(params, ["tool", "toolno", "tool_number"], 0) or 0
+    for key in ("tool", "toolno", "tool_number"):
+        if params.get(key) not in (None, ""):
+            number = whole_number(params[key], "Werkzeug")
+            if number < 0:
+                raise ValueError("Werkzeugnummer darf nicht negativ sein.")
+            return number
+    return 0
 
 
 def get_param_float(params: Dict[str, object], keys: List[str], default: float | None = None) -> float | None:
     for key in keys:
         if key in params and params.get(key) not in (None, ""):
             try:
-                return float(params.get(key))
+                value = float(params.get(key))
             except (TypeError, ValueError):
                 continue
+            return finite_float(value, key)
     return default
 
 
@@ -149,10 +157,7 @@ def validate_internal_x_limit(settings: Dict[str, object], x_values: List[object
         raise ValueError(f"{op_label} erfordert ein gueltiges XRI im Programmkopf.")
     numeric_values: List[float] = []
     for value in x_values:
-        try:
-            numeric_values.append(float(value))
-        except Exception:
-            continue
+        numeric_values.append(finite_float(value, op_label))
     if not numeric_values:
         return safe_x
     min_x = min(numeric_values)
@@ -294,10 +299,9 @@ def emit_coolant(lines: List[str], mode: object) -> None:
 
 
 def float_or_none(value: object | None) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
+    if value in (None, ""):
         return None
+    return finite_float(value)
 
 
 def clean_path(path: List[Point]) -> List[Point]:

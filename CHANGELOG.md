@@ -1,6 +1,46 @@
 # Changelog
 
 ## [Unreleased]
+
+### Lokale Umsetzung 2026-09-08 (noch keine Maschinenabnahme)
+
+- LES-041 abgeschlossen: Generierung auf tief kopiertem Programmsnapshot;
+  Konturen/Freistiche frisch aufloesen, keine alten Ableitungen wiederverwenden.
+  Fehlende oder doppelte Konturnamen und unbekannte Operationen brechen ab.
+- LES-042 abgeschlossen: Programm-JSON ueber temporaere Datei und atomaren
+  Ersatz schreiben; bei Fehler bleiben Datei und bisheriger Programmpfad erhalten.
+- LES-043 abgeschlossen: Step-Dateien ebenfalls atomar, Verknuepfung erst
+  nach erfolgreichem Schreiben; Teilfehler melden bereits gespeicherte Steps,
+  ungespeicherte/verknuepfungslose Steps bleiben dirty.
+- LES-038 abgeschlossen: Stub-/Real-Qt in getrennten Prozessen, gemeinsamer
+  `run_tests.py`; 472 Stub-Tests und 43 echte Qt-Tests bestanden, keine Skips.
+- LES-023 abgeschlossen: automatische Kommentare ohne gespeicherte Nummer;
+  manuelle Kommentare bleiben erhalten. Konturen zaehlen in der Step-Liste
+  als Geometrieschritte mit, erzeugen aber keine eigene Bearbeitung.
+- LES-011 abgeschlossen: gemeinsame Freistich-Primitive fuer Vorschau,
+  Kontur-Sub und explizites Schlichten auf identische Ausgabe getestet;
+  Segment-Features ueberstehen Save/Load.
+- LES-016 abgeschlossen: Freistichnorm nur bei Vorschlagsmodus sichtbar;
+  alte IDs normalisiert, beide Zweige und Sprach-/Save-/Load-Wechsel mit
+  echtem Qt geprueft. Kontur-Kantenfelder bleiben sichtbar/deaktivierbar;
+  Innen/Aussen bekommt ohne fachlichen Bedarf keine zusaetzliche Ausblendung.
+- LES-001/039 teilweise: gemeinsame Anfahrt achsweise; Futter-Sperrzone
+  blockiert Ziel- und Segmentverletzungen. XT/ZT auch bei Einzelwerkzeug
+  zwingend. Unbekannte Startposition und vollstaendige Kollisionsplanung offen.
+- LES-040/028 teilweise: endliche Zahlen an Daten-/Geometriegrenzen,
+  ganzzahlige Werkzeugnummern und G76-Eingaben; defekte Pfadpunkte abweisen.
+  Ungueltige Gewindesteigung wird nicht mehr still ersetzt, H=0 bleibt H=0.
+- LES-003/015 teilweise: vorhandenes XI als Bohrungsgrenze erhalten,
+  Innenaufmass richtig ausrichten; 18 Profil-/Richtungs-/Moduskombinationen.
+- LES-036 implementiert: Planradius aus gemeinsamen Geometrieprimitiven,
+  G2 mit radialem I im Durchmessermodus, G91.1 im Programmkopf;
+  analytische Bogen- und echte Qt-Roundtrip-Tests. LinuxCNC-Abnahme offen.
+- LES-020 teilweise: Kopf-, Kontur-, Gewinde-Preset- und Tooltip-Funktionen
+  aus Handler in eigene Module extrahiert; Widget-Bootstrapping bleibt offen.
+- Neun NGC-Referenzen regeneriert, darunter Innenstufe, mittiger Freistich
+  und Planradius; statischer Validator korrigiert, rs274-Batchpruefung
+  vorbereitet. Fuer diesen Stand keine reale Parser-/Backplot-Verifikation.
+
 - Fix: Die neue sichere Innenanfahrt in `emit_approach()` (axial auf XRI,
   erst danach radial zustellen, kein diagonaler Schnellgang durch die
   Bohrung) erzeugte einen bedeutungslosen zusaetzlichen `G0 Z...` auf

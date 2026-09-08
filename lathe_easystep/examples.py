@@ -178,4 +178,34 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
         ],
         dict(settings),
     )
+    settings = make_program_settings()
+    settings.update(program_name="Innen_Stufe", xi=10.0, xri=9.0, zri=2.0,
+                    xri_absolute=True, zri_absolute=True)
+    contour = Operation(OpType.CONTOUR, {"name": "innen_stufe", "start_x": 12.0,
+        "start_z": -30.0, "segments": [{"x": 12.0, "z": -15.0},
+        {"x": 18.0, "z": -15.0}, {"x": 18.0, "z": 0.0}]})
+    rough = Operation(OpType.ABSPANEN, {"contour_name": "innen_stufe", "side": "inside",
+        "mode": "rough_finish", "slice_strategy": "parallel_z", "tool": 11,
+        "spindle": 800.0, "feed": 0.15, "depth_per_pass": 0.5,
+        "finish_allow_x": 0.2, "finish_allow_z": 0.1})
+    examples["Innen_Stufe.ngc"] = ([contour, rough], settings)
+
+    settings = make_program_settings()
+    settings["program_name"] = "Freistich_Mitte"
+    contour = Operation(OpType.CONTOUR, {"name": "freistich_mitte", "start_x": 20.0,
+        "start_z": 0.0, "segments": [{"x": 20.0, "z": -10.0},
+        {"x": 20.0, "z": -20.0, "feature": {"feature_type": "din_relief",
+        "thread_size": "M10", "internal": False, "orientation": "end"}},
+        {"x": 20.0, "z": -35.0}]})
+    finish = Operation(OpType.ABSPANEN, {"contour_name": "freistich_mitte", "side": "outside",
+        "mode": "finish", "undercut_mode": "full", "tool": 4,
+        "spindle": 600.0, "feed": 0.1, "depth_per_pass": 0.5})
+    examples["Freistich_Mitte.ngc"] = ([contour, finish], settings)
+
+    from copy import deepcopy
+    operations, settings = deepcopy(examples["Planen.ngc"])
+    settings["program_name"] = "Planen_Radius"
+    operations[-1].params.update(edge_type="radius", edge_size=1.0, mode="rough_finish")
+    examples["Planen_Radius.ngc"] = (operations, settings)
+
     return examples

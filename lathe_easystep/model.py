@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from .numeric import validate_finite_data
 from typing import Callable, Dict, List
 
 
@@ -77,6 +78,8 @@ class ProgramModel:
                 self.operations[index], self.operations[index + 1]
 
     def update_geometry(self, op: Operation):
+        validate_finite_data(op.params, op.op_type)
+        validate_finite_data(self.program_settings, "Programmkopf")
         builders = self._geometry_builders or _default_geometry_builders()
         builder = builders.get(op.op_type)
         if not builder:

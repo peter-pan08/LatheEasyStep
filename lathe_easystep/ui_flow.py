@@ -9,24 +9,13 @@ from qtpy import QtCore, QtWidgets
 
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType
+from .comments import is_generated_comment, update_auto_comment
 from .ui_helpers import translate as _tr
 from .ui_messages import format_user_error, parse_error_location
 
 _ERROR_HIGHLIGHT_STYLE = "border: 2px solid #d9534f; background-color: #fff3f3;"
 
-_GENERATED_STEP_COMMENT_RE = re.compile(r"^\d+\.\s")
-
-
-def _looks_like_generated_step_comment(comment: object) -> bool:
-    """True fuer leere Kommentare und fuer bereits maschinell nummerierte
-    Beschreibungen ("5. Innenabspanen ..."), deren fuehrende Zahl beim
-    Einfuegen an anderer Position veralten kann. Ein bewusst individueller
-    Kommentar ohne diese Nummerierung gilt nicht als generiert und bleibt
-    beim Einfuegen/Hinzufuegen unangetastet (LES-023)."""
-    text = str(comment or "").strip()
-    if not text:
-        return True
-    return bool(_GENERATED_STEP_COMMENT_RE.match(text))
+_looks_like_generated_step_comment = is_generated_comment
 _ERROR_HIGHLIGHT_DURATION_MS = 4000
 
 
@@ -113,11 +102,11 @@ def build_gcode_lines(handler):
             tool_val = 0
         if tool_val > 0:
             unique_tools.add(tool_val)
-    if len(unique_tools) >= 2:
+    if unique_tools:
         xt = header.get("xt")
         zt = header.get("zt")
         if xt is None or zt is None:
-            raise ValueError("Bitte XT und ZT im Programm-Tab eintragen, da mehrere Werkzeuge verwendet werden.")
+            raise ValueError("Bitte XT und ZT im Programm-Tab eintragen, da ein Werkzeugwechsel ausgegeben wird.")
     header_lines = handler._tool_change_position_lines(header)
     footer_lines = handler._tool_change_position_lines(header)
     handler.model.program_settings["header_lines"] = header_lines
@@ -350,16 +339,7 @@ def describe_operation(handler, op, number=None):
 
 
 def renumber_operations(handler):
-    """Aktualisiert Listenanzeige UND den gespeicherten Kommentar jeder Operation.
-
-    Realer Bug: Verschieben/Loeschen einer Operation aktualisierte bisher nur
-    den Anzeigetext der Liste (item.setText). Der in op.params["comment"]
-    gespeicherte - und in der G-Code-Ausgabe als "(STEP: ...)" verwendete -
-    Kommentar behielt seine urspruengliche, jetzt falsche Stepnummer. Das
-    erzeugte genau den beobachteten Widerspruch zwischen "(Step 4: ...)"
-    (frisch aus der laufenden Nummerierung) und "(STEP: 5. ...)" (veralteter,
-    gespeicherter Kommentar) im generierten Programm.
-    """
+    """Refresh list numbers and generated descriptions, preserving user comments."""
     if handler.list_ops is None:
         return
     for i in range(handler.list_ops.count()):
@@ -368,4 +348,4 @@ def renumber_operations(handler):
         description = handler._describe_operation(op, i + 1)
         item.setText(description)
         if op.op_type != OpType.PROGRAM_HEADER:
-            op.params["comment"] = description
+            update_auto_comment(op, description)

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import os
 import re
 from typing import Dict, List, Tuple
 
 from .model import OpType, Operation
+from .numeric import validate_finite_data
 
 STEP_FILE_PATH_KEY = "__step_file_path"
 PROGRAM_FILE_PATH_KEY = "__program_file_path"
@@ -74,6 +77,7 @@ def parse_program_payload(
     *,
     expected_version: int = 1,
 ) -> Tuple[Dict[str, object], List[Dict[str, object]], str | None, str | None]:
+    validate_finite_data(program_data, "Programmdatei")
     if program_data.get("version") != expected_version:
         raise ValueError("Ungültiges Dateiformat oder nicht unterstützte Version.")
     header = program_data.get("header", {})
@@ -88,3 +92,19 @@ def parse_program_payload(
     program_path = normalized_file_path(meta.get(PROGRAM_FILE_PATH_KEY) or file_path)
     gcode_path = normalized_file_path(meta.get(GCODE_FILE_PATH_KEY))
     return header, operations, program_path, gcode_path
+
+
+def atomic_write_json(file_path, data, *, default=None):
+    """Replace one JSON file only after complete serialization and close."""
+    directory = os.path.dirname(os.path.abspath(file_path))
+    fd, temporary_path = tempfile.mkstemp(prefix=".lathe-easystep-", suffix=".json", dir=directory, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, default=default, allow_nan=False)
+        os.replace(temporary_path, file_path)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise

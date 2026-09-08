@@ -157,4 +157,4 @@ def test_internal_roughing_with_real_bore_contour_produces_even_stepped_passes()
     # (nicht mehr eine leere "X-band"-Kopfzeile ohne folgenden Schnitt).
     assert "(Pass 10: no cut region in band X[17.000,18.000])" in text
     assert "(Pass 11: no cut region in band X[18.000,19.000])" in text
-    assert "(Pass 12: no cut region in band X[19.000,19.200])" in text
+    assert "(Pass 12: no cut region in band X[19.000,19.100])" in text

@@ -2,7 +2,7 @@
 (Programm automatisch erzeugt)
 (Programmname: Einstich)
 (Masseinheit: mm)
-G18 G7 G90 G40 G80
+G18 G7 G90 G91.1 G40 G80
 G21
 G95
 G54

@@ -1,6 +1,6 @@
 # Roadmap LatheEasyStep
 
-Stand: 2026-07-24
+Stand: 2026-09-08
 
 LatheEasyStep soll ein werkstattnahes, konversationelles Drehpanel fuer
 LinuxCNC werden. Die Roadmap beschreibt Release-Ziele und Abhaengigkeiten.
@@ -12,7 +12,7 @@ Verifikation in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- aktueller Teststand: `364 passed, 7 skipped`
+- aktueller Teststand: `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped`
 - UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,
   nichtleere Sprachschluessel
@@ -31,6 +31,8 @@ gewarnte Fahrwege erzeugen.
 Verbindliche Aufgaben:
 
 - LES-001 sichere Anfahrt zwischen Operationen
+- LES-039 sichere erste Freifahrt und Werkzeugwechsel
+- LES-040 vollstaendige Zahlen- und Wertebereichspruefung
 - LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 - LES-005 Innen-Schlichtanfahrt und Rueckzug absichern
 
@@ -55,11 +57,9 @@ Verbindliche Aufgaben:
 
 - LES-006 Rueckzugsstrategie je Bearbeitungsart
 - LES-010 lokale DIN-Freistichgeometrie
-- LES-011 einheitliche Freistichdarstellung
 - LES-012 G1/G2/G3-Primitive durchgaengig erhalten
 - LES-013 sichere CSS-Umschaltung nach per-Operation-G96/G97
 - LES-015 automatisierte Innenkontur-Testmatrix
-- LES-016 fachlich definierte UI-Sichtbarkeitsregeln
 - LES-019 fehlende DIN-76-Presets
 - LES-030 LinuxCNC-Simulationsmatrix
 - LES-036 Kantenform "Radius" beim Planen
@@ -87,7 +87,6 @@ Aufgabenbereiche:
 - LES-018 optionale G70-Wiederverwendung
 - LES-020 weitere Handler-Extraktionen
 - LES-022 zentraler Bewegungs- und Modalzustand
-- LES-023 Step-Kommentare und Exportnummerierung
 - LES-024 Vorschau-/Step-UI und Controllergrenzen
 - LES-027 Embedded-/Standalone-Performance
 - LES-028 normalisierte Werkzeug- und G76-Daten
@@ -128,3 +127,10 @@ Voraussetzungen:
 - weitere Maschinen-, Futter- und Werkzeugprofile
 - automatisierte LinuxCNC-Simulationslaeufe
 - zusaetzliche Abspanstrategien
+
+Entwicklungsstand 2026-09-08: Snapshot-Generierung, atomare Programmdateien,
+getrennte Qt-Testlaeufe, normierte Step-Kommentare und Freistich-Koordinaten-
+regressionen sind umgesetzt. Planradius, Innenaufmass, Eingabevalidierung
+und gemeinsame Anfahrt wurden erweitert. Die neuen Fahrwege sind noch
+nicht mit LinuxCNC-Parser, Backplot und Maschine abgenommen; offene P0-
+Punkte bleiben Releaseblocker. [Details und Grenzen](doc/VERIFICATION_2026-09-08.md).

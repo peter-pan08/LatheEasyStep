@@ -9,7 +9,7 @@ def test_slice_step_defaults_to_depth_per_pass_when_unset():
     params = {"mode": 0, "depth_per_pass": 0.75, "slice_strategy": 1, "feed": 0.15, "tool": 1}
     op = Operation(OpType.ABSPANEN, params=params, path=path)
     m.operations = [op]
-    m.program_settings = {"xra": 60.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 60.0, "zra": 5.0}
     g = "\n".join(m.generate_gcode())
     # Move-based roughing should be used (not G72 cycle)
     assert "Move-based" in g

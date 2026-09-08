@@ -87,14 +87,14 @@ class TestDrillG81:
 
     def test_g81_emitted_for_mode_0(self):
         op = _make_drill_op(mode=0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line is not None, f"No cycle line found in: {lines}"
         assert cycle_line.startswith("G81")
 
     def test_g81_contains_x_z_r_f(self):
         op = _make_drill_op(mode=0, depth=-20.0, safe_z=2.0, feed=0.12)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert "X0.000" in cycle_line
         assert "Z-20.000" in cycle_line
@@ -104,7 +104,7 @@ class TestDrillG81:
     def test_g81_is_default_for_unknown_mode(self):
         """Unknown mode index should fallback to G81."""
         op = _make_drill_op(mode=99)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line is not None
         assert cycle_line.startswith("G81")
@@ -113,7 +113,7 @@ class TestDrillG81:
         """Mode passed as string 'G81' should also work."""
         op = _make_drill_op()
         op.params["mode"] = "G81"
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line.startswith("G81")
 
@@ -127,14 +127,14 @@ class TestDrillG82:
 
     def test_g82_emitted_for_mode_1(self):
         op = _make_drill_op(mode=1, dwell=1.5)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line is not None
         assert cycle_line.startswith("G82")
 
     def test_g82_contains_dwell_parameter(self):
         op = _make_drill_op(mode=1, dwell=2.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert "P2.000" in cycle_line
 
@@ -148,14 +148,14 @@ class TestDrillG83:
 
     def test_g83_emitted_for_mode_2(self):
         op = _make_drill_op(mode=2, peck_depth=3.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line is not None
         assert cycle_line.startswith("G83")
 
     def test_g83_contains_peck_depth(self):
         op = _make_drill_op(mode=2, peck_depth=5.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert "Q5.000" in cycle_line
 
@@ -169,14 +169,14 @@ class TestDrillG73:
 
     def test_g73_emitted_for_mode_3(self):
         op = _make_drill_op(mode=3, peck_depth=2.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line is not None
         assert cycle_line.startswith("G73")
 
     def test_g73_contains_peck_depth(self):
         op = _make_drill_op(mode=3, peck_depth=4.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert "Q4.000" in cycle_line
 
@@ -190,7 +190,7 @@ class TestDrillG84:
 
     def test_g84_emitted_for_mode_4(self):
         op = _make_drill_op(mode=4)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_line = _get_cycle_line(lines)
         assert cycle_line is not None
         assert cycle_line.startswith("G84")
@@ -205,7 +205,7 @@ class TestDrillPlaneSwitch:
 
     def test_g17_before_cycle(self):
         op = _make_drill_op(mode=0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         g17_idx = None
         cycle_idx = None
         for i, line in enumerate(lines):
@@ -219,7 +219,7 @@ class TestDrillPlaneSwitch:
 
     def test_g18_after_g80(self):
         op = _make_drill_op(mode=0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         g80_idx = None
         g18_idx = None
         for i, line in enumerate(lines):
@@ -242,7 +242,7 @@ class TestDrillApproachRetract:
     def test_approach_x_is_centerline(self):
         """Drill must approach on X=0 (centerline)."""
         op = _make_drill_op(mode=0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         # Find G0 moves before the cycle
         cycle_idx = next(i for i, l in enumerate(lines) if re.match(r"G8[1234]|G73", l))
         approach_g0 = [l for l in lines[:cycle_idx] if l.startswith("G0") and "X" in l]
@@ -256,7 +256,7 @@ class TestDrillApproachRetract:
     def test_approach_z_is_safe(self):
         """Approach must go to safe_z before drilling."""
         op = _make_drill_op(mode=0, safe_z=5.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         cycle_idx = next(i for i, l in enumerate(lines) if re.match(r"G8[1234]|G73", l))
         approach_g0 = [l for l in lines[:cycle_idx] if l.startswith("G0") and "Z" in l]
         assert len(approach_g0) >= 1
@@ -270,7 +270,7 @@ class TestDrillApproachRetract:
     def test_retract_to_safe_z_after_g80(self):
         """After G80, tool must retract to safe_z before G18 restore."""
         op = _make_drill_op(mode=0, safe_z=3.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         g80_idx = next(i for i, l in enumerate(lines) if l.strip() == "G80")
         g18_idx = next(i for i, l in enumerate(lines) if l.strip() == "G18")
         # Between G80 and G18 there should be a G0 Z retract
@@ -291,7 +291,7 @@ class TestDrillCoolant:
 
     def test_coolant_not_duplicated(self):
         op = _make_drill_op(mode=0, coolant=1.0)
-        lines = gcode_for_drill(op)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
         m8_count = sum(1 for l in lines if l.strip() in ("M8", "M7"))
         assert m8_count <= 1, f"Coolant command emitted {m8_count} times (expected 0 or 1)"
 

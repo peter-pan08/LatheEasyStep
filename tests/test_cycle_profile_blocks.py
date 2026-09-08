@@ -22,7 +22,7 @@ def test_g71_profile_sub_uses_only_g1_g2_g3_for_profile():
             path=path,
         )
     ]
-    m.program_settings = {"xa": 40.0, "xra": 50.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xa": 40.0, "xra": 50.0, "zra": 5.0}
     g = "\n".join(m.generate_gcode())
 
     assert "G71 Q" in g

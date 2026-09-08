@@ -511,3 +511,12 @@ def update_drill_visibility(handler):
         handler.label_drill_peck_depth.setVisible(peck_visible)
     if getattr(handler, "drill_peck_depth", None) is not None:
         handler.drill_peck_depth.setVisible(peck_visible)
+
+
+def update_thread_relief_visibility(handler):
+    mode = getattr(handler, "thread_relief_mode", None)
+    visible = mode is not None and mode.currentData() in ("suggest", "suggest_din_relief")
+    for name in ("label_thread_relief_norm", "thread_relief_norm"):
+        widget = getattr(handler, name, None)
+        if widget is not None:
+            widget.setVisible(visible)

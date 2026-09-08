@@ -6,11 +6,12 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import ProgramModel, Operation, OpType
 
-DEFAULT_RETRACT_SETTINGS = {"xra": 50.0, "zra": 5.0}
+DEFAULT_RETRACT_SETTINGS = {"xt": 150.0, "zt": 300.0, "xra": 50.0, "zra": 5.0}
 
 
 def test_parting_slice_index_triggers_parallel_x():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy data value (1 -> parallel_x)
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "slice_step": 0.5, "depth_per_pass": 0.5, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
@@ -20,6 +21,7 @@ def test_parting_slice_index_triggers_parallel_x():
 
 def test_parting_slice_index_triggers_parallel_z():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy data value (2 -> parallel_z)
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "slice_step": 0.5, "depth_per_pass": 0.5, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
@@ -29,6 +31,7 @@ def test_parting_slice_index_triggers_parallel_z():
 
 def test_parting_slice_string_triggers_parallel_x():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy as explicit string
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": "parallel_x", "slice_step": 1.0, "depth_per_pass": 1.0, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
@@ -38,6 +41,7 @@ def test_parting_slice_string_triggers_parallel_x():
 
 def test_parting_slice_string_triggers_parallel_z():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy as explicit string
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": "parallel_z", "slice_step": 1.0, "depth_per_pass": 1.0, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
@@ -47,6 +51,7 @@ def test_parting_slice_string_triggers_parallel_z():
 
 def test_parting_parallel_z_non_monotonic_x_falls_back_to_move_based():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # Non-monotonic X profile -> must fall back to move-based roughing.
     path = [(20.0, 0.0), (10.0, -5.0), (15.0, -10.0)]
     m.operations = [
@@ -63,7 +68,7 @@ def test_parting_parallel_z_non_monotonic_x_falls_back_to_move_based():
             path=path,
         )
     ]
-    m.program_settings = {"xa": 40.0, "xra": 50.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xa": 40.0, "xra": 50.0, "zra": 5.0}
     g = "\n".join(m.generate_gcode())
     assert "(ABSPANEN Rough - parallel Z - Move-based)" in g
     assert "G71 Q" not in g
@@ -71,6 +76,7 @@ def test_parting_parallel_z_non_monotonic_x_falls_back_to_move_based():
 
 def test_internal_parallel_z_cycle_uses_contour_based_stock_x_when_xi_is_zero():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     path = [(50.0, 0.0), (40.0, -10.0), (10.0, -40.0)]
     m.operations = [
         Operation(
@@ -86,7 +92,7 @@ def test_internal_parallel_z_cycle_uses_contour_based_stock_x_when_xi_is_zero():
             path=path,
         )
     ]
-    m.program_settings = {"xi": 0.0, "xri": 2.0, "zri": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xi": 0.0, "xri": 2.0, "zri": 5.0}
     g = "\n".join(m.generate_gcode())
     # G71/G72 werden fuer Innenbearbeitung nicht mehr verwendet (real gegen
     # den LinuxCNC-Interpreter bestaetigt: der Zyklus erzeugt dort fuer
@@ -100,6 +106,7 @@ def test_internal_parallel_z_cycle_uses_contour_based_stock_x_when_xi_is_zero():
 
 def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     path = [(50.0, 0.0), (40.0, -10.0), (10.0, -40.0)]
     m.operations = [
         Operation(
@@ -115,7 +122,7 @@ def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
             path=path,
         )
     ]
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "xi": 0.0,
         "xri": 9.0,
         "xri_absolute": True,
@@ -139,6 +146,7 @@ def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
 
 def test_internal_parallel_z_approach_uses_xri_and_zri_safe_position():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     path = [(50.0, 0.0), (40.0, -10.0), (10.0, -40.0)]
     m.operations = [
         Operation(
@@ -154,7 +162,7 @@ def test_internal_parallel_z_approach_uses_xri_and_zri_safe_position():
             path=path,
         )
     ]
-    m.program_settings = {"xi": 0.0, "xri": 9.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xi": 0.0, "xri": 9.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
     lines = m.generate_gcode()
     # G71 wird fuer Innenbearbeitung nicht mehr verwendet (siehe Kommentar im
     # Test oben) - die sichere XRI-/ZRI-Anfahrt bleibt aber ueber denselben
@@ -167,6 +175,7 @@ def test_internal_parallel_z_approach_uses_xri_and_zri_safe_position():
 
 def test_internal_parallel_z_rejects_unplausible_xri():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     m.operations = [
         Operation(
             OpType.ABSPANEN,
@@ -174,7 +183,7 @@ def test_internal_parallel_z_rejects_unplausible_xri():
             path=[(50.0, 0.0), (40.0, -10.0), (10.0, -40.0)],
         )
     ]
-    m.program_settings = {"xi": 0.0, "xri": 12.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xi": 0.0, "xri": 12.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
     with pytest.raises(ValueError, match="XRI=.*unplausibel"):
         m.generate_gcode()
 
@@ -189,6 +198,7 @@ def test_internal_finish_entry_uses_checked_approach_not_raw_diagonal_move():
     Schlicht-Einfahrt ueber denselben emit_approach()-Helfer wie die
     Schrupp-Zustellung, der die Lage prueft und warnt."""
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     path = [(10.0, 0.0), (10.0, -20.0)]
     m.operations = [
         Operation(
@@ -197,7 +207,7 @@ def test_internal_finish_entry_uses_checked_approach_not_raw_diagonal_move():
             path=path,
         )
     ]
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         # za bewusst tiefer als der berechnete Einfahrpunkt (Z=2, aus
         # ZRI=0/absolute=False -> safe_z=0 + Leadout 2.0), damit der
         # Einfahrpunkt tatsaechlich noch im Rohteil liegt und die Warnung

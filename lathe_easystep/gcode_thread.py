@@ -4,6 +4,7 @@ from typing import Callable, Dict, List, Tuple
 
 from .contour_logic import thread_relief_spec
 from .model import Operation
+from .numeric import finite_float, whole_number, validate_finite_data
 from .gcode_utils import is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
 
 
@@ -21,14 +22,14 @@ def generate_thread_gcode(
     sanitize_comment_text: Callable[[object], str],
 ) -> List[str]:
     settings = settings or {}
+    validate_finite_data(op.params, "THREAD")
+    validate_finite_data(settings, "Programmkopf")
     require_tool(op.params, "THREAD")
     safe_z = float(op.params.get("safe_z", 2.0))
     major_diameter = float(op.params.get("major_diameter", 0.0))
     pitch = float(op.params.get("pitch", 1.5))
-    pitch_warning: str | None = None
     if pitch <= 0.0:
-        pitch_warning = "(WARN: Ungueltige Steigung; P=1.0 fallback)"
-        pitch = 1.0
+        raise ValueError("THREAD pitch muss groesser als 0 sein.")
     length = float(op.params.get("length", 0.0))
     start_z = float(op.params.get("thread_start_z", 0.0) or 0.0)
     hand_raw = op.params.get("hand", 0)
@@ -37,35 +38,34 @@ def generate_thread_gcode(
     z_dir = -1.0 if hand_idx == 0 else 1.0
     end_z = start_z + (z_dir * abs(length))
 
-    raw_thread_depth = op.params.get("thread_depth")
-    if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
-        thread_depth = float(raw_thread_depth)
-    else:
-        thread_depth = pitch * 0.6134
+    def automatic_positive(key, default):
+        raw = op.params.get(key)
+        value = 0.0 if raw in (None, "") else finite_float(raw, key)
+        if value < 0:
+            raise ValueError(f"THREAD {key} darf nicht negativ sein.")
+        return value or default
 
-    raw_first_depth = op.params.get("first_depth")
-    if isinstance(raw_first_depth, (int, float)) and raw_first_depth > 0:
-        first_depth = float(raw_first_depth)
-    else:
-        first_depth = max(thread_depth * 0.1, pitch * 0.05)
-
+    thread_depth = automatic_positive("thread_depth", pitch * 0.6134)
+    first_depth = automatic_positive("first_depth", max(thread_depth * 0.1, pitch * 0.05))
     raw_peak_offset = op.params.get("peak_offset")
-    if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
-        peak_offset = abs(float(raw_peak_offset))
-    else:
-        peak_offset = max(first_depth, pitch * 0.05)
-
-    retract_r = float(op.params.get("retract_r", 1.5))
-    infeed_q = float(op.params.get("infeed_q", 29.5))
-    spring_passes_raw = op.params.get("spring_passes")
-    if isinstance(spring_passes_raw, (int, float)) and spring_passes_raw > 0:
-        spring_passes = max(0, int(spring_passes_raw))
-    else:
-        spring_passes = max(0, int(op.params.get("passes", 1)))
-    e_val = float(op.params.get("e", 0.0))
-    l_val = int(float(op.params.get("l", 0)))
-    lead_in = abs(float(op.params.get("lead_in", 0.0) or 0.0))
-    lead_out = abs(float(op.params.get("lead_out", 0.0) or 0.0))
+    peak_offset = abs(finite_float(raw_peak_offset, "peak_offset")) if raw_peak_offset not in (None, "") else 0.0
+    peak_offset = peak_offset or max(first_depth, pitch * 0.05)
+    retract_r = finite_float(op.params.get("retract_r", 1.5), "retract_r")
+    infeed_q = finite_float(op.params.get("infeed_q", 29.5), "infeed_q")
+    raw_spring = op.params.get("spring_passes")
+    spring_passes = whole_number(op.params.get("passes", 1) if raw_spring in (None, "") else raw_spring, "spring_passes")
+    e_val = finite_float(op.params.get("e", 0.0), "e")
+    l_val = whole_number(op.params.get("l", 0), "l")
+    lead_in = finite_float(op.params.get("lead_in", 0.0) or 0.0, "lead_in")
+    lead_out = finite_float(op.params.get("lead_out", 0.0) or 0.0, "lead_out")
+    if major_diameter <= 0 or length <= 0 or 2 * thread_depth >= major_diameter:
+        raise ValueError("THREAD Durchmesser, Laenge und Kerndurchmesser muessen positiv sein.")
+    if first_depth > thread_depth:
+        raise ValueError("THREAD first_depth darf thread_depth nicht uebersteigen.")
+    if retract_r < 1 or spring_passes < 0 or l_val not in (0, 1, 2, 3):
+        raise ValueError("THREAD erfordert R >= 1, H >= 0 und L in 0..3.")
+    if min(e_val, lead_in, lead_out) < 0:
+        raise ValueError("THREAD Taperlaengen duerfen nicht negativ sein.")
     if lead_in > 0.0 or lead_out > 0.0:
         if lead_in > 0.0 and lead_out > 0.0 and abs(lead_in - lead_out) > 1e-6:
             raise ValueError(
@@ -75,6 +75,9 @@ def generate_thread_gcode(
             )
         e_val = lead_in or lead_out
         l_val = 3 if lead_in > 0.0 and lead_out > 0.0 else (1 if lead_in > 0.0 else 2)
+
+    if e_val > length / 2:
+        raise ValueError("THREAD Taperlaenge E darf die halbe Gewindelaenge nicht uebersteigen.")
 
     orientation_raw = op.params.get("orientation", 0)
     internal = is_internal_side(orientation_raw)
@@ -111,8 +114,6 @@ def generate_thread_gcode(
     comments.append(f"(Gewindestart/-ende Z: {start_z:.3f} -> {end_z:.3f})")
     if lead_in > 0.0 or lead_out > 0.0:
         comments.append(f"(Gewinde-Taper: Vorlauf={lead_in:.3f} Auslauf={lead_out:.3f} mm; G76 E={e_val:.3f} L={l_val})")
-    if pitch_warning:
-        comments.append(pitch_warning)
     relief_mode = str(op.params.get("relief_mode", "off") or "off").strip().lower()
     relief_norm = str(op.params.get("relief_norm", "DIN 76-A") or "DIN 76-A").strip()
     if relief_mode in ("suggest", "suggest_din_relief"):

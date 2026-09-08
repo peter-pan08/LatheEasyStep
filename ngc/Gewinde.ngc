@@ -2,7 +2,7 @@
 (Programm automatisch erzeugt)
 (Programmname: Gewinde)
 (Masseinheit: mm)
-G18 G7 G90 G40 G80
+G18 G7 G90 G91.1 G40 G80
 G21
 G95
 G54
@@ -35,7 +35,7 @@ M9
 (Gewinderichtung: Rechtsgewinde)
 (Gewindestart/-ende Z: 0.000 -> -30.000)
 (Anfahren vor Gewinde)
-G0 X10.092 Z2.000
+G0 X10.092
 G0 Z0.000
 G76 P1.5000 Z-30.000 I-0.0920 J0.1840 R1.5000 K1.8402 Q29.5000 H1 E0.0000 L0
 G0 Z2.000

@@ -4,6 +4,9 @@ from typing import Callable, Dict, List, Tuple
 
 from .gcode_utils import resolve_enum_index
 from .model import Operation
+from .face_geometry import face_primitives
+from .gcode_roughing import contour_sub_from_primitives
+from .numeric import finite_float, validate_finite_data
 
 FACE_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
 FACE_EDGE_TYPE_INDEX = {"none": 0, "chamfer": 1, "radius": 2}
@@ -21,6 +24,7 @@ def generate_face_gcode(
 ) -> List[str]:
     settings = settings or {}
     p = op.params
+    validate_finite_data(p, "Planen")
     lines: List[str] = []
 
     def req_float(key: str) -> float:
@@ -30,7 +34,7 @@ def generate_face_gcode(
         if v is None or v == "":
             raise ValueError(f"Empty parameter: '{key}'")
         try:
-            return float(v)
+            return finite_float(v, key)
         except Exception:
             raise ValueError(f"Invalid float for '{key}': {v!r}")
 
@@ -57,12 +61,7 @@ def generate_face_gcode(
 
     if "edge_type" not in p:
         raise ValueError("Missing parameter: 'edge_type'")
-    edge_type = resolve_enum_index(p.get("edge_type"), FACE_EDGE_TYPE_INDEX, default=0)
-    if edge_type == 2:
-        raise ValueError(
-            "Kantenform 'Radius' ist fuer Planen noch nicht implementiert - "
-            "bitte 'Fase' oder 'Keine' waehlen (LES-036)."
-        )
+    edge_type = resolve_enum_index(p.get("edge_type"), FACE_EDGE_TYPE_INDEX, default=-1)
     edge_size = req_float("edge_size")
 
     coolant_enabled = opt_bool("coolant")
@@ -89,27 +88,14 @@ def generate_face_gcode(
     emit_coolant(lines, coolant_mode)
     lines.append(f"F{feed:.3f}")
 
-    contour: List[Tuple[float, float]] = []
-    if edge_type == 1:
-        if edge_size <= 0.0:
-            raise ValueError("edge_size must be > 0 when edge_type==1")
-        contour.append((start_x, end_z - edge_size))
-        contour.append((start_x - 2.0 * edge_size, end_z))
-    else:
-        contour.append((start_x, end_z))
-
-    contour.append((end_x, end_z))
-    cleaned = clean_path(contour)
+    profile = face_primitives(start_x, end_x, end_z, edge_type, edge_size)
 
     allocator = settings.get("sub_allocator")
     if allocator:
         sub_num = allocator.allocate()
     else:
         sub_num = 100
-    lines.append(f"o{sub_num} sub")
-    for x, z in cleaned:
-        lines.append(f"G1 X{x:.3f} Z{z:.3f}")
-    lines.append(f"o{sub_num} endsub")
+    lines.extend(contour_sub_from_primitives(profile, sub_num))
 
     lines.append("(Anfahren vor Zyklus)")
     emit_approach(lines, start_x, start_z, settings)

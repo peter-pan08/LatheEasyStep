@@ -13,7 +13,7 @@ def test_abspanen_finish_allowance_comments():
               "slice_strategy": 1}  # choose parallel X roughing
     op = Operation(OpType.ABSPANEN, params=params, path=path)
     m.add_operation(op)
-    m.program_settings = {"sc": 3.0, "xa": 40.0, "xra": 45.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "sc": 3.0, "xa": 40.0, "xra": 45.0, "zra": 5.0}
     gcode = "\n".join(m.generate_gcode())
     # comment should mention the finish allowances we provided
     assert "Schlichtaufmaß" in gcode or "finish allow" in gcode.lower()

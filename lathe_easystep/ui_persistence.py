@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import builtins
 import json
 import os
@@ -10,7 +11,7 @@ from qtpy import QtCore, QtWidgets
 from .model import OpType
 from .ui_helpers import translate as _tr
 from .persistence import build_program_data as build_program_data_payload
-from .storage import parse_program_payload
+from .storage import parse_program_payload, atomic_write_json
 from .ui_messages import format_user_error
 
 
@@ -36,24 +37,35 @@ def write_program_file(handler, file_path: str) -> None:
     program_path = handler._normalized_file_path(file_path) or file_path
     previous_program_path = handler._current_program_path
     handler._current_program_path = program_path
-    parent = handler.root_widget or handler._find_root_widget()
-    settings = QtCore.QSettings()
-    base_dir = os.path.dirname(program_path)
-    for idx, op in enumerate(handler.model.operations):
-        if op.op_type == OpType.PROGRAM_HEADER:
-            continue
-        if not handler._ensure_step_file_link(
-            op,
-            index_hint=idx,
-            parent=parent,
-            settings=settings,
-            base_dir=base_dir,
-        ):
-            raise ValueError("Programmspeichern abgebrochen: fuer mindestens einen Step fehlt eine Step-Datei.")
-    program_data = handler._build_program_data()
-    with builtins.open(program_path, "w", encoding="utf-8") as handle:
-        json.dump(program_data, handle, indent=2, default=str)
-    handler._current_program_path = program_path if program_path else previous_program_path
+    try:
+        parent = handler.root_widget or handler._find_root_widget()
+        settings = QtCore.QSettings()
+        base_dir = os.path.dirname(program_path)
+        for idx, op in enumerate(handler.model.operations):
+            if op.op_type == OpType.PROGRAM_HEADER:
+                continue
+            if not handler._ensure_step_file_link(
+                op,
+                index_hint=idx,
+                parent=parent,
+                settings=settings,
+                base_dir=base_dir,
+            ):
+                raise ValueError("Programmspeichern abgebrochen: fuer mindestens einen Step fehlt eine Step-Datei.")
+        program_data = handler._build_program_data()
+        atomic_write_json(program_path, program_data, default=str)
+    except Exception:
+        handler._current_program_path = previous_program_path
+        raise
+
+
+def write_step_file(handler, op, file_path):
+    normalized = handler._normalized_file_path(file_path) or file_path
+    snapshot = deepcopy(op)
+    handler._set_step_file_path(snapshot, normalized)
+    atomic_write_json(normalized, handler._operation_to_step_data(snapshot))
+    handler._set_step_file_path(op, normalized)
+    return normalized
 
 
 def write_gcode_file(handler, file_path: str) -> None:
@@ -110,10 +122,7 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
             warning = handler._tool_orientation_mismatch(op)
             if warning:
                 QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.tool_orientation_check.title"), warning)
-            handler._set_step_file_path(op, file_path)
-            data = handler._operation_to_step_data(op)
-            with builtins.open(file_path, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, indent=2)
+            write_step_file(handler, op, file_path)
         except Exception as exc:
             QtWidgets.QMessageBox.critical(parent, _tr(handler, "dialog.step.save.title"), format_user_error(handler, exc, fallback_title=_tr(handler, "message.step.save_failed")))
             return
@@ -340,6 +349,8 @@ def handle_save_changes(handler) -> None:
     if handler._saving_changes:
         return
     handler._saving_changes = True
+    saved_steps = 0
+    saved_program = False
     try:
         parent = handler.root_widget or handler._find_root_widget()
         settings = QtCore.QSettings()
@@ -368,8 +379,7 @@ def handle_save_changes(handler) -> None:
                 continue
             linked_steps += 1
             data = handler._operation_to_step_data(op)
-            with builtins.open(step_path, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, indent=2)
+            atomic_write_json(step_path, data)
             handler._remember_dialog_path(
                 settings,
                 step_path,
@@ -435,14 +445,17 @@ def handle_save_changes(handler) -> None:
             "\n".join(messages),
         )
         try:
-            handler._clear_dirty_state()
+            if saved_program or (linked_steps == len(dirty_step_indices) and not handler._program_dirty):
+                handler._clear_dirty_state()
         except Exception:
             pass
     except Exception as exc:
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
             _tr(handler, "dialog.changes.save.title"),
-            format_user_error(handler, exc, fallback_title=_tr(handler, "message.changes.save_failed")),
+            format_user_error(handler, exc, fallback_title=_tr(handler, "message.changes.save_failed"))
+            + "\n" + _tr(handler, "message.changes.steps_updated", count=saved_steps)
+            + ("\n" + _tr(handler, "message.changes.program_updated") if saved_program else ""),
         )
     finally:
         handler._saving_changes = False

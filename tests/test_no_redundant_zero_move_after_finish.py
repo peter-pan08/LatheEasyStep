@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from lathe_easystep.model import OpType, Operation, ProgramModel
 
-DEFAULT_RETRACT_SETTINGS = {"xra": 50.0, "zra": 0.0}
+DEFAULT_RETRACT_SETTINGS = {"xt": 150.0, "zt": 300.0, "xra": 50.0, "zra": 0.0}
 
 
 def test_no_redundant_g0_when_finish_contour_already_ends_at_safe_z():
@@ -14,6 +14,7 @@ def test_no_redundant_g0_when_finish_contour_already_ends_at_safe_z():
     zusaetzlich ein 'G0 Z0.000' angehaengt: eine bedeutungslose Nullbewegung
     auf eine bereits erreichte Position."""
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     path = [(10.0, -10.0), (19.0, 0.0)]
     m.operations = [
         Operation(
@@ -32,6 +33,7 @@ def test_no_redundant_g0_when_finish_contour_already_ends_at_safe_z():
 
 def test_retract_still_emitted_when_finish_contour_ends_elsewhere():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     path = [(10.0, -10.0), (19.0, -2.0)]
     m.operations = [
         Operation(

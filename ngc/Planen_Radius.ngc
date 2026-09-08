@@ -1,6 +1,6 @@
 %
 (Programm automatisch erzeugt)
-(Programmname: Bohren)
+(Programmname: Planen_Radius)
 (Masseinheit: mm)
 G18 G7 G90 G91.1 G40 G80
 G21
@@ -16,32 +16,37 @@ G54
 (=== END SICHERHEITSPARAMETER ===)
 
 
-(Werkzeug T07)
+
+(=== Subroutine Definitions ===)
+o100 sub
+G1 X40.000 Z-1.000
+G2 X38.000 Z0.000 I-1.000 K0.000
+G1 X0.000 Z0.000
+o100 endsub
+(=== End Subroutines ===)
+
+(Werkzeug T01)
 G0 Z2.000
 G0 X80.000
 M5
 M9
 (Toolchange move)
 G0 X150.000 Z300.000
-T07 M6
+T01 M6
 G0 X80.000 Z2.000
 
 
-(Step 1: drill)
-(STEP: Loch bohren)
-G97 S1500 M3
-M9
-(Anfahren vor Zyklus)
-G0 X0.000
-(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
-G17
+(Step 1: face)
+(STEP: Gesicht planen)
+G97 S2000 M3
+M8
 F0.100
-G81 X0.000 Z-30.000 R2.000 F0.100
-G80
-G0 Z2.000
-G18
-G0 Z2.000
+(Anfahren vor Zyklus)
+G0 X40.000
+G72 Q100 X40.000 Z2.000 D0.000 I0.050 R1.000
+G70 Q100 X40.000 Z2.000
 G0 X80.000
+G0 Z2.000
 
 (Werkzeugwechselpunkt am Ende)
 G0 X150.000 Z300.000

@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-08-22
+Stand: 2026-09-08
 
 Diese Datei ist die verbindliche Liste aller offenen Aufgaben. Erledigte Punkte
 werden entfernt und im `CHANGELOG.md` dokumentiert. Release-Ziele und
@@ -11,10 +11,12 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand (Stub-Qt-Lauf, `python3 -m pytest -q`): `368 passed, 7 skipped`.
-  Der kombinierte Gesamtprozess mit echtem PyQt5 ist bis zur Trennung von
-  Stub- und Echt-Qt-Tests unter LES-038 nicht als ein verifizierter
-  Gesamtwert auszuweisen.
+- Teststand: `472 passed` (Stub-Qt) und `43 passed` (echtes PyQt5),
+  getrennte Prozesse ueber `python run_tests.py`, keine Skips.
+- Neun Referenzprogramme regeneriert; statische NGC-Pruefung bestanden.
+  LinuxCNC-Parser/Backplot fuer diese Aenderungen noch nicht ausgefuehrt.
+- Umfang, Testbefehle und verbleibende Grenzen:
+  [Verifikationsbericht 2026-09-08](doc/VERIFICATION_2026-09-08.md).
 - UI-Shell und acht Reiter-Teil-UIs sind getrennt und werden ueber
   `lathe_easystep/ui_split.py` geladen
 - `de.lng`, `en.lng` und `es.lng` enthalten jeweils 1.022 identische,
@@ -43,23 +45,21 @@ Prioritaeten:
 | ID | Prio | Aufgabe | Nutzen | Aufwand | Ziel |
 |---|---|---|---|---|---|
 | LES-001 | P0 | Sichere Anfahrt zwischen aufeinanderfolgenden Operationen | sehr hoch | M | 0.8.0-alpha |
+| LES-039 | P0 | Werkzeugwechselposition und sichere erste Freifahrt verbindlich pruefen | sehr hoch | M-L | 0.8.0-alpha |
+| LES-040 | P0 | Nicht endliche Zahlen vor Geometrie und Ausgabe ablehnen | hoch | M | 0.8.0-alpha |
 | LES-003 | P0 | Innen-Schruppen Parallel-Z abschliessend verifizieren | sehr hoch | L | 0.8.0-alpha |
 | LES-005 | P0 | Innen-Schlichtanfahrt und Rueckzug fuer weitere Konturformen absichern | sehr hoch | M-L | 0.8.0-alpha |
 | LES-006 | P1 | Rueckzugsstrategie und Achsreihenfolge je Bearbeitungsart festlegen | hoch | M | 0.8.0 |
 | LES-010 | P1 | Lokale DIN-Freistichgeometrie am markierten Segment erzeugen | hoch | L | 0.8.0 |
-| LES-011 | P1 | Freistich in Vorschau, Subroutine und Schlichtweg identisch darstellen | hoch | M-L | 0.8.0 |
 | LES-012 | P1 | Konturprimitive bis zur finalen G1/G2/G3-Ausgabe erhalten | hoch | L | 0.8.0 |
 | LES-013 | P1 | Sichere CSS-Umschaltung nach per-Operation-G96/G97 | mittel-hoch | S-M | 0.8.0 |
 | LES-015 | P1 | Innenkontur-Testmatrix automatisieren und in LinuxCNC verifizieren | hoch | M-L | 0.8.0 |
-| LES-016 | P1 | UI-Sichtbarkeitsregeln fachlich festlegen und testen | mittel | S-M | 0.8.0 |
 | LES-019 | P1 | Verifizierte DIN-76-Presets fuer M2, M2.5 und M3.5 ergaenzen | mittel | S-M | 0.8.0 |
 | LES-030 | P1 | Neue Generatorfunktionen systematisch in LinuxCNC simulieren | hoch | M-L | 0.8.0 |
 | LES-037 | P0 | Freistich/Relief am Gewindeende verankern, nicht am Konturende; bei zu wenig Platz klar fehlern | sehr hoch | M | 0.8.0-alpha |
-| LES-038 | P2 | Stub- und Echt-Qt-Tests reproduzierbar trennen | mittel | M | 0.9.0 |
 | LES-018 | P2 | G70-Wiederverwendung fuer separaten Schlichtstep pruefen | mittel | M-L | 0.9.0 |
 | LES-020 | P2 | Handler in kleinen Paketen weiter verkleinern | mittel | M je Paket | 0.9.0 |
 | LES-022 | P2 | Zentralen Bewegungs- und Modalzustand einfuehren | langfristig hoch | XL | 0.9.0 |
-| LES-023 | P2 | Nummer nur bei Export erzeugen statt dauerhaft speichern (Rest) | gering-mittel | S-M | 0.9.0 |
 | LES-024 | P2 | Restliche UI-Modularisierung und Controllergrenzen abschliessen | mittel | L | 0.9.0 |
 | LES-027 | P2 | Start- und Reaktionszeit im Embedded-Betrieb messen | mittel | S | 0.9.0 |
 | LES-028 | P2 | Werkzeug- und G76-Parameter vor Ausgabe zentral normalisieren | mittel-hoch | M | 0.9.0 |
@@ -74,18 +74,84 @@ Prioritaeten:
 
 ### LES-001 Sichere Anfahrt zwischen Operationen
 
-Aktueller Fehler: `emit_approach()` gibt bei gesetztem `_is_at_safe` einen
+Ausgangsbefund (in der gemeinsamen Anfahrt inzwischen behoben):
+`emit_approach()` gab bei gesetztem `_is_at_safe` einen
 direkten diagonalen Zielmove aus. Der Status sagt nur, dass die vorherige
 Operation an einer sicheren Position endete; er beweist nicht, dass der neue
 Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 
-- [ ] direkten Zielmove nicht allein aus dem Boolean `_is_at_safe` ableiten
+- [x] direkten Zielmove nicht allein aus dem Boolean `_is_at_safe` ableiten
 - [ ] sichere Achsreihenfolge anhand Start-, Ziel-, Rohteil- und Futterzone waehlen
 - [ ] gleiches Werkzeug ohne dazwischenliegenden Werkzeugwechsel testen
 - [ ] Aussen-Schruppen -> Schlichten und Innen-Schruppen -> Schlichten testen
 - [ ] Bohren und Gewinde als Z-vor-X-Sonderfaelle pruefen
 - [ ] Warnung und tatsaechlicher Fahrweg duerfen sich nicht widersprechen
 - [ ] Regressionen fuer Rohteil- und Chuck-No-Go-Faelle ergaenzen
+
+Ergaenzung aus Codepruefung 2026-09-08: `gcode_safety.emit_approach()`
+erzeugt trotz erkannter Futter-Sperrzone weiterhin einen Eilgang. Lokal auf
+Funktionsebene reproduziert: Rohteil XA=50, XI=0, ZA=0, ZI=-50;
+relative Rueckzuege XRA=5/ZRA=5; Sperrzone X=0..100, Z<=-40;
+Ziel X30/Z-45 ergibt Warnkommentare und danach `G0 X30.000 Z-45.000`.
+
+- [x] Verletzungen der Futter-Sperrzone in `emit_approach` als blockierenden Fehler behandeln;
+  ein WARN-Kommentar darf die Bewegung nicht freigeben
+- [ ] gesamte Eilgangstrecke gegen Rohteil und Futterzone pruefen, auch wenn
+  Start und Ziel jeweils ausserhalb liegen; beabsichtigte Schnittbewegungen
+  gesondert behandeln
+- [x] obigen Fall sowohl direkt als auch ueber Gesamtgenerator und Export
+  testen: keine ausfuehrbare Ausgabe, bestehende G-Code-Datei bleibt erhalten
+
+Teilstand 2026-09-08: gemeinsame Anfahrt achsweise; Futterpruefung
+auch fuer kreuzende Segmente und Werkzeugwechsel in Werkstueckkoordinaten.
+Noch keine vollstaendige Rohteil-/Werkzeughuellenpruefung aller direkten
+Moves oder Zyklen; angenommene Safe-Position ersetzt keinen Positionsnachweis.
+
+### LES-039 Werkzeugwechselposition und erste Freifahrt absichern
+
+Codepruefung 2026-09-08: `gcode_safety.append_tool_and_spindle()` gibt bei
+fehlendem XT/ZT nach einer Warnung trotzdem `T01 M6` aus (lokal reproduziert).
+`ui_flow.build_gcode_lines()` verlangt XT/ZT erst bei mindestens zwei
+unterschiedlichen Werkzeugen. Vor dem ersten Wechsel wird zudem pauschal
+Z vor X freigefahren, ohne Ausgangsposition und aktuell eingesetztes Werkzeug
+zu kennen. Ein noch im Einstich stehendes Werkzeug ist ein Kollisionsrisiko;
+dieses Szenario wurde nicht an der Maschine getestet.
+
+- [x] XT/ZT fuer jedes ausgegebene T/M6 verlangen,
+  auch bei nur einem Werkzeug; fehlende notwendige XT/ZT blockieren die Ausgabe
+- [ ] Startbedingungen fuer Position, aktives Werkzeug und freien Eingriff
+  explizit festlegen und pruefen; unbekannten Zustand nicht als sicher annehmen
+- [ ] erste Freifahrt passend zu Werkzeug und Eingriff planen; kein pauschales
+  Z-vor-X bei einem im Einstich stehenden Werkzeug
+- [ ] Wechselposition und Hin-/Rueckweg im ausgewaehlten Koordinatensystem
+  pruefen; mit LES-001, LES-006 und LES-022 abstimmen
+- [ ] Einzelwerkzeug ohne XT/ZT, mehrere Werkzeuge, Innenwerkzeug und
+  Stechwerkzeug im Eingriff als Regressionen plus LinuxCNC-Simulation abdecken
+
+Teilstand: fehlendes XT/ZT blockiert auch Einzelwerkzeugprogramme.
+G53-Hin-/Rueckwege koennen ohne Maschinenoffsets nicht gegen die
+Werkstueck-Sperrzone geprueft werden. Erste Freifahrt bleibt offen.
+
+### LES-040 Nicht endliche Zahlen zentral ablehnen
+
+Codepruefung 2026-09-08: `gcode_utils.require_positive()` akzeptiert
+`"nan"` und `"inf"` (lokal reproduziert). `float()` und reine
+Groessenvergleiche sichern die Geometrie und Ausgabe daher nicht ausreichend.
+
+- [x] gemeinsame Zahlenvalidierung mit `math.isfinite()` vor Berechnung und
+  Ausgabe einsetzen, einschliesslich geladener Programm-/Step-Daten
+- [ ] Koordinaten, Vorschuebe, Drehzahlen, Zustellungen und Sicherheitswerte
+  auf Endlichkeit und fachlich passende Wertebereiche pruefen
+- [x] Werkzeugnummern als gueltige ganze Zahlen validieren statt Dezimalwerte
+  still mit `int(float(...))` abzuschneiden; mit LES-028 abstimmen
+- [ ] NaN, positive/negative Unendlichkeit, ungueltige Texte und Grenzwerte
+  testen; Fehler muss vor Bewegungsplanung und Dateiersetzung auftreten
+
+Teilstand: NaN/Inf an Import-, Modell- und Gesamtgeneratorgrenzen
+blockiert; defekte X/Z-Punkte werden nicht mehr still uebersprungen.
+Regressionsfaelle fuer Zahlen, Werkzeugnummern und Dateierhalt vorhanden.
+Fachliche Wertebereiche aller Operationen und direkter Generatoraufrufe
+bleiben vollstaendig durchzugehen (LES-028).
 
 ### LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 
@@ -115,13 +181,19 @@ statt eines Riesenschnitts) und mit `rs274` fehlerfrei ausgefuehrt. Test:
 
 - [ ] `XRI` nur als sichere Einfahr-/Rueckzugsebene verwenden, niemals als
   Schnittbahn; Regression muss jeden G1-Profilwert gegen diese Grenze pruefen
-- [ ] Schlichtaufmass X/Z fuer Innenkonturen korrekt ausrichten
+- [x] Schlichtaufmass X/Z fuer Innenkonturen korrekt ausrichten
 - [ ] automatisierte Faelle fuer monoton steigende UND fallende Z-Konturen
   sowie Innen-/Aussenbearbeitung pflegen
-- [ ] `examples.py` um ein verifiziertes Innen-Abspanen-Beispiel
-  (`side=inside`) ergaenzen und in `regenerate_all_ngc.py` aufnehmen
+- [x] `examples.py` um Innen-Abspanen (`Innen_Stufe.ngc`, `side=inside`)
+  ergaenzen; automatisiert getestet und regeneriert, reale Abnahme unten offen
 - [ ] LinuxCNC-Parser, Backplot und Trockenlauf mit diesem Referenzteil
   dokumentieren (P0 - vor Praxiseinsatz zwingend)
+
+Teilstand: positive vorhandene Bohrung XI bleibt Materialgrenze;
+Zylinder, Stufe und Konus jeweils in beiden Konturrichtungen und drei
+Bearbeitungsmodi automatisiert getestet (18 Kombinationen). XRI-Grenze,
+mehrere Zustellungen und reines Schlichten ohne erneutes Schruppen geprueft.
+Innenradius, Werkzeughuelle und reale Abnahme bleiben offen.
 
 ### LES-005 Innen-Schlichtanfahrt und Rueckzug
 
@@ -179,23 +251,7 @@ beide bestaetigt korrekt.
   verifizierte Norm-Referenz pruefen - die Platzierung ist jetzt korrekt,
   die hinterlegten Zahlenwerte selbst sind noch nicht extern verifiziert
   (siehe LES-019, "keine Werte schaetzen")
-- [ ] `examples.py`/`regenerate_all_ngc.py` um ein Referenzbeispiel mit
-  Freistich mitten in der Kontur ergaenzen
-
-### LES-011 Einheitliche Freistichdarstellung
-
-Fertigkontur und Rough-Kontur verwenden bereits dieselbe Primitiv-Quelle
-(`build_contour_variants()`); die Splicing-Position ist fuer beide identisch
-korrekt. Die Seitenvorschau (`ui_preview.py::_collect_paths()`) ruft
-ebenfalls bereits `build_contour_variants()` auf und zeichnet die
-Freistich-Feature-Primitive (`role="feature"`) - Aussen- UND Innenfreistich
-mitten in der Kontur sind damit seit dem Splicing-Fix auch dort korrekt und
-wurden vom Nutzer real am Panel bestaetigt ("vorschau ... funktioniert").
-
-- [ ] Vorschau, Kontur-Subroutine und ausgeschriebenen Schlichtweg fuer
-  denselben Freistich-Fall automatisiert auf identische Koordinaten
-  vergleichen (bisher nur visuell/real bestaetigt, kein Regressionstest)
-- [ ] Save/Load-Roundtrip der Segment-Features testen
+- [x] Referenzbeispiel `Freistich_Mitte.ngc` in `examples.py` und Regeneration
 
 ### LES-012 Konturprimitive und G2/G3 erhalten
 
@@ -250,25 +306,6 @@ Test- und Referenzmatrix.
 - [ ] Werkzeugradiuskorrektur, Konturseite und sichere Ein-/Ausfahrt je Fall
 - [ ] Vorschau, erzeugten G-Code und LinuxCNC-Backplot je Referenz vergleichen
 
-### LES-016 UI-Sichtbarkeitsregeln
-
-Fuer die folgenden Punkte bestehen AKTUELL KEINE Sichtbarkeitsregeln im Code
-- hier fehlt nicht ein Test, sondern eine Produktentscheidung, welche Felder
-ueberhaupt bedingt ein-/ausgeblendet werden sollen, bevor eine Regression
-sinnvoll ist:
-
-- [ ] Kontur: entscheiden und dokumentieren, ob `setEnabled` fuer
-  Kantengroesse ausreicht oder Felder wirklich ausgeblendet werden sollen
-- [ ] Gewinde: entscheiden, ob `thread_relief_norm` nur bei
-  `thread_relief_mode == "suggest"` sichtbar sein soll
-- [ ] Innen/Aussen: je Operation festlegen, ob `side`/`lage`/
-  `orientation` weitere Felder bedingt ein- oder ausblenden
-- [ ] jede neu eingefuehrte Regel mit echtem PyQt5 fuer beide Zweige testen
-- [ ] Sprachumschaltung und Save/Load duerfen Sichtbarkeit und technische
-  `currentData()`-Werte nicht veraendern
-- [ ] falls keine fachlich sinnvolle Regel benoetigt wird, den jeweiligen
-  Unterpunkt begruendet schliessen statt kuenstliche UI-Logik einzubauen
-
 ### LES-019 Fehlende DIN-76-Presets
 
 - [ ] verifizierte Normwerte fuer M2, M2.5 und M3.5 beschaffen
@@ -278,7 +315,7 @@ sinnvoll ist:
 
 ### LES-030 LinuxCNC-Simulationsmatrix
 
-- [ ] alle Referenzprogramme nach Generatoraenderungen regenerieren
+- [x] alle neun Referenzprogramme nach Generatoraenderungen regenerieren
 - [ ] Planen, Bohren, Gewinde, Einstich, Abspanen innen/aussen und Konturen pruefen
 - [ ] Nichtnull-I-Boegen unter G7 im direkten Schlichtweg und in
   G71/G72-Subroutinen auf Parserfehler und korrekten Backplot pruefen
@@ -290,35 +327,26 @@ sinnvoll ist:
 - [ ] relevante Sicherheits- und Materialabtragsfaelle als reale Trockenlaeufe bestaetigen
 - [ ] Maschinenprofile und Futter-Sperrzonen mit Beispielen verifizieren
 
+Teilstand: `validate_ngc.py` prueft statisch, `check_linuxcnc.py` ist
+als separater rs274-Batchlauf vorbereitet. Hier fehlt der Interpreter;
+synthetische Werkzeugtabelle ersetzt keine Maschinenkonfiguration.
+
 ### LES-036 Kantenform "Radius" beim Planen
 
-Die String-ID-Auswertung fuer die Planen-Kantenform ist repariert: "Fase"
-funktioniert wieder. "Radius" ist im UI waehlbar, im Generator aber noch nicht
-umgesetzt und wird deshalb derzeit mit einer klaren Fehlermeldung abgewiesen.
-Da die Option sichtbar angeboten wird, gehoert die Umsetzung als P1 in 0.8.0.
+Radius ist implementiert; Vorschau und G-Code verwenden gemeinsame
+Primitive. Externe Parser-/Backplot- und Panelabnahme bleiben offen.
 
-- [ ] Radius-Eckengeometrie fuer den 90-Grad-Planen-Spezialfall umsetzen
-- [ ] Durchmesser-/Radiusumrechnung fuer X sowie G2/G3-I/K eindeutig herleiten
-- [ ] String-IDs und alte numerische Save-Dateien weiterhin unterstuetzen
-- [ ] Vorschau und G-Code aus derselben Geometrie ableiten
-- [ ] Grenzfaelle pruefen: Radius 0, zu grosser Radius, Schruppen,
+- [x] Radius-Eckengeometrie fuer den 90-Grad-Planen-Spezialfall umsetzen
+- [x] Durchmesser-/Radiusumrechnung fuer X sowie G2/G3-I/K eindeutig herleiten
+- [x] String-IDs und alte numerische Save-Dateien weiterhin unterstuetzen
+- [x] Vorschau und G-Code aus derselben Geometrie ableiten
+- [x] Grenzfaelle pruefen: Radius 0, zu grosser Radius, Schruppen,
   Schlichten und Schruppen+Schlichten
-- [ ] echten PyQt5-Roundtrip sowie LinuxCNC-Parser/Backplot testen
+- [x] echten PyQt5-Roundtrip testen
+- [ ] LinuxCNC-Parser/Backplot testen
 - [ ] Realtest am Panel nach Umsetzung dokumentieren
 
 ## P2 - Bedienung, Wartbarkeit und Architektur
-
-### LES-038 Stub- und Echt-Qt-Tests reproduzierbar trennen
-
-Der kombinierte Lauf mischt zwei inkompatible Importwelten: schnelle Tests
-patchen `qtpy`/`qtvcp` mit Stubs, UI-Tests benoetigen echtes PyQt5 und laden
-`.ui`-Dateien. Das Umschalten in einem gemeinsamen Interpreter ist
-reihenfolgeabhaengig und kann Rekursionen oder falsche Widget-Klassen erzeugen.
-
-- [ ] getrennte Standardbefehle fuer Stub- und Echt-Qt-Tests bereitstellen
-- [ ] beide Laeufe in einem reproduzierbaren Gesamt-Check zusammenfassen
-- [ ] keine Testdatei darf globale Qt-Module fuer spaetere Tests hinterlassen
-- [ ] Gesamt-Check mit frischem Prozess und klarer Fehlermeldung dokumentieren
 
 ### LES-018 G70 fuer separaten Schlichtstep
 
@@ -334,11 +362,11 @@ Kontur-Sub spaeter per G70 wiederzuverwenden.
 
 Jede Extraktion einzeln mit vollem Testlauf und echtem `uic.loadUi` pruefen.
 
-- [ ] Programmkopf-Sammlung
-- [ ] Kontursegment-Sammlung
-- [ ] Gewinde-Preset-UI nach `ui_thread.py`
+- [x] Programmkopf-Sammlung
+- [x] Kontursegment-Sammlung
+- [x] Gewinde-Preset-UI nach `ui_thread.py`
 - [ ] Widget-Bootstrapping
-- [ ] Tooltip-Erzwingung nach `ui_tooltips.py`
+- [x] Tooltip-Erzwingung nach `ui_tooltips.py`
 
 ### LES-022 Zentraler Bewegungs- und Modalzustand
 
@@ -347,13 +375,6 @@ Jede Extraktion einzeln mit vollem Testlauf und echtem `uic.loadUi` pruefen.
 - [ ] M3/M4/M5, M7/M8/M9 und Werkstuecknullpunkt verwalten
 - [ ] sichere Pfadentscheidungen auf reale aktuelle Position stuetzen
 - [ ] robuste explizite Ausgabe fuer manuell bearbeitbaren G-Code erhalten
-
-### LES-023 Step-Kommentare normalisieren
-
-Groessere Architekturfrage, nicht nur ein Bugfix (Detailfix siehe CHANGELOG.md):
-
-- [ ] laufende Nummer nur beim Gesamtprogrammexport erzeugen, nicht dauerhaft in `params["comment"]` speichern
-- [ ] Konturen bewusst mitzaehlen oder als nicht ausfuehrbare Geometrie markieren
 
 ### LES-024 Restliche UI-Modularisierung
 
@@ -381,6 +402,12 @@ root-caused; keine Codeaenderung in dieser Session dazu.
 
 ### LES-028 Eingaben zentral normalisieren
 
+Teilstand: G76 blockiert ungueltige Steigung, Tiefe, Durchmesser, Laenge,
+R/H/L und Taperlaenge; Zahlenstrings werden gleichwertig ausgewertet,
+explizites H=0 bleibt erhalten. Null fuer automatische Schnitttiefen bleibt
+kompatibel. Werkzeugnummern werden nicht mehr dezimal abgeschnitten.
+
+
 - [ ] Werkzeugwechsel nur aus normalisiertem Werkzeugdatensatz erzeugen
 - [ ] G76-Parameter vor Ausgabe vollstaendig normalisieren und validieren
 - [ ] bestaetigtes G7-Masssystem nicht erneut als offenen Fachfehler behandeln
@@ -407,6 +434,11 @@ root-caused; keine Codeaenderung in dieser Session dazu.
 
 ### LES-034 Preview-Pipeline
 
+- [ ] Vorschau und G-Code auf denselben geplanten Bewegungen aufbauen,
+  einschliesslich Anfahrt, Rueckzug, Werkzeugwechsel und Parken; gemeinsame
+  Grundlage mit LES-022 und LES-041 abstimmen
+- [ ] dargestellten Werkzeugweg fuer Referenzprogramme gegen die tatsaechliche
+  Ausgabe und den LinuxCNC-Backplot vergleichen (siehe LES-030)
 - [ ] Werkstueck-Endkontur, Werkzeugweg und Hilfs-/Sicherheitsgeometrie trennen
 - [ ] keine impliziten Verbindungen oder Fantasie-Hilfslinien zeichnen
 - [ ] im Zweifel weniger statt geometrisch falsche Elemente anzeigen
@@ -438,7 +470,7 @@ Norm-/Systemabhaengige Blocker:
 ## Verbindlicher Abschluss jeder Generatoraenderung
 
 1. fokussierte Regression, die den alten Fehler reproduziert und mit dem Fix besteht
-2. kompletter `pytest -q`-Lauf; neue oder geaenderte Skips muessen begruendet werden
+2. kompletter `python run_tests.py`-Lauf (Stub und Real-Qt getrennt); neue oder geaenderte Skips muessen begruendet werden
 3. `python3 regenerate_all_ngc.py`
 4. Diff der Referenzprogramme fachlich pruefen
 5. echter PyQt5-Test bei UI-, Sichtbarkeits- oder Save/Load-Aenderungen

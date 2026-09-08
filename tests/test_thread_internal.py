@@ -32,7 +32,7 @@ def _make_thread_op(orientation=0, **overrides):
 
 
 def _thread_settings(**overrides):
-    settings = {"xi": 0.0, "xri": 7.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
+    settings = {"xt": 150.0, "zt": 300.0, "xi": 0.0, "xri": 7.0, "xri_absolute": True, "zri": 4.0, "zri_absolute": True}
     settings.update(overrides)
     return settings
 
@@ -335,3 +335,20 @@ class TestInternalThreadPreview:
         path = build_thread_path(params)
         assert abs(path[0][1] - (-4.0)) < 0.01
         assert abs(path[-1][1] - (-16.0)) < 0.01
+
+
+@pytest.mark.parametrize("changes", [
+    {"pitch": 0}, {"pitch": -1}, {"pitch": "nan"}, {"length": 0},
+    {"major_diameter": 0}, {"thread_depth": -1}, {"first_depth": -1},
+    {"spring_passes": 1.5}, {"spring_passes": -1}, {"l": "1.5"},
+    {"l": 4}, {"retract_r": .9}, {"lead_in": -1}, {"e": 11},
+])
+def test_invalid_thread_parameters_abort(changes):
+    with pytest.raises(ValueError):
+        gcode_for_thread(_make_thread_op(**changes), _thread_settings())
+
+
+def test_thread_numeric_strings_and_explicit_zero_spring_passes():
+    op = _make_thread_op(thread_depth="0.6", first_depth="0.1", spring_passes="0", passes=5)
+    cycle = next(line for line in gcode_for_thread(op, _thread_settings()) if line.startswith("G76 "))
+    assert "J0.2000" in cycle and "K1.2000" in cycle and "H0 " in cycle

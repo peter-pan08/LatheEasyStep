@@ -55,7 +55,7 @@ class _Model:
 class _Handler:
     def __init__(self, operations):
         self.model = _Model(operations)
-        self.list_ops = _Ops(row=1)
+        self.list_ops = _Ops(row=1, count_val=len(operations))
         self.list_ops._items = [_ListItem() for _ in operations]
         self._moving_up = False
         self._moving_down = False
@@ -89,9 +89,9 @@ def test_move_up_refreshes_stale_step_number_in_stored_comment():
 
     handle_move_up(handler)
 
-    assert ops[0].params["comment"] == "1. abspanen"
-    assert ops[1].params["comment"] == "2. face"
-    assert ops[2].params["comment"] == "3. groove"
+    assert ops[0].params["comment"] == "abspanen"
+    assert ops[1].params["comment"] == "face"
+    assert ops[2].params["comment"] == "groove"
 
 
 def test_move_down_refreshes_stale_step_number_in_stored_comment():
@@ -105,6 +105,15 @@ def test_move_down_refreshes_stale_step_number_in_stored_comment():
 
     handle_move_down(handler)
 
-    assert ops[0].params["comment"] == "1. abspanen"
-    assert ops[1].params["comment"] == "2. face"
-    assert ops[2].params["comment"] == "3. groove"
+    assert ops[0].params["comment"] == "abspanen"
+    assert ops[1].params["comment"] == "face"
+    assert ops[2].params["comment"] == "groove"
+
+
+def test_reordering_preserves_custom_comment():
+    ops = [Operation(OpType.FACE, {"comment": "Meine Notiz"}), Operation(OpType.GROOVE, {})]
+    handler = _Handler(ops)
+    handler.list_ops._row = 0
+    handle_move_down(handler)
+    assert ops[1].params["comment"] == "Meine Notiz"
+    assert not ops[0].params["comment"].startswith("1. ")

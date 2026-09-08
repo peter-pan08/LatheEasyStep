@@ -1,5 +1,28 @@
 import sys
 import types
+import os
+import pytest
+from pathlib import Path
+
+REAL_QT_TESTS = {
+    "test_program_save_real_qt.py",
+    "test_dirty_state_signal_blocking.py", "test_per_operation_spindle_mode_ui.py",
+    "test_preview_widget_paint_no_crash.py", "test_slice_strategy_ui_roundtrip.py",
+    "test_split_ui_loader.py", "test_tool_combo_selection.py",
+    "test_ui_static_translation_split_tabs.py",
+}
+
+
+def pytest_addoption(parser):
+    parser.addoption("--qt-mode", choices=("stub", "real"), default="stub",
+                     help="Isolate stub tests from real PyQt5 tests (default: stub).")
+
+
+def pytest_ignore_collect(collection_path, config):
+    if collection_path.suffix != ".py" or not collection_path.name.startswith("test_"):
+        return None
+    is_real = collection_path.name in REAL_QT_TESTS
+    return is_real != (config.getoption("--qt-mode") == "real")
 
 def _clear_stale_qt_modules():
     for name in list(sys.modules):
@@ -8,18 +31,6 @@ def _clear_stale_qt_modules():
 
 
 def _install_qt_stubs():
-    try:
-        import PyQt5  # noqa: F401
-        import qtpy  # noqa: F401
-    except Exception:
-        pass
-    else:
-        # Prefer the real Qt stack whenever the interpreter has it. Some tests
-        # intentionally import real PyQt5 widgets; leaving the fake stub in place
-        # or reusing stale modules from earlier tests made the suite order-dependent.
-        _clear_stale_qt_modules()
-        return
-
     if "qtpy" in sys.modules and "qtvcp.core" in sys.modules:
         qtpy = sys.modules["qtpy"]
         if hasattr(qtpy, "QtCore"):
@@ -60,7 +71,19 @@ def _install_qt_stubs():
         def homePath():
             return "/tmp"
 
+    class _DummySettings:
+        def __init__(self, *args, **kwargs):
+            self._values = {}
+
+        def value(self, key, default=None, type=None):
+            value = self._values.get(key, default)
+            return type(value) if type is not None and value is not None else value
+
+        def setValue(self, key, value):
+            self._values[key] = value
+
     QtCore = types.SimpleNamespace(
+        QSettings=_DummySettings,
         Qt=qt_enum,
         QObject=_Dummy,
         QTimer=_DummyTimer,
@@ -209,4 +232,36 @@ def _install_qt_stubs():
 
 
 def pytest_configure(config):
-    _install_qt_stubs()
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    if config.getoption("--qt-mode") == "real":
+        import pytest
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PyQt5 import QtWidgets
+            import qtpy
+        except ImportError as exc:
+            raise pytest.UsageError("Real-Qt tests require PyQt5 and qtpy.") from exc
+        # Real widgets, but no machine connection in UI regression tests.
+        qtvcp = types.ModuleType("qtvcp")
+        core = types.ModuleType("qtvcp.core")
+        core.Action = type("Action", (), {"CALLBACK_OPEN_PROGRAM": None})
+        sys.modules["qtvcp"] = qtvcp
+        sys.modules["qtvcp.core"] = core
+        config._lathe_qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    else:
+        _install_qt_stubs()
+
+
+@pytest.fixture(autouse=True)
+def restore_qt_namespaces(request):
+    """Legacy tests assign attributes directly; contain those changes per test."""
+    names = ("qtpy", "qtpy.QtCore", "qtpy.QtGui", "qtpy.QtWidgets", "qtvcp", "qtvcp.core")
+    modules = {name: sys.modules[name] for name in names if name in sys.modules}
+    snapshots = {name: dict(vars(module)) for name, module in modules.items()}
+    yield
+    for name, module in modules.items():
+        sys.modules[name] = module
+        namespace = vars(module)
+        for key in set(namespace) - snapshots[name].keys():
+            del namespace[key]
+        namespace.update(snapshots[name])

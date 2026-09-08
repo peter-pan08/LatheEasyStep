@@ -12,7 +12,7 @@ Ziel ist:
 - `v0.7.0` ist die lauffaehige Basis auf `main`.
 - `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
   die stabile, lauffaehige Basis.
-- Aktueller Teststand: `364 passed, 7 skipped`.
+- Aktueller Teststand: `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
   Rechts-/Linksgewinde, `rough_finish`, Realtest-Fixes und die geteilte UI.
@@ -262,7 +262,7 @@ linearisieren, sowie vollstaendige Arc-Intersections.
   - Optionalstop vor Werkzeugwechsel
   - Persistenz der neuen Expertenoptionen
 - Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
-- Aktueller Gesamtstand: `364 passed, 7 skipped`.
+- Aktueller Gesamtstand: `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped`.
 - Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
 - Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 
@@ -315,3 +315,21 @@ Beiträge sind willkommen, insbesondere:
 - Geometrie / Arc-Berechnungen
 - zusätzliche Abspanstrategien
 - Tests mit realen Maschinen
+
+
+## Reproduzierbarer Check seit 2026-09-08
+
+Testabhaengigkeiten: `python -m pip install pytest PyQt5 qtpy`.
+`python run_tests.py -p no:cacheprovider` startet Stub- und Real-Qt-Suite
+in frischen Prozessen. Einzellauf: `python -m pytest -q --qt-mode=stub`
+oder `python -m pytest -q --qt-mode=real`. Real-Qt laeuft offscreen mit
+echtem PyQt5; nur die qtvcp-Maschinenaktion ist isoliert. Fehlendes PyQt5
+ist ein Fehler und wird nicht als erfolgreicher Skip gewertet.
+
+Danach `python -X utf8 regenerate_all_ngc.py` und
+`python validate_ngc.py`. Unter Linux mit installiertem LinuxCNC:
+`python3 check_linuxcnc.py --interpreter /pfad/zu/rs274`.
+Dieser letzte Lauf wurde hier mangels Interpreter NICHT ausgefuehrt.
+Er verwendet temporaere Parameter und eine synthetische Werkzeugtabelle.
+Backplot, reale Werkzeugoffsets und Trockenlauf sind gesonderte Pruefungen.
+Details: [Verifikation](doc/VERIFICATION_2026-09-08.md).

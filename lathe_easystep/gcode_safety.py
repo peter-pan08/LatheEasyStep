@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .gcode_utils import float_or_none, get_tool_number, sanitize_comment_text
 from .model import OpType, Operation
+from .numeric import finite_float
 
 
 def _safe_axis_value(
@@ -166,7 +167,48 @@ def estimate_operation_end_pos(op: Operation) -> Optional[Tuple[float, float]]:
     return None
 
 
+def validate_chuck_segment(settings, start, end):
+    """Closed X interval intersected with the chuck-side Z half-plane."""
+    if not settings:
+        return
+    keys = ("chuck_no_go_x_min", "chuck_no_go_x_max", "chuck_no_go_z_limit")
+    values = [float_or_none(settings.get(key)) for key in keys]
+    if all(value is None for value in values):
+        return
+    if any(value is None for value in values):
+        raise ValueError("Futter-Sperrzone ist unvollstaendig definiert.")
+    lo, hi = sorted(values[:2])
+    z_limit = values[2]
+    za = float_or_none(settings.get("za"))
+    direction = 1.0 if za is None or z_limit <= za else -1.0
+    # Parametric segment clipping, including boundary contact.
+    t_min, t_max = 0.0, 1.0
+    x, z = start
+    dx, dz = end[0] - x, end[1] - z
+    for origin, delta, lower, upper in (
+        (x, dx, lo - 1e-6, hi + 1e-6),
+        (direction * z, direction * dz, float("-inf"), direction * z_limit + 1e-6),
+    ):
+        if abs(delta) < 1e-12:
+            if origin < lower or origin > upper:
+                return
+        else:
+            a, b = sorted(((lower - origin) / delta, (upper - origin) / delta))
+            t_min, t_max = max(t_min, a), min(t_max, b)
+            if t_min > t_max:
+                return
+    raise ValueError(f"Futter-Sperrzone: Fahrweg {start} -> {end} ist gesperrt.")
+
+
 def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Dict[str, object] | None) -> None:
+    start_x = finite_float(start_x, "Anfahrt X")
+    start_z = finite_float(start_z, "Anfahrt Z")
+    validate_chuck_segment(settings, (start_x, start_z), (start_x, start_z))
+    safe = get_safe_position(settings)
+    if safe:
+        x_safe, z_safe = safe
+        validate_chuck_segment(settings, safe, (x_safe, start_z))
+        validate_chuck_segment(settings, (x_safe, start_z), (start_x, start_z))
     for warning in get_approach_warnings(settings, (start_x, start_z)):
         lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     safe = get_safe_position(settings)
@@ -191,12 +233,13 @@ def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Di
                 lines.append(f"G0 X{start_x:.3f}")
             settings["_is_at_safe"] = False
             return
-        if settings.get("_is_at_safe"):
-            lines.append(f"G0 X{start_x:.3f} Z{start_z:.3f}")
-        else:
+        if not settings.get("_is_at_safe"):
             lines.append(f"G0 Z{z_safe:.3f}")
             lines.append(f"G0 X{x_safe:.3f}")
-            lines.append(f"G0 X{start_x:.3f} Z{start_z:.3f}")
+        if abs(start_z - z_safe) > 1e-9:
+            lines.append(f"G0 Z{start_z:.3f}")
+        if abs(start_x - x_safe) > 1e-9:
+            lines.append(f"G0 X{start_x:.3f}")
         settings["_is_at_safe"] = False
         return
     lines.append(f"G0 Z{start_z:.3f}")
@@ -216,14 +259,14 @@ def append_tool_and_spindle(
     if tool_value is None and settings is not None:
         tool_num = get_tool_number(settings)
     else:
-        try:
-            tool_num = int(float(tool_value))
-        except Exception:
-            tool_num = 0
+        tool_num = get_tool_number({"tool": tool_value})
 
     if tool_num > 0:
         last_tool = int(float(settings.get("_current_tool", 0))) if settings else 0
         if tool_num != last_tool:
+            if settings is None:
+                raise ValueError("Werkzeugwechsel erfordert Programmkopf mit XT/ZT.")
+            toolchange_lines = move_to_toolchange_pos(settings)
             lines.append(f"(Werkzeug T{tool_num:02d})")
             if settings is not None:
                 safe = get_safe_position_for_mode(settings, internal=False)
@@ -236,7 +279,7 @@ def append_tool_and_spindle(
                     lines.append("M1")
                 lines.append("M5")
                 lines.append("M9")
-                lines.extend(move_to_toolchange_pos(settings))
+                lines.extend(toolchange_lines)
             lines.append(f"T{tool_num:02d} M6")
             if settings is not None:
                 settings["_current_tool"] = tool_num
@@ -321,8 +364,7 @@ def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None
     prefix = f"({label})" if label else "(Toolchange move)"
     lines: List[str] = [prefix]
     if xt is None or zt is None:
-        lines.append("(WARN: Toolchange position XT/ ZT nicht gesetzt)")
-        return lines
+        raise ValueError("Werkzeugwechselposition XT/ZT fehlt.")
     mode = _coord_mode(settings, "toolchange_coords", legacy_x_key="xt_absolute", legacy_z_key="zt_absolute")
     if mode == "machine":
         lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
@@ -342,6 +384,8 @@ def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None
             if work_parts:
                 lines.append(f"G0 {' '.join(work_parts)}")
     else:
+        safe = get_safe_position_for_mode(settings, internal=False)
+        validate_chuck_segment(settings, safe or (xt, zt), (xt, zt))
         lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
     return lines
 
