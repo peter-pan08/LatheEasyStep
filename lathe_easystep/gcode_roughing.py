@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .contour_features import normalize_relief_mode, primitive_to_points
 from .contour_logic import build_contour_variants
-from .gcode_safety import append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command
+from .gcode_safety import activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command
 from .gcode_utils import (
     Point,
     float_or_none,
@@ -166,9 +166,11 @@ def _emit_relief_pass(
         lines, relief_tool, relief_spindle, settings,
         spindle_mode=op_params.get("spindle_mode"), spindle_max_rpm=op_params.get("spindle_max_rpm"),
         cutting_speed=op_params.get("cutting_speed"),
+        css_start_diameter=abs(feature_points[0][0]),
     )
     lines.append("(Hinterschnitt separat)")
     emit_approach(lines, feature_points[0][0], safe_z, settings)
+    activate_pending_css(lines, settings)
     for idx, (x, z) in enumerate(feature_points):
         code = "G1"
         if idx == 0:
@@ -528,12 +530,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         lines.append(f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm)")
     tool_num = require_tool(p, "ABSPANEN")
     spindle = float(p.get("spindle", 0.0))
-    append_tool_and_spindle(
-        lines, tool_num, spindle, settings,
-        spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
-        cutting_speed=p.get("cutting_speed"),
-    )
-    lines.append(f"F{feed:.3f}")
     contour_variants = None
     contour_params = p.get("_contour_params")
     if isinstance(contour_params, dict) and contour_params.get("segments"):
@@ -558,6 +554,12 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
 
     path = finish_path
     stock_x = _resolve_roughing_stock_x(settings, rough_path, external=side_idx == 0)
+    append_tool_and_spindle(
+        lines, tool_num, spindle, settings,
+        spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
+        cutting_speed=p.get("cutting_speed"), css_start_diameter=abs(stock_x),
+    )
+    lines.append(f"F{feed:.3f}")
     if side_idx == 1 and mode_idx in (0, 2):
         # Interior stock allowance leaves a smaller bore and a shallower end.
         # X is a diameter coordinate, matching the UI's X allowance value.
@@ -653,6 +655,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             stock_x_adj = stock_x - finish_allow_x if mode_idx == 0 and finish_allow_x > 0.0 else stock_x
             stock_x_adj = max(stock_x_adj, 0.0)
             emit_approach(lines, stock_x_adj, safe_z, settings)
+            activate_pending_css(lines, settings)
             lines.append(f"G72 Q{sub_num} X{stock_x_adj:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
             if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
@@ -669,6 +672,11 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             rough_lines = rough_turn_parallel_z(rough_path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
             if rough_lines:
                 rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
+                css_lines: List[str] = []
+                activate_pending_css(css_lines, settings)
+                if css_lines:
+                    cut_idx = next((idx for idx, line in enumerate(rough_lines) if line.startswith(("G1 ", "G2 ", "G3 "))), len(rough_lines))
+                    rough_lines[cut_idx:cut_idx] = css_lines
             lines.extend(rough_lines)
     elif strategy_code == "parallel_z" and mode_idx in (0, 2):
         # is_monotonic_z() (nicht nur "fallend") laesst auch Innenkonturen zu,
@@ -684,6 +692,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             if contour_sub_num is None:
                 lines.extend(_build_cycle_sub(sub_num))
             emit_approach(lines, stock_x, safe_z, settings)
+            activate_pending_css(lines, settings)
             lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
             if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
@@ -708,6 +717,11 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             rough_lines = rough_turn_parallel_x(rough_path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
             if rough_lines:
                 rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
+                css_lines = []
+                activate_pending_css(css_lines, settings)
+                if css_lines:
+                    cut_idx = next((idx for idx, line in enumerate(rough_lines) if line.startswith(("G1 ", "G2 ", "G3 "))), len(rough_lines))
+                    rough_lines[cut_idx:cut_idx] = css_lines
             lines.extend(rough_lines)
     if mode_idx in (0, 2):
         # LES-002: ein Schruppstep (oder der Schrupp-Anteil von "Schruppen +
@@ -738,6 +752,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         # Kontur-Einfahrpunkt angefahren wird - dieselbe Absicherung, die die
         # Schrupp-Zustellung oben bereits nutzt.
         emit_approach(lines, entry_x, entry_z, settings)
+        activate_pending_css(lines, settings)
         if compensation_command and not nose_disabled:
             lines.append(compensation_command)
         prev_point = (entry_x, entry_z) if compensation_command and not nose_disabled else None

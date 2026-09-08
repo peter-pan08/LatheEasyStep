@@ -96,6 +96,41 @@ def test_external_approach_uses_safe_x_until_target_z():
     assert lines == ["G0 Z-20.000", "G0 X45.000"]
 
 
+@pytest.mark.parametrize(
+    "filename,cut_command",
+    [
+        ("Planen.ngc", "G72 Q"),
+        ("Abdrehen.ngc", "G1 "),
+        ("Einstich.ngc", "o220 call"),
+        ("Gewinde.ngc", "G76 "),
+    ],
+)
+def test_css_starts_with_limited_g97_and_activates_only_after_approach(filename, cut_command):
+    ops, settings = example_programs()[filename]
+    machining_op = next(op for op in reversed(ops) if op.op_type != OpType.PROGRAM_HEADER)
+    machining_op.params.update(
+        spindle_mode="css", spindle_max_rpm=2400.0, cutting_speed=120.0
+    )
+    lines = generate_program_gcode(ops, settings)
+    step_idx = next(idx for idx, line in enumerate(lines) if line.startswith("(Step "))
+    section = lines[step_idx:]
+    startup_idx = next(idx for idx, line in enumerate(section) if line.startswith("G97 "))
+    css_idx = next(idx for idx, line in enumerate(section) if line == "G96 D2400 S120.0")
+    cut_idx = next(idx for idx, line in enumerate(section[css_idx + 1 :], css_idx + 1) if line.startswith(cut_command))
+    approach_moves = [idx for idx, line in enumerate(section[:css_idx]) if line.startswith("G0 ")]
+    assert startup_idx < max(approach_moves) < css_idx < cut_idx
+    assert int(section[startup_idx].split("S", 1)[1].split()[0]) <= 2400
+
+
+def test_css_rejects_zero_start_diameter_before_emitting_operation():
+    ops, settings = example_programs()["Planen.ngc"]
+    ops[-1].params.update(
+        start_x=0.0, spindle_mode="css", spindle_max_rpm=2400.0, cutting_speed=120.0
+    )
+    with pytest.raises(ValueError, match="Bearbeitungsdurchmesser"):
+        generate_program_gcode(ops, settings)
+
+
 @pytest.mark.parametrize("missing", ["xt", "zt"])
 def test_single_tool_requires_complete_toolchange_position(missing):
     ops, settings = example_programs()["Planen.ngc"]
