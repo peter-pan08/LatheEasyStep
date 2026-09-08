@@ -7,6 +7,7 @@ from .contour_features import primitive_to_points
 from .contour_logic import build_contour_path as build_contour_primitives
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType, Operation
+from .face_geometry import face_primitives
 
 Point = Tuple[float, float]
 
@@ -44,32 +45,24 @@ def build_face_path(params: Dict[str, float]) -> List[Point]:
     x_inner = float(x_inner or 0.0)
     z_start = float(params.get("start_z", params.get("z_start", 0.0)) or 0.0)
     z_end = float(params.get("end_z", z_start))
-    edge_type = int(params.get("edge_type", 0))
-    edge_size = float(params.get("edge_size", 0.0) or 0.0)
-
-    if x_inner > x_outer:
-        x_inner, x_outer = x_outer, x_inner
-
-    path: List[Point] = [(x_inner, z_end)]
-    if edge_type == 1 and edge_size > 0.0:
-        path.append((max(x_inner, x_outer - 2.0 * edge_size), z_end))
-        path.append((x_outer, z_end - edge_size))
-    elif edge_type == 2 and edge_size > 0.0:
-        x_outer_r = x_outer / 2.0
-        x_inner_r = x_inner / 2.0
-        x0_r = max(x_inner_r, x_outer_r - edge_size)
-        path.append((x0_r * 2.0, z_end))
-        cx_r = x_outer_r - edge_size
-        cz = z_end - edge_size
-        segments = 10
-        for i in range(1, segments + 1):
-            a = (math.pi / 2.0) * (1.0 - (i / segments))
-            x_r = cx_r + edge_size * math.cos(a)
-            z = cz + edge_size * math.sin(a)
-            path.append((x_r * 2.0, z))
-    else:
-        path.append((x_outer, z_end))
-    return path
+    profile = face_primitives(x_outer, x_inner, z_end,
+                              params.get("edge_type", 0), params.get("edge_size", 0.0))
+    # Preserve the preview's inside-to-outside point order. Sample the shared
+    # circular primitive in radial coordinates; G-code keeps the actual arc.
+    path = []
+    for primitive in profile:
+        if not path:
+            path.append(primitive["p1"])
+        if primitive["type"] == "arc":
+            cx, cz = primitive["c"]
+            radius = (primitive["p1"][0] - cx) / 2.0
+            for i in range(1, 17):
+                angle = math.pi * i / 32.0
+                path.append((cx + 2 * radius * math.cos(angle), cz + radius * math.sin(angle)))
+            path[-1] = primitive["p2"]
+        else:
+            path.append(primitive["p2"])
+    return list(reversed(path))
 
 
 def build_turn_path(params: Dict[str, float]) -> List[Point]:

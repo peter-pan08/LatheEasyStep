@@ -160,7 +160,7 @@ def test_parallel_z_respects_configured_retracts_via_generate():
     path = [(40.0, 2.0), (25.0, -3.0), (30.0, -5.0), (25.0, -7.0)]
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15, "tool": 1}, path=path)
     m.add_operation(op)
-    m.program_settings = {"xra": 42.0, "zra": 3.0, "xra_absolute": True, "zra_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 42.0, "zra": 3.0, "xra_absolute": True, "zra_absolute": True}
     g = "\n".join(m.generate_gcode())
     # Move-based: After a pass the G0 X retract should be to X42.000 (configured absolute)
     assert "G0 X42.000" in g
@@ -221,7 +221,7 @@ def test_parallel_z_retract_default_incremental_behaviour():
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15, "tool": 1}, path=path)
     m.add_operation(op)
     # configure a small xra value which under absolute interpretation would be near X=2.0
-    m.program_settings = {"xra": 2.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 2.0, "zra": 5.0}
     g = "\n".join(m.generate_gcode())
     # Absolute G0 X2.000 should NOT appear, because the value is interpreted as incremental
     assert "G0 X2.000" not in g
@@ -250,7 +250,7 @@ def test_abspanen_respects_program_clearance_and_retract():
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2, "tool": 1}, path=path)
     m = ProgramModel()
     m.add_operation(op)
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "sc": 3.0,
         "xa": 40.0,
         "xra": 45.0,
@@ -269,7 +269,7 @@ def test_parallel_x_retract_default_incremental_behaviour():
     op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2, "tool": 1}, path=path)
     m = ProgramModel()
     m.add_operation(op)
-    m.program_settings = {"xa": 40.0, "xra": 2.0, "zra": 5.0}  # Standard: inkrementell
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xa": 40.0, "xra": 2.0, "zra": 5.0}  # Standard: inkrementell
     g = "\n".join(m.generate_gcode())
     # Absoluter Rückzug auf X2.000 darf nicht auftreten
     assert "G0 X2.000" not in g
@@ -300,7 +300,7 @@ def test_parallel_x_retract_default_incremental_behaviour():
 def test_parallel_x_retract_settings_required():
     path = [(40.0, 0.0), (25.0, -5.0)]
     params = {"mode": 0, "slice_strategy": 1, "depth_per_pass": 1.0, "feed": 0.15, "tool": 1}
-    settings = {"sc": 1.0}
+    settings = {"xt": 150.0, "zt": 300.0, "sc": 1.0}
     with pytest.raises(ValueError):
         generate_abspanen_gcode(params, path, settings)
 
@@ -314,7 +314,7 @@ def test_program_unit_inch_emits_g20():
             path=[(20.0, 0.0), (18.0, -2.0)],
         )
     ]
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "unit": "inch",
         "xra": 45.0,
         "zra": 5.0,
@@ -349,7 +349,7 @@ def test_face_cycle_sub_uses_feed_moves_only():
             },
         )
     ]
-    m.program_settings = {"xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
     g = "\n".join(m.generate_gcode())
     sub_block = g.split("o100 sub", 1)[1].split("o100 endsub", 1)[0]
     assert "G0" not in sub_block
@@ -365,7 +365,7 @@ def test_global_safe_retract_respects_incremental_flags():
             path=[(20.0, 0.0), (18.0, -2.0)],
         )
     ]
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "xa": 40.0,
         "za": 0.0,
         "xra": 2.0,
@@ -386,7 +386,7 @@ def test_turn_uses_simultaneous_safe_retract():
             path=[(20.0, 0.0), (18.0, -2.0)],
         )
     ]
-    m.program_settings = {"xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
     lines = m.generate_gcode()
     assert "G0 X45.000 Z5.000" in lines
 
@@ -412,7 +412,7 @@ def test_groove_uses_x_then_z_safe_retract():
             },
         )
     ]
-    m.program_settings = {"xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
     lines = m.generate_gcode()
     # Die sichere EINFAHRT (vor dem Zyklusaufruf) nutzt bewusst Z-dann-X (siehe
     # emit_approach()/get_safe_position()) und kann zufaellig dieselben
@@ -435,7 +435,7 @@ def test_drill_uses_z_then_x_safe_retract():
             path=[(10.0, 0.0), (10.0, -5.0)],
         )
     ]
-    m.program_settings = {"xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 45.0, "zra": 5.0, "xra_absolute": True, "zra_absolute": True}
     lines = m.generate_gcode()
     idx_z = lines.index("G0 Z5.000")
     idx_x = lines.index("G0 X45.000")
@@ -452,7 +452,7 @@ def test_turn_inside_stock_falls_back_to_x_then_z_retract():
         )
     ]
     # Endpunkt liegt im Rohteilbereich: X in [0..40], Z in [-20..0]
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "xa": 40.0,
         "za": 0.0,
         "zi": -20.0,
@@ -483,7 +483,7 @@ def test_turn_outside_stock_keeps_simultaneous_retract():
         )
     ]
     # Endpunkt liegt außerhalb des Rohteils, simultan ist erlaubt
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "xa": 40.0,
         "za": 0.0,
         "zi": -20.0,
@@ -505,7 +505,7 @@ def test_turn_in_chuck_nogo_falls_back_to_x_then_z_retract():
             path=[(30.0, 0.0), (40.0, -50.0)],
         )
     ]
-    m.program_settings = {
+    m.program_settings = {"xt": 150.0, "zt": 300.0,
         "xra": 60.0,
         "zra": 6.0,
         "xra_absolute": True,

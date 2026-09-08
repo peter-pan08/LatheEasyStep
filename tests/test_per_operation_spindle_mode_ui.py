@@ -15,19 +15,7 @@ pytest.importorskip("PyQt5")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-for _mod in (
-    "qtpy",
-    "qtpy.QtCore",
-    "qtpy.QtGui",
-    "qtpy.QtWidgets",
-    "qtvcp",
-    "qtvcp.core",
-    "lathe_easystep_handler",
-    "lathe_easystep.ui_advanced",
-    "lathe_easystep.ui_split",
-    "lathe_easystep.ui_visibility",
-):
-    sys.modules.pop(_mod, None)
+# Qt bindings are selected once per process by conftest.py.
 
 from PyQt5 import QtWidgets, uic  # noqa: E402
 
@@ -156,3 +144,40 @@ def test_missing_spindle_mode_resets_to_fixed_instead_of_keeping_stale_value(pre
 
     load_operation_params_to_form(handler, Operation(op_type, {}))
     assert combo.currentData() == "fixed"
+
+
+@pytest.mark.parametrize("selected", ["off", "suggest_din_relief"])
+def test_thread_relief_norm_visibility_survives_roundtrip_and_translation(selected):
+    from lathe_easystep.persistence import operation_to_step_data, step_data_to_operation
+    from lathe_easystep.ui_visibility import update_thread_relief_visibility
+    from lathe_easystep.ui_static import apply_ui_static_translations
+    handler = _load_handler_with_widgets()
+    mode = handler.thread_relief_mode
+    norm = handler.thread_relief_norm
+    handler._setup_param_maps = lambda: None
+    handler.param_widgets = {OpType.THREAD: {"relief_mode": mode, "relief_norm": norm}}
+    op = Operation(OpType.THREAD, {"relief_mode": selected, "relief_norm": "din76_b"})
+    restored = step_data_to_operation(operation_to_step_data(op))
+    load_operation_params_to_form(handler, restored)
+    assert mode.currentData() == selected
+    assert norm.currentData() == "din76_b"
+    assert norm.isHidden() == (selected == "off")
+    for lang in ("de", "en", "es"):
+        apply_ui_static_translations(handler.root_widget, TRANSLATIONS.tr, lang)
+        update_thread_relief_visibility(handler)
+        assert mode.currentData() == selected
+        assert norm.currentData() == "din76_b"
+        assert norm.isHidden() == (selected == "off")
+    mode.setCurrentIndex(mode.findData("off" if selected == "suggest_din_relief" else "suggest_din_relief"))
+    assert norm.isHidden() == (selected == "suggest_din_relief")
+
+
+def test_legacy_thread_relief_ids_load_into_current_combos():
+    handler = _load_handler_with_widgets()
+    handler._setup_param_maps = lambda: None
+    handler.param_widgets = {OpType.THREAD: {"relief_mode": handler.thread_relief_mode,
+                                             "relief_norm": handler.thread_relief_norm}}
+    load_operation_params_to_form(handler, Operation(OpType.THREAD, {"relief_mode": "suggest", "relief_norm": "DIN 76-B"}))
+    assert handler.thread_relief_mode.currentData() == "suggest_din_relief"
+    assert handler.thread_relief_norm.currentData() == "din76_b"
+    assert not handler.thread_relief_norm.isHidden()

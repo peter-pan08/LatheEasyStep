@@ -81,7 +81,8 @@ def test_insert_loaded_operation_refreshes_stale_numbered_comment():
 
     comment = str(op.params.get("comment") or "")
     assert comment != "5. Innenabspanen (Werkzeug 3)"
-    assert comment.startswith("1. ")
+    assert not comment.startswith("1. ")
+    assert op.params["_auto_comment"] is True
 
 
 def test_handle_add_operation_refreshes_stale_numbered_comment_via_helper():

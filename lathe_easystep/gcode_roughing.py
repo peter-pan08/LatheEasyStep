@@ -70,7 +70,7 @@ def _resolve_roughing_stock_x(
         return fallback
     if external:
         return max(stock_x, contour_max_x)
-    if stock_x <= 0.0 or stock_x < contour_min_x - 1e-9:
+    if stock_x <= 0.0:
         # Kein (plausibles) XI im Programmkopf gesetzt - z. B. Rohteil startet
         # als Vollzylinder und die Bohrung entsteht erst durch einen
         # vorangehenden Bohren-Step. Ohne echten Freiraum wuerde G71 hier
@@ -82,7 +82,9 @@ def _resolve_roughing_stock_x(
         if drilled is not None and 0.0 < drilled < contour_min_x - 1e-9:
             return drilled
         return contour_min_x
-    return max(stock_x, contour_max_x)
+    # A positive XI is the existing bore, including XI below every target
+    # diameter. Replacing it by the target removes the entire stock to cut.
+    return stock_x
 
 
 def _finish_entry_point(
@@ -155,7 +157,7 @@ def _emit_relief_pass(
 ) -> None:
     if len(feature_points) < 2:
         return
-    relief_tool = int(float(op_params.get("undercut_tool", tool_num) or tool_num))
+    relief_tool = get_tool_number({"tool": op_params.get("undercut_tool", tool_num) or tool_num})
     relief_spindle = float(op_params.get("undercut_spindle", spindle) or spindle)
     relief_feed = float(op_params.get("undercut_feed", feed) or feed)
     if bool(op_params.get("optional_stop_before_undercut", settings.get("optional_stop_before_undercut", False))):
@@ -556,6 +558,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
 
     path = finish_path
     stock_x = _resolve_roughing_stock_x(settings, rough_path, external=side_idx == 0)
+    if side_idx == 1 and mode_idx in (0, 2):
+        # Interior stock allowance leaves a smaller bore and a shallower end.
+        # X is a diameter coordinate, matching the UI's X allowance value.
+        rough_path = [(x - finish_allow_x, z + finish_allow_z) for x, z in rough_path]
     cfg = get_retract_cfg(settings, side_idx)
     if cfg.z_value is None:
         raise ValueError("ZRA/ZRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")

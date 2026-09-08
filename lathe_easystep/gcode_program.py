@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
+
+from .numeric import validate_finite_data
 from typing import Dict, List, Optional, Tuple
 
 from .checks import validate_program_setup
+from .comments import unnumbered_comment
 from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_drill import generate_drill_gcode
 from .gcode_face import generate_face_gcode
@@ -178,49 +182,53 @@ def gcode_for_operation(op: Operation, settings: Dict[str, object] | None = None
     elif op.op_type == OpType.KEYWAY:
         result = gcode_for_keyway(op, settings)
     else:
-        result = []
-    comment = sanitize_comment_text(op.params.get("comment") or "").strip()
+        raise ValueError(f"Unbekannter Operationstyp: {op.op_type!r}")
+    comment = sanitize_comment_text(unnumbered_comment(op.params.get("comment"))).strip()
     if comment:
         result.insert(0, f"(STEP: {comment})")
     return result
 
 
 def generate_program_gcode(operations: List[Operation], program_settings: Dict[str, object]) -> List[str]:
-    settings = dict(program_settings or {})
-    validation_warnings = validate_program_setup(operations, settings)
+    # All derived geometry and state belong to this invocation, never the editor.
+    operations = deepcopy(operations)
+    settings = deepcopy(program_settings or {})
+    for key in list(settings):
+        if key.startswith("_") or key.startswith("needs_step_") or key in ("sub_allocator", "contour_subs"):
+            settings.pop(key)
+    validate_finite_data(settings, "Programmkopf")
     for i, op in enumerate(operations):
         try:
+            validate_finite_data(op.params, f"Operation {i+1}")
+            validate_finite_data(op.path, f"Operation {i+1}.path")
+            op.params.pop("_derived_relief", None)
+            if op.op_type == OpType.ABSPANEN and op.params.get("contour_name"):
+                for key in ("_primitives", "_contour_params"):
+                    op.params.pop(key, None)
+            if op.op_type == OpType.CONTOUR and "segments" in op.params:
+                op.path = build_contour_variants(op.params)["finish_primitives"]
             if op.op_type in REQUIRED_KEYS:
                 require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
-                if op.op_type in [OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL]:
+                if op.op_type in (OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL):
                     require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
-            # gcode_for_operation() dient hier NUR der Vorab-Validierung (fruehes
-            # ValueError bei fehlenden/falschen Parametern). Es mutiert aber
-            # intern denselben settings-Dict (u. a. _current_tool/_is_at_safe/
-            # _active_retract_mode ueber append_tool_and_spindle() & Co.) - die
-            # needs_step_*_pause_sub-Flags MUESSEN aus dieser Pruefung erhalten
-            # bleiben (sie werden unten fuer die Subroutinen-Definitionen
-            # gebraucht), aber die Werkzeug-/Positions-Laufzeittracker duerfen
-            # NICHT in den echten Erzeugungsdurchlauf durchsickern - sonst
-            # erkennt dieser den ERSTEN echten Werkzeugwechsel faelschlich als
-            # "Werkzeug schon aktiv" und faehrt den Werkzeugwechselpunkt nicht
-            # an (realer Bugreport: "erster Wechsel leider nicht am
-            # Werkzeugwechselpunkt").
-            gcode_for_operation(op, settings)
-        except ValueError as e:
-            raise ValueError(f"Operation {i+1} ({op.op_type}): {str(e)}") from e
-    for _key in ("_current_tool", "_is_at_safe", "_active_retract_mode"):
-        settings.pop(_key, None)
+        except ValueError as exc:
+            raise ValueError(f"Operation {i+1} ({op.op_type}): {exc}") from exc
+    validation_warnings = validate_program_setup(operations, settings)
 
     # A DIN-76 relief belongs to the thread endpoint, not to the final point
     # of a contour.  Prepare an immutable per-generation contour variant here
     # so the contour subroutine and every linked rough/finish operation share
     # exactly the same derived geometry.
-    contour_by_name = {
-        str(op.params.get("name") or "").strip(): op
-        for op in operations
-        if op.op_type == OpType.CONTOUR and isinstance(op.params, dict) and str(op.params.get("name") or "").strip()
-    }
+    contour_by_name = {}
+    for op in operations:
+        if op.op_type != OpType.CONTOUR:
+            continue
+        name = str(op.params.get("name") or "").strip()
+        if not name:
+            continue
+        if name in contour_by_name:
+            raise ValueError(f"Konturname ist nicht eindeutig: {name!r}")
+        contour_by_name[name] = op
     automatic_reliefs = []
     relief_threads: Dict[int, Operation] = {}
     for thread_op in operations:
@@ -277,7 +285,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     header_lines: List[str] = ["%", "(Programm automatisch erzeugt)", f"(Programmname: {program_name})", f"(Masseinheit: {unit})"]
     handler_header_lines = [str(x) for x in settings.get("header_lines", []) or []]
     footer_lines_from_settings = [str(x) for x in settings.get("footer_lines", []) or []]
-    header_lines.extend(["G18 G7 G90 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
+    header_lines.extend(["G18 G7 G90 G91.1 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
     header_lines.append("(=== SICHERHEITSPARAMETER ===)")
     xt = settings.get("xt")
     zt = settings.get("zt")
@@ -412,10 +420,6 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     if helper_subs:
         for sb in helper_subs:
             all_subs.append([str(x) for x in sb])
-    if settings.get("needs_step_line_pause_sub"):
-        all_subs.append(step_line_pause_sub_definition())
-    if settings.get("needs_step_x_pause_sub"):
-        all_subs.append(step_x_pause_sub_definition())
     if any(op.op_type == OpType.GROOVE for op in operations):
         all_subs.append(groove_sub_definition())
 
@@ -457,7 +461,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         if op.op_type == OpType.ABSPANEN:
             contour_name = op.params.get("contour_name")
             if contour_name:
-                contour_op = next((o for o in operations if o.op_type == OpType.CONTOUR and o.params.get("name") == contour_name), None)
+                contour_op = contour_by_name.get(str(contour_name).strip())
                 if contour_op and contour_op.path:
                     derived = derived_contours.get(str(contour_name).strip())
                     if derived:
@@ -473,7 +477,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
                         if not derived:
                             op.path = contour_op.path
                 else:
-                    op.path = []
+                    raise ValueError(f"Operation {step_num} ({op.op_type}): Kontur {contour_name!r} fehlt oder ist leer.")
         main_flow_lines.append("")
         op_title = sanitize_comment_text(op.params.get("title", op.op_type))
         tool_val = get_tool_number(op.params)
@@ -481,7 +485,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         tool_desc = ""
         if tool_val > 0 and tool_val in tools:
             tool_desc = f" | T{tool_val}: {sanitize_comment_text(tools[tool_val].get('comment', ''))}"
-        op_lines = _extract_sub_blocks(gcode_for_operation(op, settings))
+        try:
+            op_lines = _extract_sub_blocks(gcode_for_operation(op, settings))
+        except ValueError as exc:
+            raise ValueError(f"Operation {step_num} ({op.op_type}): {exc}") from exc
         if op_lines and any(not line.startswith("(") for line in op_lines):
             main_flow_lines.append(f"(Step {step_num}: {op_title}{tool_desc})")
             main_flow_lines.extend(op_lines)
@@ -499,6 +506,11 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             if re.search(rf"\bQ{sub_num}\b", referenced_text)
         ]
         all_subs[0:0] = referenced_blocks
+
+    if settings.get("needs_step_line_pause_sub"):
+        all_subs.append(step_line_pause_sub_definition())
+    if settings.get("needs_step_x_pause_sub"):
+        all_subs.append(step_x_pause_sub_definition())
 
     lines: List[str] = []
     lines.extend(header_lines)

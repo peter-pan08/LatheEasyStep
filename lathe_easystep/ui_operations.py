@@ -4,6 +4,7 @@ from qtpy import QtCore, QtWidgets
 
 from .ui_contour import RELIEF_NORMS, RELIEF_THREAD_SIZES
 from .model import OpType, Operation
+from .ui_visibility import update_thread_relief_visibility
 from .ui_helpers import current_language as _lang, populate_combo as _populate_combo
 
 
@@ -60,6 +61,11 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
             continue
         widget.blockSignals(True)
         val = op.params[key]
+        if op.op_type == OpType.THREAD and key == "relief_mode":
+            val = {"suggest": "suggest_din_relief", "auto": "suggest_din_relief",
+                   "automatic": "suggest_din_relief"}.get(val, val)
+        if op.op_type == OpType.THREAD and key == "relief_norm":
+            val = {"DIN 76-A": "din76_a", "DIN 76-B": "din76_b", "DIN 76-C": "din76_c"}.get(val, val)
         if isinstance(widget, QtWidgets.QComboBox):
             if key == "slice_strategy":
                 # slice_strategy has domain-specific codes (1=parallel_x,
@@ -122,6 +128,8 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
                     pass
         widget.blockSignals(False)
 
+    if op.op_type == OpType.THREAD:
+        update_thread_relief_visibility(handler)
     if op.op_type == OpType.CONTOUR:
         _load_contour_operation_to_form(handler, op)
         return

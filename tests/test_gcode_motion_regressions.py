@@ -82,7 +82,7 @@ def test_abspanen_finish_preserves_radius_as_arc():
             ],
         },
     }
-    settings = {"xa": 50.0, "za": 1.0, "zra": 5.0, "xra": 52.0, "zra_absolute": True, "xra_absolute": True, "tools": {}}
+    settings = {"xt": 150.0, "zt": 300.0, "xa": 50.0, "za": 1.0, "zra": 5.0, "xra": 52.0, "zra_absolute": True, "xra_absolute": True, "tools": {}}
     lines = generate_abspanen_gcode(params, [(27.0, 0.0), (30.0, 0.0), (30.0, -35.0), (40.0, -37.0)], settings)
     assert any(line.startswith("G2 ") or line.startswith("G3 ") for line in lines)
 
@@ -99,7 +99,7 @@ def test_internal_abspanen_without_xi_uses_contour_min_as_start_stock():
         "undercut_mode": "ignore",
     }
     path = [(10.0, 0.0), (10.0, -44.0), (19.2, 0.0)]
-    settings = {"xi": 0.0, "xri": 9.8, "zri": 1.0, "xri_absolute": True, "zri_absolute": True, "tools": {}}
+    settings = {"xt": 150.0, "zt": 300.0, "xi": 0.0, "xri": 9.8, "zri": 1.0, "xri_absolute": True, "zri_absolute": True, "tools": {}}
     lines = generate_abspanen_gcode(params, path, settings)
     assert any(line.startswith("(Pass ") for line in lines)
     assert any(line.startswith("G1 X") for line in lines)
@@ -119,7 +119,7 @@ def test_internal_finish_with_din_relief_disables_incompatible_nose_compensation
             "auto_thread_reliefs": [relief],
         },
     }
-    settings = {
+    settings = {"xt": 150.0, "zt": 300.0,
         "xi": 10.0, "xri": 9.3, "zri": 1.0, "xri_absolute": True, "zri_absolute": True,
         "tools": {9: {"radius_mm": 0.4, "q": 6}},
     }
@@ -161,7 +161,7 @@ def test_external_groove_approach_uses_safe_planes_before_plunge():
         },
         path=[],
     )
-    settings = {"xra": 52.0, "zra": 6.0, "xra_absolute": True, "zra_absolute": True, "_active_retract_mode": "external"}
+    settings = {"xt": 150.0, "zt": 300.0, "xra": 52.0, "zra": 6.0, "xra_absolute": True, "zra_absolute": True, "_active_retract_mode": "external"}
     lines = generate_groove_gcode(
         op,
         settings,
@@ -191,7 +191,7 @@ def test_internal_thread_approach_keeps_xri_until_thread_start_z():
         },
         path=[],
     )
-    settings = {"xri": 9.8, "zri": 1.0, "xri_absolute": True, "zri_absolute": True}
+    settings = {"xt": 150.0, "zt": 300.0, "xri": 9.8, "zri": 1.0, "xri_absolute": True, "zri_absolute": True}
     try:
         generate_thread_gcode(
             op,
@@ -225,7 +225,7 @@ def test_internal_thread_allows_generation_when_xri_is_respected():
         },
         path=[],
     )
-    settings = {"xri": 9.8, "zri": 1.0, "xri_absolute": True, "zri_absolute": True}
+    settings = {"xt": 150.0, "zt": 300.0, "xri": 9.8, "zri": 1.0, "xri_absolute": True, "zri_absolute": True}
     lines = generate_thread_gcode(
         op,
         settings,

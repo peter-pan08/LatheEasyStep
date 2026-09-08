@@ -5,6 +5,7 @@ from typing import Dict
 from qtpy import QtWidgets
 
 from .model import OpType
+from .comments import update_auto_comment
 
 
 def apply_program_header_to_handler(
@@ -163,4 +164,4 @@ def sync_form_to_operation(handler, idx: int) -> None:
         item = handler.list_ops.item(idx)
         if item:
             item.setText(description)
-    op.params["comment"] = description
+    update_auto_comment(op, description)

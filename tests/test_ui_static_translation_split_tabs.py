@@ -10,18 +10,7 @@ pytest.importorskip("PyQt5")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-for _mod in (
-    "qtpy",
-    "qtpy.QtCore",
-    "qtpy.QtGui",
-    "qtpy.QtWidgets",
-    "qtvcp",
-    "qtvcp.core",
-    "lathe_easystep_handler",
-    "lathe_easystep.ui_split",
-    "lathe_easystep.ui_static",
-):
-    sys.modules.pop(_mod, None)
+# Qt bindings are selected once per process by conftest.py.
 
 from PyQt5 import QtWidgets, uic  # noqa: E402
 

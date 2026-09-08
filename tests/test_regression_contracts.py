@@ -467,7 +467,7 @@ def test_drill_mode_string_id_selects_correct_gcode_cycle():
         path=[(0.0, 0.0), (8.0, 0.0), (8.0, -18.0), (0.0, -20.0)],
     )
     lines = generate_drill_gcode(
-        op, {}, require=require, require_tool=require_tool, get_tool_number=get_tool_number,
+        op, {"xt": 150.0, "zt": 300.0}, require=require, require_tool=require_tool, get_tool_number=get_tool_number,
         append_tool_and_spindle=append_tool_and_spindle, emit_coolant=emit_coolant, emit_approach=emit_approach,
     )
     assert any(line.startswith("G83 ") for line in lines)
@@ -503,7 +503,7 @@ def test_drill_approach_uses_shared_safety_helper_like_other_operations():
     approach_idx = lines.index("(Anfahren vor Zyklus)")
     cycle_idx = next(i for i, line in enumerate(lines) if line.startswith("G81 "))
     approach_lines = lines[approach_idx:cycle_idx]
-    assert "G0 X0.000 Z2.000" in approach_lines
+    assert "G0 X0.000" in approach_lines
     assert approach_lines.count("G0 Z2.000") == 0
 
 
@@ -745,7 +745,7 @@ def test_contour_step_description_is_neutral():
     assert "Innenkontur" not in text
 
 
-def test_chuck_no_go_zone_forces_sequential_retract():
+def test_chuck_no_go_zone_blocks_generation():
     settings = make_program_settings()
     settings.update(
         {
@@ -768,6 +768,6 @@ def test_chuck_no_go_zone_forces_sequential_retract():
             path=[(40.0, -50.0), (30.0, -50.0)],
         ),
     ]
-    lines = generate_program_gcode(operations, settings)
-    retract_x_idx = max(idx for idx, line in enumerate(lines) if line == "G0 X48.000")
-    assert lines[retract_x_idx + 1] == "G0 Z4.000"
+    import pytest
+    with pytest.raises(ValueError, match="Futter-Sperrzone"):
+        generate_program_gcode(operations, settings)

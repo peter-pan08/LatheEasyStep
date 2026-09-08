@@ -39,7 +39,7 @@ def test_g71_profile_contains_arc_for_fillet():
         path=[],  # will be resolved from contour
     )
     m.operations = [contour_op, abspanen_op]
-    m.program_settings = {"xa": 40.0, "xra": 50.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xa": 40.0, "xra": 50.0, "zra": 5.0}
     gcode = "\n".join(m.generate_gcode())
 
     # G71 cycle should be present (monotonic Z decreasing, monotonic X increasing)
@@ -156,7 +156,7 @@ def test_g71_monotonic_increasing_x_allowed():
             path=path,
         )
     ]
-    m.program_settings = {"xa": 40.0, "xra": 50.0, "zra": 5.0}
+    m.program_settings = {"xt": 150.0, "zt": 300.0, "xa": 40.0, "xra": 50.0, "zra": 5.0}
     gcode = "\n".join(m.generate_gcode())
     assert "G71 Q" in gcode, f"G71 should be used for monotonic increasing X:\n{gcode}"
     assert "Move-based" not in gcode

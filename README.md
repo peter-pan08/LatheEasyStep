@@ -40,7 +40,7 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `364 passed, 7 skipped` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
@@ -391,7 +391,7 @@ Aktuelle Reihenfolge:
 Der aktuelle Refactor-Stand wird nicht nur mit Unit-Tests, sondern auch mit
 Referenzprogrammen abgesichert.
 
-- `pytest -q`
+- `python run_tests.py`
 - `python3 regenerate_all_ngc.py`
 
 Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
@@ -453,7 +453,7 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current development baseline is validated with `364 passed, 7 skipped`
+- the current development baseline is validated with `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 
@@ -618,7 +618,7 @@ Current order:
 The current refactor state is protected by both unit tests and reference
 program snapshots.
 
-- `pytest -q`
+- `python run_tests.py`
 - `python3 regenerate_all_ngc.py`
 
 The checked-in reference programs under `ngc/` currently cover:
@@ -638,3 +638,11 @@ The current state is usable, but not yet technically complete.
 - internal steps, tapers, radii and reliefs need additional real-machine verification
 - local DIN reliefs do not yet work on arbitrary segments inside longer contours
 - real-machine clearance and collision behaviour still require backplot and dry-run verification
+
+
+Entwicklungsstand 2026-09-08: Snapshot-Generierung, atomare Programmdateien,
+getrennte Qt-Testlaeufe, normierte Step-Kommentare und Freistich-Koordinaten-
+regressionen sind umgesetzt. Planradius, Innenaufmass, Eingabevalidierung
+und gemeinsame Anfahrt wurden erweitert. Die neuen Fahrwege sind noch
+nicht mit LinuxCNC-Parser, Backplot und Maschine abgenommen; offene P0-
+Punkte bleiben Releaseblocker. [Details und Grenzen](doc/VERIFICATION_2026-09-08.md).

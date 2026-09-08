@@ -5,11 +5,12 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import ProgramModel, Operation, OpType
 
-RETRACT_SETTINGS = {"xra": 45.0, "zra": 5.0}
+RETRACT_SETTINGS = {"xt": 150.0, "zt": 300.0, "xra": 45.0, "zra": 5.0}
 
 
 def test_face_rough_includes_step_x_sub():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     m.operations = [Operation(OpType.FACE, {
         "mode": 0, "pause_enabled": True, "pause_distance": 1.0,
         "start_x": 40.0, "start_z": 1.0, "end_x": -1.0, "end_z": 0.0,
@@ -23,6 +24,7 @@ def test_face_rough_includes_step_x_sub():
 
 def test_face_finish_suppresses_step_x():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     m.operations = [Operation(OpType.FACE, {
         "mode": 1, "pause_enabled": True, "pause_distance": 1.0,
         "start_x": 40.0, "start_z": 1.0, "end_x": -1.0, "end_z": 0.0,
@@ -36,6 +38,7 @@ def test_face_finish_suppresses_step_x():
 
 def test_abspanen_rough_includes_step_line_sub_and_call():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # enable Parallel X slicing so roughing occurs and calls are generated
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 0.1, "depth_per_pass": 0.5, "feed": 0.15, "slice_strategy": 1, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     m.program_settings = RETRACT_SETTINGS
@@ -51,6 +54,7 @@ def test_abspanen_rough_without_slicing_aborts_generation():
     ein solcher Step nicht unbemerkt als scheinbar gueltiges Programm
     durchgeht."""
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     m.program_settings = RETRACT_SETTINGS
     with pytest.raises(ValueError, match="keinen einzigen Schnitt"):
@@ -59,6 +63,7 @@ def test_abspanen_rough_without_slicing_aborts_generation():
 
 def test_abspanen_finish_suppresses_step_line():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     m.operations = [Operation(OpType.ABSPANEN, {"mode": 1, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     m.program_settings = RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
@@ -68,6 +73,7 @@ def test_abspanen_finish_suppresses_step_line():
 
 def test_mixed_ops_only_includes_needed_subs():
     m = ProgramModel()
+    m.program_settings.update({"xt": 150.0, "zt": 300.0})
     m.operations = [
         Operation(OpType.FACE, {
             "mode": 1, "pause_enabled": True, "pause_distance": 1.0,

@@ -21,18 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # modules below bind to the real classes - otherwise isinstance(widget,
 # QtWidgets.QComboBox) checks in the production code compare a real QComboBox
 # against the fake stub class and silently never match.
-for _mod in (
-    "qtpy",
-    "qtpy.QtCore",
-    "qtpy.QtGui",
-    "qtpy.QtWidgets",
-    "qtvcp",
-    "qtvcp.core",
-    "lathe_easystep_handler",
-    "lathe_easystep.ui_operations",
-    "lathe_easystep.ui_params",
-):
-    sys.modules.pop(_mod, None)
+# Qt bindings are selected once per process by conftest.py.
 
 from PyQt5 import QtCore, QtWidgets  # noqa: E402
 

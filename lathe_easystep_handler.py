@@ -16,6 +16,11 @@ from weakref import WeakSet
 from qtpy import QtCore, QtGui, QtWidgets
 from qtvcp.core import Action
 import logging
+from lathe_easystep.ui_header import collect_program_header
+from lathe_easystep.ui_contour_input import collect_contour_segments
+from lathe_easystep.ui_thread import apply_thread_preset
+from lathe_easystep.comments import update_auto_comment
+from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.gcode_utils import is_internal_side
 from lathe_easystep.tools import Tool, parse_tool_table, extract_iso_from_comment, tool_kind_from_orientation
@@ -114,6 +119,7 @@ from lathe_easystep.tool_logic import (
     tool_orientation_mismatch,
 )
 from lathe_easystep.ui_persistence import (
+    write_step_file,
     build_program_data,
     handle_load_program,
     handle_load_step,
@@ -549,37 +555,6 @@ MACHINE_CHUCK_PROFILE_PRESETS: Dict[int, Dict[str, int]] = {
 STEP_FILE_FILTER = "Lathe step files (*.step.json);;JSON (*.json)"
 
 
-class _TooltipRelay(QtCore.QObject):
-    """Force tooltip display on hover for embedded/hosted QtVCP widgets."""
-
-    def __init__(self, parent=None, text: str = ""):
-        super().__init__(parent)
-        self.text = text
-
-    def eventFilter(self, obj, event):
-        etype = event.type() if event is not None else None
-        if etype not in (QtCore.QEvent.Enter, QtCore.QEvent.ToolTip):
-            return False
-        text = ""
-        try:
-            text = str(obj.toolTip() or "").strip()
-        except Exception:
-            text = ""
-        if not text:
-            text = self.text
-        if not text:
-            return False
-        try:
-            if etype == QtCore.QEvent.ToolTip and hasattr(event, "globalPos"):
-                global_pos = event.globalPos()
-            elif hasattr(obj, "rect") and hasattr(obj, "mapToGlobal"):
-                global_pos = obj.mapToGlobal(obj.rect().center())
-            else:
-                global_pos = QtGui.QCursor.pos()
-            QtWidgets.QToolTip.showText(global_pos, text, obj)
-        except Exception:
-            return False
-        return etype == QtCore.QEvent.ToolTip
 
 def normalize_arc_side(value: object | None) -> str:
     s = str(value or "auto").strip().lower()
@@ -1210,12 +1185,7 @@ class HandlerClass:
         return step_filename_stem(op, index_hint=index_hint)
 
     def _write_step_file(self, op: Operation, file_path: str) -> str:
-        normalized = self._normalized_file_path(file_path) or file_path
-        self._set_step_file_path(op, normalized)
-        data = self._operation_to_step_data(op)
-        with builtins.open(normalized, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2)
-        return normalized
+        return write_step_file(self, op, file_path)
 
     def _ensure_step_file_link(
         self,
@@ -2965,104 +2935,7 @@ class HandlerClass:
         return False
 
     def _apply_thread_preset(self, force: bool = False):
-        """Wendet das im Dropdown gewählte Preset an.
-
-        Wenn force==False: nur Felder befüllen, die noch 0 sind (soft-fill).
-        Wenn force==True: alle relevanten Felder überschreiben.
-        """
-        # Vermeide Rekursion
-        if getattr(self, "_thread_applying_standard", False):
-            return
-        combo = self.thread_standard
-        if combo is None:
-            return
-        data = combo.currentData()
-        if not isinstance(data, dict):
-            return
-        validation_errors = validate_thread_preset_data(data)
-        if validation_errors:
-            try:
-                self._log(
-                    f"[LatheEasyStep] thread preset skipped: {'; '.join(validation_errors)}",
-                    level="warning",
-                )
-            except Exception:
-                pass
-            return
-
-        self._thread_applying_standard = True
-        try:
-            major = data.get("major")
-            pitch = data.get("pitch")
-            profile = data.get("profile", "metric")
-
-            # Major & Pitch: beim Wechsel immer sichtbar setzen (oder ersetzen bei force)
-            if isinstance(major, (int, float)) and self.thread_major_diameter:
-                if force or abs(float(self.thread_major_diameter.value())) < 1e-9:
-                    self.thread_major_diameter.setValue(float(major))
-            if isinstance(pitch, (int, float)) and self.thread_pitch:
-                if force or abs(float(self.thread_pitch.value())) < 1e-9:
-                    self.thread_pitch.setValue(float(pitch))
-
-            p = float(pitch) if isinstance(pitch, (int, float)) else 1.5
-
-            # Profil-spezifische Default-Werte
-            if profile == "tr":
-                depth = p * 0.50
-                q_angle = 15.0
-            else:
-                depth = p * 0.6134
-                q_angle = 29.5
-
-            first_depth = max(depth * 0.10, p * 0.05)
-            peak_offset = -max(depth * 0.50, p * 0.25)
-
-            # Soft-Set / Force-Set
-            changed = []
-            if force:
-                if self.thread_depth is not None:
-                    self.thread_depth.setValue(float(depth)); changed.append('depth')
-                if self.thread_first_depth is not None:
-                    self.thread_first_depth.setValue(float(first_depth)); changed.append('first_depth')
-                if self.thread_peak_offset is not None:
-                    self.thread_peak_offset.setValue(float(peak_offset)); changed.append('peak_offset')
-                if self.thread_retract_r is not None:
-                    self.thread_retract_r.setValue(1.5); changed.append('retract_r')
-                if self.thread_infeed_q is not None:
-                    self.thread_infeed_q.setValue(q_angle); changed.append('infeed_q')
-                if self.thread_spring_passes is not None:
-                    self.thread_spring_passes.setValue(1); changed.append('spring_passes')
-                if self.thread_e is not None:
-                    self.thread_e.setValue(0.0); changed.append('e')
-                if self.thread_l is not None:
-                    self.thread_l.setValue(0); changed.append('l')
-            else:
-                if self._set_if_zero(self.thread_depth, depth): changed.append('depth')
-                if self._set_if_zero(self.thread_first_depth, first_depth): changed.append('first_depth')
-                if self._set_if_zero(self.thread_peak_offset, peak_offset): changed.append('peak_offset')
-                if self._set_if_zero(self.thread_retract_r, 1.5): changed.append('retract_r')
-                if self._set_if_zero(self.thread_infeed_q, q_angle): changed.append('infeed_q')
-                # spring passes
-                if self.thread_spring_passes is not None:
-                    try:
-                        if force or int(self.thread_spring_passes.value()) == 0:
-                            self.thread_spring_passes.setValue(1); changed.append('spring_passes')
-                    except Exception:
-                        pass
-                if self._set_if_zero(self.thread_e, 0.0): changed.append('e')
-                if self.thread_l is not None:
-                    try:
-                        if force or int(self.thread_l.value()) == 0:
-                            self.thread_l.setValue(0); changed.append('l')
-                    except Exception:
-                        pass
-            # Debug-Ausgabe
-            try:
-                self._log(f"[LatheEasyStep] _apply_thread_preset: profile={profile}, pitch={p}, changed={changed}", level="info")
-            except Exception:
-                pass
-        finally:
-            self._thread_applying_standard = False
+        return apply_thread_preset(self, force=force)
 
     def _apply_thread_preset_force(self):
         """Handler: Preset hart anwenden (Button)."""
@@ -3486,67 +3359,7 @@ class HandlerClass:
         self._ensure_contour_widgets()
 
     def _set_tooltip_deep(self, widget, text: str):
-        if widget is None or not text:
-            return
-        if not hasattr(self, "_tooltip_relays"):
-            self._tooltip_relays = {}
-        targets = [widget]
-        label_name = f"label_{widget.objectName()}" if hasattr(widget, "objectName") else ""
-        if label_name:
-            label = self._get_widget_by_name(label_name)
-            if label is not None:
-                targets.append(label)
-        try:
-            line_edit = widget.lineEdit() if hasattr(widget, "lineEdit") else None
-        except Exception:
-            line_edit = None
-        if line_edit is not None:
-            targets.append(line_edit)
-        try:
-            view = widget.view() if hasattr(widget, "view") else None
-        except Exception:
-            view = None
-        if view is not None:
-            targets.append(view)
-        try:
-            targets.extend(widget.findChildren(QtWidgets.QWidget))
-        except Exception:
-            pass
-        for target in targets:
-            try:
-                target.setToolTip(text)
-            except Exception:
-                pass
-            try:
-                target.setWhatsThis(text)
-            except Exception:
-                pass
-            try:
-                target.setStatusTip(text)
-            except Exception:
-                pass
-            try:
-                target.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
-            except Exception:
-                pass
-            try:
-                target.setMouseTracking(True)
-            except Exception:
-                pass
-            try:
-                target.setToolTipDuration(20000)
-            except Exception:
-                pass
-            try:
-                relay = self._tooltip_relays.get(id(target))
-                if relay is None:
-                    relay = _TooltipRelay(target, text)
-                    target.installEventFilter(relay)
-                    self._tooltip_relays[id(target)] = relay
-                else:
-                    relay.text = text
-            except Exception:
-                pass
+        return set_tooltip_deep(self, widget, text)
 
     def _layout_item_contains_widget(self, item, widget) -> bool:
         if item is None or widget is None:
@@ -3609,52 +3422,7 @@ class HandlerClass:
         return None
 
     def _fallback_tooltip_text(self, widget) -> str:
-        if widget is None:
-            return ""
-        try:
-            name = str(widget.objectName() or "").strip()
-        except Exception:
-            name = ""
-        label_candidates = []
-        if name:
-            label_candidates.extend(
-                [
-                    f"label_{name}",
-                    f"label_prog_{name[8:]}" if name.startswith("program_") else "",
-                    f"label_face_{name[5:]}" if name.startswith("face_") else "",
-                    f"label_thread_{name[7:]}" if name.startswith("thread_") else "",
-                    f"label_groove_{name[7:]}" if name.startswith("groove_") else "",
-                    f"label_drill_{name[6:]}" if name.startswith("drill_") else "",
-                    f"label_key_{name[4:]}" if name.startswith("key_") else "",
-                    f"label_parting_{name[8:]}" if name.startswith("parting_") else "",
-                ]
-            )
-        for candidate in [entry for entry in label_candidates if entry]:
-            try:
-                label = self._get_widget_by_name(candidate)
-            except Exception:
-                label = None
-            if label is None:
-                continue
-            try:
-                text = str(label.text() or "").strip()
-            except Exception:
-                text = ""
-            if text:
-                return text
-        label = self._form_label_for_widget(widget)
-        if label is not None:
-            try:
-                text = str(label.text() or "").strip()
-            except Exception:
-                text = ""
-            if text:
-                return text
-        try:
-            own_text = str(widget.text() or "").strip() if hasattr(widget, "text") else ""
-        except Exception:
-            own_text = ""
-        return own_text
+        return fallback_tooltip_text(self, widget)
 
     def _apply_tooltip_fallbacks(self):
         # Intentionally disabled by architecture rule:
@@ -3662,17 +3430,7 @@ class HandlerClass:
         return
 
     def _apply_registered_tooltips(self, lang: str):
-        for name, key in UI_TOOLTIP_KEYS.items():
-            widget = self._get_widget_by_name(name)
-            if widget is None:
-                continue
-            text = TRANSLATIONS.tr(key, lang)
-            try:
-                widget.setProperty("tooltip_key", key)
-                widget.setProperty("tooltip_fallback_auto", False)
-            except Exception:
-                pass
-            self._set_tooltip_deep(widget, text)
+        return apply_registered_tooltips(self, lang)
 
     def _apply_thread_tooltips(self, lang: str):
         """Rueckwaertskompatibler Wrapper fuer den zentralen Tooltip-Pfad."""
@@ -3871,266 +3629,7 @@ class HandlerClass:
         return collect_params(self, op_type)
 
     def _collect_program_header(self) -> Dict[str, object]:
-        """Sammelt alle Programmkopf-Parameter für Kommentare/G-Code."""
-        def _ensure_checkbox(attr_name: str):
-            widget = getattr(self, attr_name, None)
-            if widget is not None and hasattr(widget, "isChecked"):
-                return widget
-            candidate = self._get_widget_by_name(attr_name)
-            if candidate is not None and hasattr(candidate, "isChecked"):
-                setattr(self, attr_name, candidate)
-                return candidate
-            setattr(self, attr_name, None)
-            return None
-
-        def _combo_data(widget):
-            if widget is None:
-                return None
-            if hasattr(widget, "currentData"):
-                try:
-                    data = widget.currentData()
-                except Exception:
-                    data = None
-                if data is not None:
-                    return data
-            try:
-                name = str(widget.objectName() or "").strip()
-            except Exception:
-                name = ""
-            if name == "program_unit":
-                try:
-                    return "mm" if int(widget.currentIndex()) == 0 else "inch"
-                except Exception:
-                    return None
-            if name == "program_npv" and hasattr(widget, "currentText"):
-                try:
-                    token = str(widget.currentText() or "").strip().upper()
-                except Exception:
-                    token = ""
-                if token.startswith("G"):
-                    return token
-            return None
-
-        # Fehlende Widgets nachladen, falls sie zum Zeitpunkt der Initialisierung
-        # noch nicht gefunden wurden (z. B. wegen verzögertem UI-Aufbau).
-        if self.program_npv is None:
-            self.program_npv = self._get_widget_by_name("program_npv")
-        if self.program_unit is None:
-            self.program_unit = self._find_unit_combo()
-        if self.program_shape is None:
-            self.program_shape = self._find_shape_combo()
-        if self.program_retract_mode is None:
-            self.program_retract_mode = self._get_widget_by_name("program_retract_mode")
-        if self.program_s1 is None:
-            self.program_s1 = self._get_widget_by_name("program_s1")
-        if self.program_s3 is None:
-            self.program_s3 = self._get_widget_by_name("program_s3")
-        if self.program_has_subspindle is None:
-            self.program_has_subspindle = self._get_widget_by_name("program_has_subspindle")
-        if self.program_xt is None:
-            self.program_xt = self._get_widget_by_name("program_xt")
-        if self.program_zt is None:
-            self.program_zt = self._get_widget_by_name("program_zt")
-        if self.program_sc is None:
-            self.program_sc = self._get_widget_by_name("program_sc")
-        if getattr(self, "program_machine_profile", None) is None:
-            self.program_machine_profile = self._get_widget_by_name("program_machine_profile")
-        if getattr(self, "program_chuck_size", None) is None:
-            self.program_chuck_size = self._get_widget_by_name("program_chuck_size")
-        if getattr(self, "program_chuck_part_type", None) is None:
-            self.program_chuck_part_type = self._get_widget_by_name("program_chuck_part_type")
-        if getattr(self, "program_chuck_grip_mode", None) is None:
-            self.program_chuck_grip_mode = self._get_widget_by_name("program_chuck_grip_mode")
-        if getattr(self, "program_chuck_profile", None) is None:
-            self.program_chuck_profile = self._get_widget_by_name("program_chuck_profile")
-        if getattr(self, "program_chuck_x_min", None) is None:
-            self.program_chuck_x_min = self._get_widget_by_name("program_chuck_x_min")
-        if getattr(self, "program_chuck_x_max", None) is None:
-            self.program_chuck_x_max = self._get_widget_by_name("program_chuck_x_max")
-        if getattr(self, "program_chuck_z_limit", None) is None:
-            self.program_chuck_z_limit = self._get_widget_by_name("program_chuck_z_limit")
-        if self.program_name is None:
-            self.program_name = self._get_widget_by_name("program_name")
-        for attr in (
-            "program_spindle_mode",
-            "program_spindle_max_rpm",
-            "program_park_mode",
-            "program_toolchange_coords",
-            "program_park_coords",
-            "program_park_x",
-            "program_park_z",
-            "program_park_sequential",
-            "program_optional_stop_toolchange",
-            "program_preview_warnings",
-        ):
-            if getattr(self, attr, None) is None:
-                setattr(self, attr, self._get_widget_by_name(attr))
-        if self.program_xa is None:
-            self.program_xa = self._get_widget_by_name("program_xa")
-        if self.program_xi is None:
-            self.program_xi = self._get_widget_by_name("program_xi")
-        if self.program_za is None:
-            self.program_za = self._get_widget_by_name("program_za")
-        if self.program_zi is None:
-            self.program_zi = self._get_widget_by_name("program_zi")
-        if self.program_zb is None:
-            self.program_zb = self._get_widget_by_name("program_zb")
-        if self.program_w is None:
-            self.program_w = self._get_widget_by_name("program_w")
-        if self.program_l is None:
-            self.program_l = self._get_widget_by_name("program_l")
-        if self.program_n is None:
-            self.program_n = self._get_widget_by_name("program_n")
-        if self.program_sw is None:
-            self.program_sw = self._get_widget_by_name("program_sw")
-        if self.program_xra is None:
-            self.program_xra = self._get_widget_by_name("program_xra")
-        if self.program_xri is None:
-            self.program_xri = self._get_widget_by_name("program_xri")
-        if self.program_zra is None:
-            self.program_zra = self._get_widget_by_name("program_zra")
-        if self.program_zri is None:
-            self.program_zri = self._get_widget_by_name("program_zri")
-        if self.program_xra_absolute is None:
-            self.program_xra_absolute = self._get_widget_by_name("program_xra_absolute")
-        if self.program_xri_absolute is None:
-            self.program_xri_absolute = self._get_widget_by_name("program_xri_absolute")
-        if self.program_zra_absolute is None:
-            self.program_zra_absolute = self._get_widget_by_name("program_zra_absolute")
-        if self.program_zri_absolute is None:
-            self.program_zri_absolute = self._get_widget_by_name("program_zri_absolute")
-        self.program_xra_absolute = _ensure_checkbox("program_xra_absolute")
-        self.program_xri_absolute = _ensure_checkbox("program_xri_absolute")
-        self.program_zra_absolute = _ensure_checkbox("program_zra_absolute")
-        self.program_zri_absolute = _ensure_checkbox("program_zri_absolute")
-        self.program_xt_absolute = _ensure_checkbox("program_xt_absolute")
-        self.program_zt_absolute = _ensure_checkbox("program_zt_absolute")
-        self.program_has_subspindle = _ensure_checkbox("program_has_subspindle")
-        self.program_park_sequential = _ensure_checkbox("program_park_sequential")
-        self.program_optional_stop_toolchange = _ensure_checkbox("program_optional_stop_toolchange")
-        self.program_preview_warnings = _ensure_checkbox("program_preview_warnings")
-
-        header: Dict[str, object] = {}
-        if self.program_npv:
-            header["npv"] = _combo_data(self.program_npv)
-        if self.program_unit:
-            header["unit"] = _combo_data(self.program_unit)
-        if self.program_shape:
-            header["shape"] = _combo_data(self.program_shape)
-
-        def _val(widget):
-            if widget is None:
-                return None
-            if hasattr(widget, "value") and callable(getattr(widget, "value")):
-                try:
-                    return float(widget.value())
-                except Exception:
-                    return None
-            if hasattr(widget, "text") and callable(getattr(widget, "text")):
-                t = widget.text().strip()
-                if not t:
-                    return None
-                try:
-                    return float(t.replace(",", "."))
-                except Exception:
-                    return None
-            return None
-
-        # Rohteilabmessungen / Spannmaße
-        header["xa"] = _val(self.program_xa)
-        header["xi"] = _val(self.program_xi)
-        header["za"] = _val(self.program_za)
-        header["zi"] = _val(self.program_zi)
-        header["zb"] = _val(self.program_zb)
-        header["w"] = _val(self.program_w)
-        header["l"] = _val(self.program_l)
-        header["n_edges"] = _val(self.program_n)
-        header["sw"] = _val(self.program_sw)
-
-        # Rückzug/Ebenen
-        header["retract_mode"] = (
-            str(_combo_data(self.program_retract_mode) or "").strip()
-            if self.program_retract_mode
-            else ""
-        )
-        header["xra"] = _val(self.program_xra)
-        header["xri"] = _val(self.program_xri)
-        header["zra"] = _val(self.program_zra)
-        header["zri"] = _val(self.program_zri)
-
-        # Absolute flags for retract planes stay available because roughing and
-        # safety moves still distinguish between work and machine references.
-        header["xra_absolute"] = bool(self.program_xra_absolute.isChecked()) if self.program_xra_absolute else False
-        header["xri_absolute"] = bool(self.program_xri_absolute.isChecked()) if self.program_xri_absolute else False
-        header["zra_absolute"] = bool(self.program_zra_absolute.isChecked()) if self.program_zra_absolute else False
-        header["zri_absolute"] = bool(self.program_zri_absolute.isChecked()) if self.program_zri_absolute else False
-        header["xt_absolute"] = bool(self.program_xt_absolute.isChecked()) if self.program_xt_absolute else False
-        header["zt_absolute"] = bool(self.program_zt_absolute.isChecked()) if self.program_zt_absolute else False
-
-        # Werkzeugwechsel-/Sicherheitspositionen
-        header["xt"] = _val(self.program_xt)
-        header["zt"] = _val(self.program_zt)
-        header["sc"] = _val(self.program_sc)
-        if getattr(self, "program_machine_profile", None):
-            header["machine_profile"] = _combo_data(self.program_machine_profile)
-        if getattr(self, "program_chuck_size", None):
-            header["chuck_size"] = _combo_data(self.program_chuck_size)
-        if getattr(self, "program_chuck_part_type", None):
-            header["chuck_part_type"] = _combo_data(self.program_chuck_part_type)
-        if getattr(self, "program_chuck_grip_mode", None):
-            header["chuck_grip_mode"] = _combo_data(self.program_chuck_grip_mode)
-        if getattr(self, "program_chuck_profile", None):
-            header["chuck_profile"] = _combo_data(self.program_chuck_profile)
-        header["chuck_no_go_x_min"] = _val(getattr(self, "program_chuck_x_min", None))
-        header["chuck_no_go_x_max"] = _val(getattr(self, "program_chuck_x_max", None))
-        header["chuck_no_go_z_limit"] = _val(getattr(self, "program_chuck_z_limit", None))
-        if getattr(self, "program_spindle_mode", None):
-            header["spindle_mode"] = _combo_data(self.program_spindle_mode)
-        header["spindle_max_rpm"] = _val(getattr(self, "program_spindle_max_rpm", None))
-        if getattr(self, "program_park_mode", None):
-            header["park_mode"] = _combo_data(self.program_park_mode)
-        if getattr(self, "program_toolchange_coords", None):
-            header["toolchange_coords"] = _combo_data(self.program_toolchange_coords)
-            toolchange_coords = str(header.get("toolchange_coords", "work") or "work").strip().lower()
-            header["xt_absolute"] = toolchange_coords != "machine"
-            header["zt_absolute"] = toolchange_coords != "machine"
-        if getattr(self, "program_park_coords", None):
-            header["park_coords"] = _combo_data(self.program_park_coords)
-        else:
-            xt_abs = bool(header.get("xt_absolute", True))
-            zt_abs = bool(header.get("zt_absolute", True))
-            header["toolchange_coords"] = "work" if xt_abs and zt_abs else "machine"
-            header["park_coords"] = header.get("toolchange_coords", "work")
-        header["park_x"] = _val(getattr(self, "program_park_x", None))
-        header["park_z"] = _val(getattr(self, "program_park_z", None))
-        header["park_sequential"] = bool(self.program_park_sequential.isChecked()) if self.program_park_sequential else False
-        header["optional_stop_toolchange"] = bool(self.program_optional_stop_toolchange.isChecked()) if self.program_optional_stop_toolchange else False
-        header["preview_warnings"] = bool(self.program_preview_warnings.isChecked()) if self.program_preview_warnings else False
-
-        if self.program_name:
-            header["program_name"] = self.program_name.text().strip()
-
-        # Drehzahlbegrenzung (S3 nur, wenn Gegenspindel aktiv)
-        header["has_subspindle"] = bool(self.program_has_subspindle.isChecked()) if self.program_has_subspindle else False
-        header["s1_max"] = float(self.program_s1.value()) if self.program_s1 else 0.0
-        if header["has_subspindle"]:
-            header["s3_max"] = float(self.program_s3.value()) if self.program_s3 else 0.0
-        else:
-            header["s3_max"] = 0.0
-
-        cached = getattr(self, "_program_header_cache", None)
-        if isinstance(cached, dict):
-            merged = dict(cached)
-            for key, value in header.items():
-                if value is None:
-                    continue
-                if isinstance(value, str) and value == "":
-                    continue
-                merged[key] = value
-            header = merged
-
-        self._program_header_cache = dict(header)
-        return header
+        return collect_program_header(self)
 
     def _tool_change_position_lines(self, header: Dict[str, object]) -> List[str]:
         """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT)."""
@@ -4169,128 +3668,7 @@ class HandlerClass:
         return lines
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
-        table = self.contour_segments
-        if table is None:
-            return []
-
-        segments: List[Dict[str, object]] = []
-        for row in range(table.rowCount()):
-            mode_item = table.item(row, 0)
-            x_item = table.item(row, 1)
-            z_item = table.item(row, 2)
-            edge_item = table.item(row, 3)
-            size_item = table.item(row, 4)
-            # Edge type can be a QComboBox cell widget (preferred) or a text item
-            edge_widget = table.cellWidget(row, 3)
-            arc_side_item = table.item(row, 5)
-            arc_side_widget = table.cellWidget(row, 5)
-            feature_widget = table.cellWidget(row, 6)
-            thread_widget = table.cellWidget(row, 7)
-            norm_widget = table.cellWidget(row, 8)
-            side_widget = table.cellWidget(row, 9)
-            orient_widget = table.cellWidget(row, 10)
-
-            mode_raw = mode_item.text().strip().lower() if mode_item else "xz"
-            if mode_raw.startswith("xz"):
-                mode = "xz"
-            elif mode_raw.startswith("x"):
-                mode = "x"
-            elif mode_raw.startswith("z"):
-                mode = "z"
-            else:
-                mode = "xz"
-
-            # Edge type: prefer stable combo data IDs.
-            edge_txt = ""
-            try:
-                if edge_widget is not None and hasattr(edge_widget, "currentData"):
-                    edge_txt = str(edge_widget.currentData() or "").strip().lower()
-                elif edge_item is not None and edge_item.text():
-                    edge_txt = edge_item.text().strip().lower()
-            except Exception:
-                edge_txt = ""
-            if not edge_txt:
-                edge_txt = "none"
-            
-            if edge_txt in ("chamfer", "fase"):
-                edge = "chamfer"
-            elif edge_txt == "radius":
-                edge = "radius"
-            else:
-                edge = "none"
-            
-
-            # Bogen-Seite (Auto/Außen/Innen) – nur relevant bei Radius
-            arc_txt = ""
-            try:
-                if arc_side_widget is not None and hasattr(arc_side_widget, "currentData"):
-                    arc_txt = str(arc_side_widget.currentData() or "").strip().lower()
-                elif arc_side_item is not None and arc_side_item.text():
-                    arc_txt = arc_side_item.text().strip().lower()
-            except Exception:
-                arc_txt = ""
-
-            arc_side = normalize_arc_side(arc_txt)
-
-            feature_type = "none"
-            try:
-                feature_txt = str(feature_widget.currentData() or "").strip().lower() if feature_widget is not None and hasattr(feature_widget, "currentData") else ""
-            except Exception:
-                feature_txt = ""
-            if feature_txt == "din_relief":
-                feature_type = "din_relief"
-
-            thread_size = ""
-            norm = ""
-            side = "external"
-            orientation = "end"
-            try:
-                if thread_widget is not None and hasattr(thread_widget, "currentData"):
-                    thread_size = str(thread_widget.currentData() or "").strip().upper()
-                if norm_widget is not None and hasattr(norm_widget, "currentData"):
-                    norm = str(norm_widget.currentData() or "").strip()
-                if side_widget is not None and hasattr(side_widget, "currentData"):
-                    side_txt = str(side_widget.currentData() or "").strip().lower()
-                    side = "internal" if side_txt == "internal" else "external"
-                if orient_widget is not None and hasattr(orient_widget, "currentData"):
-                    orient_txt = str(orient_widget.currentData() or "").strip().lower()
-                    orientation = "start" if orient_txt == "start" else "end"
-            except Exception:
-                pass
-
-            def _to_float(item):
-                try:
-                    txt = item.text().replace(",", ".")
-                    return float(txt)
-                except Exception:
-                    return 0.0
-
-            x_text = x_item.text().strip() if x_item and x_item.text() else ""
-            z_text = z_item.text().strip() if z_item and z_item.text() else ""
-
-            seg = {
-                "mode": mode,
-                "x": _to_float(x_item) if x_item else 0.0,
-                "z": _to_float(z_item) if z_item else 0.0,
-                "x_empty": x_text == "",
-                "z_empty": z_text == "",
-                "edge": edge,
-                "edge_size": _to_float(size_item) if size_item else 0.0,
-                "arc_side": arc_side,
-                "arc_side_raw": arc_txt,
-            }
-            if feature_type != "none":
-                seg["feature"] = {
-                    "feature_type": feature_type,
-                    "thread_size": thread_size,
-                    "norm": norm,
-                    "side": side,
-                    "internal": side == "internal",
-                    "orientation": orientation,
-                }
-            segments.append(seg)
-
-        return segments
+        return collect_contour_segments(self)
 
     def _write_contour_row(self, row: int, edge_text: str | None = None, edge_size: float | None = None, arc_text: str | None = None):
         """Schreibt Kante/Maß in die aktuelle Tabellenzeile und hält Typ/X/Z unberührt."""
@@ -4548,7 +3926,7 @@ class HandlerClass:
                 # (gleiche Regel wie _insert_loaded_operation(), LES-023). Ein
                 # bewusst individueller Kommentar bleibt unangetastet.
                 if _looks_like_generated_step_comment(op.params.get("comment")):
-                    op.params["comment"] = self._describe_operation(op, len(self.model.operations))
+                    update_auto_comment(op, self._describe_operation(op, len(self.model.operations)))
                 try:
                     self._mark_program_structure_dirty(operation_indices={len(self.model.operations) - 1})
                 except Exception:
@@ -4659,7 +4037,7 @@ class HandlerClass:
         # potenziell falschen Nummer. Ein bewusst individueller Kommentar ohne
         # nummerierte Vorsilbe bleibt dagegen erhalten (LES-023).
         if _looks_like_generated_step_comment(op.params.get("comment")):
-            op.params["comment"] = self._describe_operation(op, len(self.model.operations))
+            update_auto_comment(op, self._describe_operation(op, len(self.model.operations)))
         try:
             self._clear_dirty_operation(len(self.model.operations) - 1)
         except Exception:
