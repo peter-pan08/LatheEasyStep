@@ -40,21 +40,14 @@ def get_tool_number(params: Dict[str, object]) -> int:
 def get_param_float(params: Dict[str, object], keys: List[str], default: float | None = None) -> float | None:
     for key in keys:
         if key in params and params.get(key) not in (None, ""):
-            try:
-                value = float(params.get(key))
-            except (TypeError, ValueError):
-                continue
-            return finite_float(value, key)
+            return finite_float(params[key], key)
     return default
 
 
 def get_param_int(params: Dict[str, object], keys: List[str], default: int | None = None) -> int | None:
     for key in keys:
         if key in params and params.get(key) not in (None, ""):
-            try:
-                return int(float(params.get(key)))
-            except (TypeError, ValueError):
-                continue
+            return whole_number(params[key], key)
     return default
 
 

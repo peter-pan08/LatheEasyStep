@@ -8,7 +8,7 @@ from lathe_easystep_handler import ProgramModel, OpType, Operation
 def test_abspanen_finish_allowance_comments():
     m = ProgramModel()
     path = [(40.0, 0.0), (30.0, -5.0)]
-    params = {"mode": 0, "depth_per_pass": 1.0, "feed": 0.2, "tool": 1,
+    params = {"mode": 0, "depth_per_pass": 1.0, "feed": 0.2, "spindle": 1000.0, "tool": 1,
               "finish_allow_x": 0.5, "finish_allow_z": 0.25,
               "slice_strategy": 1}  # choose parallel X roughing
     op = Operation(OpType.ABSPANEN, params=params, path=path)

@@ -1,0 +1,263 @@
+{
+  "interpreter": "/usr/bin/rs274",
+  "results": [
+    {
+      "file": "css_clearance_Abdrehen.ngc",
+      "sha256": "a96c30a012df1a915c6199e4ec77c6cd70cabb4d5d77b54f34605e1140b06ef4",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "css_clearance_Einstich.ngc",
+      "sha256": "1cf69bf9d07f68cd4e745ab2229048199971dfb3eb091ddd542581bd08c04b6a",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "css_clearance_Gewinde.ngc",
+      "sha256": "40d385926fec7686c1d34f48992ec7b09b804d389227cb1ee4170f4b63bba3b5",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "css_clearance_Innen_Stufe.ngc",
+      "sha256": "34e4547a0fd65b19579aa551441ef6ca4f5574ab2c32010551c7739926e5e299",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "css_clearance_Planen.ngc",
+      "sha256": "487f94bea0b4fd2a77d912c9fe6d8a6d64bc8493675ea8d9c9818a00d9d556c7",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_forward_finish.ngc",
+      "sha256": "780dda5dc7b41c9abd3e95948c7b5c0bbd31379a1110a98d82565614420fd4d6",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_forward_finish_comp.ngc",
+      "sha256": "1d01921ad9dab8d3db2701d10fad42b21501e8828291e6a982a5af8bb46c68c2",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_forward_rough.ngc",
+      "sha256": "c0f6f0601df3c0f2f43298ef521290377f538d93ccaff355805cf3188795d71d",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_forward_rough_finish.ngc",
+      "sha256": "636ab5bac54e3b4ac83c137194c74c81e9d1dd5fdf823cb352c963806751f2d3",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_reverse_finish.ngc",
+      "sha256": "04a3ffae9ebc50c1ddeee19a0dc9d2ba7f761595a5ec69833a917419c25e1c07",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_reverse_finish_comp.ngc",
+      "sha256": "1d0a6cfda170d7c1ba2e222d4539a5570ab51de7d519901606439633e60e468c",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_reverse_rough.ngc",
+      "sha256": "405ec7abd7089b1e524b48090b93037e42e36e346cce48b458b15649d2a097f4",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cone_reverse_rough_finish.ngc",
+      "sha256": "1b5c129a38a286b33758ce336f5e8933be44e2bb48cad6e65c7d18d6362295f3",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_forward_finish.ngc",
+      "sha256": "7ee42a3ec4c65b3b5c44f97f4547e3b267e9321ced6bce58750361482a2ce30c",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_forward_finish_comp.ngc",
+      "sha256": "f84dbfc19160b9104ba57de9f653841457154f77f55aab1d2e62248b8b394f26",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_forward_rough.ngc",
+      "sha256": "eebbf4c561085d6bd5b6c49ef678ebf68dec8dd72e8cc94ab8ddd48479ad94c2",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_forward_rough_finish.ngc",
+      "sha256": "0981d318ff48ac23949f9b0cda86202a248ce74ef15646fbe97d421f28e327d1",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_reverse_finish.ngc",
+      "sha256": "074ba822ca0aca3df627c741b3fcc33539d25bcdc2ff5c1293b0309454505d03",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_reverse_finish_comp.ngc",
+      "sha256": "286d8f5482de1b783b49a7b2ebd4e57adbf0a10911dfb82b6f64f22b3d537c3a",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_reverse_rough.ngc",
+      "sha256": "77ead9e26dac6f4e7436dd784eb040bcff4f7cac5cf9f66203c11eb7ec2e8b5f",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_cylinder_reverse_rough_finish.ngc",
+      "sha256": "3062d3b99ae94179a55b65cdd95149a209e5f4bd547f0bd16bfa5de1e35e45b8",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_radius_forward_finish.ngc",
+      "sha256": "ecf63bded63c6e4f64e6395d31601b12ee2b4d515fd92a4fc62284664e984341",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_radius_forward_rough.ngc",
+      "sha256": "1b225e44f5928ebd5f27fca7c5bd7fcd5f31167ecb97136ed881153c4375656a",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_radius_forward_rough_finish.ngc",
+      "sha256": "8cb506658f0502dcd0b89f44b32bf7d9b864b595e05b0db4c41b8e410921cb58",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_radius_reverse_finish.ngc",
+      "sha256": "625f293df2d3131301e6bc30e656bcf8060d4e8e912640b8f69d779ee0db2236",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_radius_reverse_rough.ngc",
+      "sha256": "ad6d64d60ad7538a5e22f505943b6f0d328f106ec91cac85ddddd12704279fef",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_radius_reverse_rough_finish.ngc",
+      "sha256": "a559c0a36e4489eda43f8e89ac5a2f5e77c3990b6c6e958d44cfe3a6ba14e33b",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_step_forward_finish.ngc",
+      "sha256": "89b544c85deadd4428207ab959549930e9dfd9cb6452f564b307904b9af4bb7d",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_step_forward_rough.ngc",
+      "sha256": "72bfe4e754f5e6ad66c142b475a74bbcdb26536802a5491d8ede2c059fc2b458",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_step_forward_rough_finish.ngc",
+      "sha256": "e83e8c557a99fc4b97036705e9d566747803d4e5856881296c917b52d12fe50e",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_step_reverse_finish.ngc",
+      "sha256": "c947c01e9d66eb242ee3d0549cacee0abf7e552a974c1c3c437f724cfa022f6a",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_step_reverse_rough.ngc",
+      "sha256": "4310ecf96a1c0a9e6071c678eee23ee19ea36dbc3d7946b5edf2ec63c7c9468c",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "inside_step_reverse_rough_finish.ngc",
+      "sha256": "5314e728c32dea15e253503b85ed08766487f2d97a13f324237b8d064007a086",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "outside_arc_parallel_x.ngc",
+      "sha256": "0212692bfc5a21e559f7eece2e5d51db5f40f543cd5b944bff4f83c6d7e9fc02",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "outside_arc_parallel_z.ngc",
+      "sha256": "b0a10de1b26fac0c39bd0a1cdf5b698de71f25db9b644e7b9263166019d226d8",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "same_tool_inside.ngc",
+      "sha256": "5248cf4959d4ec422451f94ec2d1a0173d2dbb379a9df4dc5655dc2454f53215",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "same_tool_outside.ngc",
+      "sha256": "e167fe69fe2d1d9dc201eb9fdf81f97e7bf704274dc1ff8d98924add8c82a38c",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "separate_finish_auto.ngc",
+      "sha256": "c170c507afc3fb9beea751ee2c3d94f029fbc2168afeca0cb5925d566fbaf8f4",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "separate_finish_prefer_explicit.ngc",
+      "sha256": "e6739551da906275cd69efb84deb386b85596de23dbc1d0cafaef869c487d2e0",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "thread_relief_inside_left.ngc",
+      "sha256": "8612d0b165675015f8986221b4103f8b65a30c55fc9777e6e5061ba22ace0908",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "thread_relief_inside_right.ngc",
+      "sha256": "8fe81a7664f1f8b0d6582c188be55201d9cf7917e3b29ed7bf65ad4fffa31a74",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "thread_relief_outside_left.ngc",
+      "sha256": "e98e66ceac57f5f035d194ff060dcfbdf9a3a1db3aa9ad9d792108d86620948b",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "thread_relief_outside_right.ngc",
+      "sha256": "a8ceeb55ce29db8f76bb668a213dada5cf0c13148ff9f6a55bd9a6a5c03120d7",
+      "ok": true,
+      "program_end": true
+    }
+  ]
+}

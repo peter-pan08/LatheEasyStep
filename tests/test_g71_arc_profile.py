@@ -33,6 +33,7 @@ def test_g71_profile_contains_arc_for_fillet():
             "slice_strategy": "parallel_z",
             "depth_per_pass": 1.0,
             "feed": 0.2,
+            "spindle": 1000.0,
             "tool": 1,
             "contour_name": "test_contour",
         },
@@ -152,7 +153,7 @@ def test_g71_monotonic_increasing_x_allowed():
     m.operations = [
         Operation(
             OpType.ABSPANEN,
-            {"mode": 0, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.2, "tool": 1},
+            {"mode": 0, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.2, "spindle": 1000.0, "tool": 1},
             path=path,
         )
     ]

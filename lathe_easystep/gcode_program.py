@@ -438,7 +438,11 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             break
     if first_tool > 0 and int(float(settings.get("_current_tool", 0))) == 0:
         pre_tool_lines: List[str] = []
-        append_tool_and_spindle(pre_tool_lines, first_tool, None, settings)
+        # Reine Werkzeugwechsel-Positionierung ohne Drehzahlkontext - die
+        # eigentliche, operationsspezifische Drehzahl wird gleich danach durch
+        # den echten append_tool_and_spindle()-Aufruf der ersten Operation
+        # gesetzt. Hier darf das Fehlen einer Drehzahl nicht blockieren.
+        append_tool_and_spindle(pre_tool_lines, first_tool, None, settings, require_spindle=False)
         main_flow_lines.extend(pre_tool_lines)
     main_flow_lines.append("")
 
@@ -455,7 +459,11 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         op_tool = get_tool_number(op.params)
         if op_tool > 0:
             tool_lines: List[str] = []
-            append_tool_and_spindle(tool_lines, op_tool, None, settings)
+            # Reine Werkzeugwechsel-Positionierung vor dem Operationskoerper -
+            # die eigentliche, operationsspezifische Drehzahl (inkl. CSS-
+            # Parametern) wird gleich danach vom jeweiligen Operations-
+            # Generator selbst per append_tool_and_spindle() gesetzt.
+            append_tool_and_spindle(tool_lines, op_tool, None, settings, require_spindle=False)
             if tool_lines:
                 main_flow_lines.extend(tool_lines)
         if op.op_type == OpType.ABSPANEN:

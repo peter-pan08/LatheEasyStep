@@ -158,7 +158,7 @@ def test_parallel_z_respects_configured_retracts_via_generate():
     # Test with non-monotonic X to force move-based roughing where retracts are visible.
     m = ProgramModel()
     path = [(40.0, 2.0), (25.0, -3.0), (30.0, -5.0), (25.0, -7.0)]
-    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15, "tool": 1}, path=path)
+    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15, "spindle": 1000.0, "tool": 1}, path=path)
     m.add_operation(op)
     m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 42.0, "zra": 3.0, "xra_absolute": True, "zra_absolute": True}
     g = "\n".join(m.generate_gcode())
@@ -218,7 +218,7 @@ def test_parallel_z_retract_default_incremental_behaviour():
     # Use non-monotonic X to force move-based roughing.
     m = ProgramModel()
     path = [(40.0, 2.0), (25.0, -3.0), (30.0, -5.0), (25.0, -7.0)]
-    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15, "tool": 1}, path=path)
+    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "depth_per_pass": 1.0, "feed": 0.15, "spindle": 1000.0, "tool": 1}, path=path)
     m.add_operation(op)
     # configure a small xra value which under absolute interpretation would be near X=2.0
     m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 2.0, "zra": 5.0}
@@ -247,7 +247,7 @@ def test_parallel_x_skips_degenerate_intervals():
 def test_abspanen_respects_program_clearance_and_retract():
     # Use non-monotonic X to force move-based roughing
     path = [(40.0, 0.0), (30.0, -5.0), (35.0, -7.0), (30.0, -10.0)]
-    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2, "tool": 1}, path=path)
+    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2, "spindle": 1000.0, "tool": 1}, path=path)
     m = ProgramModel()
     m.add_operation(op)
     m.program_settings = {"xt": 150.0, "zt": 300.0,
@@ -266,7 +266,7 @@ def test_abspanen_respects_program_clearance_and_retract():
 def test_parallel_x_retract_default_incremental_behaviour():
     # Use non-monotonic X to force move-based roughing (X goes 40->30->35->25)
     path = [(40.0, 0.0), (30.0, -5.0), (35.0, -7.0), (25.0, -10.0)]
-    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2, "tool": 1}, path=path)
+    op = Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "depth_per_pass": 2.0, "feed": 0.2, "spindle": 1000.0, "tool": 1}, path=path)
     m = ProgramModel()
     m.add_operation(op)
     m.program_settings = {"xt": 150.0, "zt": 300.0, "xa": 40.0, "xra": 2.0, "zra": 5.0}  # Standard: inkrementell
@@ -310,7 +310,7 @@ def test_program_unit_inch_emits_g20():
     m.operations = [
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(20.0, 0.0), (18.0, -2.0)],
         )
     ]
@@ -361,7 +361,7 @@ def test_global_safe_retract_respects_incremental_flags():
     m.operations = [
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(20.0, 0.0), (18.0, -2.0)],
         )
     ]
@@ -382,7 +382,7 @@ def test_turn_uses_simultaneous_safe_retract():
     m.operations = [
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(20.0, 0.0), (18.0, -2.0)],
         )
     ]
@@ -431,7 +431,7 @@ def test_drill_uses_z_then_x_safe_retract():
     m.operations = [
         Operation(
             OpType.DRILL,
-            {"tool": 1, "feed": 0.12, "safe_z": 2.0, "mode": 0},
+            {"tool": 1, "feed": 0.12, "safe_z": 2.0, "mode": 0, "spindle": 1000.0},
             path=[(10.0, 0.0), (10.0, -5.0)],
         )
     ]
@@ -447,7 +447,7 @@ def test_turn_inside_stock_falls_back_to_x_then_z_retract():
     m.operations = [
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(30.0, 0.0), (28.0, -10.0)],
         )
     ]
@@ -478,7 +478,7 @@ def test_turn_outside_stock_keeps_simultaneous_retract():
     m.operations = [
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(45.0, 2.0), (46.0, 3.0)],
         )
     ]
@@ -501,12 +501,16 @@ def test_turn_in_chuck_nogo_falls_back_to_x_then_z_retract():
     m.operations = [
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(30.0, 0.0), (40.0, -50.0)],
         )
     ]
     m.program_settings = {"xt": 150.0, "zt": 300.0,
-        "xra": 60.0,
+        # xra MUSS die Futter-Sperrzone (X20..80) tatsaechlich verlassen -
+        # mit xra=60 (innerhalb der Zone) wuerde der zweite Rueckzugsschritt
+        # (Z-Zwischenzug bei konstantem X) die gesamte restliche Z-Strecke
+        # durch die Sperrzone fuehren, siehe LES-001/validate_chuck_segment.
+        "xra": 90.0,
         "zra": 6.0,
         "xra_absolute": True,
         "zra_absolute": True,
@@ -517,7 +521,7 @@ def test_turn_in_chuck_nogo_falls_back_to_x_then_z_retract():
     }
     lines = m.generate_gcode()
     step_lines = lines[lines.index("(Step 1: turn)"):]
-    assert "G0 X60.000 Z6.000" not in step_lines
-    idx_x = step_lines.index("G0 X60.000")
+    assert "G0 X90.000 Z6.000" not in step_lines
+    idx_x = step_lines.index("G0 X90.000")
     idx_z = step_lines.index("G0 Z6.000")
     assert idx_x < idx_z

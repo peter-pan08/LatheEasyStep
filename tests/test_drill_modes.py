@@ -13,6 +13,7 @@ import re
 import sys
 import os
 import math
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import build_drill_path
@@ -101,13 +102,11 @@ class TestDrillG81:
         assert "R2.000" in cycle_line
         assert "F0.120" in cycle_line
 
-    def test_g81_is_default_for_unknown_mode(self):
-        """Unknown mode index should fallback to G81."""
+    def test_unknown_mode_is_rejected(self):
+        """Corrupt mode data must not silently select a different cycle."""
         op = _make_drill_op(mode=99)
-        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
-        cycle_line = _get_cycle_line(lines)
-        assert cycle_line is not None
-        assert cycle_line.startswith("G81")
+        with pytest.raises(ValueError, match="Bohrmodus"):
+            gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
 
     def test_g81_for_string_mode(self):
         """Mode passed as string 'G81' should also work."""
@@ -267,16 +266,35 @@ class TestDrillApproachRetract:
                 z_val = float(z_match.group(1))
                 assert z_val >= 5.0 - 0.01, f"Approach Z={z_val} is below safe_z=5.0"
 
-    def test_retract_to_safe_z_after_g80(self):
-        """After G80, tool must retract to safe_z before G18 restore."""
+    def test_no_redundant_retract_when_r_already_equals_safe_z(self):
+        """Realer Bugreport (LES-031): LinuxCNC kehrt nach dem Zyklus (G80)
+        auf die Rueckzugsebene R zurueck, nicht auf die Z-Position vor dem
+        Zyklus (real gegen rs274 verifiziert: G99-Standardmodus, kein G98).
+        Ohne explizites 'retract' faellt R auf safe_z zurueck - das
+        Werkzeug steht nach G80 also bereits auf safe_z. Ein zusaetzliches
+        G0 Z<safe_z> davor war eine bedeutungslose Nullbewegung."""
         op = _make_drill_op(mode=0, safe_z=3.0)
         lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
+        cycle_line = _get_cycle_line(lines)
+        assert "R3.000" in cycle_line
         g80_idx = next(i for i, l in enumerate(lines) if l.strip() == "G80")
         g18_idx = next(i for i, l in enumerate(lines) if l.strip() == "G18")
-        # Between G80 and G18 there should be a G0 Z retract
+        between = lines[g80_idx + 1:g18_idx]
+        assert not [l for l in between if l.startswith("G0") and "Z" in l]
+
+    def test_retracts_to_safe_z_when_explicit_retract_plane_is_taller(self):
+        """Ist 'retract' bewusst hoeher als safe_z gesetzt, steht das
+        Werkzeug nach G80 auf R (retract), nicht auf safe_z - hier ist die
+        Freifahrt auf safe_z eine echte, notwendige Bewegung."""
+        op = _make_drill_op(mode=0, safe_z=3.0, retract=8.0)
+        lines = gcode_for_drill(op, settings={"xt": 150.0, "zt": 300.0})
+        cycle_line = _get_cycle_line(lines)
+        assert "R8.000" in cycle_line
+        g80_idx = next(i for i, l in enumerate(lines) if l.strip() == "G80")
+        g18_idx = next(i for i, l in enumerate(lines) if l.strip() == "G18")
         between = lines[g80_idx + 1:g18_idx]
         retract_lines = [l for l in between if l.startswith("G0") and "Z" in l]
-        assert len(retract_lines) >= 1, "No retract G0 Z between G80 and G18"
+        assert retract_lines == ["G0 Z3.000"]
         z_match = re.search(r"Z([+-]?\d+\.?\d*)", retract_lines[0])
         assert z_match
         assert abs(float(z_match.group(1)) - 3.0) < 0.01

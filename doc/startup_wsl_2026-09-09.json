@@ -1,0 +1,67 @@
+{
+  "scope": "isolated Qt UI construction; no HandlerClass initialization, HAL, tooltable or visible panel",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+  "python": "3.13.5",
+  "samples_seconds": [
+    {
+      "imports_and_qapplication": 3.0356202370000007,
+      "shell_ui": 0.11547408799999914,
+      "eight_tab_uis": 0.17443116799999991,
+      "advanced_widgets": 0.05846135700000055,
+      "translation_source_map": 0.09871261700000034,
+      "polish_and_pending_events": 0.0015955349999998703,
+      "total_measured": 3.4842950020000005,
+      "process_wall_time": 3.703194379
+    },
+    {
+      "imports_and_qapplication": 1.0110594810000002,
+      "shell_ui": 0.030150017000000418,
+      "eight_tab_uis": 0.1746292099999991,
+      "advanced_widgets": 0.0534664900000017,
+      "translation_source_map": 0.0907245139999997,
+      "polish_and_pending_events": 0.0021817999999989013,
+      "total_measured": 1.362211512,
+      "process_wall_time": 1.5652729549999993
+    },
+    {
+      "imports_and_qapplication": 1.117231133999999,
+      "shell_ui": 0.02961392700000154,
+      "eight_tab_uis": 0.17689808099999915,
+      "advanced_widgets": 0.05609450000000038,
+      "translation_source_map": 0.09611148299999961,
+      "polish_and_pending_events": 0.001545359999999718,
+      "total_measured": 1.4774944849999994,
+      "process_wall_time": 1.6734465380000003
+    },
+    {
+      "imports_and_qapplication": 0.879527959999999,
+      "shell_ui": 0.023179058000000197,
+      "eight_tab_uis": 0.13639590300000037,
+      "advanced_widgets": 0.039546309000000335,
+      "translation_source_map": 0.06934085999999873,
+      "polish_and_pending_events": 0.0015604880000008592,
+      "total_measured": 1.1495505779999995,
+      "process_wall_time": 1.3524398039999994
+    },
+    {
+      "imports_and_qapplication": 0.8479150820000001,
+      "shell_ui": 0.02327824499999842,
+      "eight_tab_uis": 0.14360533700000033,
+      "advanced_widgets": 0.10095835799999975,
+      "translation_source_map": 0.0588625700000005,
+      "polish_and_pending_events": 0.001934389000000536,
+      "total_measured": 1.1765539809999996,
+      "process_wall_time": 1.342767599
+    }
+  ],
+  "median_seconds": {
+    "imports_and_qapplication": 1.0110594810000002,
+    "shell_ui": 0.02961392700000154,
+    "eight_tab_uis": 0.17443116799999991,
+    "advanced_widgets": 0.05609450000000038,
+    "translation_source_map": 0.0907245139999997,
+    "polish_and_pending_events": 0.0015955349999998703,
+    "total_measured": 1.362211512,
+    "process_wall_time": 1.5652729549999993
+  }
+}

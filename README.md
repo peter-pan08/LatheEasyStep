@@ -2,7 +2,7 @@ Lathe EasyStep
 ==============
 
 Current Version: `0.7.0+unreleased`
-Status Date: `2026-07-24`
+Status Date: `2026-09-09`
 Primary Test Branch: `dev`
 
 Deutsch
@@ -26,7 +26,7 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.7.0 + Unreleased, 24. Juli 2026
+Stand: Version 0.7.0 + Unreleased (Entwicklung fuer 0.8.0), 9. September 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -40,7 +40,7 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
@@ -379,11 +379,11 @@ Aktuelle Reihenfolge:
 
 1. sichere Anfahrt zwischen aufeinanderfolgenden Operationen
 2. Innen-Schruppen und Innen-Schlichten an weiteren Konturformen verifizieren
-   (G71-Zyklus fuer Innenkonturen behoben, Backplot-/Realverifikation offen)
+   (Innenbearbeitung verwendet ausgeschriebene Bewegungen; Backplot-/Realverifikation offen)
 3. lokale DIN-Freistichgeometrie und gemeinsame Vorschau-/G-Code-Primitive
 4. G96/G97 pro Operation ist umgesetzt (Planen/Abspanen/Einstich/Gewinde);
-   offen bleibt die sichere CSS-Umschaltung (G97-Anfahrt, G96 erst an
-   Bearbeitungsposition) und die LinuxCNC-Referenzmatrix
+   G97-Anfahrt und verzoegertes G96 sind implementiert; offen bleiben
+   vollstaendige Modalsequenz und LinuxCNC-Abnahme
 5. anschliessend Handler-, UI-, Sprach- und Modalarchitektur konsolidieren
 
 ## Regressionstests und Smoke-Test
@@ -407,9 +407,9 @@ Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
 
 Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
-- `emit_approach()` kann bei gesetztem `_is_at_safe` einen neuen Zielpunkt noch direkt diagonal anfahren
+- Gemeinsame Anfahrt ist achsweise; vollstaendige Rohteil-/Werkzeughuellenpruefung und erste Freifahrt bleiben offen
 - Innen-Schruppen, Innenstufen, Innenkonen, Innenradien und Innenfreistiche brauchen weitere Realtests
-- lokale DIN-Freistiche funktionieren noch nicht an beliebigen Segmenten einer laengeren Kontur
+- Lokale DIN-Freistiche funktionieren an beliebigen Segmenten; Normwerte und neue Fahrwege brauchen weitere Verifikation
 - reale Maschinen- und Kollisionsfaelle muessen weiterhin per Backplot und Trockenlauf verifiziert werden
 
 ## Aktuelle Modulstruktur
@@ -443,7 +443,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.7.0 + Unreleased, July 24, 2026.
+Current documented state: Version 0.7.0 + Unreleased (development toward 0.8.0), September 9, 2026.
 
 The project is still under active development, but it is no longer just an
 early prototype:
@@ -453,7 +453,7 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current development baseline is validated with `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped`
+- the current development baseline is validated with `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 
@@ -605,12 +605,12 @@ Current order:
 
 1. make operation-to-operation approach moves safe
 2. verify internal roughing and finishing on additional contour forms
-   (G71 cycle for internal contours fixed, backplot/real-machine
+   (internal machining uses explicit moves; backplot/real-machine
    verification still open)
 3. complete local DIN-relief geometry and shared preview/G-code primitives
 4. per-operation G96/G97 is implemented (facing/turning/parting/threading);
-   still open: safe CSS switching (approach on G97, activate G96 only at
-   the cutting position) and the LinuxCNC reference matrix
+   G97 approach and deferred G96 are implemented; the complete modal
+   sequence and LinuxCNC acceptance remain open
 5. then consolidate handler, UI, translation and modal-state architecture
 
 ## Regression and Smoke Test
@@ -634,9 +634,9 @@ The checked-in reference programs under `ngc/` currently cover:
 
 The current state is usable, but not yet technically complete.
 
-- `emit_approach()` can still emit a direct diagonal target move when `_is_at_safe` is set
+- Shared approaches use separate axis moves; full stock/tool-envelope checks and initial clearance remain open
 - internal steps, tapers, radii and reliefs need additional real-machine verification
-- local DIN reliefs do not yet work on arbitrary segments inside longer contours
+- Local DIN reliefs work at arbitrary segments; norm data and new toolpaths still require verification
 - real-machine clearance and collision behaviour still require backplot and dry-run verification
 
 
@@ -646,3 +646,68 @@ regressionen sind umgesetzt. Planradius, Innenaufmass, Eingabevalidierung
 und gemeinsame Anfahrt wurden erweitert. Die neuen Fahrwege sind noch
 nicht mit LinuxCNC-Parser, Backplot und Maschine abgenommen; offene P0-
 Punkte bleiben Releaseblocker. [Details und Grenzen](doc/VERIFICATION_2026-09-08.md).
+
+Aktueller Pruefstand 2026-09-09: 524 Stub- und 44 Real-Qt-Tests bestanden;
+elf NGC-Referenzen mit 88 statischen Checks. Neu: CSS-Wechsel und Innenradius.
+Bohrparameter und Zahlenleser strenger validiert. LinuxCNC-Parser: elf
+Referenzen und 30 Matrixfaelle bestanden; Backplot/Maschinenabnahme offen.
+[Umfang und verbleibende Grenzen](doc/VERIFICATION_2026-09-09.md).
+
+WSL-Fortsetzung 2026-09-09: LinuxCNC-Interpreterpruefung erfolgreich fuer
+elf Referenzen und 30 Matrixprogramme. Nichtmonotone Boegen vor G71/G72
+abweisen; primitive Konturboegen auch beim expliziten Schlichten erhalten.
+[Interpreterbericht und Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+LES-005 Teilabschluss: Innen-Schlichtrueckzug radial vor axial, G40-Abwahl
+mit geprueftem Freiraum. 524 Stub-/44 Qt-Tests und 11 Referenzen/30 Matrixfaelle
+im Interpreter bestanden. [Details und Grenzen](doc/LES005_INNEN_RUECKZUG_2026-09-09.md).
+
+Review nach Unterbrechung 2026-09-09: Zwischenzeitliche Erweiterungen
+beibehalten; explizite Schlichtpraeferenz und CSS-/G76-Ausgaberundung
+korrigiert. Aktuell 563 Stub-/44 Qt-Tests und elf Referenzen/37 Matrixfaelle
+im Interpreter bestanden. LES-013 bleibt fuer Durchmesserbewertung,
+zyklusinterne Bewegungen und reale Abnahmen offen; fruehere pauschale
+Abschlussaussagen sind damit ersetzt.
+[Details und Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+Fortsetzung LES-037/001/006: vier Gewindefreistichfaelle (innen/aussen,
+rechts/links) und zwei Schruppen-/Schlichten-Folgen mit identischem Werkzeug
+unter rs274 bestanden. Zu wenig Konturstrecke blockiert in allen vier
+Freistichvarianten den Export; Konturverlaengerung verschiebt den Freistich
+nicht. Aktuell 573 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle.
+WSLg/AXIS sind erreichbar; grafischer Backplot und reale Abnahme bleiben offen.
+[Pruefbericht](doc/linuxcnc_2026-09-09/README.md).
+
+
+LES-040/028, Einstichvalidierung 2026-09-09: Vorschuebe, Zustellung,
+Werkzeug-/Nutbreite und Ueberdeckung werden mit den tatsaechlich an o220
+uebergebenen drei Nachkommastellen geprueft. Start/Ende duerfen nach
+Rundung nicht zusammenfallen. Spanbruchanzahl muss ganzzahlig und
+nichtnegativ sein. Fuenf zuvor fehlschlagende Regressionen bestanden.
+Aktuell 578 Stub-/44 Qt-Tests, keine Skips; elf Referenzen und 43
+Matrixfaelle unter rs274 sowie 88 statische Checks bestanden.
+Referenzausgabe unveraendert. Dies ist keine vollstaendige Abnahme aller
+Einstich-/Abstichvarianten. Keilnut erzeugt derzeit wegen der expliziten
+Makro-Sperre in gcode_keyway.py keinen G-Code; eine eigenstaendige
+Implementierung und LinuxCNC-Abnahme bleiben offen.
+
+LES-027 Teilstand 2026-09-09: isolierter Qt-Startbenchmark mit frischen
+Prozessen vorhanden. UI-Ausschnitt im Median 0.368 s unter Windows und
+1.362 s unter WSL, keine Reproduktion der gemeldeten >20 s. Neun
+nachgelagerte Panel-Startaufgaben erhalten eigene Zeitmarken. Reale
+Ursache, Bedienbereitschaft und Embedded-/Standalone-Vergleich bleiben offen.
+[Messumfang, Rohdaten und naechster Nachweis](doc/STARTUP_2026-09-09.md).
+
+
+LES-028/032 Teilstand 2026-09-09: Radiuskorrektur lehnt negative Radien,
+nicht darstellbare Schneidendurchmesser sowie explizit ungueltige
+Werkzeugorientierungen ab. Q/L wird ganzzahlig in 0..9 validiert, statt
+Dezimalwerte abzuschneiden oder bei defekten Angaben still ohne Korrektur
+weiterzulaufen. G41.1/G42.1 darf keinen auf null gerundeten D-Wert ausgeben.
+Gueltige Zahlenstrings bleiben kompatibel. Fehlende Werkzeugdaten bzw.
+fehlendes Q und Radius null behalten das bisherige Verhalten ohne Korrektur;
+eine allgemeine Pflicht fuer vollstaendige Werkzeugtabellen ist nicht umgesetzt.
+Neun Fehlerfaelle vorher reproduziert, elf neue Regressionen bestanden.
+Aktuell 589 Stub-/44 Qt-Tests, 88 statische Checks sowie elf Referenzen und
+43 Matrixfaelle unter rs274 bestanden; Referenzausgabe unveraendert.
+Werkzeughuellen, Schneidenlaenge, physische Eignung und reale Abnahme bleiben offen.

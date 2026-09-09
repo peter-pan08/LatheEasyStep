@@ -19,7 +19,7 @@ def test_no_redundant_g0_when_finish_contour_already_ends_at_safe_z():
     m.operations = [
         Operation(
             OpType.ABSPANEN,
-            {"mode": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.15, "tool": 1},
+            {"mode": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.15, "spindle": 1000.0, "tool": 1},
             path=path,
         )
     ]
@@ -38,7 +38,7 @@ def test_retract_still_emitted_when_finish_contour_ends_elsewhere():
     m.operations = [
         Operation(
             OpType.ABSPANEN,
-            {"mode": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.15, "tool": 1},
+            {"mode": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.15, "spindle": 1000.0, "tool": 1},
             path=path,
         )
     ]

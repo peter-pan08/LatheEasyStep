@@ -277,7 +277,9 @@ def generate_groove_gcode(
     f_sweep = abs(get_param_float(p, ["F_sweep", "f_sweep", "sweep_feed"], f_plunge) or 0.0)
     finish = abs(get_param_float(p, ["finish", "fin"], 0.0) or 0.0)
     chip_amp = abs(get_param_float(p, ["chip_amp", "camp"], 0.0) or 0.0)
-    chip_n = int(round(get_param_float(p, ["chip_n", "cn"], 0.0) or 0.0))
+    chip_n = get_param_int(p, ["chip_n", "cn"], 0)
+    if chip_n < 0:
+        raise ValueError("GROOVE: Spanbruchanzahl darf nicht negativ sein.")
 
     if mode == 0:
         step_a *= 2.0
@@ -291,6 +293,15 @@ def generate_groove_gcode(
         if lage == 1:
             validate_internal_x_limit(settings, [a_start, a_end], op_label="Inneneinstich")
 
+    # Validate the values actually passed to o220, after diameter conversion
+    # and three-decimal formatting. Positive inputs can otherwise become zero.
+    wtool, wnut, step_a, overlap, f_plunge, f_sweep = (
+        float(f"{value:.3f}") for value in
+        (wtool, wnut, step_a, overlap, f_plunge, f_sweep)
+    )
+    if min(f_plunge, f_sweep) <= 0:
+        raise ValueError("GROOVE: Vorschuebe muessen auch nach Ausgaberundung positiv sein.")
+
     # Diese Pruefungen verhindern degenerierte Zyklusparameter, die im o220-Zyklus
     # sonst zu einer Nullbewegung und damit zu einer Endlosschleife fuehren wuerden.
     if wtool <= 0.0:
@@ -299,6 +310,8 @@ def generate_groove_gcode(
         raise ValueError("GROOVE: Nutbreite muss groesser als 0 sein.")
     if step_a <= 0.0:
         raise ValueError("GROOVE: Zustellung pro Schnitt muss groesser als 0 sein.")
+    if float(f"{a_start:.3f}") == float(f"{a_end:.3f}"):
+        raise ValueError("GROOVE: Start und Ende fallen nach Ausgaberundung zusammen.")
     if wtool > wnut + 0.0001:
         raise ValueError("GROOVE: Werkzeug ist breiter als die Nut.")
     step_w = wtool - overlap

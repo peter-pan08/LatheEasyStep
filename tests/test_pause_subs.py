@@ -40,7 +40,7 @@ def test_abspanen_rough_includes_step_line_sub_and_call():
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # enable Parallel X slicing so roughing occurs and calls are generated
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 0.1, "depth_per_pass": 0.5, "feed": 0.15, "slice_strategy": 1, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 0.1, "depth_per_pass": 0.5, "feed": 0.15, "slice_strategy": 1, "spindle": 1000.0, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     m.program_settings = RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
     assert "o<step_line_pause> sub" in g
@@ -55,7 +55,7 @@ def test_abspanen_rough_without_slicing_aborts_generation():
     durchgeht."""
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "spindle": 1000.0, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     m.program_settings = RETRACT_SETTINGS
     with pytest.raises(ValueError, match="keinen einzigen Schnitt"):
         m.generate_gcode()
@@ -64,7 +64,7 @@ def test_abspanen_rough_without_slicing_aborts_generation():
 def test_abspanen_finish_suppresses_step_line():
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 1, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 1, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "spindle": 1000.0, "tool": 1}, path=[(0.0, 0.0), (10.0, -2.0)])]
     m.program_settings = RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
     assert "o<step_line_pause> sub" not in g
@@ -82,7 +82,7 @@ def test_mixed_ops_only_includes_needed_subs():
             "feed": 0.2, "spindle": 1300.0, "tool": 1,
             "edge_type": 0, "edge_size": 0.0, "coolant": False
         }),
-        Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "tool": 1, "slice_strategy": "parallel_z"}, path=[(0.0, 0.0), (10.0, -2.0)])
+        Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "spindle": 1000.0, "tool": 1, "slice_strategy": "parallel_z"}, path=[(0.0, 0.0), (10.0, -2.0)])
     ]
     m.program_settings = RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())

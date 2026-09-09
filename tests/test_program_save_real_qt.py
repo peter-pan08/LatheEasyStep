@@ -41,3 +41,37 @@ def test_radius_real_widgets_program_save_load_roundtrip(tmp_path):
     edge.setItemText(edge.currentIndex(), "Round corner")
     assert edge.currentData() == "radius"
     root.close()
+
+
+def test_mixed_css_program_real_widgets_save_load(tmp_path):
+    from lathe_easystep.ui_operations import load_operation_params_to_form
+    from lathe_easystep.ui_advanced import ensure_advanced_widgets
+    from lathe_easystep.model import OpType
+
+    root = uic.loadUi(str(Path(__file__).resolve().parents[1] / "lathe_easystep.ui"))
+    handler = SimpleNamespace(root_widget=root, _split_tabs_loaded=False, _log=lambda *a, **k: None)
+    load_split_tab_uis(handler)
+    handler.w = root
+    handler._get_widget_by_name = lambda name: root.findChild(QtWidgets.QWidget, name)
+    ensure_advanced_widgets(handler)
+    combo = handler.face_spindle_mode
+    ops, settings = example_programs()["CSS_Wechsel.ngc"]
+    handler.model = SimpleNamespace(operations=ops)
+    handler._normalized_file_path = str
+    handler._current_program_path = None
+    handler._ensure_step_file_link = lambda *a, **k: True
+    handler._build_program_data = lambda: build_program_data(ops, settings, {})
+    target = tmp_path / "mixed.lse"
+    write_program_file(handler, str(target))
+    payload = json.loads(target.read_text())
+    restored = [step_data_to_operation(data) for data in payload["operations"]]
+    assert generate_program_gcode(restored, payload["header"]) == generate_program_gcode(ops, settings)
+    handler._setup_param_maps = lambda: None
+    handler.param_widgets = {OpType.FACE: {"spindle_mode": combo}}
+    for op in (restored[-3], restored[-1]):
+        combo.setCurrentIndex(0)
+        load_operation_params_to_form(handler, op)
+        assert combo.currentData() == "css"
+    assert restored[-2].params["spindle_mode"] == "fixed"
+    assert [restored[-3].params["cutting_speed"], restored[-1].params["cutting_speed"]] == [120, 180]
+    root.close()

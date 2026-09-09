@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .contour_features import normalize_relief_mode, primitive_to_points
 from .contour_logic import build_contour_variants
-from .gcode_safety import activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command
+from .gcode_safety import activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command, validate_chuck_segment, suspend_css
 from .gcode_utils import (
     Point,
     float_or_none,
@@ -24,6 +24,35 @@ from .gcode_utils import (
 )
 
 PARTING_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
+
+
+def _cycle_extrema_points(primitives):
+    """Include analytic arc extrema; endpoint-only checks miss reversals.
+
+    G18 G3 runs clockwise in the (radius X, Z) coordinate plane.
+    """
+    points = []
+    for primitive in primitives or []:
+        p1, p2 = primitive["p1"], primitive["p2"]
+        points.append(tuple(p1))
+        if primitive.get("type") == "arc":
+            cx, cz = primitive["c"]
+            start = math.atan2(p1[1] - cz, (p1[0] - cx) / 2)
+            end = math.atan2(p2[1] - cz, (p2[0] - cx) / 2)
+            direction = -1 if primitive.get("ccw") else 1
+            sweep = ((end - start) * direction) % math.tau
+            if sweep < 1e-12:
+                sweep = math.tau
+            radius = math.hypot((p1[0] - cx) / 2, p1[1] - cz)
+            extrema = []
+            for angle in (0, math.pi / 2, math.pi, 3 * math.pi / 2):
+                distance = ((angle - start) * direction) % math.tau
+                if 1e-10 < distance < sweep - 1e-10:
+                    extrema.append((distance, (cx + 2 * radius * math.cos(angle),
+                                               cz + radius * math.sin(angle))))
+            points.extend(point for _, point in sorted(extrema))
+        points.append(tuple(p2))
+    return points
 
 
 @dataclass(frozen=True)
@@ -177,6 +206,7 @@ def _emit_relief_pass(
             lines.append(f"{code} X{x:.3f} Z{z:.3f} F{relief_feed:.3f}")
         else:
             lines.append(f"{code} X{x:.3f} Z{z:.3f} F{relief_feed:.3f}")
+    suspend_css(lines, settings)
     lines.append(f"G0 Z{safe_z:.3f}")
 
 
@@ -428,10 +458,12 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
             z_low = min(za, zb)
             z_high = max(za, zb)
             z_entry, z_exit = (z_high, z_low) if z_dir < 0 else (z_low, z_high)
+            activate_pending_css(pass_lines, pause_state)
             if abs(z_entry - safe_z) > 1e-9:
                 pass_lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
             _emit_segment_with_pauses(pass_lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=x_cut, current_z=z_exit, safe_z=safe_z)
+            suspend_css(pass_lines, pause_state, resume=True)
             if external:
                 cmd = ["G0"]
                 if rx_eff is not None:
@@ -497,10 +529,12 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
             if not allow_undercut and min_x is not None and max_x is not None:
                 if xb < min_x - 1e-6 or xa > max_x + 1e-6:
                     continue
+            activate_pending_css(lines, pause_state)
             lines.append(f"G1 Z{band_lo:.3f} F{feed:.3f}")
             cut_target = min(xa, xb) if external else max(xa, xb)
             _emit_segment_with_pauses(lines, (start_x, band_lo), (cut_target, band_lo), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=cut_target, current_z=band_lo, safe_z=safe_z)
+            suspend_css(lines, pause_state, resume=True)
             cmd = ["G0"]
             if rx_eff is not None:
                 cmd.append(f"X{rx_eff:.3f}")
@@ -627,6 +661,15 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     # fuer LinuxCNC G71/G72 nicht monoton. Explizites Move-based-Schruppen
     # verarbeitet diese Geometrie dagegen ohne einen ungueltigen Zyklus.
     can_use_cycles = output_preference != "prefer_explicit" and not (feature_path and relief_mode == "full")
+    cycle_primitives = primitives
+    if contour_variants and relief_mode in ("ignore", "finish_only", "separate"):
+        cycle_primitives = contour_variants["rough_primitives"]
+    if can_use_cycles and external and mode_idx in (0, 2) and cycle_primitives:
+        extrema = _cycle_extrema_points(cycle_primitives)
+        axis_monotonic = (is_monotonic_z(extrema) if strategy_code == "parallel_z"
+                          else is_monotonic_x(extrema) if strategy_code == "parallel_x" else True)
+        if not axis_monotonic and any(pr.get("type") == "arc" for pr in cycle_primitives):
+            raise ValueError("Kontur-Bogen ist fuer G71/G72 nicht monoton; Kontur oder Strategie pruefen.")
     rough_done = False
     cycle_finish_done = False
     roughing_section_start = len(lines)
@@ -657,6 +700,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             emit_approach(lines, stock_x_adj, safe_z, settings)
             activate_pending_css(lines, settings)
             lines.append(f"G72 Q{sub_num} X{stock_x_adj:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            if settings is not None:
+                settings.setdefault("_cycle_defined_subs", set()).add((sub_num, external))
             if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
             rough_done = True
@@ -672,11 +717,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             rough_lines = rough_turn_parallel_z(rough_path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
             if rough_lines:
                 rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
-                css_lines: List[str] = []
-                activate_pending_css(css_lines, settings)
-                if css_lines:
-                    cut_idx = next((idx for idx, line in enumerate(rough_lines) if line.startswith(("G1 ", "G2 ", "G3 "))), len(rough_lines))
-                    rough_lines[cut_idx:cut_idx] = css_lines
             lines.extend(rough_lines)
     elif strategy_code == "parallel_z" and mode_idx in (0, 2):
         # is_monotonic_z() (nicht nur "fallend") laesst auch Innenkonturen zu,
@@ -694,6 +734,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             emit_approach(lines, stock_x, safe_z, settings)
             activate_pending_css(lines, settings)
             lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            if settings is not None:
+                settings.setdefault("_cycle_defined_subs", set()).add((sub_num, external))
             if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
             rough_done = True
@@ -717,11 +759,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             rough_lines = rough_turn_parallel_x(rough_path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
             if rough_lines:
                 rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
-                css_lines = []
-                activate_pending_css(css_lines, settings)
-                if css_lines:
-                    cut_idx = next((idx for idx, line in enumerate(rough_lines) if line.startswith(("G1 ", "G2 ", "G3 "))), len(rough_lines))
-                    rough_lines[cut_idx:cut_idx] = css_lines
             lines.extend(rough_lines)
     if mode_idx in (0, 2):
         # LES-002: ein Schruppstep (oder der Schrupp-Anteil von "Schruppen +
@@ -741,7 +778,33 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             )
     if relief_mode == "separate" and feature_path:
         _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
-    if mode_idx in (1, 2) and not cycle_finish_done:
+    # LES-018: ein REINER Schlichtstep (eigene Operation, typischerweise eigenes
+    # Werkzeug) darf den Kontur-Sub eines FRUEHEREN, separaten Schruppschritts
+    # per G70 wiederverwenden, statt die Fertigkontur nochmal explizit als G1/
+    # G2/G3-Liste auszugeben - aber NUR, wenn dieser exakte Sub (dieselbe
+    # Kontur, dieselbe Aussen-/Innenseite) bereits nachweislich per G71/G72
+    # zyklisch definiert wurde (_cycle_defined_subs; bei Innenbearbeitung, die
+    # G71/G72 nie nutzt, bleibt die Menge fuer diese Seite leer - der Fallback
+    # greift automatisch) und keine Werkzeugradiuskorrektur noetig ist (der
+    # bestehende G70-Pfad der kombinierten Schruppen+Schlichten-Ausgabe
+    # unterstuetzt diese ebenfalls nicht, siehe oben). mode_idx == 2
+    # (kombiniert) bleibt bewusst aussen vor: das ist bereits der bestehende,
+    # separat abgesicherte Pfad ueber cycle_finish_done.
+    can_reuse_cycle_sub = (
+        mode_idx == 1
+        and output_preference != "prefer_explicit"
+        and contour_sub_num is not None
+        and (not compensation_command or nose_disabled)
+        and settings is not None
+        and (contour_sub_num, external) in settings.get("_cycle_defined_subs", set())
+    )
+    if can_reuse_cycle_sub:
+        lines.append("(Schlichtschnitt Kontur - G70 Wiederverwendung des Schruppzyklus)")
+        emit_approach(lines, stock_x, safe_z, settings)
+        activate_pending_css(lines, settings)
+        lines.append(f"G70 Q{contour_sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
+        suspend_css(lines, settings)
+    elif mode_idx in (1, 2) and not cycle_finish_done:
         lines.append("(Schlichtschnitt Kontur)")
         finish_points = rough_path if relief_mode == "ignore" else finish_path
         entry_x, entry_z = _finish_entry_point(finish_points, safe_z)
@@ -761,6 +824,9 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             _emit_finish_primitives(lines, finish_primitives, feed=feed)
             if finish_points:
                 prev_point = finish_points[-1]
+        elif primitives and not contour_variants:
+            _emit_finish_primitives(lines, primitives, feed=feed)
+            prev_point = tuple(primitives[-1]["p2"])
         else:
             for idx, (x, z) in enumerate(finish_points):
                 current_point = (x, z)
@@ -773,10 +839,35 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         # safe_z liegt (z. B. Kontur endet an der Stirnflaeche bei Z0, safe_z
         # ebenfalls 0), ist der Rueckzug bereits erreicht - ein zusaetzliches
         # G0 auf dieselbe Position ist eine bedeutungslose Nullbewegung.
-        if not (prev_point is not None and abs(prev_point[1] - safe_z) <= 1e-6):
-            lines.append(f"G0 Z{safe_z:.3f}")
-        if compensation_command and not nose_disabled:
-            lines.append("G40")
+        suspend_css(lines, settings)
+        if not external:
+            # X is a diameter. Validate the emitted coordinates, including
+            # the physical length required after cancelling compensation.
+            retract_x = float(f"{resolve_internal_safe_x(settings):.3f}")
+            end_x, end_z = (float(f"{value:.3f}") for value in prev_point)
+            radial_distance = (end_x - retract_x) / 2
+            if radial_distance < 0:
+                raise ValueError("Innen-Schlichtrueckzug muss radial nach innen erfolgen.")
+            compensated = bool(compensation_command and not nose_disabled)
+            if compensated:
+                tool_diameter = float(f"{float(tool_info['radius_mm']) * 2:.4f}")
+                if radial_distance <= tool_diameter:
+                    raise ValueError("Abwahl der Werkzeugradiuskorrektur: radialer Weg bis XRI "
+                                     "muss laenger als der Werkzeugdurchmesser sein.")
+            validate_chuck_segment(settings, (end_x, end_z), (retract_x, end_z))
+            validate_chuck_segment(settings, (retract_x, end_z), (retract_x, safe_z))
+            if compensated:
+                lines.append("G40")
+                lines.append(f"G1 X{retract_x:.3f} F{feed:.3f}")
+            elif radial_distance > 0:
+                lines.append(f"G0 X{retract_x:.3f}")
+            if abs(end_z - safe_z) > 1e-6:
+                lines.append(f"G0 Z{safe_z:.3f}")
+        else:
+            if not (prev_point is not None and abs(prev_point[1] - safe_z) <= 1e-6):
+                lines.append(f"G0 Z{safe_z:.3f}")
+            if compensation_command and not nose_disabled:
+                lines.append("G40")
     return lines
 
 

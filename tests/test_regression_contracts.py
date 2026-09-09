@@ -78,6 +78,12 @@ def test_inch_program_uses_g20():
 
 
 def test_toolchange_retracts_to_safe_position_before_next_m6():
+    """Die Position vor T07 M6 muss die konfigurierte sichere Aussenposition
+    (X45/Z6) sein. LES-031: bis der vorherige Schritt (FACE) bereits exakt
+    dorthin zurueckgezogen hatte, wurde diese Bewegung vor jedem
+    Werkzeugwechsel bedeutungslos ein zweites Mal ausgegeben - jetzt wird
+    diese Nullbewegung erkannt und uebersprungen, die sichere Position
+    stammt hier vom Rueckzug der vorherigen Operation."""
     settings = make_program_settings()
     settings.update({"xra": 45.0, "zra": 6.0, "xra_absolute": True, "zra_absolute": True})
     operations = [
@@ -91,10 +97,14 @@ def test_toolchange_retracts_to_safe_position_before_next_m6():
     ]
     lines = generate_program_gcode(operations, settings)
     toolchange_idx = lines.index("T07 M6")
-    prelude = lines[max(0, toolchange_idx - 6):toolchange_idx]
+    prelude = lines[max(0, toolchange_idx - 8):toolchange_idx]
     assert "M9" in prelude
     assert "G0 Z6.000" in prelude
     assert "G0 X45.000" in prelude
+    # Die vorherige (jetzt eingesparte) Nullbewegung darf nicht mehr direkt
+    # vor dem Werkzeugwechsel-Kommentar auftauchen.
+    comment_idx = prelude.index("(Werkzeug T07)")
+    assert prelude[comment_idx + 1:comment_idx + 3] != ["G0 Z6.000", "G0 X45.000"]
 
 
 def test_toolchange_before_internal_op_still_uses_external_safe_planes():
@@ -693,7 +703,7 @@ def test_first_toolchange_moves_to_toolchange_point_when_only_one_tool_used():
         Operation(OpType.PROGRAM_HEADER, {"program_name": "SingleToolFirstChange"}),
         Operation(
             OpType.TURN,
-            {"tool": 1, "feed": 0.2, "safe_z": 2.0},
+            {"tool": 1, "feed": 0.2, "safe_z": 2.0, "spindle": 1000.0},
             path=[(20.0, 0.0), (18.0, -2.0)],
         ),
     ]

@@ -1,6 +1,6 @@
 # Roadmap LatheEasyStep
 
-Stand: 2026-09-08
+Stand: 2026-09-09
 
 LatheEasyStep soll ein werkstattnahes, konversationelles Drehpanel fuer
 LinuxCNC werden. Die Roadmap beschreibt Release-Ziele und Abhaengigkeiten.
@@ -12,7 +12,7 @@ Verifikation in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- aktueller Teststand: `472 passed (Stub-Qt), 43 passed (Real-Qt), 0 skipped`
+- aktueller Teststand: `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
 - UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,
   nichtleere Sprachschluessel
@@ -134,3 +134,67 @@ regressionen sind umgesetzt. Planradius, Innenaufmass, Eingabevalidierung
 und gemeinsame Anfahrt wurden erweitert. Die neuen Fahrwege sind noch
 nicht mit LinuxCNC-Parser, Backplot und Maschine abgenommen; offene P0-
 Punkte bleiben Releaseblocker. [Details und Grenzen](doc/VERIFICATION_2026-09-08.md).
+
+Fortsetzung 2026-09-09: CSS-Zwischenstand abgesichert, Bohr- und zentrale
+Zahlenvalidierung erweitert, Innenradiusmatrix und zwei Referenzen ergaenzt.
+LES-013/040/028/003/012/015 bleiben mit den dokumentierten Restarbeiten offen.
+[Pruefstand und Grenzen](doc/VERIFICATION_2026-09-09.md).
+
+WSL-Fortsetzung 2026-09-09: LinuxCNC-Interpreterpruefung erfolgreich fuer
+elf Referenzen und 30 Matrixprogramme. Nichtmonotone Boegen vor G71/G72
+abweisen; primitive Konturboegen auch beim expliziten Schlichten erhalten.
+[Interpreterbericht und Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+LES-005 Teilabschluss: Innen-Schlichtrueckzug radial vor axial, G40-Abwahl
+mit geprueftem Freiraum. 524 Stub-/44 Qt-Tests und 11 Referenzen/30 Matrixfaelle
+im Interpreter bestanden. [Details und Grenzen](doc/LES005_INNEN_RUECKZUG_2026-09-09.md).
+
+Review nach Unterbrechung 2026-09-09: Zwischenzeitliche Erweiterungen
+beibehalten; explizite Schlichtpraeferenz und CSS-/G76-Ausgaberundung
+korrigiert. Aktuell 563 Stub-/44 Qt-Tests und elf Referenzen/37 Matrixfaelle
+im Interpreter bestanden. LES-013 bleibt fuer Durchmesserbewertung,
+zyklusinterne Bewegungen und reale Abnahmen offen; fruehere pauschale
+Abschlussaussagen sind damit ersetzt.
+[Details und Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+Fortsetzung LES-037/001/006: vier Gewindefreistichfaelle (innen/aussen,
+rechts/links) und zwei Schruppen-/Schlichten-Folgen mit identischem Werkzeug
+unter rs274 bestanden. Zu wenig Konturstrecke blockiert in allen vier
+Freistichvarianten den Export; Konturverlaengerung verschiebt den Freistich
+nicht. Aktuell 573 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle.
+WSLg/AXIS sind erreichbar; grafischer Backplot und reale Abnahme bleiben offen.
+[Pruefbericht](doc/linuxcnc_2026-09-09/README.md).
+
+
+LES-040/028, Einstichvalidierung 2026-09-09: Vorschuebe, Zustellung,
+Werkzeug-/Nutbreite und Ueberdeckung werden mit den tatsaechlich an o220
+uebergebenen drei Nachkommastellen geprueft. Start/Ende duerfen nach
+Rundung nicht zusammenfallen. Spanbruchanzahl muss ganzzahlig und
+nichtnegativ sein. Fuenf zuvor fehlschlagende Regressionen bestanden.
+Aktuell 578 Stub-/44 Qt-Tests, keine Skips; elf Referenzen und 43
+Matrixfaelle unter rs274 sowie 88 statische Checks bestanden.
+Referenzausgabe unveraendert. Dies ist keine vollstaendige Abnahme aller
+Einstich-/Abstichvarianten. Keilnut erzeugt derzeit wegen der expliziten
+Makro-Sperre in gcode_keyway.py keinen G-Code; eine eigenstaendige
+Implementierung und LinuxCNC-Abnahme bleiben offen.
+
+LES-027 Teilstand 2026-09-09: isolierter Qt-Startbenchmark mit frischen
+Prozessen vorhanden. UI-Ausschnitt im Median 0.368 s unter Windows und
+1.362 s unter WSL, keine Reproduktion der gemeldeten >20 s. Neun
+nachgelagerte Panel-Startaufgaben erhalten eigene Zeitmarken. Reale
+Ursache, Bedienbereitschaft und Embedded-/Standalone-Vergleich bleiben offen.
+[Messumfang, Rohdaten und naechster Nachweis](doc/STARTUP_2026-09-09.md).
+
+
+LES-028/032 Teilstand 2026-09-09: Radiuskorrektur lehnt negative Radien,
+nicht darstellbare Schneidendurchmesser sowie explizit ungueltige
+Werkzeugorientierungen ab. Q/L wird ganzzahlig in 0..9 validiert, statt
+Dezimalwerte abzuschneiden oder bei defekten Angaben still ohne Korrektur
+weiterzulaufen. G41.1/G42.1 darf keinen auf null gerundeten D-Wert ausgeben.
+Gueltige Zahlenstrings bleiben kompatibel. Fehlende Werkzeugdaten bzw.
+fehlendes Q und Radius null behalten das bisherige Verhalten ohne Korrektur;
+eine allgemeine Pflicht fuer vollstaendige Werkzeugtabellen ist nicht umgesetzt.
+Neun Fehlerfaelle vorher reproduziert, elf neue Regressionen bestanden.
+Aktuell 589 Stub-/44 Qt-Tests, 88 statische Checks sowie elf Referenzen und
+43 Matrixfaelle unter rs274 bestanden; Referenzausgabe unveraendert.
+Werkzeughuellen, Schneidenlaenge, physische Eignung und reale Abnahme bleiben offen.
