@@ -159,8 +159,8 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
                 {"name": "radius_chamfer"},
                 path=[
                     {"type": "line", "p1": (40.0, 0.0), "p2": (32.0, -8.0)},
-                    {"type": "arc", "p1": (32.0, -8.0), "p2": (26.0, -16.0), "c": (26.0, -11.4375), "ccw": False},
-                    {"type": "line", "p1": (26.0, -16.0), "p2": (20.0, -28.0)},
+                    {"type": "arc", "p1": (32.0, -8.0), "p2": (26.0, -11.0), "c": (26.0, -8.0), "ccw": True},
+                    {"type": "line", "p1": (26.0, -11.0), "p2": (20.0, -28.0)},
                 ],
             ),
             Operation(
@@ -207,5 +207,22 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
     settings["program_name"] = "Planen_Radius"
     operations[-1].params.update(edge_type="radius", edge_size=1.0, mode="rough_finish")
     examples["Planen_Radius.ngc"] = (operations, settings)
+
+    operations, settings = deepcopy(examples["Planen.ngc"])
+    settings["program_name"] = "CSS_Wechsel"
+    operations[-1].params.update(spindle_mode="css", cutting_speed=120.0,
+                                 spindle_max_rpm=2500.0)
+    drill = deepcopy(examples["Bohren.ngc"][0][-1])
+    drill.params.update(tool=2, spindle=900.0, spindle_mode="fixed")
+    finish = deepcopy(operations[-1])
+    finish.params.update(cutting_speed=180.0)
+    operations.extend([drill, finish])
+    examples["CSS_Wechsel.ngc"] = (operations, settings)
+
+    operations, settings = deepcopy(examples["Innen_Stufe.ngc"])
+    settings["program_name"] = "Innen_Radius"
+    operations[0].params["segments"][0].update(edge="radius", edge_size=1.0)
+    operations[-1].params["undercut_mode"] = "full"
+    examples["Innen_Radius.ngc"] = (operations, settings)
 
     return examples

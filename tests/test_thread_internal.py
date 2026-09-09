@@ -342,10 +342,20 @@ class TestInternalThreadPreview:
     {"major_diameter": 0}, {"thread_depth": -1}, {"first_depth": -1},
     {"spring_passes": 1.5}, {"spring_passes": -1}, {"l": "1.5"},
     {"l": 4}, {"retract_r": .9}, {"lead_in": -1}, {"e": 11},
+    {"infeed_q": -1}, {"infeed_q": 90}, {"infeed_q": 120},
 ])
 def test_invalid_thread_parameters_abort(changes):
     with pytest.raises(ValueError):
         gcode_for_thread(_make_thread_op(**changes), _thread_settings())
+
+
+def test_zero_infeed_angle_is_a_valid_radial_infeed():
+    """LES-028: Q=0 (radiale Zustellung, z. B. fuer Quadratgewinde) ist
+    physikalisch gueltig und darf nicht durch die neue Q-Bereichspruefung
+    blockiert werden - nur negative oder >=90 Grad Werte sind ungueltig."""
+    op = _make_thread_op(infeed_q=0)
+    cycle = next(line for line in gcode_for_thread(op, _thread_settings()) if line.startswith("G76 "))
+    assert "Q0.0000" in cycle
 
 
 def test_thread_numeric_strings_and_explicit_zero_spring_passes():

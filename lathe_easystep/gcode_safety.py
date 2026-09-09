@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .gcode_utils import float_or_none, get_tool_number, sanitize_comment_text
 from .model import OpType, Operation
-from .numeric import finite_float
+from .numeric import finite_float, whole_number
 
 
 def _safe_axis_value(
@@ -81,6 +81,7 @@ def emit_safe_retract_for_op(
     op_type: Optional[str],
     current_pos: Optional[Tuple[float, float]] = None,
 ) -> None:
+    suspend_css(lines, settings)
     safe = get_safe_position(settings)
     if not safe:
         return
@@ -128,20 +129,50 @@ def emit_safe_retract_for_op(
 
     inside_stock = _inside_stock_envelope(current_pos)
     inside_chuck_nogo = _inside_chuck_nogo(current_pos)
+    internal = str((settings or {}).get("_active_retract_mode", "") or "").strip().lower() == "internal"
+
+    def _validate_second_leg(corner: Tuple[float, float]) -> None:
+        # Erstes Teilstueck (Weg AUS der aktuellen, ggf. gefaehrlichen
+        # Position hinaus) wird bewusst NICHT geprueft: es darf legitim in
+        # der Rohteil-Huellkurve bzw. Futter-Sperrzone STARTEN (genau dafuer
+        # existiert diese Fluchtbewegung). Das zweite Teilstueck haelt die
+        # zuerst freigefahrene Achse konstant auf ihrem sicheren Wert - hier
+        # deckt die Pruefung eine fehlkonfigurierte "sichere" Position auf
+        # (z. B. XRA/ZRA, die tatsaechlich noch im Rohteil oder in der
+        # Futterzone liegt). Die Rohteil-Pruefung gilt nur fuer echte
+        # Aussen-Sicherheitspositionen, da die Huellkurve keine Bohrung
+        # abbilden kann.
+        if current_pos is None:
+            return
+        validate_chuck_segment(settings, corner, (x_safe, z_safe))
+        if not internal:
+            validate_stock_segment(settings, corner, (x_safe, z_safe))
 
     if op_type in (OpType.GROOVE, OpType.KEYWAY):
+        if current_pos is not None:
+            _validate_second_leg((x_safe, current_pos[1]))
         lines.append(f"G0 X{x_safe:.3f}")
         lines.append(f"G0 Z{z_safe:.3f}")
     elif op_type in (OpType.DRILL, OpType.THREAD):
+        if current_pos is not None:
+            _validate_second_leg((current_pos[0], z_safe))
         lines.append(f"G0 Z{z_safe:.3f}")
         lines.append(f"G0 X{x_safe:.3f}")
     elif inside_stock or inside_chuck_nogo:
+        if current_pos is not None:
+            _validate_second_leg((x_safe, current_pos[1]))
         lines.append(f"G0 X{x_safe:.3f}")
         lines.append(f"G0 Z{z_safe:.3f}")
     else:
+        if current_pos is not None:
+            validate_chuck_segment(settings, current_pos, (x_safe, z_safe))
+            if not internal:
+                validate_stock_segment(settings, current_pos, (x_safe, z_safe))
         lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
     if settings is not None:
         settings["_is_at_safe"] = True
+        settings["_safe_x"] = x_safe
+        settings["_safe_z"] = z_safe
 
 
 def estimate_operation_end_pos(op: Operation) -> Optional[Tuple[float, float]]:
@@ -201,7 +232,50 @@ def validate_chuck_segment(settings, start, end):
     raise ValueError(f"Futter-Sperrzone: Fahrweg {start} -> {end} ist gesperrt.")
 
 
+def validate_stock_segment(settings, start, end):
+    """Closed X/Z rectangle formed by the raw stock envelope (XA/XI, ZA/ZI).
+
+    Nur fuer reine Diagonal-Eilgaenge gedacht, die beide Endpunkte bewusst
+    ausserhalb der Rohteil-Huellkurve anfahren (z. B. sicherer Rueckzug,
+    Werkzeugwechselposition). Die achsweise Anfahrt/Rueckzugsfolge in
+    emit_approach haelt bereits je einen Achswert ausserhalb der Huellkurve
+    und wird hier bewusst nicht geprueft, da deren Zielpunkt haeufig
+    beabsichtigt innerhalb der Huellkurve liegt (z. B. Schlichten auf einem
+    bereits abgetragenen Durchmesser).
+    """
+    if not settings:
+        return
+    xa = float_or_none(settings.get("xa"))
+    za = float_or_none(settings.get("za"))
+    zi = float_or_none(settings.get("zi"))
+    if xa is None or za is None or zi is None:
+        return
+    xi = float_or_none(settings.get("xi"))
+    if xi is None:
+        xi = 0.0
+    x_lo, x_hi = sorted((xi, xa))
+    z_lo, z_hi = sorted((zi, za))
+    # Parametric segment clipping, including boundary contact.
+    t_min, t_max = 0.0, 1.0
+    x, z = start
+    dx, dz = end[0] - x, end[1] - z
+    for origin, delta, lower, upper in (
+        (x, dx, x_lo - 1e-6, x_hi + 1e-6),
+        (z, dz, z_lo - 1e-6, z_hi + 1e-6),
+    ):
+        if abs(delta) < 1e-12:
+            if origin < lower or origin > upper:
+                return
+        else:
+            a, b = sorted(((lower - origin) / delta, (upper - origin) / delta))
+            t_min, t_max = max(t_min, a), min(t_max, b)
+            if t_min > t_max:
+                return
+    raise ValueError(f"Rohteil: Eilgang {start} -> {end} durchquert die Rohteil-Huellkurve.")
+
+
 def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Dict[str, object] | None) -> None:
+    suspend_css(lines, settings, resume=True)
     start_x = finite_float(start_x, "Anfahrt X")
     start_z = finite_float(start_z, "Anfahrt Z")
     validate_chuck_segment(settings, (start_x, start_z), (start_x, start_z))
@@ -210,6 +284,14 @@ def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Di
         x_safe, z_safe = safe
         validate_chuck_segment(settings, safe, (x_safe, start_z))
         validate_chuck_segment(settings, (x_safe, start_z), (start_x, start_z))
+        internal = str((settings or {}).get("_active_retract_mode", "") or "").strip().lower() == "internal"
+        # Der Z-Zwischenzug haelt X bewusst auf der sicheren Aussenposition -
+        # die Zielposition selbst (naechste Zeile oben) darf dagegen
+        # absichtlich innerhalb der Rohteil-Huellkurve liegen (z. B.
+        # Schlichten nach Schruppen). Fuer den Innen-Modus entfaellt die
+        # Pruefung, da die Huellkurve eine Bohrung nicht abbilden kann.
+        if not internal:
+            validate_stock_segment(settings, safe, (x_safe, start_z))
     for warning in get_approach_warnings(settings, (start_x, start_z)):
         lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     safe = get_safe_position(settings)
@@ -257,7 +339,11 @@ def append_tool_and_spindle(
     spindle_max_rpm: object | None = None,
     cutting_speed: object | None = None,
     css_start_diameter: object | None = None,
+    require_spindle: bool = True,
 ):
+    suspend_css(lines, settings)
+    if settings is not None:
+        settings.pop("_pending_css", None)
     if tool_value is None and settings is not None:
         tool_num = get_tool_number(settings)
     else:
@@ -271,14 +357,42 @@ def append_tool_and_spindle(
             toolchange_lines = move_to_toolchange_pos(settings)
             lines.append(f"(Werkzeug T{tool_num:02d})")
             if settings is not None:
+                # M1 VOR der angenommenen sicheren Rueckzugsbewegung, nicht
+                # danach: bei unbekanntem Ausgangszustand (insbesondere vor
+                # dem allerersten Werkzeugwechsel, wo Werkzeug und Position
+                # nicht aus einer vorherigen Operation bekannt sind) soll der
+                # Bediener vor JEDER angenommenen sicheren Bewegung pruefen
+                # koennen - nicht erst danach. Bewusst nicht mehr auf
+                # last_tool > 0 beschraenkt: das Tooltip verspricht "vor
+                # jedem Werkzeugwechsel", nicht "vor jedem weiteren".
+                if bool(settings.get("optional_stop_toolchange", False)):
+                    lines.append("M1")
                 safe = get_safe_position_for_mode(settings, internal=False)
                 if safe:
                     x_safe, z_safe = safe
-                    lines.append(f"G0 Z{z_safe:.3f}")
-                    lines.append(f"G0 X{x_safe:.3f}")
+                    # Die vorherige Operation hat bereits per
+                    # emit_safe_retract_for_op() exakt auf diese Aussen-
+                    # Position zurueckgezogen (haeufigster Fall: Aussen- auf
+                    # Aussen-Operation mit demselben XRA/ZRA) - ein erneuter
+                    # G0 auf denselben Wert waere eine bedeutungslose
+                    # Nullbewegung. _safe_x/_safe_z halten fest, WELCHE
+                    # sichere Position zuletzt tatsaechlich erreicht wurde
+                    # (Innen- und Aussen-Sicherheitspositionen koennen sich
+                    # unterscheiden, daher reicht das Flag _is_at_safe allein
+                    # nicht).
+                    already_here = (
+                        bool(settings.get("_is_at_safe"))
+                        and settings.get("_safe_x") is not None
+                        and settings.get("_safe_z") is not None
+                        and abs(float(settings["_safe_x"]) - x_safe) < 1e-6
+                        and abs(float(settings["_safe_z"]) - z_safe) < 1e-6
+                    )
+                    if not already_here:
+                        lines.append(f"G0 Z{z_safe:.3f}")
+                        lines.append(f"G0 X{x_safe:.3f}")
                     settings["_is_at_safe"] = True
-                if last_tool > 0 and bool(settings.get("optional_stop_toolchange", False)):
-                    lines.append("M1")
+                    settings["_safe_x"] = x_safe
+                    settings["_safe_z"] = z_safe
                 lines.append("M5")
                 lines.append("M9")
                 lines.extend(toolchange_lines)
@@ -290,6 +404,8 @@ def append_tool_and_spindle(
                     x_safe, z_safe = safe
                     lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
                     settings["_is_at_safe"] = True
+                    settings["_safe_x"] = x_safe
+                    settings["_safe_z"] = z_safe
     # Op-spezifischer Drehzahlmodus hat Vorrang; ohne Angabe gilt weiterhin
     # der globale Programmkopf-Wert (Rueckwaertskompatibilitaet).
     if spindle_mode is not None:
@@ -310,35 +426,52 @@ def append_tool_and_spindle(
             max_rpm = float_or_none((settings or {}).get("spindle_max_rpm"))
         if vc and vc > 0 and max_rpm and max_rpm > 0:
             diameter = float_or_none(css_start_diameter)
-            if diameter is None or diameter <= 0:
+            if diameter is None or diameter <= 0 or float(f"{diameter:.3f}") <= 0:
                 raise ValueError(
                     "CSS/G96 erfordert einen positiven ersten Bearbeitungsdurchmesser."
                 )
+            if float(f"{vc:.1f}") <= 0:
+                raise ValueError("CSS/G96 Schnittgeschwindigkeit rundet in der Ausgabe auf null.")
             # Vc wird in der UI immer in m/min erfasst, X ist ein Durchmesser.
             # Die feste Anfahrdrehzahl entspricht deshalb n=1000*Vc/(pi*d)
             # und wird hart auf die programmweite Maximaldrehzahl begrenzt.
-            start_rpm = min(max_rpm, (1000.0 * vc) / (math.pi * diameter))
-            rpm_value = max(1, int(round(start_rpm)))
+            rpm_limit = math.floor(max_rpm)
+            if rpm_limit < 1:
+                raise ValueError("CSS/G96 Maximaldrehzahl muss mindestens 1 U/min sein.")
+            start_rpm = min(rpm_limit, (vc / diameter) * (1000.0 / math.pi))
+            rpm_value = min(rpm_limit, max(1, int(round(start_rpm))))
             lines.append(f"G97 S{rpm_value} M3 (CSS-Anfahrdrehzahl bei X{diameter:.3f})")
             if settings is None:
                 raise ValueError("CSS/G96 erfordert Programmkopf-Einstellungen.")
-            settings["_pending_css"] = (int(round(max_rpm)), vc)
+            settings["_pending_css"] = (rpm_limit, vc)
+            settings["_css_fixed_rpm"] = rpm_value
             return
         rpm = float_or_none(spindle_value)
-        if rpm and rpm > 0:
+        rpm_value = int(round(rpm)) if rpm and rpm > 0 else 0
+        if rpm_value > 0:
             if not (vc and vc > 0):
                 lines.append("(WARN: CSS angefordert, aber Schnittgeschwindigkeit fehlt - nutze G97)")
             else:
                 lines.append("(WARN: CSS angefordert, aber spindle_max_rpm fehlt - nutze G97)")
-            lines.append(f"G97 S{int(round(rpm))} M3")
+            lines.append(f"G97 S{rpm_value} M3")
+        elif require_spindle:
+            raise ValueError(
+                "Drehzahl fehlt: weder vollstaendige CSS-Parameter (Schnittgeschwindigkeit "
+                "und Maximaldrehzahl) noch eine positive feste Drehzahl als Ausweichwert "
+                "vorhanden - die Spindel wuerde nicht gestartet."
+            )
         return
     rpm = float_or_none(spindle_value)
     if settings is not None:
         settings.pop("_pending_css", None)
-    if rpm and rpm > 0:
-        rpm_value = int(round(rpm))
-        if rpm_value > 0:
-            lines.append(f"G97 S{rpm_value} M3")
+    rpm_value = int(round(rpm)) if rpm and rpm > 0 else 0
+    if rpm_value > 0:
+        lines.append(f"G97 S{rpm_value} M3")
+    elif require_spindle:
+        raise ValueError(
+            "Drehzahl fehlt, ist nicht positiv oder rundet auf 0 U/min - die Spindel "
+            "wuerde nicht gestartet."
+        )
 
 
 def activate_pending_css(lines: List[str], settings: Dict[str, object] | None) -> None:
@@ -350,23 +483,44 @@ def activate_pending_css(lines: List[str], settings: Dict[str, object] | None) -
         return
     max_rpm, vc = pending
     lines.append(f"G96 D{int(max_rpm)} S{float(vc):.1f}")
+    settings["_active_css"] = pending
+
+
+def suspend_css(lines: List[str], settings: Dict[str, object] | None, *, resume=False) -> None:
+    """Use the bounded approach RPM for explicit clearance and tool changes."""
+    if settings is None:
+        return
+    active = settings.pop("_active_css", None)
+    if active is not None:
+        rpm = settings.get("_css_fixed_rpm")
+        if rpm is None:
+            raise ValueError("CSS-Rueckzug erfordert eine bekannte Festdrehzahl.")
+        lines.append(f"G97 S{int(rpm)} (CSS-Freifahrt)")
+        if resume:
+            settings["_pending_css"] = active
+    if not resume:
+        settings.pop("_pending_css", None)
 
 
 def nose_compensation_command(tool_info: Dict[str, object] | None, external: bool) -> Optional[str]:
     if not tool_info:
         return None
     radius = float_or_none(tool_info.get("radius_mm"))
-    if radius is None or radius <= 0:
+    if radius is not None and radius < 0:
+        raise ValueError("Werkzeugradius darf nicht negativ sein.")
+    if radius is None or radius == 0:
         return None
     orientation_raw = tool_info.get("q")
     if orientation_raw is None:
         return None
-    try:
-        orientation_idx = int(float(orientation_raw))
-    except Exception:
-        return None
+    orientation_idx = whole_number(orientation_raw, "Werkzeugorientierung Q/L")
+    if not 0 <= orientation_idx <= 9:
+        raise ValueError("Werkzeugorientierung Q/L muss in 0..9 liegen.")
+    diameter = finite_float(radius * 2, "Schneidendurchmesser")
+    if float(f"{diameter:.4f}") <= 0:
+        raise ValueError("Schneidendurchmesser rundet bei Radiuskorrektur auf null.")
     comp_code = "G42.1" if external else "G41.1"
-    return f"{comp_code} D{(radius * 2):.4f} L{orientation_idx}"
+    return f"{comp_code} D{diameter:.4f} L{orientation_idx}"
 
 
 def _coord_mode(settings: Dict[str, object] | None, primary_key: str, *, legacy_x_key: str | None = None, legacy_z_key: str | None = None, default: str = "work") -> str:
@@ -414,6 +568,7 @@ def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None
     else:
         safe = get_safe_position_for_mode(settings, internal=False)
         validate_chuck_segment(settings, safe or (xt, zt), (xt, zt))
+        validate_stock_segment(settings, safe or (xt, zt), (xt, zt))
         lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
     return lines
 
@@ -443,9 +598,15 @@ def get_approach_warnings(settings: Dict[str, object] | None, start_pos: Tuple[f
                 warnings.append(f"Startpunkt X{x:.3f} Z{z:.3f} liegt in der Futter-Sperrzone")
         safe = get_safe_position(settings)
         if safe is not None:
-            _, safe_z = safe
-            if safe_z <= z_lim + 1e-6:
-                warnings.append(f"Rueckzugsebene Z{safe_z:.3f} schneidet den Futterbereich")
+            safe_x, safe_z = safe
+            # Wie validate_chuck_segment() ist die Sperrzone ein Rechteck aus
+            # X-Intervall UND Z-Halbebene - eine "sichere" Z-Ebene, die zwar
+            # den Z-Grenzwert unterschreitet, deren X aber ausserhalb des
+            # gesperrten X-Bereichs liegt, ist real nicht betroffen. Ohne
+            # diese Pruefung widerspraeche die Warnung dem tatsaechlichen,
+            # bereits durch validate_chuck_segment() abgesicherten Fahrweg.
+            if safe_z <= z_lim + 1e-6 and min(x_min, x_max) - 1e-6 <= safe_x <= max(x_min, x_max) + 1e-6:
+                warnings.append(f"Rueckzugsebene X{safe_x:.3f} Z{safe_z:.3f} schneidet den Futterbereich")
     return warnings
 
 

@@ -13,7 +13,7 @@ def test_parting_slice_index_triggers_parallel_x():
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy data value (1 -> parallel_x)
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "slice_step": 0.5, "depth_per_pass": 0.5, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 1, "slice_step": 0.5, "depth_per_pass": 0.5, "feed": 0.2, "spindle": 1000.0, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
     assert "(ABSPANEN Rough - parallel X)" in g
@@ -23,7 +23,7 @@ def test_parting_slice_index_triggers_parallel_z():
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy data value (2 -> parallel_z)
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "slice_step": 0.5, "depth_per_pass": 0.5, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": 2, "slice_step": 0.5, "depth_per_pass": 0.5, "feed": 0.2, "spindle": 1000.0, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0), (8.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
     assert "(ABSPANEN Rough - parallel Z)" in g
@@ -33,7 +33,7 @@ def test_parting_slice_string_triggers_parallel_x():
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy as explicit string
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": "parallel_x", "slice_step": 1.0, "depth_per_pass": 1.0, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": "parallel_x", "slice_step": 1.0, "depth_per_pass": 1.0, "feed": 0.2, "spindle": 1000.0, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
     assert "(ABSPANEN Rough - parallel X)" in g
@@ -43,7 +43,7 @@ def test_parting_slice_string_triggers_parallel_z():
     m = ProgramModel()
     m.program_settings.update({"xt": 150.0, "zt": 300.0})
     # slice_strategy as explicit string
-    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": "parallel_z", "slice_step": 1.0, "depth_per_pass": 1.0, "feed": 0.2, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0)])]
+    m.operations = [Operation(OpType.ABSPANEN, {"mode": 0, "slice_strategy": "parallel_z", "slice_step": 1.0, "depth_per_pass": 1.0, "feed": 0.2, "spindle": 1000.0, "tool": 1}, path=[(12.0, 0.0), (10.0, -2.0)])]
     m.program_settings = DEFAULT_RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())
     assert "(ABSPANEN Rough - parallel Z)" in g
@@ -63,6 +63,7 @@ def test_parting_parallel_z_non_monotonic_x_falls_back_to_move_based():
                 "slice_step": 1.0,
                 "depth_per_pass": 1.0,
                 "feed": 0.2,
+                "spindle": 1000.0,
                 "tool": 1,
             },
             path=path,
@@ -87,6 +88,7 @@ def test_internal_parallel_z_cycle_uses_contour_based_stock_x_when_xi_is_zero():
                 "slice_strategy": "parallel_z",
                 "depth_per_pass": 1.0,
                 "feed": 0.2,
+                "spindle": 1000.0,
                 "tool": 1,
             },
             path=path,
@@ -117,6 +119,7 @@ def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
                 "slice_strategy": "parallel_z",
                 "depth_per_pass": 1.0,
                 "feed": 0.2,
+                "spindle": 1000.0,
                 "tool": 5,
             },
             path=path,
@@ -124,7 +127,7 @@ def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
     ]
     m.program_settings = {"xt": 150.0, "zt": 300.0,
         "xi": 0.0,
-        "xri": 9.0,
+        "xri": 8.0,
         "xri_absolute": True,
         "zri": 2.0,
         "zri_absolute": True,
@@ -133,12 +136,12 @@ def test_internal_finish_with_nose_comp_gets_nonzero_entry_move():
     g = "\n".join(m.generate_gcode())
     assert "G41.1 D0.8000 L3" in g
     # Innenanfahrt darf keinen diagonalen Schnellgang durch die Bohrung
-    # erzeugen: erst axial auf der freien XRI-Ebene (X9.000), erst danach
+    # erzeugen: erst axial auf der freien XRI-Ebene (X8.000), erst danach
     # radial auf den Konturstart (X50.000) - beides bei sicherem Z2.000, kein
     # zusaetzlicher (Nullbewegungs-)G0 auf dasselbe Z.
     lines = g.split("\n")
     approach_idx = lines.index("G0 Z2.000")
-    assert lines[approach_idx + 1] == "G0 X9.000"
+    assert lines[approach_idx + 1] == "G0 X8.000"
     assert lines[approach_idx + 2] == "G0 X50.000"
     assert lines[approach_idx + 3] == "G41.1 D0.8000 L3"
     assert "G1 X50.000 Z0.000 F0.200" in g
@@ -157,6 +160,7 @@ def test_internal_parallel_z_approach_uses_xri_and_zri_safe_position():
                 "slice_strategy": "parallel_z",
                 "depth_per_pass": 1.0,
                 "feed": 0.2,
+                "spindle": 1000.0,
                 "tool": 1,
             },
             path=path,
@@ -179,7 +183,7 @@ def test_internal_parallel_z_rejects_unplausible_xri():
     m.operations = [
         Operation(
             OpType.ABSPANEN,
-            {"mode": 0, "side": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.2, "tool": 1},
+            {"mode": 0, "side": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.2, "spindle": 1000.0, "tool": 1},
             path=[(50.0, 0.0), (40.0, -10.0), (10.0, -40.0)],
         )
     ]
@@ -203,7 +207,7 @@ def test_internal_finish_entry_uses_checked_approach_not_raw_diagonal_move():
     m.operations = [
         Operation(
             OpType.ABSPANEN,
-            {"mode": 1, "side": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.15, "tool": 11},
+            {"mode": 1, "side": 1, "slice_strategy": "parallel_z", "depth_per_pass": 1.0, "feed": 0.15, "spindle": 1000.0, "tool": 11},
             path=path,
         )
     ]

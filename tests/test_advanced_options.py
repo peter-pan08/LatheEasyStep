@@ -97,6 +97,27 @@ def test_optional_stop_before_toolchange_is_emitted():
     assert "M1" in lines[max(0, toolchange_idx - 8):toolchange_idx]
 
 
+def test_optional_stop_before_first_toolchange_is_emitted():
+    """LES-039: das Tooltip verspricht 'vor jedem Werkzeugwechsel', der
+    allererste Werkzeugwechsel wurde davon aber bisher stillschweigend
+    ausgenommen - genau dort ist Werkzeug/Position am wenigsten bekannt.
+    M1 muss ausserdem VOR der angenommenen sicheren Rueckzugsbewegung
+    stehen, nicht danach, damit der Bediener vor jeder Bewegung pruefen
+    kann."""
+    settings = make_program_settings()
+    settings["optional_stop_toolchange"] = True
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {"program_name": "StopFirstTC"}),
+        Operation(OpType.THREAD, {"tool": 3, "spindle": 400.0, "pitch": 1.0, "length": 10.0, "major_diameter": 8.0}),
+    ]
+    lines = generate_program_gcode(operations, settings)
+    toolchange_idx = lines.index("T03 M6")
+    prelude = lines[:toolchange_idx]
+    assert "M1" in prelude
+    m1_idx = prelude.index("M1")
+    assert not any(line.startswith("G0") for line in prelude[:m1_idx])
+
+
 def test_advanced_abspanen_params_roundtrip_through_persistence():
     op = Operation(
         OpType.ABSPANEN,

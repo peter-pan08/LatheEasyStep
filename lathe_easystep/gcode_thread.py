@@ -65,6 +65,13 @@ def generate_thread_gcode(
         raise ValueError("THREAD first_depth darf thread_depth nicht uebersteigen.")
     if retract_r < 1 or spring_passes < 0 or l_val not in (0, 1, 2, 3):
         raise ValueError("THREAD erfordert R >= 1, H >= 0 und L in 0..3.")
+    # Q ist der Zustellwinkel des G76-Kompoundschlittens: 0 Grad bedeutet
+    # radiale Zustellung (gueltig, z. B. fuer quadratische Gewinde), Werte
+    # nahe/ueber 90 Grad sind physikalisch keine Zustellung mehr entlang der
+    # Flanke. Bisher wurde ein negativer oder unplausibel grosser Wert
+    # ungeprueft direkt in die Q-Ausgabe uebernommen.
+    if not (0.0 <= infeed_q < 90.0) or float(f"{infeed_q:.4f}") >= 90.0:
+        raise ValueError("THREAD Zustellwinkel (infeed_q/Q) muss im Bereich 0 bis <90 Grad liegen.")
     if min(e_val, lead_in, lead_out) < 0:
         raise ValueError("THREAD Taperlaengen duerfen nicht negativ sein.")
     if lead_in > 0.0 or lead_out > 0.0:

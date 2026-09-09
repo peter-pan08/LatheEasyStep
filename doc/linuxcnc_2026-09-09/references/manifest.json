@@ -1,0 +1,71 @@
+{
+  "interpreter": "/usr/bin/rs274",
+  "results": [
+    {
+      "file": "Abdrehen.ngc",
+      "sha256": "53858133fdd38c3c9cbcbff8c53aa5b0039b1f1117f8d8f963ed04f39ef1d75a",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Bohren.ngc",
+      "sha256": "1b76cf9d0725e950c84b7d25c77b3e142754eaceff0ef569529614c99949226b",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "CSS_Wechsel.ngc",
+      "sha256": "1543c6ae34e325d79a0ebad61fb3d2250376313be78c26804cbccc366785a82f",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Einstich.ngc",
+      "sha256": "43b47f1f2cf22aa41c253994bf2d2d68ffba00c8f48de719e49c76c15475bb89",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Freistich_Mitte.ngc",
+      "sha256": "6fb2c5f51da37eefa5cce0c2888001c37dd48d4e2cd52a7092ff4ca07083d937",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Gewinde.ngc",
+      "sha256": "e27b6c86071c38aae73cf1c2d97aecbf165f05236fc2c60d347f687231f0f4ad",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Innen_Radius.ngc",
+      "sha256": "a608b7b1bab1de619052060a9786440ea123d9d579c4b06d4098f44f70e827d6",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Innen_Stufe.ngc",
+      "sha256": "901b6816cdd8a568dea7fb0d5b5a4774b1ad93e76bdb4bafe7afd2704b93e3b5",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Kontur_Radius_Fase.ngc",
+      "sha256": "3f203689f7bf321c5c08973d6ad0843bed63e9b9e1fa90e26f9d8a3d5c0e09cd",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Planen.ngc",
+      "sha256": "160eeeea193e33f330a6da94457932aca2065b8d8a5bacf436ea8a1991e8c3d5",
+      "ok": true,
+      "program_end": true
+    },
+    {
+      "file": "Planen_Radius.ngc",
+      "sha256": "49f3c8897267987334443e938d451a7ba93ecd06194fe2ab9ac61d2d56bdd901",
+      "ok": true,
+      "program_end": true
+    }
+  ]
+}

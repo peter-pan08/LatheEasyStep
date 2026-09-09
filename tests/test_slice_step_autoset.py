@@ -6,7 +6,7 @@ def test_slice_step_defaults_to_depth_per_pass_when_unset():
     m = ProgramModel()
     # Use a non-monotonic X path to force move-based roughing
     path = [(40.0, 2.0), (25.0, -5.0), (30.0, -10.0), (25.0, -35.0)]
-    params = {"mode": 0, "depth_per_pass": 0.75, "slice_strategy": 1, "feed": 0.15, "tool": 1}
+    params = {"mode": 0, "depth_per_pass": 0.75, "slice_strategy": 1, "feed": 0.15, "spindle": 1000.0, "tool": 1}
     op = Operation(OpType.ABSPANEN, params=params, path=path)
     m.operations = [op]
     m.program_settings = {"xt": 150.0, "zt": 300.0, "xra": 60.0, "zra": 5.0}

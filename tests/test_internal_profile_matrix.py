@@ -1,5 +1,6 @@
 from copy import deepcopy
 import re
+import math
 
 import pytest
 
@@ -66,3 +67,41 @@ def test_internal_allowance_leaves_material_for_the_finish_pass():
     assert any("Z-29.900" in line for line in rough if line.startswith("G1"))
     assert not any("Z-30.000" in line for line in rough if line.startswith("G1"))
     assert any("X12.000 Z-30.000" in line for line in lines[finish_index:] if line.startswith("G1"))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("mode", ["rough", "finish", "rough_finish"])
+def test_internal_radius_preserves_arcs_and_material_limits(reverse, mode):
+    ops, settings = example_programs()["Innen_Radius.ngc"]
+    contour = ops[0].params
+    if reverse:
+        contour.update(start_x=18.0, start_z=0.0, segments=[
+            {"x": 18.0, "z": -15.0},
+            {"x": 12.0, "z": -15.0, "edge": "radius", "edge_size": 1.0},
+            {"x": 12.0, "z": -30.0}])
+    ops[-1].params["mode"] = mode
+    lines = generate_program_gcode(ops, settings)
+    assert not any(line.startswith(("G71 ", "G72 ")) for line in lines)
+    assert any(line.startswith("(Pass ") for line in lines) == (mode != "finish")
+    cuts = [line for line in lines if line.startswith(("G1 ", "G2 ", "G3 "))]
+    xs = [float(m[1]) for line in cuts if (m := re.search(r"\bX(-?[0-9.]+)", line))]
+    assert xs and min(xs) > settings["xri"]
+    if mode != "rough":
+        assert any(line.startswith(("G2 ", "G3 ")) for line in lines)
+    primitives = build_contour_variants(contour)["finish_primitives"]
+    emitted = []
+    _emit_finish_primitives(emitted, primitives, feed=.15)
+    sub = contour_sub_from_primitives(primitives, 100)[1:-1]
+    assert [re.sub(r" F[0-9.]+$", "", line) for line in emitted] == sub
+    position = None
+    arcs = 0
+    for line in sub:
+        words = {key: float(value) for key, value in re.findall(r"\b([XZIK])(-?[0-9.]+)", line)}
+        endpoint = (words["X"] / 2, words["Z"])
+        if line.startswith(("G2 ", "G3 ")):
+            assert position is not None
+            center = (position[0] + words["I"], position[1] + words["K"])
+            assert math.dist(position, center) == pytest.approx(math.dist(endpoint, center), abs=.002)
+            arcs += 1
+        position = endpoint
+    assert arcs

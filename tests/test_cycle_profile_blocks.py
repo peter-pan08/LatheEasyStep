@@ -17,6 +17,7 @@ def test_g71_profile_sub_uses_only_g1_g2_g3_for_profile():
                 "slice_step": 1.0,
                 "depth_per_pass": 1.0,
                 "feed": 0.2,
+                "spindle": 1000.0,
                 "tool": 1,
             },
             path=path,

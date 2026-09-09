@@ -1282,6 +1282,16 @@ class HandlerClass:
         except Exception:
             pass
 
+    def _run_startup_callback(self, callback):
+        """Time deferred initialization without changing its scheduling."""
+        label = getattr(callback, "__name__", "callback")
+        started = time.monotonic()
+        self._startup_mark(f"{label} begin")
+        try:
+            return callback()
+        finally:
+            self._startup_mark(f"{label} end ({time.monotonic() - started:.3f}s)")
+
     def _schedule_startup_heartbeats(self):
         return
 
@@ -2563,16 +2573,16 @@ class HandlerClass:
             self.face_edge_size_lbl = self.contour_edge_size_lbl
 
         # einmal initial anwenden
-        QtCore.QTimer.singleShot(0, self._apply_unit_suffix)
-        QtCore.QTimer.singleShot(0, self._update_program_visibility)
-        QtCore.QTimer.singleShot(0, self._update_retract_visibility)
-        QtCore.QTimer.singleShot(0, self._update_subspindle_visibility)
-        QtCore.QTimer.singleShot(0, self._update_face_visibility)
-        QtCore.QTimer.singleShot(0, self._auto_load_tool_table)
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._apply_unit_suffix))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._update_program_visibility))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._update_retract_visibility))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._update_subspindle_visibility))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._update_face_visibility))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._auto_load_tool_table))
         # Kontur-Tab initial vorbereiten (Spalten/Leerzeile optional)
-        QtCore.QTimer.singleShot(0, self._init_contour_table)
-        QtCore.QTimer.singleShot(0, self._sync_contour_edge_controls)
-        QtCore.QTimer.singleShot(0, self._update_contour_preview_temp)
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._init_contour_table))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._sync_contour_edge_controls))
+        QtCore.QTimer.singleShot(0, lambda: self._run_startup_callback(self._update_contour_preview_temp))
 
         # Polling-Timer für die Einheit (mm/inch),
         # falls das Qt-Signal aus irgendeinem Grund nicht feuert

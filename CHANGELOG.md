@@ -2,6 +2,356 @@
 
 ## [Unreleased]
 
+### LES-028/032 Werkzeugdatenvalidierung 2026-09-09
+
+- Explizite Werkzeugorientierung fuer Radiuskorrektur ganzzahlig in 0..9
+  pruefen; defekte Werte nicht mehr abschneiden oder still ignorieren.
+- Negative Radien, Ueberlauf des Schneidendurchmessers und auf D0 gerundete
+  Korrekturwerte blockieren. Fehlende optionale Daten behalten ihr Verhalten.
+- Neun Fehlerfaelle reproduziert, elf Regressionen ergaenzt. 589 Stub-/44
+  Qt-Tests, 88 statische Checks, elf Referenzen und 43 rs274-Matrixfaelle
+  bestanden. Referenzausgabe unveraendert; keine Werkzeughuellenabnahme.
+
+### LES-027 Startzeitmessung 2026-09-09
+
+- Reproduzierbarer Benchmark fuer den isolierten Aufbau mit echtem Qt:
+  je fuenf frische Prozesse unter Windows und WSL, Rohdaten gespeichert.
+- Neun nachgelagerte Startaufgaben des echten Panels erhalten Begin/Ende-
+  Zeitmarken, einschliesslich Werkzeugtabelle und erster Konturvorschau.
+- Gemessener UI-Ausschnitt: Median 0.368 s Windows, 1.362 s WSL.
+  Kein vollstaendiger Panelstart; Ursache der >20 s bleibt unbekannt.
+  Keine Beschleunigung behauptet, keine Generatoraenderung.
+- 578 Stub-/44 Qt-Tests bestanden, keine Skips.
+  [Messbericht](doc/STARTUP_2026-09-09.md).
+
+### LES-040/028 Einstich-Ausgabegrenzen 2026-09-09
+
+- Positive Vorschuebe/Zustellungen duerfen bei der o220-Ausgabe nicht
+  auf null runden. Breiten-/Ueberdeckungspruefung verwendet gerundete
+  Makrowerte; Start und Ende muessen unterscheidbar bleiben.
+- Spanbruchanzahl wird ganzzahlig und nichtnegativ validiert statt gerundet.
+- Fuenf Fehlerfaelle vor Korrektur reproduziert. 578 Stub-/44 Qt-Tests,
+  elf Referenzen und 43 LinuxCNC-Matrixfaelle sowie 88 statische Checks bestanden.
+  Referenzprogramme unveraendert; keine Maschinenabnahme.
+- Bestehende harte Keilnut-Generatorsperre als verbleibende Funktionsluecke
+  dokumentiert; in diesem Schritt nicht aufgehoben.
+
+### LES-037 und Operationsfolgen: Matrix erweitert 2026-09-09
+
+- Vier automatische M12-Gewindefreistichprogramme (innen/aussen,
+  rechts/links) und zwei CSS-Schruppen-/Schlichten-Folgen mit identischem
+  Werkzeug in gemeinsame Regression-/Interpreterfaelle aufgenommen.
+- Fehlender Platz erhaelt bestehende Exportdateien; Konturverlaengerung
+  verschiebt weder Freistichboegen noch Gewindeende. Kein Generatorfix
+  fuer diese Faelle erforderlich.
+- 573 Stub-/44 Qt-Tests, keine Skips; 88 statische Checks und 43
+  Matrixprogramme im echten rs274 bestanden. Elf Referenzen unveraendert.
+- WSLg/AXIS verfuegbar, verborgener GUI-Test erfolgreich. Grafischer
+  Backplot und reale Maschinenabnahme wurden damit nicht durchgefuehrt.
+  [Nachweise und Grenzen](doc/linuxcnc_2026-09-09/README.md).
+
+### Review und Fortsetzung nach Unterbrechung 2026-09-09
+
+- Zwischenstand mit 559 Stub-/44 Qt-Tests geprueft und weitgehend behalten.
+- LES-018: `prefer_explicit` verhindert jetzt auch beim separaten Schlichten
+  eine automatische G70-Wiederverwendung; auto/G70 bleibt erhalten.
+- LES-028/040: G76 Q darf nach Ausgaberundung nicht 90 erreichen;
+  CSS-Schnittgeschwindigkeit und Startdurchmesser duerfen nicht auf null runden.
+  Vier zuvor fehlschlagende Regressionen sichern die Korrekturen ab.
+- Fuenf CSS-Faelle und zwei G70-/explizite Schlichtfolgen in die
+  reproduzierbare LinuxCNC-Matrix aufgenommen: elf Referenzen und
+  37 Matrixfaelle bestanden. 563 Stub-/44 Qt-Tests, 88 statische Checks.
+- Zu weitgehende LES-013-Abschlussaussage korrigiert: stock_x entspricht
+  nicht jedem Passdurchmesser; explizite Freifahrten und zyklusinterne
+  Bewegungen sind getrennt zu bewerten. Backplot/Maschinenabnahme offen.
+  [Review und Interpreter-Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+### Dokumentations-Nachtrag 2026-09-09 (LES-012/027/037)
+
+- LES-012: `Kontur_Radius_Fase.ngc` (`G3 ... I-3.000`) und die daraus
+  abgeleiteten Matrixfaelle sind Teil der bei jeder Sitzung gegen echten
+  rs274 verifizierten Referenzen - der Nichtnull-I-Parser-Punkt ist damit
+  abgedeckt (Backplot grafisch weiterhin offen).
+- LES-027: neues `measure_startup.py` misst Shell-UI, acht Teil-UIs,
+  Zusatzwidgets und statische Uebersetzungsstruktur separat, mit
+  Handler-Instrumentierung fuer die neun nachgelagerten Startaufgaben. Die
+  gemeldeten >20s liessen sich unter Windows (0.587s) und WSL/Debian
+  (1.565s) NICHT reproduzieren - kein Root Cause, keine unbelegte
+  Optimierung. Siehe [doc/STARTUP_2026-09-09.md](doc/STARTUP_2026-09-09.md).
+- LES-037: neue automatisierte Matrix (`test_thread_relief_matrix.py`)
+  beweist die Kernaussage - eine Konturverlaengerung hinter dem Gewinde
+  verschiebt den Freistich nicht - fuer Aussen/Innen x Rechts/Links, alle
+  vier real gegen rs274 verifiziert. Reale Backplot-/Trockenlauf-Abnahme
+  bleibt der einzige noch offene Punkt.
+
+### LES-028 G76-Zustellwinkel begrenzt 2026-09-09
+
+- `infeed_q` (G76-Zustellwinkel `Q`) floss bisher vollstaendig ungeprueft
+  in die Ausgabe ein - ein negativer oder unplausibel grosser Wert
+  (>=90 Grad) waere unveraendert als `Q`-Wort ausgegeben worden. Jetzt auf
+  den physikalisch gueltigen Bereich 0..<90 Grad geprueft (0 = radiale
+  Zustellung, z. B. Quadratgewinde, bleibt explizit gueltig).
+- "G7-Massystem nicht erneut als offenen Fachfehler behandeln": keine
+  verbleibende Stelle gefunden, die das bereits per Realtest bestaetigte
+  G76-Massystem noch als offen fuehrt - kein Codegap.
+- Bewusst nicht umgesetzt: "Werkzeugwechsel nur aus normalisiertem
+  Werkzeugdatensatz erzeugen" und "Preset-/manuelle Werte nachvollziehbar
+  vergleichen" sind im TODO nicht praezise genug spezifiziert fuer eine
+  sichere Entscheidung, ohne moeglicherweise viele bestehende Testfixtures
+  oder reale Programme ohne vollstaendig gepflegte Werkzeugtabelle zu
+  brechen (aehnliches Risiko wie beim Drehzahl-Fund in LES-040) - bleibt
+  offen fuer eine Sitzung mit Klaerung der genauen Anforderung.
+- Unter WSL/Debian mit echtem rs274 verifiziert, keine Ausgabeaenderung.
+  559 Stub-Tests, 44 Real-Qt-Tests, keine Skips.
+
+### LES-018 G70-Wiederverwendung fuer separaten Schlichtstep 2026-09-09
+
+- Ein reiner Schlichtstep (eigene Operation, typischerweise eigenes
+  Werkzeug) nutzt jetzt `G70 Q<sub>`, um den Kontur-Sub eines frueheren,
+  separaten Schruppschritts wiederzuverwenden, statt die Fertigkontur
+  nochmal explizit als G1/G2/G3-Liste auszugeben - aber nur, wenn dieser
+  exakte Sub nachweislich per G71/G72 zyklisch definiert wurde (neue
+  `_cycle_defined_subs`-Zustandsverfolgung) und keine Werkzeugradius-
+  korrektur noetig ist.
+- Fallback auf den bestehenden expliziten Schlichtweg bleibt fuer alle
+  anderen Faelle unveraendert (keine benannte Kontur, kein vorheriger
+  Zyklus, Innenbearbeitung - nutzt G71/G72 ohnehin nie -, Werkzeug-
+  korrektur). Reiner Schlichtstep schruppt dabei nie erneut: G70 fuehrt
+  ausschliesslich den bereits vorhandenen Fertigkontur-Sub aus.
+- Real mit einem separaten Zwei-Werkzeug-Rough/Finish-Programm gegen
+  echten rs274 verifiziert: der Schlichtschritt fuehrt nur die zwei
+  tatsaechlichen Konturbewegungen aus, keine erneute Schruppbewegung,
+  keine zweite Subroutine-Definition.
+- Alle 11 Referenzen und 30 Matrixfaelle bestehen unveraendert (keine
+  nutzt den neuen Pfad). 555 Stub-Tests, 44 Real-Qt-Tests, keine Skips.
+
+### LES-013 CSS-Aktivierungsposition verifiziert 2026-09-09
+
+- Codepruefung: jeder Aufrufer von `append_tool_and_spindle()` mit CSS-
+  Parametern (`gcode_face.py`, `gcode_roughing.py` - Schrupp-Zyklus,
+  Move-based-Schruppen je Pass, separater Hinterschnitt, Schlichtschnitt,
+  `gcode_thread.py`, `gcode_groove.py`) uebergibt als `css_start_diameter`
+  konsistent den Durchmesser, an dem `emit_approach()` unmittelbar danach
+  tatsaechlich ankommt, bevor G96 aktiviert wird - keine Diskrepanz
+  gefunden. Move-based-Schruppen aktiviert/suspendiert CSS sogar je Pass.
+- Modalsequenz frisch gegen echten rs274 verifiziert (kanonische
+  `SET_SPINDLE_MODE`/`SET_SPINDLE_SPEED`-Ausgabe eines CSS-Wechsel-
+  Programms geprueft).
+- Kein Codegap gefunden, keine Aenderung noetig - alle offenen
+  Checklistenpunkte in TODO.md abgehakt. Grafischer Backplot und reale
+  Maschinenabnahme bleiben separate, unveraenderte Grenzen (LES-030).
+
+### LES-031 Redundante Nullbewegungen entfernt 2026-09-09
+
+- `gcode_drill.py` gab nach jedem Bohrzyklus unbedingt ein `G0 Z<safe_z>`
+  aus. Empirisch gegen echten `rs274` verifiziert: LinuxCNC-Zyklen kehren
+  im Default-Modus G99 auf die Rueckzugsebene R zurueck, nicht auf die
+  Z-Position vor dem Zyklus - da `retract` ohne Angabe auf `safe_z`
+  faellt, stand das Werkzeug nach `G80` im Standardfall bereits auf
+  `safe_z`. Die zusaetzliche Bewegung wird jetzt nur noch ausgegeben, wenn
+  `retract` explizit hoeher als `safe_z` gesetzt ist (dann echt noetig).
+- `append_tool_and_spindle()` gab vor jedem Werkzeugwechsel unbedingt
+  einen Rueckzug auf die Aussen-Sicherheitsposition aus, auch wenn die
+  vorherige Operation dort bereits exakt stand. Eng begrenzte
+  Zustandsverfolgung (`_safe_x`/`_safe_z`, nur an Stellen gesetzt, wo die
+  Position unmittelbar zuvor sicher bekannt ist) erkennt und ueberspringt
+  diesen Fall jetzt.
+- Bewusst nicht angefasst: eine dritte Redundanz in den Innen-Schrupp-
+  zyklen (`rough_turn_parallel_x/z`) - ein Fix dafuer bräuchte echte
+  zentrale Positionsverfolgung (LES-022), sonst Risiko veralteten, im
+  `rough_finish`-Kombimodus falsch als sicher angenommenen Zustands.
+- Unter WSL/Debian mit echtem rs274 verifiziert (11 Referenzen, 30
+  Matrixfaelle). 553 Stub-Tests, 44 Real-Qt-Tests, keine Skips.
+
+### LES-001 Warnung und Fahrweg abgeglichen 2026-09-09
+
+- `get_approach_warnings()` meldete "Rueckzugsebene schneidet den
+  Futterbereich" bisher allein anhand des Z-Grenzwerts der Futter-
+  Sperrzone, ohne wie `validate_chuck_segment()` auch das X-Intervall zu
+  pruefen. Eine sichere Position mit X ausserhalb der Sperrzone wurde
+  dadurch faelschlich als gefaehrdet gemeldet, obwohl der tatsaechliche,
+  bereits abgesicherte Fahrweg dort nie hinfuehrt - Warnungstext und
+  echtes Verhalten widersprachen sich. Beide pruefen jetzt dieselbe
+  Bedingung.
+- Damit ist LES-001 vollstaendig durchgegangen bis auf die bewusst nicht
+  umgesetzte "dynamische" Achsreihenfolge-Wahl je Eilgang: das wuerde den
+  Projektzielen (deterministische, nachvollziehbare Bewegungen)
+  zuwiderlaufen und ist auch im ausgewerteten Inventor-Post (LES-006)
+  nicht vorgesehen - der nutzt ebenfalls eine feste, global konfigurierte
+  Reihenfolge statt einer Fall-zu-Fall-Entscheidung.
+- Unter WSL/Debian mit echtem rs274 verifiziert (11 Referenzen, 30
+  Matrixfaelle), keine Ausgabeaenderung. 550 Stub-Tests, 44 Real-Qt-Tests,
+  keine Skips.
+
+### LES-006 Inventor-Post als Referenz ausgewertet 2026-09-09
+
+- `doc/linuxcnc turning.cps` (Autodesk generischer LinuxCNC-Drehpost)
+  ausgewertet: der Post hat keine Matrix je Operationstyp - Rueckzugs- und
+  Anfahrreihenfolge sind je eine globale Post-Eigenschaft fuer das gesamte
+  Programm, unabhaengig vom Operationstyp. Unser Generator unterscheidet
+  bereits feiner (Bohren/Gewinde Z-vor-X, Einstich/Keilnut X-vor-Z).
+- Gepruefter, bewusst nicht umgesetzter Vorschlag: Rueckzug bei
+  unbekanntem Ausgangszustand auf eine feste G53-Maschinenposition
+  umstellen (wie in der Referenz). Geometrisch widerlegt: ein fester
+  Punkt macht eine Diagonalbewegung von unbekannter Startposition nicht
+  automatisch kollisionsfrei (Gegenbeispiel dokumentiert in TODO.md) und
+  entzieht sich vollstaendig der LES-001-Segmentpruefung. Keine
+  Codeaenderung; Ergebnis in TODO.md/DEV.md festgehalten.
+
+### LES-040 Spindel-Start darf nicht stillschweigend ausbleiben 2026-09-09
+
+- `append_tool_and_spindle()` - die zentrale Funktion, die fuer JEDE
+  Operation (Abspanen, Einstich, Bohren, Gewinde, Planen) die Drehzahl
+  ausgibt - schluckte `spindle=0`, negative Werte, fehlende Werte sowie
+  eine auf 0 U/min gerundete positive Drehzahl bisher vollstaendig
+  stillschweigend: kein Fehler, kein `M3`/`S..` irgendwo im Programm. Real
+  reproduziert: eine komplette Abspanen-Operation mit `spindle=0` erzeugte
+  ein vollstaendig "gueltiges" Programm, in dem die Spindel nie gestartet
+  wird.
+- Blockiert jetzt die Ausgabe, mit einer bewussten Ausnahme fuer die reine
+  Werkzeugwechsel-Positionierung (`require_spindle=False` an den zwei
+  Stellen in `gcode_program.py`, deren Aufgabe nur das Anfahren des
+  Wechselpunkts ist - die eigentliche Drehzahl inkl. CSS setzt danach
+  immer der jeweilige Operations-Generator selbst).
+- Aendert 22 Testfixtures quer durchs Projekt (Innenkontur-Matrix,
+  Subroutinen, Rueckzugslogik, CSS, Parting), die bisher nie eine
+  Drehzahl gesetzt hatten, um eine sinnvolle Drehzahl - keine Aufweichung
+  der neuen Pruefung.
+- Unter WSL/Debian mit echtem rs274 verifiziert (11 Referenzen, 30
+  Matrixfaelle), keine Ausgabeaenderung fuer bestehende Programme. 549
+  Stub-Tests, 44 Real-Qt-Tests, keine Skips. "Koordinaten, Vorschuebe,
+  Zustellungen und Sicherheitswerte" ausserhalb der Drehzahl sind weiterhin
+  nicht vollstaendig auf fachlich passende Wertebereiche durchgegangen.
+
+### LES-039 M1 vor dem ersten Werkzeugwechsel 2026-09-09
+
+- `optional_stop_toolchange` ("Fuegt vor JEDEM Werkzeugwechsel ein
+  optionales M1 ein") schloss den allerersten Werkzeugwechsel bisher
+  stillschweigend aus - genau dort, wo Werkzeug und Ausgangsposition am
+  wenigsten bekannt sind, weil keine vorherige Operation existiert. M1
+  gilt jetzt fuer jeden Werkzeugwechsel einschliesslich des ersten.
+- M1 steht jetzt VOR der angenommenen sicheren Z-vor-X-Rueckzugsbewegung,
+  nicht mehr danach - der Bediener kann den tatsaechlichen Maschinen-
+  zustand pruefen, bevor irgendeine Bewegung ausgefuehrt wird.
+- Das ist eine prozedurale Absicherung fuer LES-039 ("unbekannten Zustand
+  nicht als sicher annehmen"), keine geometrische: die pauschale
+  Z-vor-X-Reihenfolge bei unbekanntem Ausgangszustand bleibt bestehen, da
+  eine Textgenerierung den realen Maschinenzustand nicht kennen kann.
+- Unter WSL/Debian mit echtem rs274 verifiziert (11 Referenzen, 30
+  Matrixfaelle, Sonderfall mit M1 vor dem ersten Wechsel), keine
+  Ausgabeaenderung fuer bestehende Programme. 543 Stub-Tests, 44
+  Real-Qt-Tests, keine Skips.
+
+### LES-001 Zweiter Rueckzugsschritt gegen Rohteil/Futterzone 2026-09-09
+
+- Der zweite Teilschritt jeder Rueckzugsreihenfolge (die zuerst erreichte
+  sichere Achse bleibt dabei konstant, nur die andere Achse bewegt sich)
+  wird jetzt in `emit_safe_retract_for_op()` (Einstich/Keilnut, Bohren/
+  Gewinde, X-vor-Z-Fallback bei Start im Rohteil/in der Futterzone) UND in
+  `emit_approach()` (Aussen-Modus) gegen Futter-Sperrzone und - ausser im
+  Innen-Modus, der eine Bohrung nicht als Rechteck abbilden kann - gegen
+  die Rohteil-Huellkurve geprueft. Der erste Teilschritt (Flucht aus der
+  aktuellen Position) bleibt bewusst ungeprueft, da er dort legitim
+  beginnen darf.
+- Dabei einen echten, bis dahin unentdeckten Fall gefunden und behoben:
+  ein bestehender Test konfigurierte eine "sichere" XRA=60, die selbst noch
+  innerhalb der Futter-Sperrzone (X20..80) lag - der zweite Rueckzugsschritt
+  haette die gesamte restliche Z-Strecke ungeprueft mitten durch die Sperr-
+  zone gefuehrt. Testfixture auf eine tatsaechlich sichere XRA=90 korrigiert.
+- Unter WSL/Debian mit echtem rs274 verifiziert: alle 11 Referenzen und
+  30 Matrixfaelle bis PROGRAM_END bestanden, keine Ausgabeaenderung.
+  542 Stub-Tests, 44 Real-Qt-Tests, keine Skips. Die eigentliche
+  Achsreihenfolge-Entscheidung nach Rohteil-/Futterzone (LES-001,
+  Kernpunkt: Reihenfolge dynamisch statt fest je Operationstyp) bleibt
+  offen - fixe Konventionen, die im Einzelfall nicht sicher sind, werden
+  jetzt aber blockiert statt stillschweigend ausgefuehrt.
+
+### LES-001 Achsreihenfolge und Werkzeugwechsel-Regressionen 2026-09-09
+
+- Regressionstest fixiert die op-spezifische Rueckzugs-Achsreihenfolge:
+  Einstich/Keilnut zieht X vor Z zurueck, Bohren/Gewinde immer Z vor X -
+  unabhaengig vom Startpunkt, damit ein im Einstich/Gewindegang stehendes
+  Werkzeug nicht zuerst radial bewegt wird.
+- Aussen- UND Innen-Schruppen->Schlichten mit identischem Werkzeug erzeugen
+  nachweislich nur einen Werkzeugwechsel; die Anfahrt der zweiten Operation
+  lief in beiden Faellen fehlerfrei durch (bei Innenarbeit bleibt die
+  sichere Position innerhalb der bereits gebohrten/hohlen Zone - kein neuer
+  Fehler gefunden, bestehendes Verhalten jetzt regressionsgesichert).
+- 539 Stub-Tests, 44 Real-Qt-Tests, keine Skips; Referenzprogramme
+  unveraendert. Die eigentliche Achsreihenfolge-Entscheidung nach Rohteil-/
+  Futterzone (LES-001, Kernpunkt) und der Abgleich Warnung/tatsaechlicher
+  Fahrweg bleiben offen.
+
+### LES-001 Diagonal-Eilgaenge gegen Rohteil 2026-09-09
+
+- `validate_stock_segment()` prueft reine Diagonal-Eilgaenge (`G0 X.. Z..`
+  in einer Zeile) gegen die Rohteil-Huellkurve als vollstaendiges Rechteck -
+  auch wenn Start- und Zielpunkt jeweils fuer sich ausserhalb liegen, die
+  Strecke dazwischen aber mitten durchs Rohteil fuehrt. Betrifft den
+  Diagonal-Rueckzug in `emit_safe_retract_for_op` und die Anfahrt der
+  Werkzeugwechselposition in `move_to_toolchange_pos`.
+- Bewusst ausgenommen: die achsweise Anfahrt-/Rueckzugsfolge in
+  `emit_approach` (dort landet der Zielpunkt bei Folgeoperationen wie
+  Schlichten nach Schruppen absichtlich innerhalb der Rohteil-Huellkurve)
+  sowie jede Sicherheitsposition im Innen-Modus - die Huellkurve ist ein
+  reines Aussenmass-Rechteck und kann eine Bohrung nicht abbilden.
+- Regressionsfaelle fuer Rohteil-Diagonalkreuzung ergaenzt, analog zur
+  bestehenden Futter-Sperrzonen-Pruefung. 533 Stub-Tests, 44 Real-Qt-Tests,
+  keine Skips; Referenzprogramme unveraendert (reine Zusatzpruefung ohne
+  Ausgabeaenderung). Die eigentliche "sichere Achsreihenfolge je nach
+  Rohteil-/Futterzone" (LES-001, erster Punkt) bleibt offen.
+
+### LES-005 Innen-Schlichtrueckzug 2026-09-09
+
+- Innen-Schlichten zieht zuerst radial nach XRI und erst danach axial nach
+  ZRI zurueck. Programmierte Segmente werden gegen Futter-Sperrzonen geprueft.
+- Bei aktiver Radiuskorrektur G40 vor der radialen G1-Freifahrt; physischer
+  Weg im G7-Masssystem nach Ausgaberundung muss laenger als der Schneiden-
+  durchmesser sein. Bei zu wenig Freiraum wird die Ausgabe blockiert.
+- Richtungs-, Korrektur- und Rundungsregressionen ergaenzt. Vier weitere
+  LinuxCNC-Matrixfaelle mit Radiuskorrektur an Innenzylinder/-konus.
+- 524 Stub-Tests, 44 Qt-Tests, 88 statische Checks; elf Referenzen und
+  30 Matrixprogramme im echten Interpreter bestanden. Werkzeughuellen,
+  weitere kompensierte Konturformen und reale Abnahme bleiben offen.
+  [Pruefbericht](doc/LES005_INNEN_RUECKZUG_2026-09-09.md).
+
+### WSL-/LinuxCNC-Fortsetzung 2026-09-09
+
+- Echter rs274-Lauf deckt nichtmonotonen Bogen in `Kontur_Radius_Fase` auf.
+  G71/G72-Pruefung beruecksichtigt jetzt analytische Bogenextrema und weist
+  solche Konturen ab; urspruenglicher Fehler fuer beide Achsstrategien getestet.
+- Positives Referenzbeispiel auf monotonen Viertelkreis umgestellt; Nutzer-
+  konturen werden nicht automatisch veraendert. Expliziter Schlichtweg erhaelt
+  jetzt auch bei rein primitiven Konturen G2/G3 statt gerader Verbindungen.
+- Elf Referenzen und 26 Matrixprogramme bestehen LinuxCNC 2.10.0~pre1 unter
+  WSL/Debian bis PROGRAM_END. Kanonische Ausgaben und SHA256-Manifeste
+  archiviert; Matrixgenerator und Report-/Eingabeordneroptionen hinzugefuegt.
+- 516 Stub-Tests, 44 Real-Qt-Tests, keine Skips; 88 statische NGC-Checks.
+  Grafischer Backplot, Trockenlauf und verbleibende Sicherheitsaufgaben offen.
+  [Interpreterbericht](doc/linuxcnc_2026-09-09/README.md).
+
+### Fortsetzung 2026-09-09 (LinuxCNC-Abnahme offen)
+
+- LES-013: gesicherten CSS-Zwischenstand geprueft; veraltete vorbereitete
+  Aktivierung beim G97-Fallback entfernt, Maximaldrehzahl ohne Ueberschreitung
+  durch Ganzzahlrundung. Gemischtes CSS/G97/CSS-Referenzprogramm und echter
+  Qt-Programmdatei-/Formular-Roundtrip ergaenzt.
+- LES-040/028: Bohrmodi werden nicht mehr still zu G81 umgedeutet;
+  endliche Bohrwerte, positive ausgegebene Vorschuebe/Zustelltiefen und
+  nichtnegative Verweilzeiten vor Bewegungsplanung geprueft. Zahlenleser
+  ersetzen defekte explizite Werte nicht durch andere Aliase oder Defaults.
+  Fehler beim G-Code-Export erhalten bestehende Dateien.
+- LES-003/012/015: Innenradius in beiden Konturrichtungen und drei Modi,
+  Schnittgrenzen und erhaltene Boegen getestet. Ausgabe von Schlichtweg und
+  Kontur-Subroutine sowie G7-Bogenradien verglichen.
+- Elf Referenzen regeneriert; neu `CSS_Wechsel.ngc` und `Innen_Radius.ngc`.
+  Die bisherigen neun Dateien bleiben unveraendert. 513 Stub-Tests,
+  44 Real-Qt-Tests und 88 statische NGC-Checks bestanden, keine Skips.
+- Testabhaengigkeiten festgehalten und veraltete README-Einschraenkungen
+  korrigiert. WSL und rs274 fehlen auf diesem Rechner; offene P0-Punkte,
+  komplette CSS-Modalsequenz und reale Abnahmen bleiben offen.
+  [Verifikationsbericht](doc/VERIFICATION_2026-09-09.md).
+
 ### Lokale Umsetzung 2026-09-08 (noch keine Maschinenabnahme)
 
 - LES-041 abgeschlossen: Generierung auf tief kopiertem Programmsnapshot;

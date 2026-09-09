@@ -1,0 +1,157 @@
+%
+(Programm automatisch erzeugt)
+(Programmname: Innen_Radius)
+(Masseinheit: mm)
+G18 G7 G90 G91.1 G40 G80
+G21
+G95
+G54
+
+(=== SICHERHEITSPARAMETER ===)
+(Werkzeugwechselpunkt: X150.000 Z300.000 Werkstueckkoordinaten)
+(Rueckzugsebenen: XRA=40.000 XRI=9.000)
+(               ZRA=2.000 ZRI=2.000)
+(Rohteil Aussendurchmesser: 40.000 mm)
+(Rohteil Z-Bereich: 0.000 bis -55.000 mm)
+(=== END SICHERHEITSPARAMETER ===)
+
+(WARN: Innenbearbeitung 'Operation 2' steht vor der ersten Bohrung in der Ablaufreihenfolge - das Werkzeug hat moeglicherweise keinen Zugang zum Material. Bohrung nach vorne verschieben oder Reihenfolge pruefen.)
+
+(Werkzeug T11)
+G0 Z2.000
+G0 X80.000
+M5
+M9
+(Toolchange move)
+G0 X150.000 Z300.000
+T11 M6
+G0 X80.000 Z2.000
+
+
+
+(Step 2: abspanen)
+(ABSPANEN)
+(Schlichtaufmaß X/Z: 0.200/0.100 mm)
+G97 S800 M3
+F0.150
+(Strategie: parallel_z)
+(Ausgabe bevorzugen: auto)
+(Hinterschnitt-Modus: full)
+(Aufmass X/Z: 0.200/0.100)
+(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)
+(ABSPANEN Rough - parallel Z - Move-based)
+(Pass 1: X-band [10.000,10.500])
+G0 Z2.000
+G0 X10.500
+G1 Z0.100 F0.150
+G1 X10.500 Z-29.900 F0.150
+G0 X9.000
+(Pass 2: X-band [10.500,11.000])
+G0 Z2.000
+G0 X11.000
+G1 Z0.100 F0.150
+G1 X11.000 Z-29.900 F0.150
+G0 X9.000
+(Pass 3: X-band [11.000,11.500])
+G0 Z2.000
+G0 X11.500
+G1 Z0.100 F0.150
+G1 X11.500 Z-29.900 F0.150
+G0 X9.000
+(Pass 4: X-band [11.500,12.000])
+G0 Z2.000
+G0 X12.000
+G1 Z0.100 F0.150
+G1 X12.000 Z-15.800 F0.150
+G0 X9.000
+(Pass 5: X-band [12.000,12.500])
+G0 Z2.000
+G0 X12.500
+G1 Z0.100 F0.150
+G1 X12.500 Z-15.550 F0.150
+G0 X9.000
+(Pass 6: X-band [12.500,13.000])
+G0 Z2.000
+G0 X13.000
+G1 Z0.100 F0.150
+G1 X13.000 Z-15.300 F0.150
+G0 X9.000
+(Pass 7: X-band [13.000,13.500])
+G0 Z2.000
+G0 X13.500
+G1 Z0.100 F0.150
+G1 X13.500 Z-15.050 F0.150
+G0 X9.000
+(Pass 8: X-band [13.500,14.000])
+G0 Z2.000
+G0 X14.000
+G1 Z0.100 F0.150
+G1 X14.000 Z-14.900 F0.150
+G0 X9.000
+(Pass 9: X-band [14.000,14.500])
+G0 Z2.000
+G0 X14.500
+G1 Z0.100 F0.150
+G1 X14.500 Z-14.900 F0.150
+G0 X9.000
+(Pass 10: X-band [14.500,15.000])
+G0 Z2.000
+G0 X15.000
+G1 Z0.100 F0.150
+G1 X15.000 Z-14.900 F0.150
+G0 X9.000
+(Pass 11: X-band [15.000,15.500])
+G0 Z2.000
+G0 X15.500
+G1 Z0.100 F0.150
+G1 X15.500 Z-14.900 F0.150
+G0 X9.000
+(Pass 12: X-band [15.500,16.000])
+G0 Z2.000
+G0 X16.000
+G1 Z0.100 F0.150
+G1 X16.000 Z-14.900 F0.150
+G0 X9.000
+(Pass 13: X-band [16.000,16.500])
+G0 Z2.000
+G0 X16.500
+G1 Z0.100 F0.150
+G1 X16.500 Z-14.900 F0.150
+G0 X9.000
+(Pass 14: X-band [16.500,17.000])
+G0 Z2.000
+G0 X17.000
+G1 Z0.100 F0.150
+G1 X17.000 Z-14.900 F0.150
+G0 X9.000
+(Pass 15: X-band [17.000,17.500])
+G0 Z2.000
+G0 X17.500
+G1 Z0.100 F0.150
+G1 X17.500 Z-14.900 F0.150
+G0 X9.000
+(Pass 16: X-band [17.500,17.800])
+G0 Z2.000
+G0 X17.800
+G1 Z0.100 F0.150
+G1 X17.800 Z-14.900 F0.150
+G0 X9.000
+(Schlichtschnitt Kontur)
+G0 X12.000
+G1 X12.000 Z-30.000 F0.150
+G1 X12.000 Z-16.000 F0.150
+G3 X14.000 Z-15.000 I1.000 K0.000 F0.150
+G1 X18.000 Z-15.000 F0.150
+G1 X18.000 Z0.000 F0.150
+G0 X9.000
+G0 Z2.000
+G0 X9.000
+G0 Z2.000
+
+(Werkzeugwechselpunkt am Ende)
+G0 X150.000 Z300.000
+
+M5
+M9
+M30
+%
