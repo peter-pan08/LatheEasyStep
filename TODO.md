@@ -9,9 +9,18 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 ## Aktuell verifizierte Basis
 
+- Native Nachpruefung von `11ee8b0`: 590/44 Tests und 11+43 rs274-Faelle
+  bestanden; Simulations-Programmladen ebenfalls geprueft. Startbefunde und
+  verbleibende Grenzen: [nativer Bericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
+- Zusaetzlich `Innen_Radius.ngc`/`Innen_Stufe.ngc` (neue Innen-
+  Schlichtanfahrt) in der QtDragon-Simulation ueber die Task-NML geladen;
+  die geladene Programmquelle bestaetigt den erwarteten Fahrweg. Ein
+  gezoomter, kollisionsfrei gepruefter Backplot bleibt an derselben
+  Simulationskonfiguration (SUBROUTINE_PATH/HOME) weiterhin offen.
+
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand: `590 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
+- Teststand: `595 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
   getrennte Prozesse ueber `python run_tests.py`, keine Skips.
 - Elf Referenzprogramme regeneriert; statische NGC-Pruefung bestanden.
   LinuxCNC-Parser: elf Referenzen und 43 Matrixfaelle bestanden;
@@ -345,13 +354,54 @@ LES-010/LES-011 offen. Die Antwort schliesst die Nutzerfrage, ersetzt aber
 nicht die reproduzierbare Generator- und LinuxCNC-Verifikation.
 
 - [ ] zuerst auf nachweislich freien Innendurchmesser fahren
-- [ ] axial auf Konturstart fahren, bevor der Schnittdurchmesser angefahren wird
-- [ ] Schneidenradiuskorrektur nur auf ausreichend langem Einfahrweg aktivieren
-- [ ] Konturstart vorne und hinten getrennt testen
+- [x] axial auf Konturstart fahren, bevor der Schnittdurchmesser angefahren wird
+- [x] Schneidenradiuskorrektur nur auf ausreichend langem Einfahrweg aktivieren
+- [x] Konturstart vorne und hinten getrennt testen
 - [x] nach dem Schnitt zuerst radial und danach axial freifahren
 - [ ] Innenstufe, Innenkonus und Innenradius als automatisierte Regressionen
   plus LinuxCNC-Backplot absichern
 - [ ] Innenfreistich nach Umsetzung von LES-010/LES-011 separat abnehmen
+
+Teilstand 2026-09-09 (native Fortsetzung): Der explizite Innen-Schlichtweg
+faehrt nun auf XRI axial bis zur Z-Lage des Konturstarts und stellt erst dort
+radial im Bearbeitungsvorschub auf den ersten Profildurchmesser zu. Zuvor
+wurde bereits an der vorderen Sicherheitsebene auf Schnittdurchmesser
+gefahren und anschliessend diagonal zum tiefen Konturstart geschnitten.
+Die neue Reihenfolge gilt auch ohne Radiuskorrektur, damit ein separater
+Schlichtstep vorhandenes Aufmass nicht per G0 trifft. Bei G41.1 wird der
+radiale Einfahrweg anhand der auf drei Stellen gerundeten X-Ausgabe im
+G7-Durchmessermass geprueft; er muss groesser als der Werkzeugdurchmesser
+sein. Vorne/hinten, mit/ohne Kompensation und Rundungsgrenzen automatisiert
+getestet. 595 Stub-/44 echte Qt-Tests sowie elf Referenzen und 43
+Matrixfaelle mit nativem rs274 bestanden. `Innen_Stufe.ngc` und
+`Innen_Radius.ngc` zeigen die geaenderte Anfahrt. Vollstaendiger Nachweis
+des freien Innendurchmessers inklusive Werkzeughuelle sowie grafische und
+reale Abnahme bleiben offen.
+
+Teilstand 2026-09-09 (SIM-Konfiguration korrigiert, echter Trockenlauf):
+Die QtDragon-Simulation (`sim.qtdragon_lathe.basic_xz_lathe-1/lathe.ini`,
+ausserhalb dieses Projekts) verhinderte bisher jeden echten Trockenlauf -
+`emcMotionInit: emcTrajInit failed` beim Start liess die Maschine nie aus
+dem Not-Aus. Ursache war ein unnoetiger 50us-Base-Thread
+(`BASE_PERIOD = 50000`), den `basic_sim.tcl` nur auf ausdruecklichen
+INI-Wunsch anlegt und den diese reine Simulation (kein Stepgen/keine
+Schrittmotor-Ausgabe) nicht braucht. Nach Entfernen von `BASE_PERIOD`,
+Ergaenzen von `HOME = 0.0` in `[JOINT_0]`/`[JOINT_1]` und Umstellen von
+`SUBROUTINE_PATH` auf einen absoluten Pfad (Sicherung der Original-INI:
+`lathe.ini.bak-2026-09-09`) liess sich die Maschine erstmals aus dem
+Not-Aus holen, beide Achsen referenzieren (`HOME=0/0`) und `Innen_Radius.ngc`
+sowie `Innen_Stufe.ngc` je einmal vollstaendig im AUTO-Modus bis `M30`
+abfahren - inklusive des manuellen Werkzeugwechseldialogs, ohne Eintrag im
+NML-Fehlerkanal. Damit ist erstmals ein echter, nicht nur interpretierter
+Trockenlauf fuer diese beiden Referenzen erbracht. Ein doppelt geladenes
+`hal_manualtoolchange` (ein zweites, dauerhaft unsichtbares
+Werkzeugwechsel-Fenster) ist als harmloser, aber unschoener Rest in der
+SIM-Konfiguration aufgefallen und noch nicht bereinigt. Ein gezoomter,
+grafisch abgelesener Konturvergleich (Backplot-Screenshot der Feinkontur)
+bleibt weiterhin offen - die Vorschaugrafik stellt Eilgang zum weit
+entfernten Werkzeugwechselpunkt und die millimetergenaue Kontur im selben
+Massstab dar, sodass Letztere im Screenshot nicht lesbar wird. Details:
+`doc/NATIVE_VERIFICATION_2026-09-09.md`.
 
 ### LES-037 Freistich/Relief am Gewindeende verankern
 

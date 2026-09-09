@@ -12,7 +12,7 @@ Ziel ist:
 - `v0.7.0` ist die lauffaehige Basis auf `main`.
 - `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
   die stabile, lauffaehige Basis.
-- Aktueller Teststand: `590 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
+- Aktueller Teststand: `595 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
   Rechts-/Linksgewinde, `rough_finish`, Realtest-Fixes und die geteilte UI.
@@ -61,6 +61,19 @@ UI und Toolpath-Logik sind bewusst getrennt.
   `.ui`-Dateien) entfernt (LES-029).
 
 ## Test-Hinweise
+
+- Auf dem nativen LinuxCNC-Rechner `/usr/bin/python3 run_tests.py` nutzen:
+  System-Python besitzt PyQt5/qtpy, die lokale `.venv` derzeit nicht.
+  Native rs274- und Simulationsbefunde fuer `11ee8b0`:
+  `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+- LES-005: Der explizite innere Schlichtweg beginnt geometrisch bei
+  `(XRI, Konturstart-Z)`. `_emit_finish_primitives(..., initial_pos=...)`
+  kennt diesen realen Ausgangspunkt, sodass die erste Profilbewegung radial
+  im Vorschub erfolgt und nicht als redundanter Punkt oder G0 ausgegeben
+  wird. Kompensierte Einfahrwege werden im G7-Durchmessermass berechnet:
+  `(Profilstart-X - XRI) / 2 > Werkzeugdurchmesser`, jeweils nach Rundung
+  der ausgegebenen X-Koordinaten.
 - Es gibt zwei Testwelten:
   - stub-basierte Suite ueber `tests/conftest.py`
   - echte PyQt5-Roundtrip-Tests wie `tests/test_slice_strategy_ui_roundtrip.py`
@@ -308,7 +321,7 @@ linearisieren, sowie vollstaendige Arc-Intersections.
   - Optionalstop vor Werkzeugwechsel
   - Persistenz der neuen Expertenoptionen
 - Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
-- Aktueller Gesamtstand: `590 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
+- Aktueller Gesamtstand: `595 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
 - Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
 - Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 
