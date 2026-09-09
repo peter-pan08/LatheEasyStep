@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+### SIM-Konfiguration korrigiert: echter Trockenlauf jetzt moeglich 2026-09-09
+
+- `sim.qtdragon_lathe.basic_xz_lathe-1/lathe.ini` (ausserhalb dieses
+  Projekts, lokale Testmaschine) verhinderte bisher jeden echten
+  Trockenlauf: `emcTrajInit failed` beim Start liess die Maschine nie aus
+  dem Not-Aus. Ursache war ein unnoetiger 50us-Base-Thread
+  (`BASE_PERIOD = 50000`) fuer eine reine Simulation ohne
+  Schrittmotor-Ausgabe. Nach Entfernen von `BASE_PERIOD`, Ergaenzen von
+  `HOME = 0.0` in `[JOINT_0]`/`[JOINT_1]` und absolutem `SUBROUTINE_PATH`
+  liess sich die Maschine referenzieren und `Innen_Radius.ngc` sowie
+  `Innen_Stufe.ngc` liefen je einmal vollstaendig im AUTO-Modus bis `M30`
+  durch, ohne Eintrag im NML-Fehlerkanal. Original-INI gesichert als
+  `lathe.ini.bak-2026-09-09`. Details: `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+### SIM-Nachtrag zur Innen-Schlichtanfahrt 2026-09-09
+
+- `Innen_Radius.ngc` und `Innen_Stufe.ngc` (neue Anfahrt XRI axial vor
+  radialem Zustellen) in der QtDragon-Simulation ueber
+  `linuxcnc.command().program_open()` geladen; die im GUI angezeigte
+  Programmquelle bestaetigt Zeile fuer Zeile den erwarteten Text
+  (`G0 Z2.000` / `G0 X9.000` / `G0 Z-30.000` / `G1 ...`). Damit
+  akzeptiert auch der reale Task, nicht nur das eigenstaendige `rs274`,
+  den geaenderten Fahrweg.
+- Ein grafisch gezoomter, kollisionsfrei gepruefter Backplot war
+  weiterhin nicht erreichbar (Vorschaugrafik zeigt nur eine
+  Eilgang-Linie zum Werkzeugwechselpunkt); dieselben Startbefunde
+  (`USRMOT`-Timeout, `emcTrajInit failed`, ungueltiger relativer
+  `SUBROUTINE_PATH`) wie zuvor. Simulationskonfigurations-Einschraenkung,
+  keine Generator-Regression. Details:
+  `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+### LES-005 Sichere Innen-Schlichtanfahrt 2026-09-09
+
+- Innen-Schlichten faehrt jetzt auf XRI axial bis zum Konturstart und stellt
+  erst dort radial im Vorschub auf den Schnittdurchmesser zu. Damit entfaellt
+  die bisherige radiale G0-Anfahrt an der Stirnseite mit anschliessendem
+  diagonalen Einfahrweg zum tiefen Konturstart.
+- Die Reihenfolge gilt auch ohne Werkzeugradiuskorrektur. Mit G41.1 muss der
+  gerundete radiale Einfahrweg laenger als der Werkzeugdurchmesser sein;
+  unzureichender Raum blockiert die Ausgabe.
+- Vorne/hinten und Rundungsgrenzen getestet: 595 Stub-/44 Real-Qt-Tests,
+  elf Referenzen und 43 native rs274-Matrixfaelle bestanden. Geaendert:
+  `Innen_Stufe.ngc`, `Innen_Radius.ngc`.
+
+### Native Nachpruefung nach Unterbrechung 2026-09-09
+
+- Stand `11ee8b0` auf dem LinuxCNC-Rechner erneut geprueft: 590 Stub-/44
+  echte Qt-Tests, elf Referenzen und 43 Matrixfaelle mit nativem rs274
+  bestanden. Regeneration ohne NGC-Diff.
+- Alle elf Referenzen in der vorhandenen QtDragon-Simulation im Not-Aus
+  geladen. Startprobleme und Grenzen dokumentiert; kein Bewegungs- oder
+  Backplotnachweis. Details: `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
 ### LES-022 CSS/G96-Modalzustand ausgelagert 2026-09-09
 
 - Zweite Etappe von LES-022: neue Klasse `SpindleState`

@@ -128,9 +128,15 @@ def _finish_entry_point(
     return (start_x, start_z + max(lead_length, 0.5))
 
 
-def _emit_finish_primitives(lines: List[str], primitives: List[Dict[str, object]], *, feed: float) -> None:
-    cur_x: Optional[float] = None
-    cur_z: Optional[float] = None
+def _emit_finish_primitives(
+    lines: List[str],
+    primitives: List[Dict[str, object]],
+    *,
+    feed: float,
+    initial_pos: Optional[Point] = None,
+) -> None:
+    cur_x: Optional[float] = initial_pos[0] if initial_pos is not None else None
+    cur_z: Optional[float] = initial_pos[1] if initial_pos is not None else None
 
     def _ensure_linear_at(x: float, z: float) -> None:
         nonlocal cur_x, cur_z
@@ -823,7 +829,29 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     elif mode_idx in (1, 2) and not cycle_finish_done:
         lines.append("(Schlichtschnitt Kontur)")
         finish_points = rough_path if relief_mode == "ignore" else finish_path
-        entry_x, entry_z = _finish_entry_point(finish_points, safe_z)
+        profile_start_x, profile_start_z = finish_points[0]
+        if external:
+            entry_x, entry_z = _finish_entry_point(finish_points, safe_z)
+        else:
+            # Innen immer zuerst auf XRI axial bis zur Z-Lage des
+            # Konturstarts fahren. Erst dort wird radial auf den
+            # Schnittdurchmesser zugestellt. Damit bleibt die Schneide beim
+            # tiefen axialen Eilgang auf der konfigurierten XRI-Ebene.
+            entry_x = resolve_internal_safe_x(settings)
+            entry_z = profile_start_z
+            if entry_x is None:
+                raise ValueError("Innen-Schlichtanfahrt erfordert ein gueltiges XRI.")
+            if compensation_command and not nose_disabled:
+                emitted_entry_x = float(f"{entry_x:.3f}")
+                emitted_start_x = float(f"{profile_start_x:.3f}")
+                lead_distance = (emitted_start_x - emitted_entry_x) / 2.0
+                tool_diameter = float(f"{float(tool_info['radius_mm']) * 2:.4f}")
+                if lead_distance <= tool_diameter:
+                    raise ValueError(
+                        "Einfahrweg der Werkzeugradiuskorrektur: radialer Weg "
+                        "von XRI bis zum Konturstart muss laenger als der "
+                        "Werkzeugdurchmesser sein."
+                    )
         # War zuvor ein einzelner diagonaler G0 (X und Z gleichzeitig) direkt aus der
         # jeweils vorherigen Position - potenziell noch im/am Rohteil bzw. in der
         # Futter-Sperrzone. emit_approach() prueft das (WARN-Zeilen) und faehrt bei
@@ -834,14 +862,19 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         activate_pending_css(lines, settings)
         if compensation_command and not nose_disabled:
             lines.append(compensation_command)
-        prev_point = (entry_x, entry_z) if compensation_command and not nose_disabled else None
+        compensated = bool(compensation_command and not nose_disabled)
+        # Innen beginnt auch ohne Kompensation am XRI-Punkt: die erste
+        # Profilbewegung stellt radial im Bearbeitungsvorschub zu. Ein G0
+        # von der vorhandenen Bohrung bis auf Fertigdurchmesser koennte bei
+        # einem separaten Schlichtstep noch vorhandenes Aufmass treffen.
+        prev_point = (entry_x, entry_z) if compensated or not external else None
         if contour_variants and relief_mode != "ignore":
             finish_primitives = contour_variants["finish_primitives"] or []
-            _emit_finish_primitives(lines, finish_primitives, feed=feed)
+            _emit_finish_primitives(lines, finish_primitives, feed=feed, initial_pos=prev_point)
             if finish_points:
                 prev_point = finish_points[-1]
         elif primitives and not contour_variants:
-            _emit_finish_primitives(lines, primitives, feed=feed)
+            _emit_finish_primitives(lines, primitives, feed=feed, initial_pos=prev_point)
             prev_point = tuple(primitives[-1]["p2"])
         else:
             for idx, (x, z) in enumerate(finish_points):

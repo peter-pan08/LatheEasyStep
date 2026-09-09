@@ -5,8 +5,8 @@ from lathe_easystep.gcode_program import generate_program_gcode
 from lathe_easystep.model import Operation, OpType
 
 
-def finish_case(reverse=False, radius=0, xri=9):
-    settings = dict(make_program_settings(), xi=10, xri=xri, zri=2,
+def finish_case(reverse=False, radius=0, xri=9, zri=2):
+    settings = dict(make_program_settings(), xi=10, xri=xri, zri=zri,
                     xri_absolute=True, zri_absolute=True,
                     tools={11: {"radius_mm": radius, "q": 3}})
     points = [(12., -30.), (18., 0.)]
@@ -40,3 +40,29 @@ def test_internal_compensation_cannot_cancel_with_insufficient_radial_clearance(
 def test_clearance_just_above_diameter_after_rounding_is_accepted():
     op, settings = finish_case(reverse=True, radius=.4, xri=10.3994)
     assert "G1 X10.399 F0.150" in generate_program_gcode([op], settings)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_internal_finish_approaches_axially_on_xri_before_cut_diameter(reverse):
+    op, settings = finish_case(reverse=reverse, xri=8)
+    lines = generate_program_gcode([op], settings)
+    section = lines[lines.index("(Schlichtschnitt Kontur)") + 1:]
+    start_x, start_z = op.path[0]
+    z_move = section.index(f"G0 Z{start_z:.3f}")
+    x_move = next(idx for idx, line in enumerate(section) if line.startswith("G1 ") and f"X{start_x:.3f}" in line)
+    assert z_move < x_move
+    assert "G0 X8.000" in section[:z_move]
+
+
+@pytest.mark.parametrize("xri", [10.4, 10.4004])
+def test_internal_compensation_rejects_insufficient_lead_in_after_rounding(xri):
+    op, settings = finish_case(reverse=False, radius=.4, xri=xri)
+    with pytest.raises(ValueError, match="Einfahrweg"):
+        generate_program_gcode([op], settings)
+
+
+def test_internal_compensation_accepts_lead_in_just_above_tool_diameter():
+    op, settings = finish_case(reverse=False, radius=.4, xri=10.3994)
+    lines = generate_program_gcode([op], settings)
+    assert "G0 Z-30.000" in lines
+    assert "G41.1 D0.8000 L3" in lines
