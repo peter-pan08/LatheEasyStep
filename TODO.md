@@ -11,10 +11,10 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand: `589 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
+- Teststand: `590 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
   getrennte Prozesse ueber `python run_tests.py`, keine Skips.
 - Elf Referenzprogramme regeneriert; statische NGC-Pruefung bestanden.
-  LinuxCNC-Parser: elf Referenzen und 30 Matrixfaelle bestanden;
+  LinuxCNC-Parser: elf Referenzen und 43 Matrixfaelle bestanden;
   grafischer Backplot und Trockenlauf bleiben offen.
 - Umfang, Testbefehle und verbleibende Grenzen:
   [Verifikationsbericht 2026-09-09](doc/VERIFICATION_2026-09-09.md).
@@ -70,6 +70,7 @@ Prioritaeten:
 | LES-034 | P2 | Preview-Pipeline fachlich in Werkstueck, Werkzeugweg und Hilfsgeometrie trennen | mittel | L | 0.9.0 |
 | LES-035 | P2 | Embedded- und Standalone-Verhalten weiter angleichen | mittel | M | 0.9.0 |
 | LES-036 | P1 | Kantenform "Radius" beim Planen umsetzen | mittel | M | 0.8.0 |
+| LES-042 | P2 | Legacy-Operationstypen TURN/BORE bereinigen oder korrigieren | gering | S | 0.9.0 |
 
 ## P0 - Sicherheits- und Generatorblocker
 
@@ -617,16 +618,115 @@ Jede Extraktion einzeln mit vollem Testlauf und echtem `uic.loadUi` pruefen.
 - [x] Programmkopf-Sammlung
 - [x] Kontursegment-Sammlung
 - [x] Gewinde-Preset-UI nach `ui_thread.py`
-- [ ] Widget-Bootstrapping
+- [x] Widget-Bootstrapping nach `ui_widget_lookup.py` (19 Methoden, davon
+      `_register_known_widgets`, `_resolve_core_widgets_strict`,
+      `_get_widget_by_name`; `TAB_TRANSLATIONS`/`_looks_like_panel_widget`
+      dafuer nach `ui_registry.py` verschoben, um einen Zirkelimport zu
+      vermeiden - dabei einen bestehenden `NameError`-Bug in
+      `widget_resolver.py` gefunden und behoben, der den
+      "sieht wie unser Panel aus"-Fallback in `_pick_best_root()` stumm
+      per `except Exception: pass` verschluckt hatte). 589 Stub-/44
+      Qt-Tests bestanden, NGC-Referenzen unveraendert.
 - [x] Tooltip-Erzwingung nach `ui_tooltips.py`
 
 ### LES-022 Zentraler Bewegungs- und Modalzustand
 
-- [ ] aktuelle X/Z-Position bei jeder Move-Emission mitfuehren
-- [ ] G90/G91, G94/G95, G96/G97, G18 und G40/G41/G42 verwalten
-- [ ] M3/M4/M5, M7/M8/M9 und Werkstuecknullpunkt verwalten
-- [ ] sichere Pfadentscheidungen auf reale aktuelle Position stuetzen
+- [ ] aktuelle X/Z-Position bei jeder Move-Emission mitfuehren (bisher nur
+      fuer Rueckzug/Anfahrt/Werkzeugwechsel in `gcode_safety.py`, siehe
+      Teilstand unten - Schnittbewegungen G1/G2/G3 in den Operations-
+      Generatoren sind noch nicht erfasst)
+- [ ] G90/G91, G94/G95, G96/G97, G18 und G40/G41/G42 verwalten (G96/G97
+      CSS-Modalzustand erledigt, siehe Teilstand oben; die uebrigen Codes
+      gezielt auf ein analoges Stale-State-Risiko geprueft - siehe
+      Teilstand unten, kein Bug gefunden, aber auch kein ad-hoc Zustand zum
+      Formalisieren vorhanden)
+- [ ] M3/M4/M5, M7/M8/M9 und Werkstuecknullpunkt verwalten (ebenfalls
+      geprueft, siehe Teilstand unten)
+- [x] sichere Pfadentscheidungen auf reale aktuelle Position stuetzen (fuer
+      die Rueckzugs-/Anfahrt-/Werkzeugwechsel-Positionierung; dabei einen
+      echten Sicherheitsfehler gefunden und behoben, siehe Teilstand unten)
 - [ ] robuste explizite Ausgabe fuer manuell bearbeitbaren G-Code erhalten
+
+Teilstand 2026-09-09 (erste Etappe: Positions-Tracking): neue Klasse
+`MotionState` (`lathe_easystep/motion_state.py`) ersetzt die bisherigen
+ad-hoc settings-Keys `_is_at_safe`/`_safe_x`/`_safe_z` in `gcode_safety.py`
+(`emit_safe_retract_for_op`, `emit_approach`, `append_tool_and_spindle`) und
+`gcode_groove.py`. Dabei einen echten, reproduzierbaren Sicherheitsfehler
+gefunden: nach einer Aussen-Operation liess ein kombinierter Schruppen+
+Schlichten-Innen-Step (Move-based Fallback, z. B. jede Innenbearbeitung, da
+G71/G72 dafuer nicht zuverlaessig ist) das veraltete `_is_at_safe`-Flag
+faelschlich als "bereits sicher" gelten, obwohl die zuletzt tatsaechlich
+erreichte Position die AUSSEN- statt der fuer diese Operation gueltigen
+INNEN-Sicherheitsebene war - `emit_approach()` uebersprang dadurch den
+Rueckzug auf die sichere Z-Ebene vor dem Schlichtschnitt und fuhr im Eilgang
+(G0) diagonal direkt durch das noch stehengebliebene Restmaterial (real
+reproduziert: `G0 X12.000` bei Z=-29.900, mitten durch 0.2mm unbearbeitetes
+Aufmass). Zwei bestehende Referenzprogramme (`Innen_Radius.ngc`,
+`Innen_Stufe.ngc`) waren betroffen und wurden neu generiert - beide fuegen
+jetzt vor Schrupp- und Schlichteinstieg den fehlenden Rueckzug ein. Neuer
+gezielter Regressionstest
+(`test_combined_internal_rough_finish_after_external_op_retracts_before_finish_entry`).
+590 Stub-/44 Qt-Tests, elf Referenzen und 43 rs274-Matrixfaelle bestanden.
+
+Teilstand 2026-09-09 (zweite Etappe: CSS/G96-Modalzustand): neue Klasse
+`SpindleState` (`lathe_easystep/motion_state.py`) ersetzt die bisherigen
+ad-hoc settings-Keys `_pending_css`/`_active_css`/`_css_fixed_rpm` in
+`activate_pending_css()`/`suspend_css()`/`append_tool_and_spindle()`
+(`gcode_safety.py`) - dieselben Funktionen, die alle anderen Operations-
+Generatoren (Abspanen, Bohren, Gewinde, Face, Groove) bereits ausschliess-
+lich ueber die oeffentlichen Funktionen nutzen, keine weiteren Aenderungen
+noetig. Anders als beim Positions-Tracking (erste Etappe) war die CSS-
+Suspend/Resume-Logik bereits vollstaendig konsistent (kein Sicherheitsfehler
+gefunden) - reine Architekturbereinigung, Ausgabe unveraendert (elf
+Referenzen, 43 rs274-Matrixfaelle inkl. `css_clearance_*`-Faelle bestehen
+identisch). 590 Stub-/44 Qt-Tests weiterhin bestanden.
+
+Teilstand 2026-09-09 (Bestandsaufnahme uebrige modale Codes): gezielt auf
+ein analoges Stale-State-Risiko wie bei Positions-Tracking/CSS geprueft -
+in keinem Fall gefunden:
+
+- G90/G91.1/G95/G54 werden ausschliesslich einmalig im Programmkopf gesetzt
+  (`G18 G7 G90 G91.1 G40 G80` / `G95` / `G54`) und danach nie mehr
+  veraendert; volles G91 (inkrementell) und G94 (Vorschub/Minute) werden im
+  gesamten Code nirgends emittiert. Keine dynamische Umschaltung -> kein
+  ad-hoc Zustand zum Formalisieren vorhanden.
+- G40/G41/G42 (Werkzeugradiuskorrektur) wird ausschliesslich in
+  `generate_abspanen_gcode()` verwendet, rein ueber lokale Variablen
+  (`compensation_command`/`nose_disabled`) je Aufruf - Aktivierung und
+  Abwahl sind im selben Funktionsaufruf zwingend gepaart (jeder Pfad
+  zwischen Aktivierung und Abwahl endet entweder in der Abwahl oder in
+  einer `ValueError`, die die gesamte Programmerzeugung abbricht, bevor
+  unvollstaendiger G-Code je verwendet wird). Kein settings-Dict-Zustand
+  beteiligt, kein Cross-Operation-Risiko moeglich.
+- M4 (Spindel rueckwaerts) wird nirgends emittiert - bewusst, da
+  Linksgewinde ueber die Z-Fahrtrichtung (`z_dir`) in `gcode_thread.py`
+  abgebildet wird, nicht ueber Spindelumkehr.
+- G17 erscheint einmalig als dokumentierter LinuxCNC-Bohrzyklus-Sonderfall
+  (Kommentar "G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit" in
+  `gcode_drill.py`) und wird danach zuverlaessig wieder auf G18
+  zurueckgesetzt - bereits vor dieser Session verifiziert.
+- Werkstuecknullpunkt: ausschliesslich statisches G54 im Programmkopf,
+  keine G55/G56/... oder dynamische Umschaltung im Code vorhanden.
+- Dabei zwei bereits laenger unbenutzte Legacy-Funktionen gefunden
+  (`gcode_for_turn`/`gcode_for_bore` fuer `OpType.TURN`/`BORE`), die M8
+  direkt statt ueber `emit_coolant()` ausgeben und nie M9 abschalten -
+  diese Operationstypen sind aber ueber die UI nicht mehr erreichbar
+  (abgeloest durch ABSPANEN mit `side`-Parameter, kein `tabTurn`/`tabBore`
+  in `ui_registry.TAB_TRANSLATIONS`). Kein LES-022-Thema, sondern eine
+  separate Altlasten-/Aufraeumfrage (toter Code behalten fuer alte
+  gespeicherte Programme vs. entfernen) - hier nicht angefasst.
+
+Verbleibend fuer eine spaetere, deutlich groessere Etappe: vollstaendiges
+Positions-Tracking ueber Schnittbewegungen (G1/G2/G3) in allen sechs
+Operations-Generatoren (`gcode_roughing.py`, `gcode_drill.py`,
+`gcode_thread.py`, `gcode_groove.py`, `gcode_keyway.py`, `gcode_face.py`) -
+das wuerde erlauben, die in `gcode_roughing.py` nach dem Schruppen bewusst
+konservative `_motion_state(settings).clear()`-Invalidierung durch echtes
+Wissen ueber die real erreichte Endposition zu ersetzen und dadurch
+zusaetzliche, tatsaechlich redundante Rueckzuege zu erkennen - ohne
+begleitende, sorgfaeltige Verifikation (analog zur Positions-Tracking-
+Etappe) aber ein reales Risiko, versehentlich einen neuen Fehler derselben
+Klasse einzufuehren, die diese Etappe gerade behoben hat.
 
 ### LES-024 Restliche UI-Modularisierung
 
@@ -800,6 +900,25 @@ Spaltenzuordnung oder einer realen Beispiel-Tooltable als Referenz.
 - [ ] Widget-Binding, Tooltips, Dialoge und Dateipfade vergleichen
 - [ ] keine globalen Host-Widgets im Embedded-Betrieb binden
 - [ ] Real-Qt-Smoke-Test fuer beide Startarten pflegen
+
+### LES-042 Legacy TURN/BORE bereinigen
+
+Fund aus der LES-022-Bestandsaufnahme der modalen Codes: `gcode_for_turn()`/
+`gcode_for_bore()` (`gcode_program.py`, fuer `OpType.TURN`/`OpType.BORE`)
+geben Kuehlmittel direkt als `M8` aus statt ueber den zentralen
+`emit_coolant()`-Helfer und schalten es nie mit `M9` wieder ab. Beide
+Operationstypen sind aber ueber die UI nicht mehr erstellbar (kein
+`tabTurn`/`tabBore` in `ui_registry.TAB_TRANSLATIONS`, abgeloest durch
+ABSPANEN mit `side`-Parameter) - noch reachable nur ueber den Dispatcher
+in `gcode_for_operation()` und ggf. alte gespeicherte Programme/direkte
+Tests.
+
+- [ ] klaeren, ob `OpType.TURN`/`BORE` fuer alte gespeicherte Programme
+  noch geladen werden koennen muessen (Migrationspfad noetig?)
+- [ ] falls ja: `gcode_for_turn`/`gcode_for_bore` auf `emit_coolant()`
+  umstellen (inkl. `M9` beim Operationsende)
+- [ ] falls nein: `OpType.TURN`/`BORE`, `gcode_for_turn`/`gcode_for_bore`
+  und zugehoerige Dispatcher-/Registry-Eintraege vollstaendig entfernen
 
 ## Offene externe Antworten und Blocker
 

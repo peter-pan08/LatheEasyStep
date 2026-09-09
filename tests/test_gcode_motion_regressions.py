@@ -9,6 +9,7 @@ from lathe_easystep.gcode_safety import emit_approach
 from lathe_easystep.gcode_thread import generate_thread_gcode
 from lathe_easystep.contour_logic import thread_relief_spec
 from lathe_easystep.model import OpType, Operation
+from lathe_easystep.motion_state import MotionState
 
 
 def _append_tool_and_spindle(lines, tool, spindle, settings=None, **_kwargs):
@@ -135,7 +136,7 @@ def test_internal_approach_moves_z_on_xri_before_radial_infeed():
         10.0,
         -20.0,
         {"xri": 9.3, "zri": 1.0, "xri_absolute": True, "zri_absolute": True,
-         "_active_retract_mode": "internal", "_is_at_safe": True},
+         "_active_retract_mode": "internal", "_motion": MotionState(x=9.3, z=1.0)},
     )
     assert lines == ["G0 Z-20.000", "G0 X10.000"]
 

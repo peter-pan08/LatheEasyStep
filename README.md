@@ -40,7 +40,7 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `590 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
@@ -453,7 +453,7 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current development baseline is validated with `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
+- the current development baseline is validated with `590 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 

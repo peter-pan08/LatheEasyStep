@@ -12,7 +12,7 @@ Ziel ist:
 - `v0.7.0` ist die lauffaehige Basis auf `main`.
 - `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
   die stabile, lauffaehige Basis.
-- Aktueller Teststand: `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
+- Aktueller Teststand: `590 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
   Rechts-/Linksgewinde, `rough_finish`, Realtest-Fixes und die geteilte UI.
@@ -28,7 +28,7 @@ Ziel ist:
 ## Architektur-Überblick
 
 - `lathe_easystep_handler.py`
-  - QtVCP-`HandlerClass`, Widget-Bootstrapping und verbleibende Klebelogik
+  - QtVCP-`HandlerClass` und verbleibende Klebelogik
   - neue substanzielle Fachlogik gehoert in Module unter `lathe_easystep/`
 - `lathe_easystep.ui`
   - Shell fuer Step-Liste, Tab-Container und Vorschau
@@ -89,6 +89,11 @@ Ausgegliederte Handler-Bestandteile (frueher direkt im Handler definiert):
 - `lathe_easystep/ui_split.py`
   - Laufzeit-Lader fuer die ausgelagerten Reiter-UIs aus
     `lathe_easystep/ui_parts/`
+- `lathe_easystep/ui_widget_lookup.py`
+  - Widget-Bootstrapping: `register_known_widgets()`, `resolve_core_widgets_strict()`,
+    `get_widget_by_name()`, `find_root_widget()`, `poll_for_widget()` u.a. -
+    reine Widget-Lookup-Mechanik ohne fachliche Logik, vom Handler nur ueber
+    gleichnamige, duenne Wrapper-Methoden aufgerufen
 
 Gemeinsame Querschnittslogik:
 - `lathe_easystep/ui_helpers.py`
@@ -107,20 +112,38 @@ Gemeinsame Querschnittslogik:
 - `lathe_easystep/ui_registry.py`
   - `PANEL_WIDGET_NAMES` (moegliche Root-Objektnamen je nach Embedding), neben
     den bestehenden Text-/Tooltip-/Combo-Item-Registries
+- `lathe_easystep/motion_state.py` (LES-022)
+  - `MotionState` (erste Etappe): zentraler, typisierter Bewegungszustand
+    (zuletzt real erreichte X/Z-Position). Ersetzt die fruehere ad-hoc
+    Ablage ueber `settings["_is_at_safe"/"_safe_x"/"_safe_z"]` in
+    `gcode_safety.py` und `gcode_groove.py`. `gcode_safety._motion_state(settings)`
+    liefert/legt die Instanz unter `settings["_motion"]` an (lazy, auch fuer
+    Tests mit handgebauten Dicts ohne vorherige Initialisierung). Wird nach
+    jedem Schruppdurchlauf in `gcode_roughing.py` explizit invalidiert
+    (`clear()`), da Schnittbewegungen (G1/G2/G3) dort noch nicht
+    feingranular mitgefuehrt werden.
+  - `SpindleState` (zweite Etappe): CSS(G96)-Modalzustand (`pending`/
+    `active`/`fixed_rpm`). Ersetzt `settings["_pending_css"/"_active_css"/
+    "_css_fixed_rpm"]` in `activate_pending_css()`/`suspend_css()`/
+    `append_tool_and_spindle()` (`gcode_safety.py`), analog ueber
+    `gcode_safety._spindle_state(settings)` unter `settings["_spindle"]`.
+  - Siehe TODO.md fuer die verbleibenden LES-022-Punkte (uebrige modale
+    G/M-Codes, vollstaendiges Move-Tracking ueber Schnittbewegungen).
 
 Lokale Kopien dieser Helfer sollen nicht erneut in UI- oder G-Code-Modulen
 angelegt werden. Das fruehere Paket `lathe_easystep/contour/` war ungenutzt
 und intern unvollstaendig und wurde entfernt; produktive Konturpfade laufen
 ueber `contour_logic.py` und `contour_features.py`.
 
-Weitere Handler-Methoden mit substanzieller Eigenlogik (statt reinem
-Delegieren), die sich als naechstes ausgliedern liessen: `_collect_program_header`,
-`_collect_contour_segments`, `_apply_thread_preset`/`_populate_thread_standard_options`,
-`_get_widget_by_name`/`_resolve_core_widgets_strict`/`_register_known_widgets`
-(Widget-Bootstrapping), `_set_tooltip_deep`/`_fallback_tooltip_text` (Tooltip-
-Erzwingung). Nicht in dieser Runde gemacht, um das Risiko in einem Durchgang
-begrenzt zu halten - jede Extraktion wurde einzeln mit vollem Testlauf und
-echtem PyQt5 (`uic.loadUi`) gegengeprueft.
+Die zuvor als naechste Kandidaten identifizierten Handler-Methoden mit
+substanzieller Eigenlogik (`_collect_program_header`, `_collect_contour_segments`,
+`_apply_thread_preset`/`_populate_thread_standard_options`,
+`_get_widget_by_name`/`_resolve_core_widgets_strict`/`_register_known_widgets`,
+`_set_tooltip_deep`/`_fallback_tooltip_text`) sind inzwischen alle ausgegliedert
+(LES-020 abgeschlossen). Jede Extraktion wurde einzeln mit vollem Testlauf und
+echtem PyQt5 (`uic.loadUi`) gegengeprueft. Weitere Kandidaten fuer zukuenftige
+Pakete sind derzeit nicht konkret identifiziert (LES-020 bleibt als
+Aufwandskategorie in `TODO.md`, falls neue Klebelogik im Handler entsteht).
 
 ---
 
@@ -285,7 +308,7 @@ linearisieren, sowie vollstaendige Arc-Intersections.
   - Optionalstop vor Werkzeugwechsel
   - Persistenz der neuen Expertenoptionen
 - Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
-- Aktueller Gesamtstand: `589 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
+- Aktueller Gesamtstand: `590 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
 - Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
 - Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 

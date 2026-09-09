@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from qtpy import QtCore, QtWidgets
+
 PANEL_WIDGET_NAMES = (
     'LatheConversationalPanel',
     'lathe_easystep',
@@ -11,6 +13,29 @@ PANEL_WIDGET_NAMES = (
     'MainWindow',
     'VCPWindow',
 )
+
+TAB_TRANSLATIONS = {
+    "tabProgram": {"de": "Programm", "en": "Program"},
+    "tabFace": {"de": "Planen", "en": "Facing"},
+    "tabContour": {"de": "Kontur", "en": "Contour"},
+    "tabParting": {"de": "Abspanen", "en": "Parting"},
+    "tabThread": {"de": "Gewinde", "en": "Thread"},
+    "tabGroove": {"de": "Einstich/Abstich", "en": "Groove/Parting"},
+    "tabDrill": {"de": "Bohren", "en": "Drilling"},
+    "tabKeyway": {"de": "Keilnut", "en": "Keyway"},
+}
+
+
+def _looks_like_panel_widget(widget: QtWidgets.QWidget | None) -> bool:
+    """Return True when a widget is the actual LatheEasyStep panel root."""
+    if widget is None:
+        return False
+    try:
+        has_ops = widget.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
+        has_tabs = widget.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
+        return bool(has_ops and has_tabs)
+    except Exception:
+        return False
 
 UI_TEXT_KEYS = {
     "label_prog_npv": "text.label_prog_npv",

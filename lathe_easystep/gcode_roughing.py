@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .contour_features import normalize_relief_mode, primitive_to_points
 from .contour_logic import build_contour_variants
-from .gcode_safety import activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command, validate_chuck_segment, suspend_css
+from .gcode_safety import _motion_state, activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command, validate_chuck_segment, suspend_css
 from .gcode_utils import (
     Point,
     float_or_none,
@@ -393,7 +393,11 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
     max_x = max(xs) if xs else None
     cfg = retract_cfg or RetractCfg(None, None, True, True)
     start_rx, start_rz = resolve_retract_targets(cfg, external=external, current_x=x_stock, current_z=safe_z, safe_z=safe_z)
-    already_safe = bool((pause_state or {}).get("_is_at_safe"))
+    already_safe = (
+        start_rx is not None
+        and start_rz is not None
+        and _motion_state(pause_state).at(start_rx, start_rz)
+    )
     if not already_safe:
         if start_rz is not None:
             lines.append(f"G0 Z{start_rz:.3f}")
@@ -776,6 +780,18 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 "abgebrochen. Bitte Bearbeitungsrichtung (Parallel X/Z), Kontur und "
                 "Aufmass fuer diesen Step pruefen."
             )
+        # LES-022: weder der G71/G72-Zyklus noch die Move-based Zustellungen
+        # in rough_turn_parallel_x/z fuehren die reale Position laufend mit -
+        # ein direkt anschliessender emit_approach()-Aufruf fuer den
+        # Schlichtschritt (siehe unten) darf sich deshalb NICHT auf eine
+        # Position von VOR dem Schruppen verlassen. Ohne diese Invalidierung
+        # konnte ein veraltetes "bereits sicher"-Flag den noetigen Rueckzug
+        # auf die sichere Ebene unterdruecken und stattdessen einen Eilgang
+        # direkt durch das gerade stehengebliebene Restmaterial ausloesen
+        # (reproduziert: Aussen-Operation vor einer kombinierten Innen-
+        # rough_finish-Bohrung mit Move-based Fallback).
+        if settings is not None:
+            _motion_state(settings).clear()
     if relief_mode == "separate" and feature_path:
         _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
     # LES-018: ein REINER Schlichtstep (eigene Operation, typischerweise eigenes

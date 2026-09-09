@@ -4,7 +4,7 @@ from typing import Callable, Dict, List
 
 from .model import Operation
 from .gcode_utils import get_param_float, get_param_int, validate_internal_x_limit
-from .gcode_safety import activate_pending_css, get_safe_position
+from .gcode_safety import _motion_state, activate_pending_css, get_safe_position
 
 
 def groove_sub_definition() -> List[str]:
@@ -341,10 +341,11 @@ def generate_groove_gcode(
         if mode == 0:
             lines.append(f"G0 Z{c_val:.3f}")
             lines.append(f"G0 X{start_x:.3f}")
+            _motion_state(settings).record(start_x, c_val)
         else:
             lines.append(f"G0 X{c_val:.3f}")
             lines.append(f"G0 Z{a_start:.3f}")
-        settings["_is_at_safe"] = False
+            _motion_state(settings).record(c_val, a_start)
     else:
         lines.append(f"G0 Z{safe_z:.3f}")
         lines.append(f"G0 X{start_x:.3f}")

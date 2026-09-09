@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from lathe_easystep.examples import example_programs, make_program_settings
 from lathe_easystep.gcode_program import generate_program_gcode
 from lathe_easystep.model import OpType, Operation
+from lathe_easystep.motion_state import MotionState
 from lathe_easystep.persistence import build_program_data, step_data_to_operation
 from lathe_easystep.ui_flow import describe_operation
 
@@ -525,7 +526,8 @@ def test_drill_approach_uses_shared_safety_helper_like_other_operations():
     from lathe_easystep.gcode_utils import require, require_tool, get_tool_number, emit_coolant
 
     settings = make_program_settings()
-    settings.update({"_is_at_safe": True})
+    # x_safe = xa(40) + xra(40) = 80.0, z_safe = za(0) + zra(2) = 2.0
+    settings.update({"_motion": MotionState(x=80.0, z=2.0)})
     op = Operation(
         OpType.DRILL,
         {"tool": 7, "spindle": 900.0, "feed": 0.08, "mode": "g81", "safe_z": 2.0},

@@ -40,6 +40,8 @@ F0.150
 (Aufmass X/Z: 0.200/0.100)
 (Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)
 (ABSPANEN Rough - parallel Z - Move-based)
+G0 Z2.000
+G0 X9.000
 (Pass 1: X-band [10.000,10.500])
 G0 Z2.000
 G0 X10.500
@@ -137,6 +139,8 @@ G1 Z0.100 F0.150
 G1 X17.800 Z-14.900 F0.150
 G0 X9.000
 (Schlichtschnitt Kontur)
+G0 Z2.000
+G0 X9.000
 G0 X12.000
 G1 X12.000 Z-30.000 F0.150
 G1 X12.000 Z-16.000 F0.150
