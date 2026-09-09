@@ -5,10 +5,11 @@ import pytest
 from lathe_easystep.examples import example_programs
 from lathe_easystep.gcode_program import generate_program_gcode
 from lathe_easystep.gcode_safety import append_tool_and_spindle, activate_pending_css
+from lathe_easystep.motion_state import SpindleState
 
 
 def test_css_fallback_discards_previous_pending_activation():
-    settings = {"_pending_css": (2500, 120)}
+    settings = {"_spindle": SpindleState(pending=(2500, 120))}
     lines = []
     append_tool_and_spindle(lines, 0, 900, settings, spindle_mode="css")
     activate_pending_css(lines, settings)

@@ -5,7 +5,36 @@ from typing import Dict, List, Optional, Tuple
 
 from .gcode_utils import float_or_none, get_tool_number, sanitize_comment_text
 from .model import OpType, Operation
+from .motion_state import MotionState, SpindleState
 from .numeric import finite_float, whole_number
+
+
+def _motion_state(settings: Dict[str, object] | None) -> MotionState:
+    """Get-or-create den zentralen Bewegungszustand (LES-022) auf `settings`.
+
+    Viele Aufrufer (insbesondere Tests) reichen rohe, handgebaute Dicts ohne
+    vorherige Initialisierung durch `generate_program_gcode()` durch - daher
+    legt diese Funktion `_motion` bei Bedarf lazy an, statt eine vorherige
+    Initialisierung vorauszusetzen.
+    """
+    if settings is None:
+        return MotionState()
+    state = settings.get("_motion")
+    if not isinstance(state, MotionState):
+        state = MotionState()
+        settings["_motion"] = state
+    return state
+
+
+def _spindle_state(settings: Dict[str, object] | None) -> SpindleState:
+    """Get-or-create den CSS-Modalzustand (LES-022) auf `settings`."""
+    if settings is None:
+        return SpindleState()
+    state = settings.get("_spindle")
+    if not isinstance(state, SpindleState):
+        state = SpindleState()
+        settings["_spindle"] = state
+    return state
 
 
 def _safe_axis_value(
@@ -170,9 +199,7 @@ def emit_safe_retract_for_op(
                 validate_stock_segment(settings, current_pos, (x_safe, z_safe))
         lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
     if settings is not None:
-        settings["_is_at_safe"] = True
-        settings["_safe_x"] = x_safe
-        settings["_safe_z"] = z_safe
+        _motion_state(settings).record(x_safe, z_safe)
 
 
 def estimate_operation_end_pos(op: Operation) -> Optional[Tuple[float, float]]:
@@ -301,8 +328,9 @@ def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Di
         # In der Bohrung darf kein diagonaler Schnellgang vom Rueckzugspunkt
         # zum Konturstart entstehen. Der Inventor/LinuxCNC-Post faehrt erst
         # axial auf der freien XRI-Ebene und stellt erst dort radial zu.
+        state = _motion_state(settings)
         if internal:
-            if not settings.get("_is_at_safe"):
+            if not state.at(x_safe, z_safe):
                 lines.append(f"G0 Z{z_safe:.3f}")
                 lines.append(f"G0 X{x_safe:.3f}")
             # Nach der (ggf. uebersprungenen) Anfahrt auf die sichere XRI-/
@@ -314,19 +342,21 @@ def emit_approach(lines: List[str], start_x: float, start_z: float, settings: Di
                 lines.append(f"G0 Z{start_z:.3f}")
             if abs(start_x - x_safe) > 1e-9:
                 lines.append(f"G0 X{start_x:.3f}")
-            settings["_is_at_safe"] = False
+            state.record(start_x, start_z)
             return
-        if not settings.get("_is_at_safe"):
+        if not state.at(x_safe, z_safe):
             lines.append(f"G0 Z{z_safe:.3f}")
             lines.append(f"G0 X{x_safe:.3f}")
         if abs(start_z - z_safe) > 1e-9:
             lines.append(f"G0 Z{start_z:.3f}")
         if abs(start_x - x_safe) > 1e-9:
             lines.append(f"G0 X{start_x:.3f}")
-        settings["_is_at_safe"] = False
+        state.record(start_x, start_z)
         return
     lines.append(f"G0 Z{start_z:.3f}")
     lines.append(f"G0 X{start_x:.3f}")
+    if settings is not None:
+        _motion_state(settings).record(start_x, start_z)
 
 
 def append_tool_and_spindle(
@@ -342,8 +372,6 @@ def append_tool_and_spindle(
     require_spindle: bool = True,
 ):
     suspend_css(lines, settings)
-    if settings is not None:
-        settings.pop("_pending_css", None)
     if tool_value is None and settings is not None:
         tool_num = get_tool_number(settings)
     else:
@@ -375,24 +403,16 @@ def append_tool_and_spindle(
                     # Position zurueckgezogen (haeufigster Fall: Aussen- auf
                     # Aussen-Operation mit demselben XRA/ZRA) - ein erneuter
                     # G0 auf denselben Wert waere eine bedeutungslose
-                    # Nullbewegung. _safe_x/_safe_z halten fest, WELCHE
-                    # sichere Position zuletzt tatsaechlich erreicht wurde
-                    # (Innen- und Aussen-Sicherheitspositionen koennen sich
-                    # unterscheiden, daher reicht das Flag _is_at_safe allein
+                    # Nullbewegung. Der zentrale Bewegungszustand (LES-022)
+                    # haelt fest, WELCHE Position zuletzt tatsaechlich
+                    # erreicht wurde (Innen- und Aussen-Sicherheitspositionen
+                    # koennen sich unterscheiden, ein reines Flag reicht
                     # nicht).
-                    already_here = (
-                        bool(settings.get("_is_at_safe"))
-                        and settings.get("_safe_x") is not None
-                        and settings.get("_safe_z") is not None
-                        and abs(float(settings["_safe_x"]) - x_safe) < 1e-6
-                        and abs(float(settings["_safe_z"]) - z_safe) < 1e-6
-                    )
+                    already_here = _motion_state(settings).at(x_safe, z_safe)
                     if not already_here:
                         lines.append(f"G0 Z{z_safe:.3f}")
                         lines.append(f"G0 X{x_safe:.3f}")
-                    settings["_is_at_safe"] = True
-                    settings["_safe_x"] = x_safe
-                    settings["_safe_z"] = z_safe
+                    _motion_state(settings).record(x_safe, z_safe)
                 lines.append("M5")
                 lines.append("M9")
                 lines.extend(toolchange_lines)
@@ -403,9 +423,7 @@ def append_tool_and_spindle(
                 if safe:
                     x_safe, z_safe = safe
                     lines.append(f"G0 X{x_safe:.3f} Z{z_safe:.3f}")
-                    settings["_is_at_safe"] = True
-                    settings["_safe_x"] = x_safe
-                    settings["_safe_z"] = z_safe
+                    _motion_state(settings).record(x_safe, z_safe)
     # Op-spezifischer Drehzahlmodus hat Vorrang; ohne Angabe gilt weiterhin
     # der globale Programmkopf-Wert (Rueckwaertskompatibilitaet).
     if spindle_mode is not None:
@@ -443,8 +461,7 @@ def append_tool_and_spindle(
             lines.append(f"G97 S{rpm_value} M3 (CSS-Anfahrdrehzahl bei X{diameter:.3f})")
             if settings is None:
                 raise ValueError("CSS/G96 erfordert Programmkopf-Einstellungen.")
-            settings["_pending_css"] = (rpm_limit, vc)
-            settings["_css_fixed_rpm"] = rpm_value
+            _spindle_state(settings).request(rpm_limit, vc, rpm_value)
             return
         rpm = float_or_none(spindle_value)
         rpm_value = int(round(rpm)) if rpm and rpm > 0 else 0
@@ -463,7 +480,7 @@ def append_tool_and_spindle(
         return
     rpm = float_or_none(spindle_value)
     if settings is not None:
-        settings.pop("_pending_css", None)
+        _spindle_state(settings).pending = None
     rpm_value = int(round(rpm)) if rpm and rpm > 0 else 0
     if rpm_value > 0:
         lines.append(f"G97 S{rpm_value} M3")
@@ -478,28 +495,24 @@ def activate_pending_css(lines: List[str], settings: Dict[str, object] | None) -
     """Aktiviert ein vorbereitetes G96 erst an der Bearbeitungsposition."""
     if settings is None:
         return
-    pending = settings.pop("_pending_css", None)
+    pending = _spindle_state(settings).activate()
     if pending is None:
         return
     max_rpm, vc = pending
     lines.append(f"G96 D{int(max_rpm)} S{float(vc):.1f}")
-    settings["_active_css"] = pending
 
 
 def suspend_css(lines: List[str], settings: Dict[str, object] | None, *, resume=False) -> None:
     """Use the bounded approach RPM for explicit clearance and tool changes."""
     if settings is None:
         return
-    active = settings.pop("_active_css", None)
+    state = _spindle_state(settings)
+    active = state.suspend(resume=resume)
     if active is not None:
-        rpm = settings.get("_css_fixed_rpm")
+        rpm = state.fixed_rpm
         if rpm is None:
             raise ValueError("CSS-Rueckzug erfordert eine bekannte Festdrehzahl.")
         lines.append(f"G97 S{int(rpm)} (CSS-Freifahrt)")
-        if resume:
-            settings["_pending_css"] = active
-    if not resume:
-        settings.pop("_pending_css", None)
 
 
 def nose_compensation_command(tool_info: Dict[str, object] | None, external: bool) -> Optional[str]:

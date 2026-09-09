@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtWidgets
 
-from .ui_registry import PANEL_WIDGET_NAMES
+from .ui_registry import PANEL_WIDGET_NAMES, _looks_like_panel_widget
 
 
 class WidgetResolveError(RuntimeError):

@@ -17,6 +17,7 @@ from lathe_easystep.gcode_safety import (
 )
 from lathe_easystep.gcode_utils import require_positive, get_tool_number
 from lathe_easystep.model import OpType, Operation, ProgramModel
+from lathe_easystep.motion_state import MotionState
 from lathe_easystep.persistence import step_data_to_operation
 from lathe_easystep.storage import parse_program_payload
 from lathe_easystep import ui_persistence
@@ -235,7 +236,7 @@ def test_pre_toolchange_retreat_skips_move_already_at_that_safe_position():
     emit_safe_retract_for_op() bereits dorthin zurueckgezogen), ist der vor
     jedem Werkzeugwechsel unbedingt ausgegebene Rueckzug auf dieselbe
     Position eine bedeutungslose Nullbewegung."""
-    settings = dict(_stock_settings(), _current_tool=1, _is_at_safe=True, _safe_x=60.0, _safe_z=10.0)
+    settings = dict(_stock_settings(), _current_tool=1, _motion=MotionState(x=60.0, z=10.0))
     lines = []
     append_tool_and_spindle(lines, 2, 1000.0, settings)
     assert "G0 X60.000" not in lines
@@ -247,17 +248,65 @@ def test_pre_toolchange_retreat_still_moves_from_a_different_safe_position():
     """Kontrollfall: Kam die vorherige Operation aus dem Innen-Modus (andere
     sichere Position) oder ist die Position gaenzlich unbekannt, muss der
     Rueckzug weiterhin ausgegeben werden."""
-    settings = dict(_stock_settings(), _current_tool=1, _is_at_safe=True, _safe_x=9.0, _safe_z=4.0)
+    settings = dict(_stock_settings(), _current_tool=1, _motion=MotionState(x=9.0, z=4.0))
     lines = []
     append_tool_and_spindle(lines, 2, 1000.0, settings)
     assert "G0 X60.000" in lines
     assert "G0 Z10.000" in lines
 
-    settings2 = dict(_stock_settings(), _current_tool=1)  # _is_at_safe unbekannt
+    settings2 = dict(_stock_settings(), _current_tool=1)  # Position unbekannt (kein _motion)
     lines2 = []
     append_tool_and_spindle(lines2, 2, 1000.0, settings2)
     assert "G0 X60.000" in lines2
     assert "G0 Z10.000" in lines2
+
+
+def test_combined_internal_rough_finish_after_external_op_retracts_before_finish_entry():
+    """LES-022: reproduzierter Sicherheitsfehler. Eine Innenbearbeitung im
+    kombinierten Schruppen+Schlichten-Modus (Move-based Fallback, da G71/G72
+    fuer Innenbearbeitung nicht zuverlaessig ist) nach einer vorangehenden
+    AUSSEN-Operation liess das Werkzeug per veraltetem `_is_at_safe`-Flag
+    faelschlich als 'bereits sicher' gelten - obwohl die tatsaechlich zuletzt
+    erreichte Position die AUSSEN-Sicherheitsebene (XRA/ZRA) war, nicht die
+    fuer diese Operation gueltige INNEN-Ebene (XRI/ZRI). emit_approach()
+    ueberspringt in diesem Fall faelschlich den Rueckzug auf die sichere
+    Z-Ebene vor dem Schlichtschnitt und faehrt stattdessen im Eilgang (G0)
+    diagonal direkt durch das noch stehengebliebene Restmaterial. Seit der
+    zentralen Bewegungszustandsverfolgung (MotionState) wird die reale
+    Position statt eines reinen Flags verglichen bzw. nach dem Schruppen
+    explizit als unbekannt markiert - der Rueckzug wird jetzt zuverlaessig
+    ausgegeben."""
+    settings = dict(make_program_settings(), xi=10.0, xri=9.0, zri=2.0, xri_absolute=True, zri_absolute=True)
+    op_face = Operation(
+        OpType.FACE,
+        {
+            "mode": "rough", "tool": 5, "spindle": 1200.0, "feed": 0.12, "depth_max": 0.2,
+            "start_x": 40.0, "end_x": 0.0, "start_z": 0.0, "end_z": 0.0,
+            "finish_allow_z": 0.0, "retract": 1.0, "edge_type": 0, "edge_size": 0.0,
+        },
+        path=[(40.0, 0.0), (0.0, 0.0)],
+    )
+    op_bore = Operation(
+        OpType.ABSPANEN,
+        {
+            "side": "inside", "mode": "rough_finish", "tool": 5,
+            "spindle": 800.0, "feed": 0.15, "depth_per_pass": 0.5, "slice_strategy": "parallel_z",
+            "finish_allow_x": 0.2, "finish_allow_z": 0.1,
+        },
+        path=[(12.0, -30.0), (12.0, 0.0)],
+    )
+    lines = generate_program_gcode([op_face, op_bore], settings)
+    finish_idx = lines.index("(Schlichtschnitt Kontur)")
+    # Direkt nach der Schlichtschnitt-Markierung muss zuerst auf die sichere
+    # Innen-Z-Ebene zurueckgezogen werden, bevor X ueberhaupt bewegt wird -
+    # kein Eilgang darf X allein/zuerst anfahren, waehrend Z noch auf der
+    # (falschen) tiefen Schruppposition steht.
+    assert lines[finish_idx + 1] == "G0 Z2.000"
+    assert lines[finish_idx + 2] == "G0 X9.000"
+    # Dieselbe Absicherung gilt fuer den Einstieg ins Schruppen selbst.
+    rough_idx = lines.index("(ABSPANEN Rough - parallel Z - Move-based)")
+    assert lines[rough_idx + 1] == "G0 Z2.000"
+    assert lines[rough_idx + 2] == "G0 X9.000"
 
 
 def test_same_tool_two_operations_share_single_toolchange():
@@ -396,7 +445,10 @@ def test_same_tool_internal_rough_then_finish_shares_single_toolchange():
 
 
 def test_external_approach_uses_safe_x_until_target_z():
-    settings = dict(make_program_settings(), _is_at_safe=True)
+    # x_safe = xa(40) + xra(40) = 80.0, z_safe = za(0) + zra(2) = 2.0 -
+    # der Bewegungszustand muss exakt darauf stehen, damit der anfaengliche
+    # Rueckzug auf die sichere Ebene als bereits erreicht uebersprungen wird.
+    settings = dict(make_program_settings(), _motion=MotionState(x=80.0, z=2.0))
     lines = []
     emit_approach(lines, 45, -20, settings)
     assert lines == ["G0 Z-20.000", "G0 X45.000"]
@@ -411,7 +463,6 @@ def test_external_approach_blocks_misconfigured_safe_x_inside_stock():
     settings = dict(
         _stock_settings(),
         xra=30, xra_absolute=True,
-        _is_at_safe=True,
     )
     lines = []
     with pytest.raises(ValueError, match="Rohteil"):

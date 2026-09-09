@@ -2,6 +2,91 @@
 
 ## [Unreleased]
 
+### LES-022 CSS/G96-Modalzustand ausgelagert 2026-09-09
+
+- Zweite Etappe von LES-022: neue Klasse `SpindleState`
+  (`lathe_easystep/motion_state.py`) ersetzt die bisherigen ad-hoc
+  settings-Keys `_pending_css`/`_active_css`/`_css_fixed_rpm` in
+  `activate_pending_css()`, `suspend_css()` und `append_tool_and_spindle()`
+  (`gcode_safety.py`). Alle anderen Operations-Generatoren (Abspanen,
+  Bohren, Gewinde, Face, Groove) rufen bereits ausschliesslich die
+  oeffentlichen Funktionen auf und waren nicht direkt betroffen.
+- Im Gegensatz zur ersten Etappe (Positions-Tracking) war die CSS-Suspend/
+  Resume-Logik bereits durchgehend konsistent - gezielt auf ein analoges
+  Stale-State-Risiko geprueft, keines gefunden. Reine Architektur-
+  bereinigung ohne Ausgabeaenderung: elf Referenzen und 43 rs274-
+  Matrixfaelle (inkl. der `css_clearance_*`-Faelle) bestehen identisch.
+- Ein Testfall mit direkter `_pending_css`-Dict-Konstruktion auf
+  `SpindleState` umgestellt. 590 Stub-/44 echte Qt-Tests weiterhin
+  bestanden.
+
+### LES-022 Zentraler Bewegungszustand: Sicherheitsfehler bei Innen-Schruppen+Schlichten behoben 2026-09-09
+
+- **Sicherheitsfehler gefunden und behoben:** Eine Innenbearbeitung im
+  kombinierten Schruppen+Schlichten-Modus (Move-based Fallback, betrifft
+  jede Innenbearbeitung, da G71/G72 dafuer nicht zuverlaessig ist, siehe
+  LES-003), die NICHT die erste Operation im Programm ist, konnte den
+  Rueckzug auf die sichere Z-Ebene vor dem Schlichtschnitt faelschlich
+  ueberspringen und stattdessen im Eilgang (G0) diagonal direkt durch das
+  noch stehengebliebene Restmaterial fahren. Ursache: das bisherige
+  `_is_at_safe`-Flag blieb nach dem Schruppen unveraendert auf dem Wert
+  einer vorherigen (typischerweise AUSSEN-)Operation stehen, obwohl die
+  reale Position laengst eine andere war - `emit_approach()` vertraute
+  diesem Flag, ohne die tatsaechlich hinterlegte Position gegenzupruefen.
+  Real reproduziert und verifiziert: ohne den Fix erzeugt ein Programm mit
+  vorangehender Aussen-Operation gefolgt von einer kombinierten Innen-
+  Bohrung einen `G0 X12.000`-Eilgang bei Z=-29.900, mitten durch 0.2mm
+  unbearbeitetes Schlicht-Aufmass.
+- Neue Klasse `MotionState` (`lathe_easystep/motion_state.py`, LES-022,
+  erste Etappe: Positions-Tracking) ersetzt die bisherigen ad-hoc
+  settings-Keys `_is_at_safe`/`_safe_x`/`_safe_z` durch ein typisiertes
+  Objekt mit `record()`/`update()`/`clear()`/`at()`. `gcode_safety.py`
+  (`emit_safe_retract_for_op`, `emit_approach`, `append_tool_and_spindle`)
+  und `gcode_groove.py` nutzen es jetzt statt der rohen Dict-Keys;
+  `emit_approach()` vergleicht die Zielposition jetzt exakt gegen die
+  zuletzt real erreichte Position statt nur ein Flag zu lesen.
+  `gcode_roughing.py` invalidiert den Zustand nach jedem Schruppdurchlauf
+  (G71/G72-Zyklus wie auch Move-based Fallback) explizit, da dessen reale
+  Endposition hier bewusst nicht feingranular mitgefuehrt wird - ein
+  nachfolgender `emit_approach()`-Aufruf fuer den Schlichtschritt muss sich
+  dadurch immer neu auf eine tatsaechlich bekannte Position stuetzen statt
+  auf eine veraltete Annahme.
+  Zwei bestehende Referenzprogramme (`Innen_Radius.ngc`, `Innen_Stufe.ngc`)
+  waren vom Fehler betroffen und wurden neu generiert; beide fuegen jetzt
+  den zuvor fehlenden Rueckzug vor Schrupp- und Schlichteinstieg ein. Alle
+  neun uebrigen Referenzen unveraendert.
+- Fuenf Testdateien (`gcode_safety.py`-, `gcode_groove.py`- und
+  `gcode_roughing.py`-Konsumenten sowie drei Testdateien mit direkten
+  `_is_at_safe`/`_safe_x`/`_safe_z`-Dict-Konstruktionen) auf `MotionState`
+  umgestellt; neuer gezielter Regressionstest fuer das gefundene Szenario
+  (`test_combined_internal_rough_finish_after_external_op_retracts_before_finish_entry`).
+  590 Stub-/44 echte Qt-Tests, elf NGC-Referenzen und 43 rs274-Matrixfaelle
+  (WSL/Debian) bestanden.
+- Weiterhin offen fuer LES-022: modale G/M-Codes (G90/G91, G94/G95, G18,
+  G40/G41/G42, M3/M4/M5, M7/M8/M9) zentral verwalten sowie Positions-
+  Tracking auf Schnittbewegungen (G1/G2/G3) innerhalb der Operations-
+  Generatoren ausweiten.
+
+### LES-020 Widget-Bootstrapping ausgelagert 2026-09-09
+
+- Letzte verbleibende Teilaufgabe von LES-020: 19 Widget-Suche/-Auflösungs-
+  Methoden (`_register_known_widgets`, `_resolve_core_widgets_strict`,
+  `_get_widget_by_name`, `_find_root_widget`, `_poll_for_widget` u.a.) aus
+  `lathe_easystep_handler.py` nach `lathe_easystep/ui_widget_lookup.py`
+  verschoben; der Handler ruft sie nur noch ueber duenne, gleichnamige
+  Wrapper-Methoden auf, Aufrufstellen unveraendert.
+- `TAB_TRANSLATIONS` und `_looks_like_panel_widget` dafuer nach
+  `lathe_easystep/ui_registry.py` verschoben, um einen Zirkelimport zu
+  vermeiden. Dabei einen bestehenden `NameError`-Bug in
+  `lathe_easystep/widget_resolver.py` gefunden und behoben:
+  `_pick_best_root()` rief `_looks_like_panel_widget()` auf, ohne dass es
+  importiert war - der Fehler wurde bislang von einem umgebenden
+  `except Exception: pass` stumm verschluckt, wodurch der Fallback
+  "sieht strukturell wie unser Panel aus" nie tatsaechlich griff.
+- 589 Stub-/44 echte Qt-Tests (mit `uic.loadUi`) bestanden, elf
+  NGC-Referenzen statisch unveraendert (reiner UI-Refactor ohne
+  G-Code-Auswirkung).
+
 ### LES-028/032 Werkzeugdatenvalidierung 2026-09-09
 
 - Explizite Werkzeugorientierung fuer Radiuskorrektur ganzzahlig in 0..9
