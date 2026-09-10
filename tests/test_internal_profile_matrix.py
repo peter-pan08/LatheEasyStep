@@ -105,3 +105,101 @@ def test_internal_radius_preserves_arcs_and_material_limits(reverse, mode):
             arcs += 1
         position = endpoint
     assert arcs
+
+
+def test_internal_rough_passes_never_undercut_allowance_through_arc():
+    """Regression fuer den Sehnen-statt-Bogen-Fehler: An einer Rundung
+    zwischen engerer Bohrung und Schulter (kleiner Bogenradius) duerfen
+    Schrupp-Paesse das konfigurierte Schlichtaufmass nicht unterschreiten
+    oder gar ins Fertigteil schneiden. Die fruehere Implementierung
+    reduzierte den Bogen fuer die Materialreichweiten-Berechnung je
+    X-Band auf seine Sehne; die wahre (konkave) Kontur liegt naeher am
+    Zentrum als die Sehne, wodurch reale Schnitte bis zu 0.43mm
+    Durchmesser-Uebermass erzeugten (bei 0.2mm konfiguriertem Aufmass).
+    Die Kontur hier entspricht exakt `ngc/Innen_Radius.ngc`."""
+    ops, settings = example_programs()["Innen_Radius.ngc"]
+    lines = generate_program_gcode(ops, settings)
+    finish_allow_x = ops[-1].params["finish_allow_x"]
+
+    # Wahre Fertigkontur (Radius-Raum), unabhaengig vom Generator direkt aus
+    # der Kontur nachgerechnet: senkrechte Wand bei R6 bis Z-16, R1-Bogen
+    # (Zentrum R7/Z-16) bis (R7,Z-15), Schulter R9 ab Z-15.
+    def wall_radius_at_z(z):
+        if z <= -16.0 - 1e-9:
+            return 6.0
+        if z <= -15.0 + 1e-9:
+            cx, cz, r = 7.0, -16.0, 1.0
+            dz = max(-r, min(r, z - cz))
+            return cx - math.sqrt(max(0.0, r * r - dz * dz))
+        return 9.0
+
+    finish_index = lines.index("(Schlichtschnitt Kontur)")
+    rough = lines[:finish_index]
+    allow_radius = finish_allow_x / 2.0
+    checked = 0
+    for line in rough:
+        if not line.startswith("G1 "):
+            continue
+        m = re.search(r"X(-?[0-9.]+) Z(-?[0-9.]+)", line)
+        if not m:
+            continue
+        x, z = float(m.group(1)), float(m.group(2))
+        clearance = wall_radius_at_z(z) - x / 2.0
+        assert clearance >= allow_radius - 1e-6, (
+            f"Schrupp-Schnitt X{x} Z{z} verletzt das Aufmass: nur "
+            f"{clearance * 2:.3f}mm statt {finish_allow_x:.3f}mm Restaufmass"
+        )
+        checked += 1
+    assert checked > 10
+
+
+def test_internal_rough_passes_never_undercut_allowance_through_arc_with_chip_breaking():
+    """Nutzerhinweis 2026-09-10: Innenbearbeitung nutzt IMMER den
+    bewegungsbasierten ("ISO") Pfad (G71/G72 ist fuer Innenkonturen in
+    dieser LinuxCNC-Version nicht nutzbar, siehe LES-003) - genau der Pfad,
+    an dem sowohl der Sehnen-Fix als auch das Spanbruch-Feature
+    (`pause_enabled`) ansetzen. Diese Regression kombiniert beides an
+    derselben Bogenkontur wie oben: mit aktivem Spanbruch duerfen die
+    Schrupp-Schnittpunkte (jetzt als `o<step_line_pause> call [...]`
+    statt als `G1`-Zeile ausgegeben) weiterhin nicht in das Schlichtaufmass
+    hineinschneiden."""
+    ops, settings = deepcopy(example_programs()["Innen_Radius.ngc"])
+    ops[-1].params.update(pause_enabled=True, pause_distance=3.0)
+    lines = generate_program_gcode(ops, settings)
+    finish_allow_x = ops[-1].params["finish_allow_x"]
+
+    assert not any(l.startswith(("G71 ", "G72 ")) for l in lines)
+
+    def wall_radius_at_z(z):
+        if z <= -16.0 - 1e-9:
+            return 6.0
+        if z <= -15.0 + 1e-9:
+            cx, cz, r = 7.0, -16.0, 1.0
+            dz = max(-r, min(r, z - cz))
+            return cx - math.sqrt(max(0.0, r * r - dz * dz))
+        return 9.0
+
+    finish_index = lines.index("(Schlichtschnitt Kontur)")
+    rough = lines[:finish_index]
+    allow_radius = finish_allow_x / 2.0
+    checked = 0
+    for line in rough:
+        if line.startswith("G1 "):
+            m = re.search(r"X(-?[0-9.]+) Z(-?[0-9.]+)", line)
+            if not m:
+                continue
+            x, z = float(m.group(1)), float(m.group(2))
+        elif "step_line_pause" in line and "call" in line:
+            nums = re.findall(r"\[(-?[0-9.]+)\]", line)
+            if len(nums) < 4:
+                continue
+            x, z = float(nums[2]), float(nums[3])
+        else:
+            continue
+        clearance = wall_radius_at_z(z) - x / 2.0
+        assert clearance >= allow_radius - 1e-6, (
+            f"Schrupp-Schnitt X{x} Z{z} verletzt das Aufmass: nur "
+            f"{clearance * 2:.3f}mm statt {finish_allow_x:.3f}mm Restaufmass"
+        )
+        checked += 1
+    assert checked > 10

@@ -362,6 +362,25 @@ def update_subspindle_visibility(handler, *args, **kwargs):
     if handler.program_s3:
         handler.program_s3.setVisible(has_sub)
 
+    # Vorerst deaktiviert: kein Operationstyp und keine G-Code-Erzeugung
+    # wertet "has_subspindle"/"s3_max" je aus - der Generator kennt keine
+    # Werkstueckuebergabe, Spindelsynchronisation oder S3-Drehzahlgrenze.
+    # Die Checkbox blieb bisher trotzdem bedienbar und konnte Bediener zur
+    # Annahme verleiten, eine Gegenspindel-Bearbeitung sei unterstuetzt und
+    # abgesichert. Bis eine echte Umsetzung existiert, bleibt die Eingabe
+    # sichtbar (fuer bereits gespeicherte Programme), aber gesperrt.
+    _SUBSPINDLE_DISABLED_TOOLTIP = (
+        "Gegenspindel-Unterstuetzung ist im Generator noch nicht "
+        "umgesetzt (keine Werkstueckuebergabe, keine Spindelsynchronisation, "
+        "S3-Drehzahlgrenze wird nicht geprueft). Vorerst deaktiviert."
+    )
+    if handler.program_has_subspindle:
+        handler.program_has_subspindle.setEnabled(False)
+        handler.program_has_subspindle.setToolTip(_SUBSPINDLE_DISABLED_TOOLTIP)
+    if handler.program_s3:
+        handler.program_s3.setEnabled(False)
+        handler.program_s3.setToolTip(_SUBSPINDLE_DISABLED_TOOLTIP)
+
 
 _SPINDLE_MODE_OPERATION_PREFIXES = ("face", "parting", "groove", "thread")
 

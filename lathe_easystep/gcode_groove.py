@@ -378,4 +378,16 @@ def generate_groove_gcode(
         f"{macro_arg(chip_amp, 3)} "
         f"{macro_arg_int(chip_n)}"
     )
+    # LES-022 (dritte Etappe): der o220-Zyklus stuft die Nutbreite in einer
+    # datenabhaengigen Reihenfolge (0, +stepW, -stepW, +2*stepW, ...) bis zum
+    # Ueberschreiten von omin/omax - die real erreichte Endposition auf der
+    # Breitenachse (Z bei mode 0, X sonst) haengt vom genauen Verhaeltnis aus
+    # Werkzeugbreite/Nutbreite/Ueberdeckung ab und ist ohne Duplizieren dieser
+    # Makro-Logik in Python nicht zuverlaessig vorherzusagen (die Plunge-Achse
+    # kehrt zwar nachweislich immer auf Astart zurueck, die Breitenachse aber
+    # nicht). Bisher blieb der gemeinsame Bewegungszustand hier stillschweigend
+    # auf der Anfahrposition VOR dem Zyklus stehen - jetzt explizit als
+    # unbekannt markiert, statt eine falsche Position anzunehmen.
+    if settings is not None:
+        _motion_state(settings).clear()
     return lines

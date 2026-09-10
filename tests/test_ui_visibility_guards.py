@@ -11,9 +11,17 @@ from lathe_easystep.ui_visibility import chuck_size_mm
 class _BoolWidget:
     def __init__(self):
         self.visible = None
+        self.enabled = None
+        self.tooltip = None
 
     def setVisible(self, value):
         self.visible = bool(value)
+
+    def setEnabled(self, value):
+        self.enabled = bool(value)
+
+    def setToolTip(self, text):
+        self.tooltip = text
 
 
 class _ComboByIndex:
@@ -35,9 +43,17 @@ class _ComboByIndex:
 class _Check:
     def __init__(self, checked):
         self._checked = bool(checked)
+        self.enabled = None
+        self.tooltip = None
 
     def isChecked(self):
         return self._checked
+
+    def setEnabled(self, value):
+        self.enabled = bool(value)
+
+    def setToolTip(self, text):
+        self.tooltip = text
 
 
 class _Root:
@@ -176,6 +192,13 @@ def test_subspindle_visibility_uses_checkbox_state_not_label_text():
 
     assert handler.label_prog_s3.visible is True
     assert handler.program_s3.visible is True
+    # Gegenspindel-Unterstuetzung ist im Generator nicht umgesetzt (kein
+    # Operationstyp, keine Werkstueckuebergabe/-synchronisation, S3-Grenze
+    # wird nirgends geprueft) - Eingabe bleibt sichtbar, aber gesperrt.
+    assert handler.program_has_subspindle.enabled is False
+    assert handler.program_s3.enabled is False
+    assert handler.program_has_subspindle.tooltip
+    assert handler.program_s3.tooltip
 
 
 def test_chuck_size_mm_prefers_internal_item_data_over_display_text():

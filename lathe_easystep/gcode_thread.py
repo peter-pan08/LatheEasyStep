@@ -6,7 +6,7 @@ from .contour_logic import thread_relief_spec
 from .model import Operation
 from .numeric import finite_float, whole_number, validate_finite_data
 from .gcode_utils import is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
-from .gcode_safety import activate_pending_css
+from .gcode_safety import _motion_state, activate_pending_css
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
@@ -191,4 +191,13 @@ def generate_thread_gcode(
             f"L{l_val:d}"
         )
     )
+    # LES-022 (dritte Etappe): G76 endet nachweislich (rs274-Verifikation)
+    # exakt bei (approach_x, end_z) - der letzte Gewindeschnitt faehrt auf
+    # volle Tiefe bis zum Gewindeende und retraktiert NICHT automatisch.
+    # Vorher blieb der gemeinsame Bewegungszustand faelschlich auf der
+    # Anfahrposition VOR dem Gewindeschneiden stehen (insbesondere Z blieb
+    # auf start_z statt end_z) - ein Folgeschritt haette einen noetigen
+    # Rueckzug potenziell faelschlich als bereits erledigt angesehen.
+    if settings is not None:
+        _motion_state(settings).record(approach_x, end_z)
     return lines

@@ -162,6 +162,50 @@ def validate_internal_x_limit(settings: Dict[str, object], x_values: List[object
     return safe_x
 
 
+def validate_internal_material_clearance(
+    settings: Dict[str, object], safe_x: float, z_values: List[float], *, op_label: str
+) -> None:
+    """Sicherstellen, dass die axiale Eilgangebene (XRI) nachweislich in
+    bereits offenem Material liegt - nicht nur innerhalb der Fertigkontur
+    (siehe `validate_internal_x_limit`), sondern auch innerhalb dessen, was
+    laut Programmkopf (XI, vorgebohrtes/Rohr-Rohteil) oder einer
+    vorangehenden Bohren-Operation tatsaechlich schon frei ist. XI deckt die
+    gesamte Werkstuecklaenge ab; eine Bohrung nur bis zu ihrer Tiefe.
+    Blockiert nur bei nachgewiesenem Widerspruch zu bekannten Werten - bei
+    fehlender Angabe (weder XI noch vorangehende Bohrung) bleibt dies
+    bewusst fehlerfrei, dafuer existiert die separate Reihenfolge-Warnung in
+    `checks.py::validate_program_setup`."""
+    xi = float_or_none(settings.get("xi"))
+    drilled_diameter = float_or_none(settings.get("_last_drill_diameter"))
+    drilled_depth = float_or_none(settings.get("_last_drill_depth"))
+    deepest_z = min(z_values) if z_values else None
+
+    if xi is not None and xi > 1e-9 and safe_x <= xi + 1e-6:
+        return  # XI deckt die gesamte Werkstuecklaenge ab.
+
+    if drilled_diameter is not None and drilled_diameter > 1e-9 and safe_x <= drilled_diameter + 1e-6:
+        if drilled_depth is None or deepest_z is None or deepest_z >= drilled_depth - 1e-6:
+            return
+        raise ValueError(
+            f"{op_label}: XRI={safe_x:.3f} ist nur bis Z{drilled_depth:.3f} (Bohrtiefe) "
+            f"nachweislich frei, die Bearbeitung erreicht aber Z{deepest_z:.3f}. Bohrung "
+            "vertiefen oder Z-Bereich der Operation pruefen."
+        )
+
+    have_xi = xi is not None and xi > 1e-9
+    have_drill = drilled_diameter is not None and drilled_diameter > 1e-9
+    if have_xi or have_drill:
+        known = xi if have_xi else drilled_diameter
+        source = "das im Programmkopf gesetzte XI" if have_xi else "die vorangehende Bohrung"
+        raise ValueError(
+            f"{op_label}: XRI={safe_x:.3f} ist groesser als der durch {source} "
+            f"nachgewiesene offene Innendurchmesser (Ø{known:.3f}). Die axiale "
+            "Eilgangebene waere nicht nachweislich frei von Material."
+        )
+    # Weder XI noch eine vorangehende Bohrung bekannt - keine gesicherte
+    # Aussage moeglich, bewusst kein Fehler.
+
+
 def require_tool(params: Dict[str, object], op_label: str) -> int:
     tool_num = get_tool_number(params)
     if tool_num <= 0:
@@ -229,7 +273,7 @@ REQUIRED_KEYS = {
     OpType.GROOVE: ["feed", "safe_z", "tool"],
     OpType.DRILL: ["feed", "safe_z", "tool"],
     OpType.KEYWAY: ["depth_per_pass"],
-    OpType.ABSPANEN: ["depth_per_pass", "tool"],
+    OpType.ABSPANEN: ["depth_per_pass", "feed", "tool"],
 }
 
 

@@ -82,7 +82,7 @@ def test_mixed_ops_only_includes_needed_subs():
             "feed": 0.2, "spindle": 1300.0, "tool": 1,
             "edge_type": 0, "edge_size": 0.0, "coolant": False
         }),
-        Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "spindle": 1000.0, "tool": 1, "slice_strategy": "parallel_z"}, path=[(0.0, 0.0), (10.0, -2.0)])
+        Operation(OpType.ABSPANEN, {"mode": 0, "pause_enabled": True, "pause_distance": 1.0, "depth_per_pass": 0.5, "feed": 0.15, "spindle": 1000.0, "tool": 1, "slice_strategy": "parallel_z"}, path=[(0.0, 0.0), (10.0, -2.0)])
     ]
     m.program_settings = RETRACT_SETTINGS
     g = "\n".join(m.generate_gcode())

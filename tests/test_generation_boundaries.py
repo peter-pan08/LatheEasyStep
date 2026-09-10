@@ -416,9 +416,13 @@ def test_same_tool_internal_rough_then_finish_shares_single_toolchange():
     ]
     settings = make_program_settings()
     settings.update({"xi": 0.0, "xri": 9.3, "xri_absolute": True})
+    # Bohrdurchmesser >= XRI, damit validate_internal_material_clearance()
+    # dieses Fixture nicht als unbewiesen-frei ablehnt - diese Grenze ist
+    # hier nicht das, was getestet wird (siehe Docstring: Werkzeugwechsel-
+    # Dedup fuer Innen-Schruppen -> Schlichten).
     drill = Operation(
         OpType.DRILL,
-        {"tool": 10, "spindle": 600.0, "feed": 0.12, "mode": 0, "safe_z": 2.0, "diameter": 8.0},
+        {"tool": 10, "spindle": 600.0, "feed": 0.12, "mode": 0, "safe_z": 2.0, "diameter": 9.5},
         path=[(0.0, 2.0), (0.0, -45.0)],
     )
     rough = Operation(

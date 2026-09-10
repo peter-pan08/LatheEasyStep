@@ -6,7 +6,7 @@ from .gcode_utils import resolve_enum_index
 from .model import Operation
 from .face_geometry import face_primitives
 from .gcode_roughing import contour_sub_from_primitives
-from .gcode_safety import activate_pending_css
+from .gcode_safety import _motion_state, activate_pending_css
 from .numeric import finite_float, validate_finite_data
 
 FACE_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
@@ -108,6 +108,18 @@ def generate_face_gcode(
         )
     if mode in (1, 2):
         lines.append(f"G70 Q{sub_num} X{start_x:.3f} Z{start_z:.3f}")
+
+    # LES-022 (dritte Etappe): G70 endet nachweislich (rs274-Verifikation,
+    # siehe gcode_roughing.py) immer exakt am letzten Punkt der referenzierten
+    # Kontur - hier (end_x, end_z), das Ende von `profile`. Ohne folgendes
+    # G70 (reines Schruppen, mode 0) bleibt die Endposition des G72-Zyklus
+    # unbekannt (siehe gcode_roughing.py can_use_cycles-Kommentar) - dort
+    # explizit ungueltig markieren statt die Anfahrposition stehen zu lassen.
+    if settings is not None:
+        if mode in (1, 2):
+            _motion_state(settings).record(end_x, end_z)
+        else:
+            _motion_state(settings).clear()
 
     if mode in (0, 2) and pause_enabled and pause_distance > 0.0:
         settings["needs_step_x_pause_sub"] = True

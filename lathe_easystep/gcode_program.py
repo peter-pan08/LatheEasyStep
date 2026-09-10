@@ -27,6 +27,7 @@ from .gcode_safety import (
     estimate_operation_end_pos,
     get_end_park_lines,
     get_machine_limit_warnings,
+    validate_external_retract_clearance,
 )
 from .gcode_thread import generate_thread_gcode
 from .gcode_utils import (
@@ -197,6 +198,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         if key.startswith("_") or key.startswith("needs_step_") or key in ("sub_allocator", "contour_subs"):
             settings.pop(key)
     validate_finite_data(settings, "Programmkopf")
+    validate_external_retract_clearance(settings)
     for i, op in enumerate(operations):
         try:
             validate_finite_data(op.params, f"Operation {i+1}")
@@ -456,6 +458,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             drill_diameter = float_or_none(op.params.get("diameter"))
             if drill_diameter is not None and drill_diameter > 0.0:
                 settings["_last_drill_diameter"] = drill_diameter
+            if op.path:
+                drill_depth = float_or_none(op.path[-1][1])
+                if drill_depth is not None:
+                    settings["_last_drill_depth"] = drill_depth
         op_tool = get_tool_number(op.params)
         if op_tool > 0:
             tool_lines: List[str] = []

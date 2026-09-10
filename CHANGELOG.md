@@ -2,6 +2,309 @@
 
 ## [Unreleased]
 
+### LES-022 dritte Etappe: Positions-Tracking in allen sechs Operations-Generatoren 2026-09-10
+
+- Jede Operation mit deterministisch bekannter Endposition aktualisiert
+  jetzt den gemeinsamen Bewegungszustand (`_motion_state`), statt ihn
+  stillschweigend veraltet stehen zu lassen: `gcode_drill.py` (G81-Familie
+  endet immer auf `(x_start, safe_z)`), `gcode_thread.py` (G76 endet immer
+  auf `(approach_x, end_z)`), `gcode_face.py` und `gcode_roughing.py`
+  (G70 endet immer exakt am letzten Punkt der referenzierten Kontur -
+  alle vier per `rs274`-Trace empirisch verifiziert). `gcode_keyway.py`
+  bricht immer ab, keine Bewegung.
+- **Echter, zuvor unbemerkter Bug gefunden:** `gcode_thread.py`
+  aktualisierte den Bewegungszustand nach G76 bisher ueberhaupt nicht - er
+  blieb faelschlich auf der Anfahrposition VOR dem Gewindeschneiden stehen
+  (Z blieb insbesondere auf `start_z` statt dem real erreichten `end_z` -
+  bei einem 20mm-Gewinde ein Versatz von 20mm). Ein direkt folgender
+  Schritt haette einen tatsaechlich noetigen Rueckzug potenziell
+  faelschlich als bereits erledigt ansehen koennen. Neuer Regressionstest,
+  gegen den alten Code verifiziert (`git stash`).
+- Zwei Faelle bleiben bewusst auf `clear()` (Endposition unbekannt) statt
+  eines geratenen Werts: der `o220`-Nutzyklus in `gcode_groove.py`
+  (Breitenachsen-Endposition haengt datenabhaengig von Werkzeugbreite/
+  Nutbreite/Ueberdeckung ab - Nachrechnen in Python wuerde die
+  Makro-Zustelllogik duplizieren) und die eigentlichen Schrupp-Baender in
+  `gcode_roughing.py` (`rough_turn_parallel_x/z` - reine Effizienzfrage,
+  keine Sicherheitsluecke, da die bestehende `clear()`-Invalidierung
+  bereits sicher ist). Details: TODO.md LES-022.
+- 639 Stub-/44 Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274
+  bestanden; keine Ausgabeaenderung ausser den bereits bekannten Diffs von
+  heute (keine der zwoelf Referenzen hat einen Schritt direkt nach einem
+  Gewinde-Step, daher wird der Thread-Bugfix dort nicht sichtbar).
+
+### LES-045 Ergaenzung: G71/G72-Ruecklaufabstand (R) bewusst gesetzt 2026-09-10
+
+- Per `rs274`-Trace verifiziert: `R` ist wie `D`/`I` ein reiner, nicht
+  konvertierter Radius-/Z-Abstand (`R5.0` erzeugte einen exakt diagonalen
+  5mm-Ruecklauf in X und Z zwischen den Schruppgaengen). Bisher war `R`
+  nie gesetzt (Interpreter-Default 0.5mm) - nicht sicherheitskritisch
+  falsch, aber unbewusst knapp. Jetzt `R{LEADOUT_LENGTH_DEFAULT}` (2.0mm)
+  in beiden G71/G72-Zeilen ergaenzt, passend zur bereits etablierten
+  Freifahrtlaenge des bewegungsbasierten Pfads. `Kontur_Radius_Fase.ngc`
+  neu erzeugt (`R2.000` ergaenzt). 638 Stub-/44 Qt-Tests, zwoelf
+  Referenzen und 43 Matrixfaelle unter rs274 bestanden. Details: TODO.md
+  LES-045.
+
+### LES-045 Fix: G71/G72 sendeten Zustelltiefe und Aufmass an vertauschte Parameter 2026-09-10
+
+- **Sicherheitsrelevanter Fix, real gegen den LinuxCNC-Interpreter
+  verifiziert:** der G7x-Dreh-Zyklus (`gcode_roughing.py`) sendete bisher
+  nur `D{depth_per_pass}` - kein `I`. Laut Interpreter-Quelltext
+  (`interp_g7x.cc`) ist `D` aber das AUFMASS ("final distance to
+  profile", radial) und `I` die ZUSTELLTIEFE ("increment of cutting",
+  radial, Default 1.0mm). Folge: die konfigurierte Zustelltiefe wurde bei
+  Zyklus-Ausgabe komplett ignoriert (immer 1.0mm Default, empirisch per
+  `rs274`-Trace bestaetigt: `depth_per_pass=1.0` und `=0.3` erzeugten
+  identische Schnittfolgen), und das konfigurierte Schlichtaufmass kam nie
+  an - stattdessen wirkte `depth_per_pass` zufaellig als Aufmass
+  (`Kontur_Radius_Fase.ngc` liess trotz konfiguriertem Aufmass 0 bisher
+  0.75mm Radius unbeabsichtigtes Restmaterial stehen).
+- **Fix:** `I{depth_per_pass/2}` ergaenzt, `D{finish_allow_x/2}` statt
+  `D{depth_per_pass}` (beide UI-Werte sind Durchmesserwerte, der Zyklus
+  rechnet radial). Der bisherige `stock_x_adj`-Hack im G72-Zweig (Versuch,
+  Aufmass ueber eine verkleinerte Startgrenze nachzubilden) entfernt.
+  `U`/`W` (getrennter X/Z-Versatz) sind vom installierten Interpreter-Build
+  nicht nutzbar ("Bad character 'u' used") - deshalb erzwingt
+  `finish_allow_z > finish_allow_x` jetzt den bewegungsbasierten Pfad
+  (nur EIN Aufmass ueber `D` darstellbar). Vorbild fuer den korrekten
+  Parameter-Einsatz war der bereits laenger richtige Facing-Zyklus-Pfad
+  (`gcode_face.py`).
+- D/I-Semantik empirisch per `rs274`-Trace an gerader Zylinderwand UND an
+  einer Bogenkontur bestaetigt (Restaufmass ueberall >= Konfiguration).
+  `Kontur_Radius_Fase.ngc` (einzige Referenz mit echtem Dreh-G71) neu
+  erzeugt; elf weitere Referenzen unveraendert. 638 Stub-/44 Qt-Tests,
+  zwoelf Referenzen und 43 Matrixfaelle unter rs274 bestanden. Details:
+  TODO.md LES-045.
+
+### LES-003 Test: Innenbearbeitung mit Spanbruch an der Bogenkontur abgesichert 2026-09-10
+
+- **Nutzerauftrag:** Roheitentest muss alle drei praxisrelevanten Faelle
+  an derselben Bogenkontur abdecken - Zyklus (erledigt), expliziter
+  ("ISO") Code, und explizit MIT aktiver Vorschub-Unterbrechung
+  (Spanbruch). Der dritte Fall fehlte bisher fuer Innenbearbeitung, wo
+  die urspruengliche Sehne-statt-Bogen-Regression gefunden wurde und wo
+  ausschliesslich der explizite Pfad existiert (G71/G72 fuer
+  Innenkonturen in dieser LinuxCNC-Version generell nicht nutzbar,
+  LES-003-Hauptbefund). Neuer Test
+  `test_internal_rough_passes_never_undercut_allowance_through_arc_with_chip_breaking`
+  (`tests/test_internal_profile_matrix.py`): `Innen_Radius.ngc`-Bogenkontur
+  mit `pause_enabled=True`, prueft jeden Schrupp-Punkt (aus `G1`- und aus
+  `o<step_line_pause> call [...]`-Zeilen) gegen die wahre Fertigkontur.
+  Gegen den alten Sehnen-Code verifiziert (`git stash`): schlaegt real mit
+  einer Aufmass-Verletzung fehl (0.04mm statt 0.2mm Restaufmass bei
+  X12.0 Z-15.8). 637 Stub-/44 Qt-Tests, elf Referenzen und 43
+  Matrixfaelle unter rs274 bestanden, keine Referenzaenderung. Details:
+  TODO.md LES-003.
+
+### LES-003 Fix: Zyklus-vs-explizit-Paritaet, zwei Bugs im Aussen-Schrupp-Pfad 2026-09-10
+
+- **Nutzerfrage:** liefert eine Kontur mit G71/G72-Zyklus dasselbe
+  Ergebnis wie mit explizit erzeugtem ("ISO") G-Code? Neue
+  `tests/test_cycle_vs_explicit_parity.py` prueft genau das fuer eine
+  Aussenkontur mit Bogen, einmal per `prefer_cycle`, einmal per
+  `prefer_explicit`, gegen die wahre (nicht linearisierte) Fertigkontur.
+  Zwei echte Bugs im bewegungsbasierten Aussen-Schrupp-Pfad gefunden:
+  1. **Schlichtaufmass-Asymmetrie** (`gcode_roughing.py`): der
+     Aufmass-Versatz wurde nur fuer Innenbearbeitung angewendet -
+     Aussenkonturen im expliziten Pfad schrubbten bis zur Fertigkontur
+     OHNE jedes Aufmass, sobald der explizite statt der Zyklus-Pfad
+     genutzt wurde. Behoben: Versatz jetzt fuer beide Seiten mit
+     passendem Vorzeichen.
+  2. **Spanbruch ignoriert bei zyklustauglicher Kontur** (`gcode_roughing.py`
+     `can_use_cycles`): das selbst gebaute Vorschub-Unterbrechungsfeature
+     (`pause_enabled`/`pause_distance`, Ersatz fuer einen LinuxCNC
+     unbekannten Siemens-Zyklus, nutzerbestaetigt real haeufig verwendet)
+     wurde stillschweigend uebergangen, wenn die Kontur sonst
+     zyklustauglich war - G71/G72 kann diese Unterbrechung grundsaetzlich
+     nicht ausfuehren. Behoben: aktiver Spanbruch erzwingt jetzt immer
+     den expliziten Pfad.
+- Beide Fixes gegen den alten Code verifiziert (`git stash`, 3 der 5
+  neuen Tests schlagen vorher mit spezifischen Aufmass-Verletzungen fehl).
+  636 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle unter rs274
+  bestanden; nur `Innen_Radius.ngc` aendert sich (bereits dokumentierter
+  Sehnen-Fix), keine neue Referenzaenderung durch diese beiden Fixes.
+  Details: TODO.md LES-003.
+
+### LES-005 abgeschlossen: Innen_Konus.ngc als zwoelfte Referenz 2026-09-10
+
+- `Innen_Konus.ngc` war bisher nur ein Profil-Fall in der generischen
+  Testmatrix, keine eingecheckte Referenz. Neu in `examples.py` ergaenzt
+  (Kegelkontur, sonst identischer Aufbau wie `Innen_Stufe.ngc`) und als
+  zwoelfte Referenz regeneriert - besteht statische Pruefung und `rs274`.
+  In der SIM (Zoom-Testvariante) bis `M30` gefahren, Backplot zeigt die
+  Kegelform klar erkennbar. Damit haben jetzt alle drei LES-005-
+  Innenkonturformen (Stufe, Konus, Radius) automatisierte Regressionen
+  UND einen dokumentierten nativen LinuxCNC-Nachweis. 631 Stub-/44
+  Qt-Tests bestanden. Details: `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+### LES-040 Fix: Aussen-Rueckzugsebene konnte im Rohteil liegen 2026-09-10
+
+- **Sicherheitsrelevanter Fix, Nutzerentscheidung:** "Ausser bei
+  Innenbearbeitung kann die Rueckzugsebene niemals im Rohteil sein."
+  Neue Funktion `validate_external_retract_clearance()` (`gcode_safety.py`)
+  prueft die aufgeloeste AUSSEN-Rueckzugsebene (XRA/ZRA) einmalig ganz am
+  Anfang der Programmerzeugung gegen die Rohteil-Huellkurve (X- und
+  Z-Bereich gleichzeitig) und blockiert die Ausgabe, wenn sie tatsaechlich
+  innerhalb liegt. Innenbearbeitung (XRI/ZRI) ist bewusst unberuehrt - dort
+  ist "innerhalb der Huellkurve" der Normalfall (eigene Pruefung von
+  heute frueh, `validate_internal_material_clearance()`).
+- Bewusst NICHT geloest: die generelle sichere Achsreihenfolge/
+  -sequenzierung einzelner Bewegungen (separat verfolgt unter LES-001/
+  LES-039) - diese Pruefung sichert nur die konfigurierte Rueckzugsebene
+  selbst ab, nicht jede Einzelbewegung dorthin.
+- Drei neue Tests (Unit- und zwei Integrationstests), gegen den alten
+  Code verifiziert. 630 Stub-/44 Qt-Tests, 88 statische Checks, elf
+  Referenzen und 43 Matrixfaelle unter rs274 bestanden; keine Referenz
+  geaendert. Details: TODO.md LES-040.
+
+### LES-040 Fix: Abspanen akzeptierte Vorschub 0 oder negativ 2026-09-10
+
+- **Fix:** `REQUIRED_KEYS[OpType.ABSPANEN]` fehlte `"feed"` - anders als
+  bei FACE/DRILL wurde der Vorschub fuer Abspanen (die mit Abstand
+  meistgenutzte Operation) nie auf Positivitaet geprueft. `feed=0` erzeugte
+  `G1 ... F0.000`, `feed=-0.15` sogar `G1 ... F-0.150`. Behoben durch
+  Ergaenzen von `"feed"` in der Liste; dieselbe zentrale Pruefung greift
+  automatisch. Neuer Regressionstest, gegen den alten Code verifiziert.
+  627 Stub-/44 Qt-Tests bestanden, keine Referenz geaendert.
+- **Noch offen, bewusst nicht ad hoc gefixt:** `zra`/`zri` (globale
+  Z-Rueckzugsebenen) werden nirgends auf einen plausiblen Wertebereich
+  geprueft - eine Ebene innerhalb der Rohteil-Huellkurve erzeugt nur eine
+  informative Kommentarzeile, keinen Fehler. Braucht eine fachliche
+  Entscheidung vor einer Aenderung. Details: TODO.md LES-040.
+
+### LES-003 abgeschlossen: Backplot-Nachweis fuer Innen_Stufe.ngc 2026-09-10
+
+- Letzter offener LES-003-Punkt nachgeholt: lesbarer SIM-Backplot-
+  Screenshot fuer `Innen_Stufe.ngc` (Parser/`rs274` und echter
+  AUTO-Trockenlauf bis `M30` waren bereits vorher erbracht). Stufenkontur
+  im Backplot klar erkennbar, leerer NML-Fehlerkanal. LES-003 damit
+  vollstaendig abgehakt. Details: `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+### LES-003 Aussen-Richtungsmatrix ergaenzt, zwei Checkboxen nachtraeglich bestaetigt 2026-09-10
+
+- Audit ergab: "XRI nur als Einfahr-/Rueckzugsebene" und "monoton
+  steigende/fallende Z-Konturen" waren inhaltlich bereits durch
+  bestehende Tests erledigt (24 Kombinationen fuer Innenbearbeitung), nur
+  nicht abgehakt.
+- Fuer Aussenbearbeitung fehlte die analoge Richtungs-/Modus-Matrix (nutzt
+  einen grundsaetzlich anderen Ausgabepfad: G71/G72-Zyklus statt der
+  bewegungsbasierten Innen-Ersatzloesung) - neu ergaenzt in
+  `tests/test_external_profile_matrix.py` (18 Kombinationen, prueft dass
+  kein Schnitt die XA-Rohteilgrenze ueberschreitet). Reiner Testzuwachs,
+  keine Referenz geaendert. 625 Stub-/44 Qt-Tests bestanden.
+
+### LES-005 "zuerst auf nachweislich freien Innendurchmesser fahren" 2026-09-10
+
+- **Sicherheitsrelevanter Fix:** Die axiale Eilgangebene (`XRI`) bei
+  Innenbearbeitung wurde bisher nie gegen bekanntes, bereits offenes
+  Material geprueft - ein zu gross gewaehltes XRI (groesser als eine
+  vorangehende Bohrung oder das im Programmkopf gesetzte XI) haette den
+  Eilgang durch stehengebliebenes Vollmaterial fahren lassen koennen.
+- Neue Pruefung `validate_internal_material_clearance()`
+  (`gcode_utils.py`): blockiert die Ausgabe, sobald XRI nachweislich groesser
+  ist als das per Programmkopf-`XI` (deckt die gesamte Werkstuecklaenge ab)
+  oder per vorangehender Bohren-Operation (Durchmesser UND Tiefe, neu in
+  `gcode_program.py` mitverfolgt) bekannte offene Material. Fehlen beide
+  Angaben, bleibt die Pruefung bewusst stumm - dafuer existiert weiterhin
+  die separate Reihenfolge-Warnung in `checks.py::validate_program_setup`.
+- Neue Testdatei `tests/test_internal_material_clearance.py` (11 Faelle).
+  Zwei bestehende Testfixtures mit unplausiblen XRI/XI- bzw.
+  XRI/Bohrdurchmesser-Kombinationen korrigiert. 607 Stub-/44 Qt-Tests, 88
+  statische Checks, elf Referenzen und 43 Matrixfaelle unter rs274
+  bestanden; keine Referenz geaendert (alle bestehenden Kombinationen
+  waren bereits konsistent). Details: TODO.md LES-005.
+
+### LES-043 Gegenspindel-Checkbox vorerst deaktiviert 2026-09-10
+
+- **Sicherheitsrelevanter Befund (Nutzerverdacht bestaetigt):** Die
+  Checkbox "Gegenspindel vorhanden" und das Feld "max. Drehzahl S3" wurden
+  nirgends im Generator ausgewertet - kein Operationstyp fuer
+  Werkstueckuebergabe/Spindelsynchronisation existiert, die S3-Grenze
+  wurde nie geprueft, nicht einmal als Kommentar ausgegeben. Eine
+  irrefuehrende Bedienoberflaeche: Setzen der Checkbox konnte Unterstuetzung
+  suggerieren, die es nicht gibt.
+- Checkbox und S3-Feld bleiben sichtbar (Transparenz fuer bestehende
+  gespeicherte Programme), sind aber jetzt gesperrt (`setEnabled(False)`)
+  mit erklaerendem Tooltip, bis eine echte Umsetzung existiert. Kein
+  Generatorverhalten geaendert. Details: TODO.md LES-043.
+
+### Fix: Innen-Schruppen schnitt an Rundungen ins Fertigteil 2026-09-10
+
+- **Sicherheitsrelevanter Fix:** Beim Betrachten der SIM-Backplot-
+  Screenshots fiel auf, dass Schrupp-Paesse an der kleinen R1-Rundung
+  zwischen Bohrung und Schulter (`Innen_Radius.ngc`) ins Fertigteil
+  schnitten - bis zu 0.43mm Durchmesser-Uebermass bei 0.2mm
+  konfiguriertem Schlichtaufmass. Ursache: `primitive_to_points()`
+  reduzierte Bogen-Primitive fuer die Schrupp-Materialreichweiten-
+  Berechnung (`intersect_segment_with_x_band`) auf ihre Sehne statt den
+  wahren Kreis abzutasten; bei kleinen Radien baucht die echte Kontur
+  gegenueber der Sehne nach innen aus, wodurch die Schrupp-Zustellung zu
+  tief fuhr.
+- Behoben: `primitive_to_points()` tastet Bogen-Primitive jetzt entlang
+  des wahren Kreises ab (adaptive Segmentzahl, Sehnenabweichung
+  <0.0005mm) - betrifft nur die interne Materialreichweiten-Berechnung,
+  die FERTIGKONTUR-Ausgabe (G2/G3) war bereits vorher korrekt und bleibt
+  unveraendert.
+- Neuer Regressionstest
+  `test_internal_rough_passes_never_undercut_allowance_through_arc`
+  (`tests/test_internal_profile_matrix.py`) - reproduziert nachweislich
+  den alten Fehler ohne den Fix und prueft dauerhaft, dass kein
+  Schrupp-Schnitt entlang eines Bogens das Aufmass unterschreitet.
+  Einzige geaenderte Referenz: `Innen_Radius.ngc` (vier Zeilen, Pass 4-7
+  jetzt flacher/sicherer). 596 Stub-/44 Qt-Tests, 88 statische Checks,
+  elf Referenzen und 43 Matrixfaelle unter rs274 bestanden.
+
+### SIM: 9/11 Referenzen abgeschlossen, lesbarer Backplot-Screenshot 2026-09-10
+
+- Mit mehr Zeitbudget (400s) liefen vier weitere Referenzen fehlerfrei
+  durch: `Innen_Radius.ngc`, `Innen_Stufe.ngc`, `Planen.ngc`,
+  `Planen_Radius.ngc`. Damit 9 von 11 Referenzen in dieser Sitzung
+  automatisiert bis `M30` verifiziert.
+- `Abdrehen.ngc` gezielt mit Live-Tracking geprueft: kein Haenger,
+  sondern kontinuierlich viele feine Schrupppaesse - schlicht das
+  materialintensivste Referenzbeispiel, braucht mehr Zeitbudget als
+  bisher getestet.
+- Zoom-Testvariante (naher Werkzeugwechselpunkt) fuer `Innen_Radius.ngc`
+  liefert jetzt einen klar lesbaren Backplot-Screenshot: Schrupppaesse
+  und Schlichtkontur sauber getrennt erkennbar, inkl. der axialen
+  Einfahrt vor dem radialen Zustellen. Damit ist der zuvor offene Punkt
+  "gezoomter, lesbarer Backplot" erledigt. Details:
+  `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+### SIM: alle elf Referenzen automatisiert durchlaufen lassen 2026-09-09
+
+- `MAX_ACCELERATION` in `lathe.ini` (SIM, ausserhalb dieses Projekts) von
+  20.0 auf 2000.0 mm/s^2 erhoeht - reine Tuning-Massnahme fuer schnellere
+  Trockenlaeufe ohne reale Maschinenentsprechung, kommentiert und
+  reversibel. Vorschub-Override half kaum (dominiert von
+  Beschleunigungsrampen vieler kurzer Paesse, nicht Reisegeschwindigkeit).
+- Sechs von elf Referenzen liefen automatisiert (inkl. automatischem
+  Werkzeugwechsel-Loopback, ohne manuellen Klick) fehlerfrei bis `M30`
+  durch (1-100s). Die restlichen fuenf liefen nachweislich weiter (Position/
+  Drehzahl aendern sich kontinuierlich), ueberschritten aber das
+  150s-Testzeitbudget dieser Sitzung - kein Generatorbefund.
+- Nebenbefund: mehrfache harte Prozess-Neustarts hinterliessen ein
+  verwaistes NML-Shared-Memory-Segment (`ipcs -m`, Key `0x64`), das
+  `linuxcnc.error_channel()` brechen liess (`Error buffer invalid`);
+  behoben mit `ipcrm -M 0x64` nach vollstaendigem Prozessstop. Details:
+  `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
+### SIM: doppelte Werkzeugwechsel-Komponente behoben, Zoom-Tipp bestaetigt 2026-09-09
+
+- `basic_sim.tcl` lud zusaetzlich zu QtDragons eigenem Werkzeugwechsel-
+  Dialog noch `hal_manualtoolchange` mit (Startlog: "Detected
+  hal_manualtoolchange component already loaded"). Fix: `[HAL] HALFILE`
+  in `lathe.ini` um die dafuer vorgesehene Option
+  `-no_use_hal_manualtoolchange` ergaenzt - kein zweites, ungemapptes
+  Werkzeugwechsel-Fenster mehr.
+- Nutzertipp bestaetigt: Mit einem testweise nahen Werkzeugwechselpunkt
+  (`xt=30`/`zt=10` statt Default 150/300, nur als Scratch-Variante ohne
+  Aenderung der Referenzen) wird die QtDragon-Vorschaugrafik erstmals
+  lesbar - Rohteil, Schrupppaesse und Konturzug sind klar erkennbar statt
+  von der Eilgang-Linie zum weit entfernten Wechselpunkt dominiert zu
+  werden. Details: `doc/NATIVE_VERIFICATION_2026-09-09.md`.
+
 ### SIM-Konfiguration korrigiert: echter Trockenlauf jetzt moeglich 2026-09-09
 
 - `sim.qtdragon_lathe.basic_xz_lathe-1/lathe.ini` (ausserhalb dieses

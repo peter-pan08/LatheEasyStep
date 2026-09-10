@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import pytest
 
 from lathe_easystep.contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec, validate_contour_segments_for_profile
 from lathe_easystep.examples import make_program_settings
@@ -328,3 +331,185 @@ def test_start_inside_stock_emits_warning():
     ]
     text = "\n".join(generate_program_gcode(operations, settings))
     assert "liegt im Rohteil" in text
+
+
+def test_validate_external_retract_clearance_unit():
+    """Direkter Unit-Test der neuen Pruefung selbst (isoliert von der
+    Werkzeugwechsel-Diagonale, die denselben Fall teils zufaellig ueber
+    einen anderen, weniger spezifischen Fehler abfaengt)."""
+    from lathe_easystep.gcode_safety import validate_external_retract_clearance
+
+    settings = make_program_settings()
+    settings.update({"xra": -20.0, "zra": -50.0})
+    with pytest.raises(ValueError, match="Rueckzugsebene"):
+        validate_external_retract_clearance(settings)
+
+    settings_ok = make_program_settings()
+    validate_external_retract_clearance(settings_ok)  # Standardwerte: kein Fehler
+
+    settings_z_only = make_program_settings()
+    settings_z_only.update({"zra": -50.0})
+    # X bleibt am sicheren Standardwert (weit ausserhalb des Durchmessers) -
+    # der resultierende Punkt ist real ausserhalb des Werkstuecks.
+    validate_external_retract_clearance(settings_z_only)
+
+
+def test_external_retract_plane_inside_stock_blocks_generation():
+    """LES-040: Nutzerentscheidung 2026-09-10 - ausser bei Innenbearbeitung
+    darf die Rueckzugsebene (XRA/ZRA) niemals innerhalb der Rohteil-
+    Huellkurve liegen (anders als XRI/ZRI, das per Definition oft
+    innerhalb liegt, z. B. in einer vorhandenen Bohrung). Anders als der
+    obige Test (Operations-ZIELPUNKT absichtlich im Rohteil, nur Warnung)
+    ist hier die konfigurierte RUECKZUGSEBENE selbst unplausibel - das
+    wird von `validate_external_retract_clearance()` als harter Fehler
+    abgelehnt, bevor irgendein G-Code entsteht (u. a. genutzt fuer die
+    Werkzeugwechsel-Positionierung vor der allerersten Operation)."""
+    settings = make_program_settings()
+    # xa=40 (Standard) + xra=-20 relativ = X20 -> innerhalb 0..40;
+    # za=0 + zra=-50 relativ = Z-50 -> innerhalb 0..-55.
+    settings.update({"xra": -20.0, "zra": -50.0})
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {}),
+        Operation(
+            OpType.ABSPANEN,
+            {"side": "outside", "mode": "finish", "tool": 1, "spindle": 800.0,
+             "feed": 0.15, "depth_per_pass": 0.5, "slice_strategy": "parallel_z"},
+            path=[(12.0, -30.0), (18.0, 0.0)],
+        ),
+    ]
+    with pytest.raises(ValueError, match="Rueckzugsebene"):
+        generate_program_gcode(operations, settings)
+
+
+def test_external_retract_plane_outside_stock_in_either_axis_is_accepted():
+    """Gegenprobe: liegt die Rueckzugsebene in MINDESTENS einer Achse
+    ausserhalb der Rohteil-Huellkurve (hier X weit ausserhalb, Z tief im
+    Rohteil), ist der resultierende Punkt real ausserhalb des Werkstuecks
+    (es gibt bei diesem Durchmesser dort kein Material) - kein Fehler."""
+    settings = make_program_settings()
+    settings.update({"zra": -50.0})  # xra bleibt am sicheren Standardwert
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {}),
+        Operation(
+            OpType.ABSPANEN,
+            {"side": "outside", "mode": "finish", "tool": 1, "spindle": 800.0,
+             "feed": 0.15, "depth_per_pass": 0.5, "slice_strategy": "parallel_z"},
+            path=[(12.0, -30.0), (18.0, 0.0)],
+        ),
+    ]
+    generate_program_gcode(operations, settings)  # darf nicht werfen
+
+
+def _polyline_wall_radius_at_z(points, z):
+    """Radius (X/2) einer monoton fallenden (X,Z)-Polylinie an einer
+    gegebenen Z-Position, linear interpoliert - fuer geradlinige
+    Konturabschnitte (keine Boegen) ist das exakt die wahre Kontur."""
+    for (x0, z0), (x1, z1) in zip(points, points[1:]):
+        lo, hi = sorted((z0, z1))
+        if lo - 1e-9 <= z <= hi + 1e-9:
+            if abs(z1 - z0) < 1e-12:
+                return max(x0, x1) / 2.0
+            t = (z - z0) / (z1 - z0)
+            return (x0 + t * (x1 - x0)) / 2.0
+    # Ausserhalb des von der Polylinie abgedeckten Z-Bereichs (z. B. minimal
+    # vor der Stirnflaeche) den naechstgelegenen Randpunkt verwenden statt
+    # ueber die Kontur hinweg zu extrapolieren.
+    nearest = min(points, key=lambda pt: abs(pt[1] - z))
+    return nearest[0] / 2.0
+
+
+def _max_wall_radius_over_z_range(points, z_lo, z_hi):
+    """Groesster Wandradius innerhalb [z_lo, z_hi] einer stueckweise
+    linearen Polylinie - das Maximum liegt immer an einem Intervallende
+    oder an einem Stuetzpunkt der Polylinie innerhalb des Intervalls. Fuer
+    Aussenbearbeitung ist genau diese Stelle der kritische Fall: ein bei
+    konstantem X ueber eine ganze Z-Spanne fahrendes Band muss ueberall
+    ausserhalb der (um das Aufmass vergroesserten) Kontur bleiben, also am
+    Ort des groessten Wandradius innerhalb der Spanne."""
+    candidates = {z_lo, z_hi}
+    for _, z in points:
+        if z_lo - 1e-9 <= z <= z_hi + 1e-9:
+            candidates.add(z)
+    return max(_polyline_wall_radius_at_z(points, z) for z in candidates)
+
+
+def test_separate_relief_with_chip_breaking_keeps_allowance_and_leaves_groove_untouched():
+    """Nutzerauftrag 2026-09-10: der Sehnen-/Aufmass-Fix und der
+    Spanbruch-Fix (siehe test_cycle_vs_explicit_parity.py) wurden nur an
+    einer einfachen Bogenkontur geprueft. Der eigentliche Risiko-Codepfad
+    ist aber ein ANDERER, wenn zusaetzlich ein separat geschruppter
+    DIN-Freistich (`undercut_mode='separate'`) mitten in der Kontur sitzt:
+    das Schruppen bekommt dann eine um die Nut BEREINIGTE Ersatzkontur
+    (`contour_variants['rough_points']`, ueberbrueckt die Nut) statt der
+    vollen Fertigkontur, UND gleichzeitig erzwingt Spanbruch (`pause_enabled`)
+    den expliziten Pfad. Diese Kombination (Nut-Ueberbrueckung + Aufmass-
+    Versatz + Pausen-Emission gleichzeitig im selben Schrupp-Pfad) war
+    bisher an keiner Stelle automatisiert getestet."""
+    settings = make_program_settings()
+    contour_params = {
+        "name": "relief_pause_contour", "start_x": 20.0, "start_z": 0.0,
+        "segments": [
+            {"x": 20.0, "z": -10.0},
+            {"x": 20.0, "z": -20.0, "feature": {"feature_type": "din_relief",
+             "thread_size": "M10", "orientation": "end", "internal": False}},
+            {"x": 26.0, "z": -30.0},
+        ],
+    }
+    variants = build_contour_variants(contour_params)
+    contour = Operation(OpType.CONTOUR, contour_params, path=variants["finish_primitives"])
+    abspanen = Operation(OpType.ABSPANEN, {
+        "tool": 1, "spindle": 900.0, "feed": 0.15, "depth_per_pass": 0.5,
+        "slice_strategy": "parallel_z", "mode": "rough_finish", "side": "outside",
+        "contour_name": "relief_pause_contour", "undercut_mode": "separate",
+        "finish_allow_x": 0.3, "finish_allow_z": 0.15,
+        "pause_enabled": True, "pause_distance": 2.0,
+    })
+    lines = generate_program_gcode([Operation(OpType.PROGRAM_HEADER, {}), contour, abspanen], settings)
+
+    assert not any(l.startswith(("G71 ", "G72 ")) for l in lines)
+    assert "(Hinterschnitt separat)" in "\n".join(lines)
+
+    rough_start = next(i for i, l in enumerate(lines) if l.startswith("(ABSPANEN Rough"))
+    relief_start = next(i for i, l in enumerate(lines) if l == "(Hinterschnitt separat)")
+    # relief_mode="separate" allein wuerde hier bereits den Zyklus-Pfad
+    # ausschliessen - erst die tatsaechlich emittierten Pausen-Zeilen
+    # beweisen, dass das Spanbruch-Feature in diesem (durch die Nut-
+    # Ueberbrueckung veraenderten) Schrupp-Pfad wirklich aktiv ist.
+    assert any("step_line_pause" in l for l in lines[rough_start:relief_start])
+
+    rough_points = variants["rough_points"]
+    allow_radius = 0.3 / 2.0
+    checked = 0
+    for line in lines[rough_start:relief_start]:
+        if "step_line_pause" not in line or "call" not in line:
+            continue
+        nums = re.findall(r"\[(-?[0-9.]+)\]", line)
+        if len(nums) < 4:
+            continue
+        x0, z0, x1, z1 = (float(nums[0]), float(nums[1]), float(nums[2]), float(nums[3]))
+        # Diese Baender fahren bei konstantem X ueber eine ganze Z-Spanne -
+        # sicher ist der Schnitt nur, wenn er ENTLANG DER GESAMTEN Spanne
+        # Abstand zur wahren Kontur haelt, nicht nur am Endpunkt.
+        assert abs(x0 - x1) < 1e-6, "Erwartet: Band bei konstantem X"
+        lo_z, hi_z = sorted((z0, z1))
+        max_wall_r = _max_wall_radius_over_z_range(rough_points, lo_z, hi_z)
+        clearance = x0 / 2.0 - max_wall_r
+        checked += 1
+        assert clearance >= allow_radius - 1e-6, (
+            f"Schrupp-Band X{x0} Z[{lo_z};{hi_z}] verletzt das Aufmass: nur "
+            f"{clearance * 2:.3f}mm statt 0.300mm Restaufmass"
+        )
+    assert checked > 3
+
+    # Die separat geschruppte Nut selbst muss exakt auf Fertigmass liegen
+    # (kein Aufmass, kein Spanbruch - Nutenwerkzeuge stechen typischerweise
+    # in einem Zug bis auf Endmass, siehe _emit_relief_pass()).
+    relief_end = next(i for i, l in enumerate(lines) if l == "(Schlichtschnitt Kontur)")
+    relief_lines = lines[relief_start:relief_end]
+    assert not any("step_line_pause" in l for l in relief_lines)
+    groove_points = [
+        (float(m.group(1)), float(m.group(2)))
+        for l in relief_lines if l.startswith("G1 ")
+        for m in [re.search(r"X(-?[0-9.]+) Z(-?[0-9.]+)", l)] if m
+    ]
+    assert groove_points == variants["feature_points"]

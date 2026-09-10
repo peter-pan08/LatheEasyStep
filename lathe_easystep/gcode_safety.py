@@ -100,6 +100,40 @@ def get_safe_position_for_mode(
             settings["_active_retract_mode"] = saved
 
 
+def validate_external_retract_clearance(settings: Dict[str, object] | None) -> None:
+    """Die AUSSEN-Rueckzugsebene (XRA/ZRA) darf nie innerhalb der Rohteil-
+    Huellkurve liegen - anders als bei Innenbearbeitung (XRI/ZRI, das per
+    Definition oft innerhalb der Huellkurve liegt, z. B. in einer bereits
+    vorhandenen Bohrung) gibt es dafuer keinen legitimen Fall (Nutzer-
+    entscheidung 2026-09-10). Diese Position wird u. a. fuer die
+    Werkzeugwechsel-Positionierung genutzt (`append_tool_and_spindle()`),
+    noch bevor irgendeine Operation beginnt - eine Rueckzugsebene im
+    Rohteil wuerde diesen allerersten Eilgang direkt durchs Vollmaterial
+    fahren lassen."""
+    if not settings:
+        return
+    safe = get_safe_position_for_mode(settings, internal=False)
+    if safe is None:
+        return
+    x, z = safe
+    xa = float_or_none(settings.get("xa"))
+    xi = float_or_none(settings.get("xi"))
+    za = float_or_none(settings.get("za"))
+    zi = float_or_none(settings.get("zi"))
+    if xa is None or za is None or zi is None:
+        return
+    x_min = min(xi if xi is not None else 0.0, xa)
+    x_max = max(xi if xi is not None else 0.0, xa)
+    z_min = min(zi, za)
+    z_max = max(zi, za)
+    if x_min - 1e-6 <= x <= x_max + 1e-6 and z_min - 1e-6 <= z <= z_max + 1e-6:
+        raise ValueError(
+            f"Aussen-Rueckzugsebene X{x:.3f} Z{z:.3f} (XRA/ZRA) liegt innerhalb "
+            "der Rohteil-Huellkurve. Ausser bei Innenbearbeitung darf eine "
+            "Rueckzugsebene niemals im Rohteil liegen."
+        )
+
+
 def emit_safe_retract(lines: List[str], settings: Dict[str, object] | None) -> None:
     emit_safe_retract_for_op(lines, settings, None)
 
@@ -711,4 +745,5 @@ __all__ = [
     "get_machine_limit_warnings",
     "move_to_toolchange_pos",
     "nose_compensation_command",
+    "validate_external_retract_clearance",
 ]

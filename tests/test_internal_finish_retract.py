@@ -6,7 +6,12 @@ from lathe_easystep.model import Operation, OpType
 
 
 def finish_case(reverse=False, radius=0, xri=9, zri=2):
-    settings = dict(make_program_settings(), xi=10, xri=xri, zri=zri,
+    # xi bewusst weit ueber allen in diesem Modul getesteten xri-Werten
+    # (bis 11), damit die XRI-vs-XI-Materialfreiheitspruefung
+    # (validate_internal_material_clearance) diese Faelle nicht faelschlich
+    # blockiert - hier wird ausschliesslich die Einfahrweg-/Rundungsgrenze
+    # der Werkzeugradiuskorrektur getestet, nicht die Materialfreiheit.
+    settings = dict(make_program_settings(), xi=20, xri=xri, zri=zri,
                     xri_absolute=True, zri_absolute=True,
                     tools={11: {"radius_mm": radius, "q": 3}})
     points = [(12., -30.), (18., 0.)]

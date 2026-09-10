@@ -148,3 +148,34 @@ def test_abspanen_with_zero_spindle_blocks_generation_instead_of_silent_no_start
     ]
     with pytest.raises(ValueError, match="Drehzahl"):
         generate_program_gcode(operations, settings)
+
+
+@pytest.mark.parametrize("feed_value", [0, -0.15])
+def test_abspanen_with_non_positive_feed_blocks_generation(feed_value):
+    """LES-040: Realer Bugreport - REQUIRED_KEYS[OpType.ABSPANEN] fehlte
+    "feed", weshalb feed=0 (Vorschub null, Werkzeug bewegt sich effektiv
+    nicht) und sogar ein negativer Vorschub (`G1 ... F-0.150`, von
+    LinuxCNC vermutlich ohnehin abgelehnt) bisher ein vollstaendig
+    "gueltiges" Programm erzeugten. FACE und DRILL pruefen das bereits
+    korrekt (dieselbe REQUIRED_KEYS/require_positive-Maschinerie) - nur
+    ABSPANEN, die mit Abstand am haeufigsten genutzte Operation, hatte
+    die Luecke."""
+    from lathe_easystep.examples import make_program_settings
+    from lathe_easystep.model import OpType, Operation
+
+    settings = make_program_settings()
+    operations = [
+        Operation(OpType.PROGRAM_HEADER, {"program_name": "ZeroFeed"}),
+        Operation(
+            OpType.CONTOUR,
+            {"name": "c1"},
+            path=[(0.0, 0.0), (20.0, 0.0), (20.0, -20.0)],
+        ),
+        Operation(
+            OpType.ABSPANEN,
+            {"mode": "rough", "tool": 1, "spindle": 800, "feed": feed_value,
+             "depth_per_pass": 0.5, "slice_strategy": 1, "contour_name": "c1"},
+        ),
+    ]
+    with pytest.raises(ValueError, match="feed"):
+        generate_program_gcode(operations, settings)
