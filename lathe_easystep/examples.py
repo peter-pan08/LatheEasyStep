@@ -191,6 +191,17 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
     examples["Innen_Stufe.ngc"] = ([contour, rough], settings)
 
     settings = make_program_settings()
+    settings.update(program_name="Innen_Konus", xi=10.0, xri=9.0, zri=2.0,
+                    xri_absolute=True, zri_absolute=True)
+    contour = Operation(OpType.CONTOUR, {"name": "innen_konus", "start_x": 12.0,
+        "start_z": -30.0, "segments": [{"x": 18.0, "z": 0.0}]})
+    rough = Operation(OpType.ABSPANEN, {"contour_name": "innen_konus", "side": "inside",
+        "mode": "rough_finish", "slice_strategy": "parallel_z", "tool": 11,
+        "spindle": 800.0, "feed": 0.15, "depth_per_pass": 0.5,
+        "finish_allow_x": 0.2, "finish_allow_z": 0.1})
+    examples["Innen_Konus.ngc"] = ([contour, rough], settings)
+
+    settings = make_program_settings()
     settings["program_name"] = "Freistich_Mitte"
     contour = Operation(OpType.CONTOUR, {"name": "freistich_mitte", "start_x": 20.0,
         "start_z": 0.0, "segments": [{"x": 20.0, "z": -10.0},

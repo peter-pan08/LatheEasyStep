@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List
 
+from .gcode_safety import _motion_state
 from .model import Operation
 from .numeric import finite_float, whole_number, validate_finite_data
 
@@ -116,4 +117,10 @@ def generate_drill_gcode(
     if retract > safe_z:
         lines.append(f"G0 Z{safe_z:.3f}")
     lines.append("G18")
+    # LES-022 (dritte Etappe): der Bohrzyklus endet nachweislich (siehe
+    # Kommentar oben, per rs274 verifiziert) immer auf X{x_start}
+    # Z{safe_z} - X bewegt sich in keinem Bohrmodus, Z kehrt ueber G80
+    # zuverlaessig auf die Ruecklaufebene zurueck. Reale Endposition ist
+    # damit bekannt und kann direkt vermerkt werden.
+    _motion_state(settings).record(x_start, safe_z)
     return lines

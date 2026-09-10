@@ -47,7 +47,7 @@ F0.180
 (Hinterschnitt-Modus: finish_only)
 (ABSPANEN Rough - parallel Z)
 G0 X40.000
-G71 Q100 X40.000 Z2.000 D0.750
+G71 Q100 X40.000 Z2.000 D0.000 I0.375 R2.000
 (Schlichtschnitt Kontur)
 G0 Z2.000
 G0 X80.000

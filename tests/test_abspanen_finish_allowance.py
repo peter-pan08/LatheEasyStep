@@ -18,6 +18,12 @@ def test_abspanen_finish_allowance_comments():
     # comment should mention the finish allowances we provided
     assert "Schlichtaufmaß" in gcode or "finish allow" in gcode.lower()
 
-    # rough cycle X value should be reduced by the radial allowance (stock=40)
-    assert "X39.500" in gcode or "x39.500" in gcode.lower()
-    assert "0.500" in gcode or "0.25" in gcode
+    # LES-003 Fix 2026-09-10: der Zyklus-Startpunkt bleibt beim vollen
+    # Rohteil (X40.000) - das Aufmass wird stattdessen ueber den echten
+    # G71/G72-"D"-Parameter (radiales Aufmass zur Kontur) sowie "I"
+    # (radiale Zustelltiefe) ausgedrueckt, empirisch gegen den realen
+    # LinuxCNC-Interpreter verifiziert. D = finish_allow_x/2 = 0.250,
+    # I = depth_per_pass/2 = 0.500 (beide UI-Werte sind Durchmesserwerte).
+    assert "X40.000" in gcode
+    assert "D0.250" in gcode
+    assert "I0.500" in gcode

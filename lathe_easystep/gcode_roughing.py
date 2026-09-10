@@ -20,6 +20,7 @@ from .gcode_utils import (
     require_tool,
     resolve_enum_index,
     resolve_internal_safe_x,
+    validate_internal_material_clearance,
     validate_internal_x_limit,
 )
 
@@ -604,19 +605,40 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         cutting_speed=p.get("cutting_speed"), css_start_diameter=abs(stock_x),
     )
     lines.append(f"F{feed:.3f}")
-    if side_idx == 1 and mode_idx in (0, 2):
-        # Interior stock allowance leaves a smaller bore and a shallower end.
-        # X is a diameter coordinate, matching the UI's X allowance value.
-        rough_path = [(x - finish_allow_x, z + finish_allow_z) for x, z in rough_path]
+    if mode_idx in (0, 2):
+        # Stock allowance keeps move-based roughing (parallel_z/parallel_x
+        # "ISO"-Fallback, siehe can_use_cycles unten) von der Fertigkontur
+        # entfernt - GENAU wie der G71/G72-Zyklus fuer Aussenbearbeitung
+        # ueber sein eigenes stock_x_adj bereits eine Reserve haelt (siehe
+        # G72-Zweig). Bis 2026-09-10 galt das nur fuer Innenbearbeitung
+        # (kleinere Bohrung, flacheres Ende); Aussenbearbeitung liess dabei
+        # explizite/"ISO"-Schruppdurchgaenge bis exakt auf das Fertigmass
+        # laufen (0.000mm statt des konfigurierten Aufmasses) - reproduziert
+        # und in gleicher Sitzung behoben, nachdem ein Vergleich Zyklus- vs.
+        # expliziter Ausgabe fuer dieselbe Kontur das aufgedeckt hat.
+        if side_idx == 1:
+            # Interior stock allowance leaves a smaller bore and a shallower end.
+            # X is a diameter coordinate, matching the UI's X allowance value.
+            rough_path = [(x - finish_allow_x, z + finish_allow_z) for x, z in rough_path]
+        else:
+            # Exterior stock allowance leaves a larger diameter and a
+            # shallower end (finish removes the outer allowance ring).
+            rough_path = [(x + finish_allow_x, z + finish_allow_z) for x, z in rough_path]
     cfg = get_retract_cfg(settings, side_idx)
     if cfg.z_value is None:
         raise ValueError("ZRA/ZRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")
     safe_z = float(cfg.z_value)
     external = side_idx == 0
     if not external:
-        validate_internal_x_limit(
+        safe_x = validate_internal_x_limit(
             settings,
             [pt[0] for pt in finish_path] + [pt[0] for pt in rough_path],
+            op_label="Innenbearbeitung",
+        )
+        validate_internal_material_clearance(
+            settings,
+            safe_x,
+            [pt[1] for pt in finish_path] + [pt[1] for pt in rough_path],
             op_label="Innenbearbeitung",
         )
     tool_info = (settings.get("tools", {}) or {}).get(tool_num)
@@ -670,7 +692,37 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     # Ein in die Kontur eingespleisster Freistich kehrt axial um und ist damit
     # fuer LinuxCNC G71/G72 nicht monoton. Explizites Move-based-Schruppen
     # verarbeitet diese Geometrie dagegen ohne einen ungueltigen Zyklus.
-    can_use_cycles = output_preference != "prefer_explicit" and not (feature_path and relief_mode == "full")
+    # Realer Bugreport 2026-09-10: das eigene Spanbruch-/Pausen-Feature
+    # (`pause_enabled`/`pause_distance`, ein an einen Siemens-Zyklus
+    # angelehnter Vorschub-Unterbrecher, den LinuxCNC nicht kennt) wurde
+    # bisher STILLSCHWEIGEND ignoriert, sobald die Kontur sonst
+    # zyklustauglich war - G71/G72 gewann, ohne jede Pause auszugeben,
+    # obwohl die (ungenutzte) Pause-Subroutine trotzdem definiert wurde.
+    # Nutzerhinweis: dieses Feature wird in der Praxis haeufig genutzt und
+    # gilt ausschliesslich fuers Schruppen (nie Schlichten) - genau der
+    # Fall, den `can_use_cycles` hier steuert.
+    # Realer Bugreport 2026-09-10 (D/I-Parametersemantik): der reale
+    # LinuxCNC-G7x-Zyklus (Quelle interp_g7x.cc, Version 2.10.0~pre1,
+    # empirisch per rs274-Trace bestaetigt) versteht D als "Final distance
+    # to profile" (senkrechtes Aufmass, RADIUS-Einheiten) und I als
+    # "Increment of cutting" (Zustelltiefe pro Schnitt, ebenfalls RADIUS).
+    # U/W (getrennter X/Z-Versatz) werden vom installierten Interpreter gar
+    # nicht als gueltige Adressbuchstaben akzeptiert ("Bad character 'u'
+    # used", per rs274-Test verifiziert). Der Zyklus kann daher NUR EIN
+    # einzelnes, isotropes Aufmass abbilden (`D`) - eine Kontur mit
+    # unterschiedlichem X-/Z-Schlichtaufmass (finish_allow_z groesser als
+    # finish_allow_x) kann ueber D allein nicht sicher garantiert werden
+    # (an einem Plansegment wirkt D vollstaendig als Z-Aufmass; ist das
+    # geforderte Z-Aufmass groesser als das aus X abgeleitete D, entstuende
+    # dort zu wenig Reserve). Deshalb erzwingt genau dieser Fall weiterhin
+    # den bewegungsbasierten Pfad, der beide Achsen unabhaengig versetzt
+    # (siehe Aufmass-Versatz oben).
+    can_use_cycles = (
+        output_preference != "prefer_explicit"
+        and not (feature_path and relief_mode == "full")
+        and not (pause_enabled and pause_distance > 0.0)
+        and finish_allow_z <= finish_allow_x
+    )
     cycle_primitives = primitives
     if contour_variants and relief_mode in ("ignore", "finish_only", "separate"):
         cycle_primitives = contour_variants["rough_primitives"]
@@ -705,11 +757,17 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             if contour_sub_num is None:
                 lines.extend(_build_cycle_sub(sub_num))
             lines.append("(Anfahren vor Zyklus)")
-            stock_x_adj = stock_x - finish_allow_x if mode_idx == 0 and finish_allow_x > 0.0 else stock_x
-            stock_x_adj = max(stock_x_adj, 0.0)
-            emit_approach(lines, stock_x_adj, safe_z, settings)
+            emit_approach(lines, stock_x, safe_z, settings)
             activate_pending_css(lines, settings)
-            lines.append(f"G72 Q{sub_num} X{stock_x_adj:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            # D = Aufmass (radial!), I = Zustelltiefe (radial!) - siehe
+            # Kommentar bei can_use_cycles oben. finish_allow_x/depth_per_pass
+            # sind Durchmesserwerte (UI-Konvention, wie der bewegungsbasierte
+            # Pfad sie auch verwendet) und werden deshalb halbiert. R ist der
+            # diagonale Ruecklaufabstand zwischen den Schruppgaengen (per
+            # rs274 empirisch bestaetigt: ein reiner Radius-/Z-Abstand, keine
+            # Umrechnung noetig) - Default waere nur 0.5mm; LEADOUT_LENGTH_DEFAULT
+            # matcht die im bewegungsbasierten Pfad bereits etablierte Freifahrt.
+            lines.append(f"G72 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{finish_allow_x / 2.0:.3f} I{depth_per_pass / 2.0:.3f} R{LEADOUT_LENGTH_DEFAULT:.3f}")
             if settings is not None:
                 settings.setdefault("_cycle_defined_subs", set()).add((sub_num, external))
             if mode_idx in (1, 2) and relief_mode == "full":
@@ -721,6 +779,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 lines.append("(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)")
             elif output_preference == "prefer_cycle":
                 lines.append("(Fallback-Grund: Kontur nicht G72-zyklustauglich)")
+            elif pause_enabled and pause_distance > 0.0:
+                lines.append("(Fallback-Grund: Spanbruch/Pausen aktiv)")
+            elif finish_allow_z > finish_allow_x:
+                lines.append("(Fallback-Grund: Z-Aufmass groesser als X-Aufmass - Zyklus kennt nur ein Aufmass)")
             elif output_preference == "prefer_explicit":
                 lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
             z_vals = [pp[1] for pp in rough_path] if rough_path else [0.0]
@@ -743,7 +805,15 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 lines.extend(_build_cycle_sub(sub_num))
             emit_approach(lines, stock_x, safe_z, settings)
             activate_pending_css(lines, settings)
-            lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
+            # D = Aufmass (radial!), I = Zustelltiefe (radial!) - siehe
+            # Kommentar bei can_use_cycles oben. finish_allow_x/depth_per_pass
+            # sind Durchmesserwerte (UI-Konvention, wie der bewegungsbasierte
+            # Pfad sie auch verwendet) und werden deshalb halbiert. R ist der
+            # diagonale Ruecklaufabstand zwischen den Schruppgaengen (per
+            # rs274 empirisch bestaetigt: ein reiner Radius-/Z-Abstand, keine
+            # Umrechnung noetig) - Default waere nur 0.5mm; LEADOUT_LENGTH_DEFAULT
+            # matcht die im bewegungsbasierten Pfad bereits etablierte Freifahrt.
+            lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{finish_allow_x / 2.0:.3f} I{depth_per_pass / 2.0:.3f} R{LEADOUT_LENGTH_DEFAULT:.3f}")
             if settings is not None:
                 settings.setdefault("_cycle_defined_subs", set()).add((sub_num, external))
             if mode_idx in (1, 2) and relief_mode == "full":
@@ -761,6 +831,8 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 lines.append("(Fallback-Grund: Freistich in voller Kontur ist nicht G71-monoton)")
             elif pause_enabled and pause_distance > 0.0:
                 lines.append("(Fallback-Grund: Spanbruch/Pausen aktiv)")
+            elif finish_allow_z > finish_allow_x:
+                lines.append("(Fallback-Grund: Z-Aufmass groesser als X-Aufmass - Zyklus kennt nur ein Aufmass)")
             elif output_preference == "prefer_explicit":
                 lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
             else:
@@ -796,8 +868,19 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         # direkt durch das gerade stehengebliebene Restmaterial ausloesen
         # (reproduziert: Aussen-Operation vor einer kombinierten Innen-
         # rough_finish-Bohrung mit Move-based Fallback).
+        # LES-022 (dritte Etappe): Ausnahme, wenn der kombinierte Zyklus
+        # bereits ein abschliessendes G70 emittiert hat (`cycle_finish_done`)
+        # - per rs274 empirisch bestaetigt, dass G70 IMMER exakt am letzten
+        # Punkt der referenzierten Kontur endet, unabhaengig von den X/Z-
+        # Parametern des vorangehenden G71/G72. Bei relief_mode=="full"
+        # (die einzige Bedingung fuer cycle_finish_done) ist das genau
+        # `finish_path[-1]`.
         if settings is not None:
-            _motion_state(settings).clear()
+            if cycle_finish_done:
+                fx, fz = finish_path[-1]
+                _motion_state(settings).record(fx, fz)
+            else:
+                _motion_state(settings).clear()
     if relief_mode == "separate" and feature_path:
         _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
     # LES-018: ein REINER Schlichtstep (eigene Operation, typischerweise eigenes
@@ -826,6 +909,14 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         activate_pending_css(lines, settings)
         lines.append(f"G70 Q{contour_sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
         suspend_css(lines, settings)
+        # LES-022 (dritte Etappe): G70 endet nachweislich (rs274-Verifikation,
+        # siehe oben) exakt am letzten Punkt der referenzierten Kontur -
+        # hier immer die eigene Fertigkontur dieses (reinen) Schlichtschritts.
+        if settings is not None:
+            finish_points = rough_path if relief_mode == "ignore" else finish_path
+            if finish_points:
+                fx, fz = finish_points[-1]
+                _motion_state(settings).record(fx, fz)
     elif mode_idx in (1, 2) and not cycle_finish_done:
         lines.append("(Schlichtschnitt Kontur)")
         finish_points = rough_path if relief_mode == "ignore" else finish_path
@@ -912,11 +1003,21 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 lines.append(f"G0 X{retract_x:.3f}")
             if abs(end_z - safe_z) > 1e-6:
                 lines.append(f"G0 Z{safe_z:.3f}")
+            # LES-022 (dritte Etappe): Innen-Schlichtrueckzug endet immer auf
+            # XRI/safe_z (siehe obige Retract-Logik - X faehrt immer auf
+            # retract_x, Z immer auf safe_z, unabhaengig davon, ob die
+            # jeweilige Einzelbewegung als Nullbewegung uebersprungen wurde).
+            if settings is not None:
+                _motion_state(settings).record(retract_x, safe_z)
         else:
             if not (prev_point is not None and abs(prev_point[1] - safe_z) <= 1e-6):
                 lines.append(f"G0 Z{safe_z:.3f}")
             if compensation_command and not nose_disabled:
                 lines.append("G40")
+            # LES-022 (dritte Etappe): Aussen-Schlichtrueckzug bewegt nur Z
+            # auf safe_z (siehe oben) - X bleibt auf dem letzten Konturpunkt.
+            if settings is not None and prev_point is not None:
+                _motion_state(settings).record(prev_point[0], safe_z)
     return lines
 
 

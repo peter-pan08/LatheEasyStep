@@ -26,12 +26,14 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Der Stand wurde am 09.09.2026 auch auf dem nativen LinuxCNC-Rechner
-nachgeprueft: 590/44 Tests und alle 54 Interpreterfaelle bestanden.
-Simulationsstart und dessen Grenzen stehen im
+Der Stand wurde auch auf dem nativen LinuxCNC-Rechner nachgeprueft:
+639/44 Tests und alle 55 Interpreterfaelle (zwoelf Referenzen, 43
+Matrixfaelle) bestanden. Nach einem SIM-Konfigurationsfix liegen zudem
+echte AUTO-Trockenlaeufe bis `M30` inkl. lesbarem Backplot-Screenshot
+fuer die drei Innenkontur-Referenzen vor. Details im
 [Pruefbericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
 
-Stand: Version 0.7.0 + Unreleased (Entwicklung fuer 0.8.0), 9. September 2026
+Stand: Version 0.7.0 + Unreleased (Entwicklung fuer 0.8.0), 10. September 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -45,7 +47,7 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `595 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `639 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
@@ -57,6 +59,12 @@ Z-Lage des Konturstarts auf der im Programmkopf festgelegten XRI-Ebene. Erst
 dort erfolgt die radiale Zustellung auf den ersten Profildurchmesser im
 Bearbeitungsvorschub. Bei aktiver Werkzeugradiuskorrektur muss dieser
 Einfahrweg groesser als der Werkzeugdurchmesser sein.
+
+Beim Innen-Schruppen wird die Materialreichweite je Zustellung jetzt entlang
+des wahren Bogens berechnet statt entlang seiner Sehne - an kleinen
+Rundungen zwischen Bohrung und Schulter konnte die Sehnen-Naeherung das
+konfigurierte Schlichtaufmass unterschreiten und real ins Fertigteil
+schneiden.
 
 ## Branch-Status
 
@@ -461,6 +469,11 @@ moving axially to the contour start Z position. It then feeds radially to the
 first profile diameter. With active tool nose compensation, this lead-in must
 be longer than the tool diameter.
 
+Internal roughing now computes each pass's material reach along the true
+arc instead of its chord - at small fillets between a bore and a shoulder,
+the chord approximation could undercut the configured finish allowance and
+actually cut into the finished part.
+
 The project is still under active development, but it is no longer just an
 early prototype:
 
@@ -469,7 +482,7 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current development baseline is validated with `595 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
+- the current development baseline is validated with `639 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 

@@ -238,3 +238,47 @@ def test_internal_thread_allows_generation_when_xri_is_respected():
         sanitize_comment_text=str,
     )
     assert any(line.startswith("G76 ") for line in lines)
+
+
+def test_external_thread_records_real_end_position_not_stale_approach():
+    """LES-022 (dritte Etappe): vor dieser Korrektur aktualisierte
+    `generate_thread_gcode()` den gemeinsamen Bewegungszustand nach G76
+    ueberhaupt nicht - er blieb auf der zuletzt VOR dem Gewinde bekannten
+    Position stehen (hier: gar nichts, da die injizierte `_emit_approach`
+    in diesem Test bewusst keinen Zustand setzt). Real (per rs274 verifiziert)
+    endet G76 aber IMMER exakt bei (approach_x, end_z) - dem tiefsten Punkt
+    des letzten Gewindeschnitts, OHNE automatischen Rueckzug. Ein Folgeschritt,
+    der sich auf einen veralteten Zustand verlaesst, koennte einen noetigen
+    Rueckzug faelschlich als bereits erledigt ansehen."""
+    op = Operation(
+        OpType.THREAD,
+        {
+            "tool": 3, "spindle": 500.0, "pitch": 1.5, "length": 20.0,
+            "major_diameter": 10.0, "thread_start_z": 0.0,
+        },
+        path=[],
+    )
+    settings = {"xt": 150.0, "zt": 300.0}
+    lines = generate_thread_gcode(
+        op, settings,
+        require_tool=lambda p, _label: int(p["tool"]),
+        get_tool_number=lambda p: int(p["tool"]),
+        append_tool_and_spindle=_append_tool_and_spindle,
+        emit_coolant=_emit_coolant,
+        emit_approach=_emit_approach,
+        sanitize_comment_text=str,
+    )
+    # Erwartete Werte direkt aus der eigenen Ausgabe ableiten statt separat
+    # nachzurechnen: die letzte "G0 X.."-Zeile vor G76 ist approach_x, das
+    # Z-Wort der G76-Zeile ist end_z.
+    g76_idx = next(i for i, ln in enumerate(lines) if ln.startswith("G76 "))
+    approach_line = next(ln for ln in reversed(lines[:g76_idx]) if ln.startswith("G0 X"))
+    expected_x = float(next(w[len("X"):] for w in approach_line.split() if w.startswith("X")))
+    expected_z = float(next(w[1:] for w in lines[g76_idx].split() if w.startswith("Z")))
+
+    state = settings["_motion"]
+    assert isinstance(state, MotionState)
+    # tol groesser als das Standard-1e-6: expected_x/z sind aus der auf drei
+    # Nachkommastellen gerundeten Textausgabe geparst, der Zustand haelt die
+    # ungerundeten internen Werte.
+    assert state.at(expected_x, expected_z, tol=1e-3)
