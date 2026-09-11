@@ -16,15 +16,14 @@ G54
 (=== END SICHERHEITSPARAMETER ===)
 
 
-(Werkzeug T07)
-G0 Z2.000
-G0 X80.000
+(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)
+o<les_first_tool> if [#<_current_tool> NE 7]
 M5
 M9
-(Toolchange move)
+(Erster Werkzeugwechsel)
 G0 X150.000 Z300.000
 T07 M6
-G0 X80.000 Z2.000
+o<les_first_tool> endif
 
 
 (Step 1: drill)
@@ -32,6 +31,8 @@ G0 X80.000 Z2.000
 G97 S1500 M3
 M9
 (Anfahren vor Zyklus)
+G0 Z2.000
+G0 X80.000
 G0 X0.000
 (G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
 G17

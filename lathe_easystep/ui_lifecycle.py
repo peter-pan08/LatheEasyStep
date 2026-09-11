@@ -169,18 +169,26 @@ def finalize_ui_ready(handler) -> None:
     try:
         try:
             handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
+            handler._startup_mark("_finalize_ui_ready: load_split_tab_uis begin")
             load_split_tab_uis(handler)
+            handler._startup_mark("_finalize_ui_ready: load_split_tab_uis end")
             handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
         except Exception as exc:
             handler._log(f"[LatheEasyStep] split UI load failed: {exc}", level="warning")
         try:
+            handler._startup_mark("_finalize_ui_ready: register_known_widgets begin")
             handler._register_known_widgets()
             handler._rebuild_widget_name_cache()
+            handler._startup_mark("_finalize_ui_ready: register_known_widgets end")
         except Exception:
             pass
 
+        handler._startup_mark("_finalize_ui_ready: ensure_core_widgets begin")
         handler._ensure_core_widgets()
+        handler._startup_mark("_finalize_ui_ready: ensure_core_widgets end")
+        handler._startup_mark("_finalize_ui_ready: ensure_advanced_widgets begin")
         ensure_advanced_widgets(handler)
+        handler._startup_mark("_finalize_ui_ready: ensure_advanced_widgets end")
         try:
             # ensure_advanced_widgets() legt Spindelmodus-/Schnittgeschwindigkeits-
             # Felder dynamisch an (Qt-Widgets sind nach dem Erzeugen standardmaessig
@@ -200,7 +208,9 @@ def finalize_ui_ready(handler) -> None:
         except Exception:
             pass
         try:
+            handler._startup_mark("_finalize_ui_ready: dock_preview_below_scroll begin")
             _dock_preview_below_scroll(handler)
+            handler._startup_mark("_finalize_ui_ready: dock_preview_below_scroll end")
         except Exception:
             pass
         if handler.tab_params is not None and handler.tab_params.currentIndex() == 0:
@@ -208,7 +218,9 @@ def finalize_ui_ready(handler) -> None:
                 handler.tab_params.setCurrentIndex(1)
             except Exception:
                 pass
+        handler._startup_mark("_finalize_ui_ready: force_attach_core_widgets begin")
         handler._force_attach_core_widgets()
+        handler._startup_mark("_finalize_ui_ready: force_attach_core_widgets end")
         handler.list_ops = handler.list_ops or handler._find_any_widget("listOperations")
         handler.tab_params = handler.tab_params or handler._find_any_widget("tabParams")
         handler.btn_add = handler.btn_add or handler._find_any_widget("id:34721") or handler._find_any_widget("btnAdd")
@@ -231,30 +243,46 @@ def finalize_ui_ready(handler) -> None:
         handler.contour_delete_segment = handler.contour_delete_segment or handler._find_any_widget("contour_delete_segment")
         handler.contour_move_up = handler.contour_move_up or handler._find_any_widget("contour_move_up")
         handler.contour_move_down = handler.contour_move_down or handler._find_any_widget("contour_move_down")
+        handler._startup_mark("_finalize_ui_ready: ensure_contour_widgets begin")
         handler._ensure_contour_widgets()
         handler._init_contour_table()
+        handler._startup_mark("_finalize_ui_ready: ensure_contour_widgets end")
         try:
             handler._log(f"[LatheEasyStep] core widgets FIX: add={handler.btn_add} del={handler.btn_delete} list={handler.list_ops}", level="info")
         except Exception:
             pass
+        handler._startup_mark("_finalize_ui_ready: ensure_preview_widgets begin")
         handler._ensure_preview_widgets()
+        handler._startup_mark("_finalize_ui_ready: ensure_preview_widgets end")
+        handler._startup_mark("_finalize_ui_ready: connect_core_signals begin")
         handler._connect_core_signals()
+        handler._startup_mark("_finalize_ui_ready: connect_core_signals end")
         try:
+            handler._startup_mark("_finalize_ui_ready: connect_remaining_signals begin")
             handler._connect_param_change_signals()
             handler._connect_global_form_signals()
             handler._connect_language_signal()
             handler._connect_tool_preview_signals()
             handler._connect_mode_visibility_signals()
+            handler._startup_mark("_finalize_ui_ready: connect_remaining_signals end")
         except Exception as exc:
             handler._log(f"[LatheEasyStep] finalize signal setup failed: {exc}", level="warning")
         handler._ensure_core_widgets()
 
+        handler._startup_mark("_finalize_ui_ready: update_parting_choices begin")
         handler._update_parting_contour_choices()
         handler._update_parting_ready_state()
+        handler._startup_mark("_finalize_ui_ready: update_parting_choices end")
         try:
+            handler._startup_mark("_finalize_ui_ready: presentation: apply_tab_titles begin")
             handler._apply_tab_titles(handler._current_language_code())
+            handler._startup_mark("_finalize_ui_ready: presentation: apply_tab_titles end")
+            handler._startup_mark("_finalize_ui_ready: presentation: handle_global_change begin")
             handler._handle_global_change()
+            handler._startup_mark("_finalize_ui_ready: presentation: handle_global_change end")
+            handler._startup_mark("_finalize_ui_ready: presentation: apply_language_texts begin")
             handler._apply_language_texts()
+            handler._startup_mark("_finalize_ui_ready: presentation: apply_language_texts end")
         except Exception as exc:
             handler._log(f"[LatheEasyStep] UI presentation failed: {exc}", level="warning")
         for name in ("program_xt_absolute", "program_zt_absolute"):

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from .contour_features import normalize_relief_mode, primitive_to_points
+from .numeric import finite_float, validate_finite_data
 from .contour_logic import build_contour_variants
 from .gcode_safety import _motion_state, activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command, validate_chuck_segment, suspend_css
 from .gcode_utils import (
@@ -558,23 +559,32 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
 
 def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: Dict[str, object]) -> List[str]:
     lines: List[str] = ["(ABSPANEN)"]
+    validate_finite_data(p, "ABSPANEN")
+    validate_finite_data(path, "ABSPANEN path")
+    validate_finite_data(settings, "Programmkopf")
     require(p, ["depth_per_pass"], "ABSPANEN")
     require_positive(p, ["depth_per_pass"], "ABSPANEN")
     side_idx = 1 if is_internal_side(p.get("side", 0)) else 0
-    feed = float(p.get("feed", 0.15))
-    depth_per_pass = float(p["depth_per_pass"])
+    feed = finite_float(p.get("feed", 0.15), "ABSPANEN feed")
+    depth_per_pass = finite_float(p["depth_per_pass"], "ABSPANEN depth_per_pass")
     pause_enabled = bool(p.get("pause_enabled", False))
-    pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
+    pause_distance = finite_float(p.get("pause_distance", 0.0), "ABSPANEN pause_distance")
     pause_duration = 0.5
     mode_idx = resolve_enum_index(p.get("mode", 0), PARTING_MODE_INDEX, default=0)
     if pause_enabled and pause_distance > 0.0 and mode_idx in (0, 2):
         settings["needs_step_line_pause_sub"] = True
-    finish_allow_x = max(float(p.get("finish_allow_x", 0.0)), 0.0)
-    finish_allow_z = max(float(p.get("finish_allow_z", 0.0)), 0.0)
+    finish_allow_x = finite_float(p.get("finish_allow_x", 0.0), "ABSPANEN finish_allow_x")
+    finish_allow_z = finite_float(p.get("finish_allow_z", 0.0), "ABSPANEN finish_allow_z")
+    if float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("ABSPANEN: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
+    if float(f"{depth_per_pass:.3f}") <= 0.0:
+        raise ValueError("ABSPANEN: Zustelltiefe muss auch nach Ausgaberundung groesser als null sein.")
+    if min(pause_distance, finish_allow_x, finish_allow_z) < 0.0:
+        raise ValueError("ABSPANEN: Spanbruchdistanz und Schlichtaufmasse duerfen nicht negativ sein.")
     if finish_allow_x > 0.0 or finish_allow_z > 0.0:
         lines.append(f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm)")
     tool_num = require_tool(p, "ABSPANEN")
-    spindle = float(p.get("spindle", 0.0))
+    spindle = finite_float(p.get("spindle", 0.0), "ABSPANEN spindle")
     contour_variants = None
     contour_params = p.get("_contour_params")
     if isinstance(contour_params, dict) and contour_params.get("segments"):

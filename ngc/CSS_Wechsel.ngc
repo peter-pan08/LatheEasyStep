@@ -28,15 +28,14 @@ G1 X0.000 Z0.000
 o101 endsub
 (=== End Subroutines ===)
 
-(Werkzeug T01)
-G0 Z2.000
-G0 X80.000
+(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)
+o<les_first_tool> if [#<_current_tool> NE 1]
 M5
 M9
-(Toolchange move)
+(Erster Werkzeugwechsel)
 G0 X150.000 Z300.000
 T01 M6
-G0 X80.000 Z2.000
+o<les_first_tool> endif
 
 
 (Step 1: face)
@@ -45,6 +44,8 @@ G97 S955 M3 (CSS-Anfahrdrehzahl bei X40.000)
 M8
 F0.100
 (Anfahren vor Zyklus)
+G0 Z2.000
+G0 X80.000
 G0 X40.000
 G96 D2500 S120.0
 G72 Q100 X40.000 Z2.000 D0.000 I0.050 R1.000

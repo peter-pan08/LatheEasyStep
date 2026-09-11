@@ -17,15 +17,14 @@ G54
 
 (WARN: Innenbearbeitung 'Operation 2' steht vor der ersten Bohrung in der Ablaufreihenfolge - das Werkzeug hat moeglicherweise keinen Zugang zum Material. Bohrung nach vorne verschieben oder Reihenfolge pruefen.)
 
-(Werkzeug T11)
-G0 Z2.000
-G0 X80.000
+(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)
+o<les_first_tool> if [#<_current_tool> NE 11]
 M5
 M9
-(Toolchange move)
+(Erster Werkzeugwechsel)
 G0 X150.000 Z300.000
 T11 M6
-G0 X80.000 Z2.000
+o<les_first_tool> endif
 
 
 

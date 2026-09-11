@@ -2231,9 +2231,21 @@ class HandlerClass:
                     pass
             try:
                 tooltip_key = widget.property("tooltip_key")
+                # Perf (LES-027, 2026-09-10): `apply_registered_tooltips()`
+                # (laeuft in `_apply_language_texts()` immer VOR dieser
+                # Funktion) markiert jedes von ihr behandelte Widget explizit
+                # mit `tooltip_fallback_auto=False`. Ohne diese Pruefung
+                # wiederholte diese Funktion `_set_tooltip_deep()` - mit
+                # eigenem verschachteltem `findChildren()` - fuer dieselben
+                # bis zu 169 Widgets ein zweites Mal (real mit >5s gemessen).
+                # Nur Widgets, deren `tooltip_key` NICHT ueber die zentrale
+                # Registry gesetzt wurde (z. B. direkt im Designer), bleiben
+                # hier zu behandeln.
+                already_registered = widget.property("tooltip_fallback_auto") is False
             except Exception:
                 tooltip_key = None
-            if isinstance(tooltip_key, str) and tooltip_key:
+                already_registered = False
+            if isinstance(tooltip_key, str) and tooltip_key and not already_registered:
                 text = TRANSLATIONS.tr(tooltip_key, lang)
                 self._set_tooltip_deep(widget, text)
 
@@ -2249,26 +2261,44 @@ class HandlerClass:
                     root = None
         if root is not None:
             try:
+                self._startup_mark("_apply_language_texts: apply_ui_static_translations begin")
                 apply_ui_static_translations(root, TRANSLATIONS.tr, lang)
+                self._startup_mark("_apply_language_texts: apply_ui_static_translations end")
             except Exception:
                 pass
+        self._startup_mark("_apply_language_texts: apply_registered_texts begin")
         self._apply_registered_texts(lang)
+        self._startup_mark("_apply_language_texts: apply_registered_texts end")
+        self._startup_mark("_apply_language_texts: apply_combo_translations begin")
         self._apply_combo_translations(lang)
+        self._startup_mark("_apply_language_texts: apply_combo_translations end")
+        self._startup_mark("_apply_language_texts: handle_global_change begin")
         self._handle_global_change()
+        self._startup_mark("_apply_language_texts: handle_global_change end")
+        self._startup_mark("_apply_language_texts: apply_tab_titles begin")
         self._apply_tab_titles(lang)
+        self._startup_mark("_apply_language_texts: apply_tab_titles end")
+        self._startup_mark("_apply_language_texts: apply_button_translations begin")
         self._apply_button_translations(lang)
+        self._startup_mark("_apply_language_texts: apply_button_translations end")
         try:
+            self._startup_mark("_apply_language_texts: apply_registered_tooltips begin")
             self._apply_registered_tooltips(lang)
+            self._startup_mark("_apply_language_texts: apply_registered_tooltips end")
         except Exception:
             pass
         try:
+            self._startup_mark("_apply_language_texts: apply_widget_property_translations begin")
             self._apply_widget_property_translations(lang)
+            self._startup_mark("_apply_language_texts: apply_widget_property_translations end")
         except Exception:
             pass
         # No tooltip fallback text from widgets/UI: only explicit translation keys are allowed.
         try:
             if getattr(self, "contour_segments", None) is not None:
+                self._startup_mark("_apply_language_texts: init_contour_table begin")
                 self._init_contour_table()
+                self._startup_mark("_apply_language_texts: init_contour_table end")
         except Exception:
             pass
         try:
@@ -2280,7 +2310,9 @@ class HandlerClass:
             self._update_dirty_status()
         except Exception:
             pass
+        self._startup_mark("_apply_language_texts: validate_language begin")
         TRANSLATIONS.validate_language(lang, getattr(self, "LOG", None))
+        self._startup_mark("_apply_language_texts: validate_language end")
 
     def _apply_combo_translations(self, lang: str):
         for name, items in COMBO_ITEM_REGISTRY.items():

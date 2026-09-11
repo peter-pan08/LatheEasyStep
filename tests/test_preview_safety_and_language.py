@@ -8,6 +8,7 @@ from lathe_easystep.presets import validate_thread_preset_data
 from lathe_easystep.preview_geometry import build_chuck_nogo_primitives
 from lathe_easystep.ui_signals import connect_language_signal
 from lathe_easystep.ui_signals import connect_global_form_signals
+from lathe_easystep.ui_tooltips import apply_registered_tooltips
 from lathe_easystep.ui_visibility import handle_global_change
 from lathe_easystep.translations import TRANSLATIONS
 from lathe_easystep_handler import (
@@ -490,6 +491,77 @@ def test_general_tooltips_cover_upper_program_tab_fields():
     ):
         assert name in GENERAL_TOOLTIP_TRANSLATIONS
         assert GENERAL_TOOLTIP_TRANSLATIONS[name].get("de")
+
+
+def test_apply_registered_tooltips_uses_widget_name_cache_and_covers_all_matches():
+    """Perf-Fund LES-027 2026-09-10: `apply_registered_tooltips()` rief bisher
+    fuer jeden der (real) 169 registrierten Tooltip-Schluessel den teuren,
+    ungecachten `_get_widget_by_name()` auf statt des Caches, den
+    `_apply_combo_translations()` fuer denselben Zweck laengst nutzt (real
+    gemessen: >16s statt < 1s). Dabei wurde nur EIN Widget pro Namen
+    behandelt - kommt ein Name mehrfach vor (mehrere eingebettete Teil-UIs
+    mit demselben Feldnamen, real beobachtet), blieben weitere Instanzen
+    ohne Tooltip. Dieser Test prueft beides: der Cache-Pfad wird genutzt,
+    UND alle zurueckgegebenen Treffer bekommen den Tooltip."""
+    class _Widget:
+        def __init__(self):
+            self.props = {}
+            self.tooltip_calls = 0
+
+        def setProperty(self, key, value):
+            self.props[key] = value
+
+    widget_a, widget_b = _Widget(), _Widget()
+    handler = object.__new__(HandlerClass)
+    handler._widgets_by_name = lambda name: [widget_a, widget_b] if name == "program_npv" else []
+    handler._get_widget_by_name = lambda name: (_ for _ in ()).throw(
+        AssertionError(f"ungecachter Lookup fuer '{name}' haette vermieden werden sollen")
+    )
+    calls = []
+    handler._set_tooltip_deep = lambda widget, text: calls.append((widget, text))
+
+    apply_registered_tooltips(handler, "de")
+
+    assert widget_a in [w for w, _ in calls]
+    assert widget_b in [w for w, _ in calls]
+    assert widget_a.props.get("tooltip_key") == "tooltip.program_npv"
+    assert widget_b.props.get("tooltip_key") == "tooltip.program_npv"
+
+
+def test_apply_widget_property_translations_skips_already_registered_tooltips():
+    """Perf-Fund LES-027 2026-09-10: `_apply_widget_property_translations()`
+    lief bisher fuer JEDES Widget im gesamten Baum mit gesetztem
+    `tooltip_key` erneut durch `_set_tooltip_deep()` (eigener verschachtelter
+    `findChildren()`-Aufruf) - genau die Widgets, die
+    `apply_registered_tooltips()` (immer direkt davor aufgerufen) bereits
+    behandelt und mit `tooltip_fallback_auto=False` markiert hat (real
+    gemessen: >5s doppelte Arbeit). Nur ein Widget, dessen `tooltip_key`
+    NICHT ueber die zentrale Registry gesetzt wurde (kein
+    `tooltip_fallback_auto`-Flag), darf hier noch behandelt werden."""
+    class _Widget:
+        def __init__(self, props):
+            self._props = props
+
+        def property(self, key):
+            return self._props.get(key)
+
+        def findChildren(self, *_args, **_kwargs):
+            return []
+
+    already_registered = _Widget({"tooltip_key": "tooltip.program_npv", "tooltip_fallback_auto": False})
+    designer_only = _Widget({"tooltip_key": "tooltip.program_xa"})
+    root = _Widget({})
+    root.findChildren = lambda *a, **k: [already_registered, designer_only]
+
+    handler = object.__new__(HandlerClass)
+    handler.root_widget = root
+    calls = []
+    handler._set_tooltip_deep = lambda widget, text: calls.append(widget)
+
+    HandlerClass._apply_widget_property_translations(handler, "de")
+
+    assert designer_only in calls
+    assert already_registered not in calls
 
 
 def test_tooltip_fallback_uses_matching_label_name():
