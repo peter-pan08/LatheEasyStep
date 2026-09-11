@@ -10,6 +10,7 @@ Validates that:
 import sys
 import os
 import re
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep.gcode_roughing import generate_abspanen_gcode
@@ -111,15 +112,13 @@ class TestFinishAllowanceRoughing:
         lines = generate_abspanen_gcode(p, path, settings)
         assert len(lines) > 0
 
-    def test_negative_values_clamped_to_zero(self):
-        """Negative finish allowance is clamped to 0."""
+    def test_negative_values_are_rejected(self):
+        """Negative finish allowance is invalid, not silently corrected."""
         p = _make_abspanen_params(mode=0, finish_allow_x=-0.5, finish_allow_z=-0.3)
         path = _simple_contour_path()
         settings = _make_abspanen_settings()
-        lines = generate_abspanen_gcode(p, path, settings)
-        text = "\n".join(lines)
-        # No comment because both are effectively 0
-        assert "Schlichtaufma" not in text.replace("(ABSPANEN)", "")
+        with pytest.raises(ValueError, match="duerfen nicht negativ"):
+            generate_abspanen_gcode(p, path, settings)
 
 
 class TestFinishAllowanceFinishing:

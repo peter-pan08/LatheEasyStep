@@ -21,6 +21,7 @@ from .gcode_roughing import (
     step_x_pause_sub_definition,
 )
 from .gcode_safety import (
+    append_initial_tool_check,
     append_tool_and_spindle,
     emit_approach,
     emit_safe_retract_for_op,
@@ -80,8 +81,12 @@ def gcode_for_turn(op: Operation, settings: Dict[str, object] | None = None) -> 
     path = op.path or []
     if not path:
         return []
+    validate_finite_data(p, "TURN")
+    validate_finite_data(path, "TURN path")
     feed = float(p.get("feed", 0.2))
     safe_z = float(p.get("safe_z", 2.0))
+    if float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("TURN: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
     lines: List[str] = []
     append_tool_and_spindle(lines, get_tool_number(p), p.get("spindle"), settings)
     if bool(p.get("coolant", False)):
@@ -97,8 +102,12 @@ def gcode_for_bore(op: Operation, settings: Dict[str, object] | None = None) -> 
     path = op.path or []
     if not path:
         return []
+    validate_finite_data(p, "BORE")
+    validate_finite_data(path, "BORE path")
     feed = float(p.get("feed", 0.15))
     safe_z = float(p.get("safe_z", 2.0))
+    if float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("BORE: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
     lines: List[str] = []
     append_tool_and_spindle(lines, get_tool_number(p), p.get("spindle"), settings)
     if bool(p.get("coolant", False)):
@@ -440,11 +449,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             break
     if first_tool > 0 and int(float(settings.get("_current_tool", 0))) == 0:
         pre_tool_lines: List[str] = []
-        # Reine Werkzeugwechsel-Positionierung ohne Drehzahlkontext - die
-        # eigentliche, operationsspezifische Drehzahl wird gleich danach durch
-        # den echten append_tool_and_spindle()-Aufruf der ersten Operation
-        # gesetzt. Hier darf das Fehlen einer Drehzahl nicht blockieren.
-        append_tool_and_spindle(pre_tool_lines, first_tool, None, settings, require_spindle=False)
+        # Der Bediener hat nach dem Einrichten bzw. Werkstueckwechsel manuell
+        # freigefahren. Das aktuell geladene Werkzeug prueft LinuxCNC erst zur
+        # Laufzeit; die Generatorposition bleibt danach bewusst unbekannt.
+        append_initial_tool_check(pre_tool_lines, first_tool, settings)
         main_flow_lines.extend(pre_tool_lines)
     main_flow_lines.append("")
 

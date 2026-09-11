@@ -2,6 +2,103 @@
 
 ## [Unreleased]
 
+### LES-027 Bestaetigt: -59% Startzeit, Restbefund bei apply_registered_tooltips 2026-09-10
+
+- Realer Testlauf bestaetigt den vorherigen Fix: Gesamtstartzeit sank von
+  28.4s auf **11.7s (-59%)**. `_apply_widget_property_translations` fiel
+  wie erwartet auf 17ms. `apply_registered_tooltips` sank von 16.63s auf
+  6.70s fuer dieselben 169 Eintraege - besser, aber immer noch deutlich
+  ueber den aus `_apply_combo_translations` erwarteten <0.5s.
+- Naheliegende Hypothese: die intrinsischen Kosten von `_set_tooltip_deep()`
+  selbst (eigener `findChildren()`-Aufruf PRO Zielwidget, bis zu sechs
+  Qt-Property-Aufrufe und ein neu erzeugter/installierter
+  `_TooltipRelay`-Eventfilter), nicht mehr der Widget-Lookup. Zaehler und
+  ein sortiertes "> 20ms"-Log der zehn langsamsten Eintraege ergaenzt, um
+  das beim naechsten Testlauf zu bestaetigen. 662 Stub-/44 Qt-Tests
+  weiterhin bestanden. Details: TODO.md LES-027.
+
+### LES-027 Fix: Startzeit-Root-Cause gefunden - doppelte Tooltip-Anwendung ueber 169 Widgets 2026-09-10
+
+- **Root Cause gefunden** (dritter Testlauf mit dem erweiterten Logging):
+  `apply_registered_tooltips()` und `_apply_widget_property_translations()`
+  zusammen 21.7s von 28.4s Gesamtstartzeit.
+- `apply_registered_tooltips()` (`ui_tooltips.py`) nutzte fuer alle 169
+  Eintraege in `UI_TOOLTIP_KEYS` den ungecachten `_get_widget_by_name()`
+  statt des Caches (`_widgets_by_name()`), den `_apply_combo_translations()`
+  fuer denselben Zweck bereits nutzt (39 Eintraege dort: ~0.1s). Behoben -
+  behandelt dabei jetzt zusaetzlich korrekt ALLE Treffer eines Namens statt
+  nur einen (echte Korrektur bei mehrfach vorkommenden Feldnamen in
+  eingebetteten Teil-UIs, nicht nur schneller).
+- `_apply_widget_property_translations()` durchlief danach nochmal den
+  GESAMTEN Widget-Baum und wandte fuer jedes Widget mit `tooltip_key`
+  erneut `_set_tooltip_deep()` an - dieselben bis zu 169 Widgets, die
+  `apply_registered_tooltips()` (immer direkt davor aufgerufen) bereits
+  behandelt hatte. Behoben: ueberspringt jetzt bereits registrierte
+  Widgets (`tooltip_fallback_auto=False`-Marker).
+- Zwei neue Regressionstests, gegen den alten Code verifiziert (`git
+  stash`). 662 Stub-/44 Qt-Tests bestanden. Reine UI-Performance-Aenderung
+  ohne Einfluss auf die G-Code-Generierung. Hypothese (noch nicht durch
+  einen realen Testlauf bestaetigt): Startzeit sinkt von ~28s auf ~7s.
+  Details: TODO.md LES-027.
+
+### LES-027 Startzeit erstmals reproduziert, feingranulare Messung ergaenzt 2026-09-10
+
+- Ein realer `LATHEEASYSTEP_DEBUG=1 qtvcp`-Lauf (Standalone, native
+  Maschine) zeigte `_finalize_ui_ready` von +0.240s bis +25.166s - die
+  erste echte Reproduktion der seit Tagen gemeldeten, zuvor unter Windows/
+  WSL nicht nachvollziehbaren >20s-Startzeit.
+- `ui_lifecycle.py` (`finalize_ui_ready()`) protokolliert jetzt vor/nach
+  jedem groesseren Teilschritt einen `_startup_mark()` (Split-UI-Laden,
+  Widget-Registrierung, Core-/Advanced-/Contour-/Preview-Widgets,
+  Signalverbindungen, Sprach-/Tab-Titel-Praesentation), statt nur am
+  Anfang und Ende der gesamten Funktion zu messen. Reine
+  Logging-Ergaenzung ohne Verhaltensaenderung.
+- Wiederholter Testlauf mit dem erweiterten Logging grenzt den
+  Hauptverursacher ein: **18.26s (84% der 21.856s Gesamtzeit) entfallen
+  auf den "presentation"-Block** (`_apply_tab_titles`/
+  `_handle_global_change`/`_apply_language_texts`); die uebrigen
+  Signalverbindungen (`connect_remaining_signals`) trugen 1.84s bei.
+  `_apply_language_texts()` selbst buendelt ~10 weitere Teilschritte
+  (u. a. `_apply_combo_translations`, das ueber alle 39 Eintraege von
+  `COMBO_ITEM_REGISTRY` iteriert) - jetzt ebenfalls mit `_startup_mark()`
+  instrumentiert, um den tatsaechlichen Ort beim naechsten Testlauf zu
+  bestaetigen. Details: TODO.md LES-027.
+
+### LES-040 fachliche Wertebereiche an Generatorgrenzen geschlossen 2026-09-10
+
+- GROOVE lehnt negative Breiten, Tiefen, Zustellungen, Ueberdeckung,
+  Rueckzug, Vorschuebe, Aufmass und Spanbruchamplitude ab, statt sie ueber
+  `abs()` unbemerkt in andere Eingaben umzudeuten.
+- ABSPANEN lehnt negative Schlichtaufmasse und Spanbruchdistanzen ab. FACE,
+  ABSPANEN sowie die erreichbaren Legacy-Pfade TURN/BORE verhindern Werte,
+  die bei der G-Code-Formatierung auf `0.000` gerundet wuerden; THREAD prueft
+  Steigung und Gewindetiefe entsprechend mit vier Nachkommastellen.
+- Direkte GROOVE-/ABSPANEN-/TURN-/BORE-Aufrufe validieren Parameter und Pfade
+  nun ebenfalls auf Endlichkeit. 21 neue beziehungsweise angepasste
+  Regressionen; 660 Stub-/44 Real-Qt-Tests, zwoelf Referenzen und 43
+  Matrixprogramme unter nativem `rs274` bestanden.
+
+### LES-039 erster Werkzeugwechsel mit LinuxCNC-Laufzeitpruefung 2026-09-10
+
+- Der Bedienablauf ist verbindlich festgelegt: Nach Antasten oder Rohteilwechsel
+  wird vor Programmstart manuell frei vom Werkstueck gefahren. Der Generator
+  leitet aus der unbekannten Startposition keinen vermeintlich sicheren
+  Rueckzugsweg mehr ab.
+- Das erste Programmwerkzeug wird zur Laufzeit mit LinuxCNCs
+  `#<_current_tool>` verglichen. Nur bei Abweichung faehrt das Programm zum
+  definierten XT/ZT-Wechselpunkt und fuehrt `T.. M6` aus. Ein bereits korrekt
+  eingelegtes Werkzeug verursacht keinen unnoetigen ersten Wechsel.
+- Der Bewegungszustand bleibt nach dem Laufzeitzweig bewusst unbekannt, damit
+  die erste Operation ihre sichere Anfahrt unabhaengig vom ausgefuehrten Zweig
+  vollstaendig ausgibt. Folgewechsel und Programmendposition bleiben wie bisher
+  deterministisch geplant.
+- Verifiziert mit 639 Stub-/44 Real-Qt-Tests, statischer Pruefung aller zwoelf
+  Referenzen sowie nativem `rs274` fuer alle zwoelf Referenzen und 43
+  Matrixprogramme. In der QtDragon-SIM wurde der Abweichungszweig real im
+  AUTO-Modus ausgefuehrt: Start mit T0, Fahrt zum Wechselpunkt, `T01 M6`,
+  anschliessend meldete LinuxCNC T1; der weitere lange Planen-Testlauf wurde
+  nach dem fuer LES-039 relevanten Startabschnitt kontrolliert abgebrochen.
+
 ### LES-022 dritte Etappe: Positions-Tracking in allen sechs Operations-Generatoren 2026-09-10
 
 - Jede Operation mit deterministisch bekannter Endposition aktualisiert

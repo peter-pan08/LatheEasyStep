@@ -64,21 +64,27 @@ def generate_face_gcode(
         raise ValueError("Missing parameter: 'edge_type'")
     edge_type = resolve_enum_index(p.get("edge_type"), FACE_EDGE_TYPE_INDEX, default=-1)
     edge_size = req_float("edge_size")
+    if edge_size < 0.0:
+        raise ValueError("edge_size must be >= 0")
 
     coolant_enabled = opt_bool("coolant")
     pause_enabled = opt_bool("pause_enabled")
-    pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
+    pause_distance = finite_float(p.get("pause_distance", 0.0), "pause_distance")
 
     if depth_per_pass <= 0.0:
         raise ValueError("depth_max must be > 0")
+    if float(f"{depth_per_pass:.3f}") <= 0.0:
+        raise ValueError("depth_max muss auch nach Ausgaberundung > 0 sein")
     if retract < 0.0:
         raise ValueError("retract must be >= 0")
     if finish_allow_z < 0.0:
         raise ValueError("finish_allow_z must be >= 0")
-    if feed <= 0.0:
-        raise ValueError("feed must be > 0")
+    if feed <= 0.0 or float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("feed muss auch nach Ausgaberundung > 0 sein")
     if spindle < 0.0:
         raise ValueError("spindle must be >= 0")
+    if pause_distance < 0.0:
+        raise ValueError("pause_distance must be >= 0")
 
     append_tool_and_spindle(
         lines, tool_num, spindle, settings,

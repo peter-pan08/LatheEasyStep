@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-09-09
+Stand: 2026-09-10
 
 Diese Datei ist die verbindliche Liste aller offenen Aufgaben. Erledigte Punkte
 werden entfernt und im `CHANGELOG.md` dokumentiert. Release-Ziele und
@@ -20,7 +20,7 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand: `639 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
+- Teststand: `662 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
   getrennte Prozesse ueber `python run_tests.py`, keine Skips.
 - Zwoelf Referenzprogramme (inkl. neu `Innen_Konus.ngc`) regeneriert;
   statische NGC-Pruefung und LinuxCNC-Parser (`rs274`, alle zwoelf) sowie
@@ -54,11 +54,6 @@ Prioritaeten:
 
 | ID | Prio | Aufgabe | Nutzen | Aufwand | Ziel |
 |---|---|---|---|---|---|
-| LES-001 | P0 | Sichere Anfahrt zwischen aufeinanderfolgenden Operationen | sehr hoch | M | 0.8.0-alpha |
-| LES-039 | P0 | Werkzeugwechselposition und sichere erste Freifahrt verbindlich pruefen | sehr hoch | M-L | 0.8.0-alpha |
-| LES-040 | P0 | Nicht endliche Zahlen vor Geometrie und Ausgabe ablehnen | hoch | M | 0.8.0-alpha |
-| LES-003 | P0 | Innen-Schruppen Parallel-Z abschliessend verifizieren | sehr hoch | L | 0.8.0-alpha |
-| LES-045 | P0 | G71/G72: D/I-Parameter vertauscht, Zustelltiefe und Aufmass falsch | sehr hoch | M | 0.8.0-alpha |
 | LES-005 | P0 | Innen-Schlichtanfahrt und Rueckzug fuer weitere Konturformen absichern | sehr hoch | M-L | 0.8.0-alpha |
 | LES-006 | P1 | Rueckzugsstrategie und Achsreihenfolge je Bearbeitungsart festlegen | hoch | M | 0.8.0 |
 | LES-010 | P1 | Lokale DIN-Freistichgeometrie am markierten Segment erzeugen | hoch | L | 0.8.0 |
@@ -81,7 +76,7 @@ Prioritaeten:
 | LES-035 | P2 | Embedded- und Standalone-Verhalten weiter angleichen | mittel | M | 0.9.0 |
 | LES-036 | P1 | Kantenform "Radius" beim Planen umsetzen | mittel | M | 0.8.0 |
 | LES-042 | P2 | Legacy-Operationstypen TURN/BORE bereinigen oder korrigieren | gering | S | 0.9.0 |
-| LES-043 | P0 | Gegenspindel-Checkbox taeuscht nicht vorhandene Generatorunterstuetzung vor | sehr hoch | XL | 0.8.0-alpha |
+| LES-043 | P2 | Entscheidung ueber spaetere Gegenspindelunterstuetzung oder Entfernung der gesperrten UI | mittel | XL | 0.9.0 |
 | LES-044 | P2 | Modulare Panel-Architektur: Geruest, Text, Darstellung und Generator strikt trennen | langfristig hoch | XL | 0.9.0 |
 
 ## P0 - Sicherheits- und Generatorblocker
@@ -95,7 +90,7 @@ Operation an einer sicheren Position endete; er beweist nicht, dass der neue
 Zielpunkt von dort direkt kollisionsfrei erreichbar ist.
 
 - [x] direkten Zielmove nicht allein aus dem Boolean `_is_at_safe` ableiten
-- [ ] sichere Achsreihenfolge anhand Start-, Ziel-, Rohteil- und Futterzone waehlen
+- [x] sichere Achsreihenfolge anhand Start-, Ziel-, Rohteil- und Futterzone waehlen
 - [x] gleiches Werkzeug ohne dazwischenliegenden Werkzeugwechsel testen
 - [x] Aussen-Schruppen -> Schlichten und Innen-Schruppen -> Schlichten testen
 - [x] Bohren und Gewinde als Z-vor-X-Sonderfaelle pruefen
@@ -212,13 +207,13 @@ dieses Szenario wurde nicht an der Maschine getestet.
 
 - [x] XT/ZT fuer jedes ausgegebene T/M6 verlangen,
   auch bei nur einem Werkzeug; fehlende notwendige XT/ZT blockieren die Ausgabe
-- [ ] Startbedingungen fuer Position, aktives Werkzeug und freien Eingriff
+- [x] Startbedingungen fuer Position, aktives Werkzeug und freien Eingriff
   explizit festlegen und pruefen; unbekannten Zustand nicht als sicher annehmen
-- [ ] erste Freifahrt passend zu Werkzeug und Eingriff planen; kein pauschales
+- [x] erste Freifahrt passend zu Werkzeug und Eingriff planen; kein pauschales
   Z-vor-X bei einem im Einstich stehenden Werkzeug
-- [ ] Wechselposition und Hin-/Rueckweg im ausgewaehlten Koordinatensystem
+- [x] Wechselposition und Hin-/Rueckweg im ausgewaehlten Koordinatensystem
   pruefen; mit LES-001, LES-006 und LES-022 abstimmen
-- [ ] Einzelwerkzeug ohne XT/ZT, mehrere Werkzeuge, Innenwerkzeug und
+- [x] Einzelwerkzeug ohne XT/ZT, mehrere Werkzeuge, Innenwerkzeug und
   Stechwerkzeug im Eingriff als Regressionen plus LinuxCNC-Simulation abdecken
 
 Teilstand: fehlendes XT/ZT blockiert auch Einzelwerkzeugprogramme.
@@ -242,6 +237,26 @@ aktiviertem M1 vor dem ersten Wechsel), keine Ausgabeaenderung fuer
 bestehende Programme (kein Referenzbeispiel aktiviert die Option). 543
 Stub-/44 Qt-Tests bestanden.
 
+Abschluss 2026-09-10 nach Festlegung des realen Bedienablaufs: Nach dem
+Antasten beziehungsweise Einspannen des naechsten identischen Rohteils wird
+vor Programmstart manuell frei vom Werkstueck gefahren. Eine geometrische
+Freifahrt aus einer unbekannten Eingriffsposition darf und muss der Generator
+daher nicht erfinden. Der erste automatische Werkzeugschritt prueft nun zur
+LAUFZEIT `#<_current_tool>`: stimmt das von LinuxCNC gemeldete Werkzeug mit
+dem ersten Programmwerkzeug ueberein, entfaellt der Werkzeugwechsel. Andernfalls
+werden Spindel/Kuehlmittel gestoppt, der definierte XT/ZT-Wechselpunkt angefahren
+und `T.. M6` ausgefuehrt. Damit ist die Werkzeugpruefung nicht vom Zeitpunkt der
+Dateierzeugung abhaengig. Nach dem bedingten Block bleibt `MotionState` bewusst
+unbekannt; die erste Operation gibt deshalb in beiden Laufzeitzweigen ihre
+vollstaendige sichere Anfahrt aus. Folgewechsel starten aus einer vom vorherigen
+Generatorweg bekannten Rueckzugsposition; das Programmende faehrt weiterhin die
+definierte Park-/Werkzeugwechselposition an. Parsernachweis fuer alle Referenzen
+und Regression fuer Umfang/Reihenfolge des bedingten Blocks vorhanden. Der
+Abweichungszweig wurde ausserdem in der QtDragon-SIM im AUTO-Modus ausgefuehrt:
+LinuxCNC startete mit T0, fuhr zum Wechselpunkt, fuehrte `T01 M6` aus und
+meldete danach T1. Der anschliessende, fuer LES-039 nicht mehr relevante lange
+Planen-Lauf wurde kontrolliert abgebrochen.
+
 ### LES-040 Nicht endliche Zahlen zentral ablehnen
 
 Codepruefung 2026-09-08: `gcode_utils.require_positive()` akzeptiert
@@ -250,7 +265,7 @@ Groessenvergleiche sichern die Geometrie und Ausgabe daher nicht ausreichend.
 
 - [x] gemeinsame Zahlenvalidierung mit `math.isfinite()` vor Berechnung und
   Ausgabe einsetzen, einschliesslich geladener Programm-/Step-Daten
-- [ ] Koordinaten, Vorschuebe, Drehzahlen, Zustellungen und Sicherheitswerte
+- [x] Koordinaten, Vorschuebe, Drehzahlen, Zustellungen und Sicherheitswerte
   auf Endlichkeit und fachlich passende Wertebereiche pruefen
 - [x] Werkzeugnummern als gueltige ganze Zahlen validieren statt Dezimalwerte
   still mit `int(float(...))` abzuschneiden; mit LES-028 abstimmen
@@ -363,6 +378,22 @@ und Zustellungen" sind weiterhin nicht vollstaendig auf fachlich passende
 Wertebereiche durchgegangen (z. B. GROOVE/THREAD ausserhalb der
 zentralen `require_positive()`-Liste bei anderen Feldern als Vorschub/
 Drehzahl) - bleibt offen.
+
+Abschluss 2026-09-10: Die verbliebenen direkten Generatorgrenzen wurden
+systematisch geschlossen. GROOVE wandelt negative Breiten, Tiefe, Zustellung,
+Ueberdeckung, Rueckzug, Vorschuebe, Aufmass und Spanbruchamplitude nicht mehr
+stillschweigend mit `abs()` in positive Werte um. ABSPANEN verwirft negatives
+X-/Z-Aufmass und negative Spanbruchdistanz statt sie auf null zu klemmen.
+ABSPANEN, FACE sowie die noch erreichbaren Legacy-Pfade TURN/BORE blockieren
+Vorschuebe beziehungsweise Zustellungen, die positiv eingegeben wurden, aber
+in der dreistelligen G-Code-Ausgabe zu `0.000` wuerden. THREAD prueft dies
+analog fuer vierstellig ausgegebene Steigung und Gewindetiefe. Parameter,
+Pfade und Programmkopf werden auch bei direkten Generatoraufrufen auf
+Endlichkeit geprueft. Koordinaten duerfen weiterhin bewusst negativ sein;
+ihre fachlichen Beziehungen werden durch die bestehenden Rohteil-, XRI-,
+Futter- und Konturpruefungen abgesichert. 660 Stub-/44 Real-Qt-Tests, zwoelf
+Referenzen und 43 Matrixprogramme unter nativem `rs274` bestanden; keine
+zusaetzliche Referenzaenderung durch LES-040.
 
 ### LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
 
@@ -1319,6 +1350,112 @@ Checklistenpunkte bleiben fachlich offen - es existiert jetzt Mess-
 infrastruktur, aber weder Reproduktion noch Root Cause noch Embedded-
 Vergleich.
 
+Teilstand 2026-09-10 (endlich reproduziert): realer `LATHEEASYSTEP_DEBUG=1
+qtvcp -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui`-Lauf
+(Standalone, native Maschine "Mini-Drehbank") zeigt `_finalize_ui_ready`
+von +0.240s bis +25.166s - **25 Sekunden fuer einen einzigen synchronen
+Aufruf**, exakt die vom Nutzer gemeldete Groessenordnung. Erste echte
+Reproduktion seit dem Teilstand von gestern. Das bisherige Logging war
+innerhalb von `finalize_ui_ready()` zu grob (nur ein `_startup_mark` am
+Anfang und am Ende der gesamten Funktion) - `ui_lifecycle.py` jetzt um
+`_startup_mark()`-Aufrufe vor/nach jedem groesseren Teilschritt ergaenzt
+(`load_split_tab_uis`, `_register_known_widgets`, `_ensure_core_widgets`,
+`ensure_advanced_widgets`, `_dock_preview_below_scroll`,
+`_force_attach_core_widgets`, `_ensure_contour_widgets`,
+`_ensure_preview_widgets`, `_connect_core_signals`, die uebrigen
+`_connect_*_signals`, `_update_parting_contour_choices`, die
+Sprach-/Tab-Titel-Praesentation). Reine Logging-Ergaenzung, keine
+Verhaltensaenderung (660 Stub-/44 Qt-Tests weiterhin bestanden). Naechster
+Schritt: denselben Testlauf mit dem erweiterten Logging wiederholen, um
+den/die tatsaechlich dominierenden Teilschritt(e) der 25s einzugrenzen.
+Nebenbefunde aus demselben Log (noch nicht root-caused): Reiterwechsel
+(`_handle_tab_changed`) brauchte 4.682s fuer den ersten Wechsel; das
+Widget `program_spindle_mode` wurde nach ~1.4s Polling nicht gefunden
+(vermutlich harmlose Timing-Luecke bei der dynamischen Erzeugung in
+`ensure_advanced_widgets`, nicht weiter verfolgt).
+
+Teilstand 2026-09-10 (zweite Runde, Praezisierung): Wiederholter Testlauf
+mit dem erweiterten Logging zeigt den Block klar eingegrenzt - von den
+insgesamt 21.856s bis "critical done" entfallen allein **18.26s (84%) auf
+den "presentation"-Block** (`_apply_tab_titles`/`_handle_global_change`/
+`_apply_language_texts`, +3.488s bis +21.751s); `connect_remaining_signals`
+(die uebrigen `_connect_*_signals`) trug mit 1.84s einen kleineren, aber
+ebenfalls auffaelligen Anteil bei. Da `_apply_language_texts()` selbst
+~10 weitere Teilschritte buendelt (und dabei `_handle_global_change()`
+sowie `_apply_tab_titles()` ein ZWEITES Mal aufruft, siehe deren
+Docstring/Code in `lathe_easystep_handler.py`), reicht die bisherige
+Aufloesung noch nicht - `_apply_language_texts()` jetzt zusaetzlich mit
+`_startup_mark()` um jeden ihrer Teilschritte ergaenzt (u. a.
+`apply_ui_static_translations`, `_apply_registered_texts`,
+`_apply_combo_translations` - iteriert ueber alle 39 Eintraege von
+`COMBO_ITEM_REGISTRY` und ruft dabei `_widgets_by_name()` auf, ein
+moeglicher Kandidat fuer eine teure Baumsuche pro Eintrag -,
+`_apply_button_translations`, `_apply_registered_tooltips`,
+`_apply_widget_property_translations`, `TRANSLATIONS.validate_language`).
+Noch keine Bestaetigung, nur eine plausible Hypothese - naechster
+Testlauf mit diesem Logging noetig, um den tatsaechlichen Ort
+einzugrenzen. Reine Logging-Ergaenzung, keine Verhaltensaenderung
+(660 Stub-/44 Qt-Tests weiterhin bestanden).
+
+Teilstand 2026-09-10 (dritte Runde, Root Cause gefunden und behoben):
+Wiederholter Testlauf zeigt den Ort exakt: `apply_registered_tooltips`
+(16.63s) und `_apply_widget_property_translations` (5.08s) - zusammen
+21.7s der 28.4s Gesamtzeit dieses Laufs.
+
+- `apply_registered_tooltips()` (`ui_tooltips.py`) rief fuer jeden der 169
+  Eintraege in `UI_TOOLTIP_KEYS` den teuren, UNGECACHTEN
+  `_get_widget_by_name()` auf (mehrfacher `findChild`-Baumdurchlauf inkl.
+  eines Panel-Scope-Walks ueber die Elternkette PRO Aufruf) statt des
+  Caches (`_widgets_by_name()`), den `_apply_combo_translations()` fuer
+  denselben Zweck bereits nutzt (dort: 39 Eintraege in ~0.1s). Behoben:
+  nutzt jetzt `_widgets_by_name()` mit automatischem Fallback bei
+  Cache-Miss. Zusaetzliche Korrektur (nicht nur schneller): behandelt jetzt
+  ALLE zurueckgegebenen Treffer statt nur einen - ein Name, der in mehreren
+  eingebetteten Teil-UIs vorkommt (real beobachtet, "contour table
+  candidates" x3 im Log), bekam bisher nur an EINER Stelle einen Tooltip.
+- `_apply_widget_property_translations()` (`lathe_easystep_handler.py`)
+  durchlief danach den GESAMTEN Widget-Baum per `findChildren()` und wandte
+  fuer jedes Widget mit gesetztem `tooltip_key` erneut `_set_tooltip_deep()`
+  an (eigener verschachtelter `findChildren()`-Aufruf) - **genau dieselben
+  bis zu 169 Widgets, die `apply_registered_tooltips()` (immer direkt davor
+  aufgerufen) bereits behandelt hat.** Behoben: ueberspringt jetzt Widgets,
+  die `apply_registered_tooltips()` bereits per `tooltip_fallback_auto=False`
+  markiert hat; nur Widgets mit einem `tooltip_key`, der NICHT ueber die
+  zentrale Registry gesetzt wurde (z. B. direkt im Qt-Designer), werden
+  hier noch behandelt.
+
+Beide Fixes je mit einem gezielten Regressionstest abgesichert
+(`tests/test_preview_safety_and_language.py`,
+`test_apply_registered_tooltips_uses_widget_name_cache_and_covers_all_matches`,
+`test_apply_widget_property_translations_skips_already_registered_tooltips`),
+gegen den alten Code per `git stash` verifiziert. 662 Stub-/44 Qt-Tests
+bestanden. Reine UI-Performance-Aenderung, kein Einfluss auf G-Code-
+Generierung - Referenzen/rs274/Matrix nicht erneut geprueft.
+
+Teilstand 2026-09-10 (vierte Runde, Bestaetigung mit Restbefund): realer
+Testlauf bestaetigt eine deutliche, aber unvollstaendige Verbesserung -
+Gesamtstartzeit sank von **28.4s auf 11.7s (-59%)**.
+`_apply_widget_property_translations` fiel wie erwartet auf 17ms (vorher
+5.08s - dieser Fix ist vollstaendig bestaetigt). `apply_registered_tooltips`
+sank von 16.63s auf **6.70s fuer dieselben 169 Eintraege** - deutlich
+schneller, aber immer noch weit ueber den aus `_apply_combo_translations`
+erwarteten <0.5s (39 Eintraege dort in ~0.1s). Da der Widget-Name-Cache
+bereits VOR dem "presentation"-Block per `_rebuild_widget_name_cache()`
+(volle `findChildren()`-Baumsuche) aufgebaut wird, sind verbleibende
+Cache-Misses unwahrscheinlich - naheliegendere Hypothese: die intrinsischen
+Kosten von `_set_tooltip_deep()` selbst (pro Widget ein eigener
+`findChildren()`-Aufruf ueber dessen Nachkommen, dazu bis zu sechs
+Qt-Property-Aufrufe UND die Erzeugung/Installation eines
+`_TooltipRelay`-Eventfilters JE Zielwidget) - multipliziert mit der neuen
+"alle Treffer statt nur einer"-Korrektur, die bei mehrfach vorkommenden
+Namen jetzt mehr Widgets als vorher behandelt. `apply_registered_tooltips()`
+jetzt mit Zaehlern (aufgeloeste Namen, behandelte Widgets insgesamt) und
+einem sortierten "> 20ms"-Log der zehn langsamsten Eintraege ergaenzt, um
+zwischen Cache-Miss und intrinsischen `_set_tooltip_deep()`-Kosten zu
+unterscheiden. Reine Logging-Ergaenzung, 662 Stub-/44 Qt-Tests weiterhin
+bestanden (inkl. beider LES-027-Regressionstests). **Ausstehend:**
+Bestaetigung durch einen weiteren realen Testlauf.
+
 ### LES-028 Eingaben zentral normalisieren
 
 Teilstand: G76 blockiert ungueltige Steigung, Tiefe, Durchmesser, Laenge,
@@ -1527,7 +1664,6 @@ Norm-/Systemabhaengige Blocker:
 
 - DIN-76-Werte fuer M2, M2.5 und M3.5 -> LES-019
 - lokale Freistichgeometrie braucht verifizierte DIN-Referenz -> LES-010
-- Innen-Schruppen braucht LinuxCNC-Backplot und Trockenlauf -> LES-003
 - Generatoraenderungen brauchen LinuxCNC-Simulation -> LES-030
 
 ## Verbindlicher Abschluss jeder Generatoraenderung

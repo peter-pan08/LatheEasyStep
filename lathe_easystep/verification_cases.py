@@ -6,7 +6,11 @@ from .model import Operation, OpType
 
 def thread_relief_case(internal=False, left=False, insufficient=False):
     settings = dict(make_program_settings(), xi=10.0, xri=9.0, zri=2.0,
-                    xri_absolute=True, zri_absolute=True)
+                    xri_absolute=True, zri_absolute=True,
+                    # Naher Wechselpunkt fuer lesbaren Backplot und kurze
+                    # native SIM-Laeufe; Produktionsreferenzen bleiben bei
+                    # ihren maschinenspezifischen XT/ZT-Werten.
+                    xt=30.0, zt=10.0)
     start, end = (-40.0, 0.0) if internal else (0.0, -40.0)
     if insufficient:
         start, end = -18.0, -19.0

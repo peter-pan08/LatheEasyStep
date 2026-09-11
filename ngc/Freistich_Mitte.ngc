@@ -16,15 +16,14 @@ G54
 (=== END SICHERHEITSPARAMETER ===)
 
 
-(Werkzeug T04)
-G0 Z2.000
-G0 X80.000
+(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)
+o<les_first_tool> if [#<_current_tool> NE 4]
 M5
 M9
-(Toolchange move)
+(Erster Werkzeugwechsel)
 G0 X150.000 Z300.000
 T04 M6
-G0 X80.000 Z2.000
+o<les_first_tool> endif
 
 
 
@@ -36,6 +35,8 @@ F0.100
 (Ausgabe bevorzugen: auto)
 (Hinterschnitt-Modus: full)
 (Schlichtschnitt Kontur)
+G0 Z2.000
+G0 X80.000
 G0 X20.000
 G1 X20.000 Z0.000 F0.100
 G1 X20.000 Z-10.000 F0.100

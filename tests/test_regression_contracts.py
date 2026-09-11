@@ -685,6 +685,9 @@ def test_first_toolchange_still_moves_to_defined_toolchange_point():
     toolchange_idx = lines.index("T07 M6")
     prelude = lines[max(0, toolchange_idx - 6):toolchange_idx]
     assert "G53 G0 X70.000 Z200.000" in prelude
+    assert "o<les_first_tool> if [#<_current_tool> NE 7]" in lines
+    assert lines.index("o<les_first_tool> if [#<_current_tool> NE 7]") < toolchange_idx
+    assert lines.index("o<les_first_tool> endif") > toolchange_idx
 
 
 def test_first_toolchange_moves_to_toolchange_point_when_only_one_tool_used():

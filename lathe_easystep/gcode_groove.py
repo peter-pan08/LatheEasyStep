@@ -5,6 +5,7 @@ from typing import Callable, Dict, List
 from .model import Operation
 from .gcode_utils import get_param_float, get_param_int, validate_internal_x_limit
 from .gcode_safety import _motion_state, activate_pending_css, get_safe_position
+from .numeric import finite_float, validate_finite_data
 
 
 def groove_sub_definition() -> List[str]:
@@ -214,17 +215,34 @@ def generate_groove_gcode(
     emit_coolant: Callable[[List[str], object], None],
 ) -> List[str]:
     settings = settings or {}
+    validate_finite_data(op.params, "GROOVE")
+    validate_finite_data(settings, "Programmkopf")
     require_tool(op.params, "GROOVE")
     lines: List[str] = []
     p = op.params
-    safe_z = float(p.get("safe_z", 2.0))
+    for aliases, label in (
+        (("wnut", "W_nut", "width", "groove_width"), "Nutbreite"),
+        (("wtool", "W_tool", "tool_width", "cutting_width", "groove_cutting_width"), "Werkzeugbreite"),
+        (("depth",), "Tiefe"),
+        (("stepA", "step_a", "depth_per_pass", "step"), "Zustellung"),
+        (("overlap", "over"), "Ueberdeckung"),
+        (("retract", "retr"), "Rueckzug"),
+        (("F_plunge", "f_plunge", "plunge_feed", "feed"), "Eintauchvorschub"),
+        (("F_sweep", "f_sweep", "sweep_feed"), "Seitvorschub"),
+        (("finish", "fin"), "Aufmass"),
+        (("chip_amp", "camp"), "Spanbruchamplitude"),
+    ):
+        explicit = get_param_float(p, list(aliases), None)
+        if explicit is not None and explicit < 0.0:
+            raise ValueError(f"GROOVE: {label} darf nicht negativ sein.")
+    safe_z = finite_float(p.get("safe_z", 2.0), "GROOVE safe_z")
     lage = get_param_int(p, ["lage"], 0) or 0
 
     mode = get_param_int(p, ["mode", "groove_mode"])
     if mode not in (0, 1):
         mode = 0 if lage in (0, 1) else 1
 
-    wnut = abs(get_param_float(p, ["wnut", "W_nut", "width", "groove_width"], 0.0) or 0.0)
+    wnut = get_param_float(p, ["wnut", "W_nut", "width", "groove_width"], 0.0) or 0.0
     use_tool_width = bool(p.get("use_tool_width", False))
     wtool = get_param_float(
         p,
@@ -232,29 +250,32 @@ def generate_groove_gcode(
         None,
     )
     if use_tool_width and wtool is not None:
-        wtool = abs(wtool)
+        if wtool < 0.0:
+            raise ValueError("GROOVE: Werkzeugbreite darf nicht negativ sein.")
     if wtool is None:
         wtool = wnut
-    wtool = abs(float(wtool))
+    wtool = finite_float(wtool, "GROOVE Werkzeugbreite")
 
     c_val = get_param_float(p, ["C", "c", "center"], None)
     ref = get_param_int(p, ["ref"], 0) or 0
     if c_val is None:
         if mode == 0:
-            c_val = groove_center_from_ref(float(p.get("z", 0.0) or 0.0), wnut, ref)
+            c_val = groove_center_from_ref(finite_float(p.get("z", 0.0) or 0.0, "GROOVE z"), wnut, ref)
         else:
-            c_val = groove_center_from_ref(float(p.get("diameter", 0.0) or 0.0), wnut, ref)
+            c_val = groove_center_from_ref(finite_float(p.get("diameter", 0.0) or 0.0, "GROOVE diameter"), wnut, ref)
 
     a_start = get_param_float(p, ["A_start", "Astart", "start"], None)
     if a_start is None:
         if mode == 0:
-            a_start = float(p.get("diameter", 0.0) or 0.0)
+            a_start = finite_float(p.get("diameter", 0.0) or 0.0, "GROOVE diameter")
         else:
-            a_start = float(p.get("z", 0.0) or 0.0)
+            a_start = finite_float(p.get("z", 0.0) or 0.0, "GROOVE z")
 
     a_end = get_param_float(p, ["A_end", "Aend", "end"], None)
     if a_end is None:
-        depth = abs(float(p.get("depth", 0.0) or 0.0))
+        depth = finite_float(p.get("depth", 0.0) or 0.0, "GROOVE depth")
+        if depth < 0.0:
+            raise ValueError("GROOVE: Tiefe darf nicht negativ sein.")
         if mode == 0:
             dia_depth = 2.0 * depth
             if lage == 1:
@@ -267,16 +288,18 @@ def generate_groove_gcode(
             else:
                 a_end = a_start - depth
 
-    step_a = abs(get_param_float(p, ["stepA", "step_a", "depth_per_pass", "step"], 0.0) or 0.0)
+    step_a = get_param_float(p, ["stepA", "step_a", "depth_per_pass", "step"], 0.0) or 0.0
     if step_a <= 0.0:
-        step_a = abs(float(p.get("depth", 0.0) or 0.0))
+        step_a = finite_float(p.get("depth", 0.0) or 0.0, "GROOVE depth")
 
-    overlap = abs(get_param_float(p, ["overlap", "over"], 0.0) or 0.0)
-    retr = abs(get_param_float(p, ["retract", "retr"], 0.0) or 0.0)
-    f_plunge = abs(get_param_float(p, ["F_plunge", "f_plunge", "plunge_feed", "feed"], 0.0) or 0.0)
-    f_sweep = abs(get_param_float(p, ["F_sweep", "f_sweep", "sweep_feed"], f_plunge) or 0.0)
-    finish = abs(get_param_float(p, ["finish", "fin"], 0.0) or 0.0)
-    chip_amp = abs(get_param_float(p, ["chip_amp", "camp"], 0.0) or 0.0)
+    overlap = get_param_float(p, ["overlap", "over"], 0.0) or 0.0
+    retr = get_param_float(p, ["retract", "retr"], 0.0) or 0.0
+    f_plunge = get_param_float(p, ["F_plunge", "f_plunge", "plunge_feed", "feed"], 0.0) or 0.0
+    f_sweep = get_param_float(p, ["F_sweep", "f_sweep", "sweep_feed"], f_plunge) or 0.0
+    finish = get_param_float(p, ["finish", "fin"], 0.0) or 0.0
+    chip_amp = get_param_float(p, ["chip_amp", "camp"], 0.0) or 0.0
+    if min(wnut, wtool, step_a, overlap, retr, f_plunge, f_sweep, finish, chip_amp) < 0.0:
+        raise ValueError("GROOVE: Breiten, Zustellung, Ueberdeckung, Rueckzug, Vorschuebe, Aufmass und Spanbruch duerfen nicht negativ sein.")
     chip_n = get_param_int(p, ["chip_n", "cn"], 0)
     if chip_n < 0:
         raise ValueError("GROOVE: Spanbruchanzahl darf nicht negativ sein.")

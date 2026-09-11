@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from qtpy import QtCore, QtGui, QtWidgets
 from .translations import TRANSLATIONS
 from .ui_registry import UI_TOOLTIP_KEYS
@@ -153,16 +155,55 @@ def fallback_tooltip_text(self, widget) -> str:
 
 
 def apply_registered_tooltips(self, lang: str):
+    # Perf (LES-027, 2026-09-10): `_get_widget_by_name()` ist die robuste,
+    # aber teure Auflösung (mehrfacher `findChild`-Baumdurchlauf inkl.
+    # Panel-Scope-Suche PRO Aufruf) - bei 169 registrierten Tooltip-
+    # Schlüsseln real mit >16s gemessen. `_widgets_by_name()` nutzt
+    # denselben Cache wie `_apply_combo_translations()` (dort 39 Eintraege
+    # in ~0.1s) und faellt bei einem Cache-Miss automatisch auf
+    # `_get_widget_by_name()` zurueck - keine Abstriche bei der Abdeckung.
+    # Iteriert zudem ueber ALLE Treffer statt nur den ersten: ein Name, der
+    # in mehreren eingebetteten Teil-UIs vorkommt (real beobachtet, siehe
+    # "contour table candidates"), bekam bisher nur an EINER Stelle einen
+    # Tooltip - das ist eine echte Korrektur, nicht nur schneller.
+    #
+    # Ergaenzung 2026-09-10 (zweite Runde): trotz Cache-Nutzung blieben real
+    # noch ~6.7s fuer 169 Eintraege (statt der aus `_apply_combo_translations`
+    # erwarteten <0.5s) - Zaehler/Slowest-Log ergaenzt, um zu klaeren, ob das
+    # an verbleibenden Cache-Misses oder an der intrinsischen Kosten von
+    # `_set_tooltip_deep()` (findChildren()+Event-Filter PRO Widget) liegt.
+    matched_names = 0
+    matched_widgets = 0
+    slow_entries: list[tuple[float, str, int]] = []
     for name, key in UI_TOOLTIP_KEYS.items():
-        widget = self._get_widget_by_name(name)
-        if widget is None:
+        entry_started = time.monotonic()
+        widgets = self._widgets_by_name(name)
+        if not widgets:
             continue
+        matched_names += 1
+        matched_widgets += len(widgets)
         text = TRANSLATIONS.tr(key, lang)
-        try:
-            widget.setProperty("tooltip_key", key)
-            widget.setProperty("tooltip_fallback_auto", False)
-        except Exception:
-            pass
-        self._set_tooltip_deep(widget, text)
+        for widget in widgets:
+            try:
+                widget.setProperty("tooltip_key", key)
+                widget.setProperty("tooltip_fallback_auto", False)
+            except Exception:
+                pass
+            self._set_tooltip_deep(widget, text)
+        entry_elapsed = time.monotonic() - entry_started
+        if entry_elapsed > 0.02:
+            slow_entries.append((entry_elapsed, name, len(widgets)))
+    slow_entries.sort(reverse=True)
+    try:
+        self._log(
+            f"[LatheEasyStep][perf] apply_registered_tooltips: "
+            f"{matched_names}/{len(UI_TOOLTIP_KEYS)} Namen aufgeloest, "
+            f"{matched_widgets} Widgets insgesamt behandelt, "
+            f"{len(slow_entries)} Eintraege > 20ms: "
+            f"{[(f'{t:.3f}s', n, c) for t, n, c in slow_entries[:10]]}",
+            level="info",
+        )
+    except Exception:
+        pass
 
 

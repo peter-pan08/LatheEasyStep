@@ -12,7 +12,7 @@ Ziel ist:
 - `v0.7.0` ist die lauffaehige Basis auf `main`.
 - `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
   die stabile, lauffaehige Basis.
-- Aktueller Teststand: `639 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
+- Aktueller Teststand: `662 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,
   Rechts-/Linksgewinde, `rough_finish`, Realtest-Fixes und die geteilte UI.
@@ -321,7 +321,7 @@ linearisieren, sowie vollstaendige Arc-Intersections.
   - Optionalstop vor Werkzeugwechsel
   - Persistenz der neuen Expertenoptionen
 - Referenzprogramme wurden nach Regenerierung erneut an den Snapshot gebunden.
-- Aktueller Gesamtstand: `639 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
+- Aktueller Gesamtstand: `662 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`.
 - Tooltip-Ausgabe wird nicht mehr nur ueber `setToolTip()` gesetzt, sondern ueber einen zusaetzlichen Hover-/ToolTip-Relay fuer Embedded-/QTVCP-Kontexte stabilisiert.
 - Reales Testprogramm `/home/adm1n/linuxcnc/nc_files/Test.ngc` wurde gegen die Generatorannahmen geprueft; die beobachtete manuelle Zusatzfahrt stammt aus der LinuxCNC-Konfiguration (`[EMCIO] TOOL_CHANGE_MODE = MANUAL`, `hal_manualtoolchange` in `lc10e_spindle_postgui.hal`), nicht aus dem generierten G-Code.
 

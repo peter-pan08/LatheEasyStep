@@ -2,7 +2,7 @@
 (Programm automatisch erzeugt)
 (Programmname: Test)
 (Masseinheit: mm)
-G18 G7 G90 G40 G80
+G18 G7 G90 G91.1 G40 G80
 G21
 G95
 G54
@@ -18,14 +18,6 @@ G54
 
 
 (=== Subroutine Definitions ===)
-o<step_line_pause> sub
-(Step line pause helper)
-G4 P[#7]
-o<step_line_pause> endsub
-o<step_x_pause> sub
-(Step X pause helper)
-G4 P0.1
-o<step_x_pause> endsub
 (=== GROOVE CYCLE LIBRARY ===)
 o200 sub
   #<Wbase> = #1
@@ -215,62 +207,211 @@ G1 X50.000 Z-2.000
 G1 X46.000 Z0.000
 G1 X-1.000 Z0.000
 o102 endsub
-o103 sub
-G1 X27.000 Z0.000
-G1 X28.000 Z0.000
-G1 X28.002 Z0.000
-G3 X30.000 Z-0.999 I0.000 K-0.999
-G1 X30.000 Z-35.000
-G1 X36.000 Z-35.000
-G3 X40.000 Z-37.000 I0.000 K-2.000
-G1 X40.000 Z-45.000
-G1 X50.000 Z-60.000
-o103 endsub
+o<step_line_pause> sub
+(Step line pause helper)
+G4 P[#7]
+o<step_line_pause> endsub
+o<step_x_pause> sub
+(Step X pause helper)
+G4 P0.1
+o<step_x_pause> endsub
 (=== End Subroutines ===)
 
-(Werkzeug T01)
-G0 Z6.000
-G0 X52.000
+(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)
+o<les_first_tool> if [#<_current_tool> NE 1]
 M5
 M9
-(Toolchange move)
+(Erster Werkzeugwechsel)
 G53 G0 X70.000 Z100.000
 T01 M6
-G0 X52.000 Z6.000
+o<les_first_tool> endif
 
 
 
 
 (Step 3: face | T1: DCMT Aussendrehen)
-(STEP: 4. Planen Schruppen Z 0.0->0.0 mit Kuehlung 1)
-G96 D2500 S180.0 M3
+(STEP: Planen Schruppen Z 0.0->0.0 mit Kuehlung 1)
+G97 S1146 M3 (CSS-Anfahrdrehzahl bei X50.000)
 M8
 F0.200
 (Anfahren vor Zyklus)
 (WARN: Startpunkt X50.000 Z1.000 liegt im Rohteil)
-G0 X50.000 Z1.000
+G0 Z6.000
+G0 X52.000
+G0 Z1.000
+G0 X50.000
+G96 D2500 S180.0
 G72 Q102 X50.000 Z1.000 D0.030 I1.000 R0.500
+G97 S1146 (CSS-Freifahrt)
 G0 X52.000
 G0 Z6.000
 
 (Step 4: abspanen | T1: DCMT Aussendrehen)
-(STEP: 5. Abspanen abdrehen, Parallel Z, Ignorieren 1)
+(STEP: Abspanen abdrehen, Parallel Z, Ignorieren 1)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
-G96 D2500 S150.0 M3
+G97 S955 M3 (CSS-Anfahrdrehzahl bei X50.000)
 F0.150
 (Strategie: parallel_z)
 (Ausgabe bevorzugen: auto)
 (Hinterschnitt-Modus: ignore)
 (Aufmass X/Z: 0.100/0.030)
-(ABSPANEN Rough - parallel Z)
-G0 X50.000 Z5.000
-G71 Q103 X50.000 Z5.000 D1.000
+(Fallback-Grund: Spanbruch/Pausen aktiv)
+(ABSPANEN Rough - parallel Z - Move-based)
+G0 Z10.000
+G0 X52.000
+(Pass 1: X-band [49.000,50.000])
+G0 X49.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [49.000] [0.030] [49.000] [-58.320] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X51.000 Z-53.320
+(Pass 2: X-band [48.000,49.000])
+G0 X48.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [48.000] [0.030] [48.000] [-56.820] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X50.000 Z-51.820
+(Pass 3: X-band [47.000,48.000])
+G0 X47.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [47.000] [0.030] [47.000] [-55.320] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X49.000 Z-50.320
+(Pass 4: X-band [46.000,47.000])
+G0 X46.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [46.000] [0.030] [46.000] [-53.820] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X48.000 Z-48.820
+(Pass 5: X-band [45.000,46.000])
+G0 X45.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [45.000] [0.030] [45.000] [-52.320] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X47.000 Z-47.320
+(Pass 6: X-band [44.000,45.000])
+G0 X44.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [44.000] [0.030] [44.000] [-50.820] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X46.000 Z-45.820
+(Pass 7: X-band [43.000,44.000])
+G0 X43.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [43.000] [0.030] [43.000] [-49.320] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X45.000 Z-44.320
+(Pass 8: X-band [42.000,43.000])
+G0 X42.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [42.000] [0.030] [42.000] [-47.820] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X44.000 Z-42.820
+(Pass 9: X-band [41.000,42.000])
+G0 X41.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [41.000] [0.030] [41.000] [-46.320] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X43.000 Z-41.320
+(Pass 10: X-band [40.000,41.000])
+G0 X40.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [40.000] [0.030] [40.000] [-36.527] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X42.000 Z-31.527
+(Pass 11: X-band [39.000,40.000])
+G0 X39.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [39.000] [0.030] [39.000] [-35.593] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X41.000 Z-30.593
+(Pass 12: X-band [38.000,39.000])
+G0 X38.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [38.000] [0.030] [38.000] [-35.211] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X40.000 Z-30.211
+(Pass 13: X-band [37.000,38.000])
+G0 X37.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [37.000] [0.030] [37.000] [-35.022] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X39.000 Z-30.022
+(Pass 14: X-band [36.000,37.000])
+G0 X36.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [36.000] [0.030] [36.000] [-34.970] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X38.000 Z-29.970
+(Pass 15: X-band [35.000,36.000])
+G0 X35.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [35.000] [0.030] [35.000] [-34.970] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X37.000 Z-29.970
+(Pass 16: X-band [34.000,35.000])
+G0 X34.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [34.000] [0.030] [34.000] [-34.970] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X36.000 Z-29.970
+(Pass 17: X-band [33.000,34.000])
+G0 X33.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [33.000] [0.030] [33.000] [-34.970] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X35.000 Z-29.970
+(Pass 18: X-band [32.000,33.000])
+G0 X32.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [32.000] [0.030] [32.000] [-34.970] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X34.000 Z-29.970
+(Pass 19: X-band [31.000,32.000])
+G0 X31.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+o<step_line_pause> call [31.000] [0.030] [31.000] [-34.970] [1.000] [0.150] [0.500]
+G97 S955 (CSS-Freifahrt)
+G0 X33.000 Z-29.970
+(Pass 20: X-band [30.000,31.000])
+G0 X30.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X30.000 Z-0.657 F0.150
+G97 S955 (CSS-Freifahrt)
+G0 X32.000 Z4.343
+(Pass 21: X-band [29.000,30.000])
+G0 X29.000 Z5.000
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X29.000 Z-0.077 F0.150
+G97 S955 (CSS-Freifahrt)
+G0 X31.000 Z4.923
+(Pass 22: no cut region in band X[28.000,29.000])
+(Pass 23: no cut region in band X[27.100,28.000])
 G0 X52.000
 G0 Z6.000
 (Werkzeug T02)
-G0 Z6.000
-G0 X52.000
 M5
 M9
 (Toolchange move)
@@ -279,17 +420,19 @@ T02 M6
 G0 X52.000 Z6.000
 
 (Step 5: abspanen | T2: CCMT Aussendrehen)
-(STEP: 6. Abspanen abdrehen, Parallel Z, Voll in Kontur 2)
+(STEP: Abspanen abdrehen, Parallel Z, Voll in Kontur 2)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
-G96 D2500 S150.0 M3
+G97 S955 M3 (CSS-Anfahrdrehzahl bei X50.000)
 F0.150
 (Strategie: parallel_z)
 (Ausgabe bevorzugen: auto)
 (Hinterschnitt-Modus: full)
 (Aufmass X/Z: 0.100/0.030)
 (Schlichtschnitt Kontur)
-G0 X27.000 Z5.000
+G0 Z5.000
+G0 X27.000
+G96 D2500 S150.0
 G42.1 D0.8000 L2
 G1 X27.000 Z0.000 F0.150
 G1 X28.000 Z0.000 F0.150
@@ -305,13 +448,12 @@ G1 X36.000 Z-35.000 F0.150
 G3 X40.000 Z-37.000 I0.000 K-2.000 F0.150
 G1 X40.000 Z-45.000 F0.150
 G1 X50.000 Z-60.000 F0.150
+G97 S955 (CSS-Freifahrt)
 G0 Z5.000
 G40
 G0 X52.000
 G0 Z6.000
 (Werkzeug T08)
-G0 Z6.000
-G0 X52.000
 M5
 M9
 (Toolchange move)
@@ -320,7 +462,7 @@ T08 M6
 G0 X52.000 Z6.000
 
 (Step 6: thread | T8: Aussengewinde MMT11er AG60)
-(STEP: 7. Gewinde Aussengewinde Rechts P 3.50; Z 0.0->-30.0 + Freistich-Vorschlag 8)
+(STEP: Gewinde Aussengewinde Rechts P 3.50; Z 0.0->-30.0 + Freistich-Vorschlag 8)
 G97 S500 M3
 M8
 (Gewindetyp: Aussen)
@@ -329,14 +471,13 @@ M8
 (DIN-Freistich: din76_a M30 Aussen B=9.000 T=2.500 Kurzform)
 (Gewindeende Z=-30.000; Ueberdeckung f=4.700)
 (Anfahren vor Gewinde)
-G0 X31.070 Z2.000
+G0 Z2.000
+G0 X31.070
 G0 Z0.000
 G76 P3.5000 Z-30.000 I-1.0700 J0.4200 R1.5000 K4.3000 Q29.5000 H1 E0.0000 L0
 G0 Z6.000
 G0 X52.000
 (Werkzeug T04)
-G0 Z6.000
-G0 X52.000
 M5
 M9
 (Toolchange move)
@@ -345,7 +486,7 @@ T04 M6
 G0 X52.000 Z6.000
 
 (Step 7: groove | T4: Einstechen MGMN200)
-(STEP: 8. Einstich Z -40.0; B 4.0 4)
+(STEP: Einstich Z -40.0; B 4.0 4)
 G97 S600 M3
 M8
 (Anfahren vor Groove)
@@ -357,8 +498,6 @@ o220 call [0] [2.000] [4.000] [-40.000] [40.000] [38.000] [0.800] [0.200] [0.400
 G0 X52.000
 G0 Z6.000
 (Werkzeug T10)
-G0 Z6.000
-G0 X52.000
 M5
 M9
 (Toolchange move)
@@ -367,23 +506,21 @@ T10 M6
 G0 X52.000 Z6.000
 
 (Step 8: drill | T10: ER25 Aufnahme)
-(STEP: 9. Bohren G73 Spanbruchbohren Z 0.0->-45.0 10)
+(STEP: Bohren G73 Spanbruchbohren Z 0.0->-45.0 10)
 G97 S600 M3
 M8
 (Anfahren vor Zyklus)
-G0 X0.000 Z2.000
+G0 Z2.000
+G0 X0.000
 (G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)
 G17
 F0.120
 G73 X0.000 Z-45.000 R2.000 Q5.000 F0.120
 G80
-G0 Z2.000
 G18
 G0 Z6.000
 G0 X52.000
 (Werkzeug T11)
-G0 Z6.000
-G0 X52.000
 M5
 M9
 (Toolchange move)
@@ -392,10 +529,10 @@ T11 M6
 G0 X9.300 Z1.000
 
 (Step 9: abspanen | T11: VCMT Innendrehen)
-(STEP: 10. Abspanen ausdrehen, Parallel Z, Ignorieren 11)
+(STEP: Abspanen ausdrehen, Parallel Z, Ignorieren 11)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
-G96 D2500 S150.0 M3
+G97 S2500 M3 (CSS-Anfahrdrehzahl bei X10.000)
 F0.150
 (Werkzeugradiuskorrektur Innenfreistich deaktiviert: LinuxCNC-Konkavecke)
 (Strategie: parallel_z)
@@ -404,110 +541,169 @@ F0.150
 (Aufmass X/Z: 0.100/0.030)
 (Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)
 (ABSPANEN Rough - parallel Z - Move-based)
+G0 Z0.000
+G0 X9.300
 (Pass 1: X-band [10.000,10.400])
 G0 Z0.000
 G0 X10.400
-G1 X10.400 Z-44.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X10.400 Z-43.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 2: X-band [10.400,10.800])
 G0 Z0.000
 G0 X10.800
-G1 X10.800 Z-44.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X10.800 Z-43.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 3: X-band [10.800,11.200])
 G0 Z0.000
 G0 X11.200
-G1 X11.200 Z-44.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X11.200 Z-43.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 4: X-band [11.200,11.600])
 G0 Z0.000
 G0 X11.600
-G1 X11.600 Z-43.800 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X11.600 Z-43.670 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 5: X-band [11.600,12.000])
 G0 Z0.000
 G0 X12.000
-G1 X12.000 Z-43.400 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X12.000 Z-10.253 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 6: X-band [12.000,12.400])
 G0 Z0.000
 G0 X12.400
-G1 X12.400 Z-10.300 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X12.400 Z-10.037 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 7: X-band [12.400,12.800])
 G0 Z0.000
 G0 X12.800
-G1 X12.800 Z-10.100 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X12.800 Z-9.973 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 8: X-band [12.800,13.200])
 G0 Z0.000
 G0 X13.200
-G1 X13.200 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X13.200 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 9: X-band [13.200,13.600])
 G0 Z0.000
 G0 X13.600
-G1 X13.600 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X13.600 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 10: X-band [13.600,14.000])
 G0 Z0.000
 G0 X14.000
-G1 X14.000 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X14.000 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 11: X-band [14.000,14.400])
 G0 Z0.000
 G0 X14.400
-G1 X14.400 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X14.400 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 12: X-band [14.400,14.800])
 G0 Z0.000
 G0 X14.800
-G1 X14.800 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X14.800 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 13: X-band [14.800,15.200])
 G0 Z0.000
 G0 X15.200
-G1 X15.200 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X15.200 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 14: X-band [15.200,15.600])
 G0 Z0.000
 G0 X15.600
-G1 X15.600 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X15.600 Z-9.970 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 15: X-band [15.600,16.000])
 G0 Z0.000
 G0 X16.000
-G1 X16.000 Z-10.000 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X16.000 Z-0.658 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 16: X-band [16.000,16.400])
 G0 Z0.000
 G0 X16.400
-G1 X16.400 Z-0.800 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X16.400 Z-0.309 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 17: X-band [16.400,16.800])
 G0 Z0.000
 G0 X16.800
-G1 X16.800 Z-0.600 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X16.800 Z-0.135 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 18: X-band [16.800,17.200])
 G0 Z0.000
 G0 X17.200
-G1 X17.200 Z-0.400 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X17.200 Z-0.034 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 19: X-band [17.200,17.600])
 G0 Z0.000
 G0 X17.600
-G1 X17.600 Z-0.200 F0.150
+G96 D2500 S150.0
+G1 Z0.030 F0.150
+G1 X17.600 Z0.018 F0.150
+G97 S2500 (CSS-Freifahrt)
 G0 X9.300
 (Pass 20: no cut region in band X[17.600,18.000])
 (Pass 21: no cut region in band X[18.000,18.400])
 (Pass 22: no cut region in band X[18.400,18.800])
-(Pass 23: no cut region in band X[18.800,19.200])
+(Pass 23: no cut region in band X[18.800,19.100])
 G0 X9.300
 G0 Z1.000
 
 (Step 10: abspanen | T11: VCMT Innendrehen)
-(STEP: 11. Abspanen ausdrehen, Parallel Z, Ignorieren 11)
+(STEP: Abspanen ausdrehen, Parallel Z, Ignorieren 11)
 (ABSPANEN)
 (Schlichtaufmaß X/Z: 0.100/0.030 mm)
 G97 S1200 M3
@@ -518,9 +714,8 @@ F0.150
 (Hinterschnitt-Modus: full)
 (Aufmass X/Z: 0.100/0.030)
 (Schlichtschnitt Kontur)
-(WARN: Startpunkt X10.000 Z0.000 liegt im Rohteil)
-G0 Z0.000
-G0 X10.000
+(WARN: Startpunkt X9.300 Z-44.000 liegt im Rohteil)
+G0 Z-44.000
 G1 X10.000 Z-44.000 F0.150
 G1 X11.400 Z-44.000 F0.150
 G1 X12.000 Z-43.400 F0.150
@@ -537,6 +732,7 @@ G1 X16.000 Z-10.000 F0.150
 G1 X16.000 Z-1.000 F0.150
 G3 X18.000 Z0.000 I1.000 K-0.000 F0.150
 G1 X19.200 Z0.000 F0.150
+G0 X9.300
 G0 X9.300
 G0 Z1.000
 (Werkzeug T07)
@@ -571,7 +767,7 @@ T09 M6
 G0 X9.300 Z1.000
 
 (Step 12: thread | T9: Innengewinde MMT11ir AG60)
-(STEP: 13. Gewinde Innengewinde Rechts P 1.75; Z -10.0->-30.0 9)
+(STEP: Gewinde Innengewinde Rechts P 1.75; Z -10.0->-30.0 9)
 G97 S500 M3
 M8
 (Gewindetyp: Innen)

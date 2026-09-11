@@ -620,6 +620,33 @@ def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None
     return lines
 
 
+def append_initial_tool_check(
+    lines: List[str],
+    tool_value: object,
+    settings: Dict[str, object],
+) -> None:
+    """Establish the first tool without assuming a known start position.
+
+    The operator contract is that the machine has been jogged clear before
+    cycle start (after touching off or loading the next identical blank).
+    LinuxCNC's runtime parameter is authoritative for the loaded tool. Only
+    when it differs do we travel to XT/ZT and execute M6. The motion state is
+    deliberately left unknown because LinuxCNC evaluates the conditional.
+    """
+    tool_num = get_tool_number({"tool": tool_value})
+    if tool_num <= 0:
+        return
+    toolchange_lines = move_to_toolchange_pos(settings, "Erster Werkzeugwechsel")
+    lines.append("(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)")
+    lines.append(f"o<les_first_tool> if [#<_current_tool> NE {tool_num}]")
+    if bool(settings.get("optional_stop_toolchange", False)):
+        lines.append("M1")
+    lines.extend(("M5", "M9", *toolchange_lines, f"T{tool_num:02d} M6"))
+    lines.append("o<les_first_tool> endif")
+    settings["_current_tool"] = tool_num
+    _motion_state(settings).clear()
+
+
 def get_approach_warnings(settings: Dict[str, object] | None, start_pos: Tuple[float, float] | None) -> List[str]:
     warnings: List[str] = []
     if settings is None or start_pos is None:
@@ -732,6 +759,7 @@ def get_end_park_lines(settings: Dict[str, object] | None) -> List[str]:
 
 
 __all__ = [
+    "append_initial_tool_check",
     "append_tool_and_spindle",
     "activate_pending_css",
     "emit_approach",

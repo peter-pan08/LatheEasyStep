@@ -31,6 +31,8 @@ def generate_thread_gcode(
     pitch = float(op.params.get("pitch", 1.5))
     if pitch <= 0.0:
         raise ValueError("THREAD pitch muss groesser als 0 sein.")
+    if float(f"{pitch:.4f}") <= 0.0:
+        raise ValueError("THREAD pitch muss auch nach Ausgaberundung groesser als 0 sein.")
     length = float(op.params.get("length", 0.0))
     start_z = float(op.params.get("thread_start_z", 0.0) or 0.0)
     hand_raw = op.params.get("hand", 0)
@@ -61,6 +63,8 @@ def generate_thread_gcode(
     lead_out = finite_float(op.params.get("lead_out", 0.0) or 0.0, "lead_out")
     if major_diameter <= 0 or length <= 0 or 2 * thread_depth >= major_diameter:
         raise ValueError("THREAD Durchmesser, Laenge und Kerndurchmesser muessen positiv sein.")
+    if float(f"{2.0 * thread_depth:.4f}") <= 0.0:
+        raise ValueError("THREAD Gewindetiefe muss auch nach Ausgaberundung groesser als 0 sein.")
     if first_depth > thread_depth:
         raise ValueError("THREAD first_depth darf thread_depth nicht uebersteigen.")
     if retract_r < 1 or spring_passes < 0 or l_val not in (0, 1, 2, 3):
