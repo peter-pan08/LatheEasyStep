@@ -49,9 +49,20 @@ def set_tooltip_deep(self, widget, text: str):
     targets = [widget]
     label_name = f"label_{widget.objectName()}" if hasattr(widget, "objectName") else ""
     if label_name:
-        label = self._get_widget_by_name(label_name)
-        if label is not None:
-            targets.append(label)
+        # Perf (LES-027, 2026-09-10, dritte Runde): der eigentliche
+        # verbleibende Flaschenhals lag NICHT in `apply_registered_tooltips`
+        # selbst (dort bereits auf den Cache umgestellt), sondern HIER -
+        # diese Funktion wird pro Zielwidget aufgerufen und rief bisher fuer
+        # JEDEN Aufruf den teuren, ungecachten `_get_widget_by_name()` fuer
+        # das zugehoerige Label auf (real gemessen: 168 Aufrufe x ~45ms =
+        # ~7.5s, exakt die verbleibende Laufzeit). Die meisten Widgets haben
+        # gar kein zugehoeriges `label_*`-Widget - der teuerste Fall fuer
+        # den ungecachten Lookup (durchsucht den ganzen Baum und findet
+        # trotzdem nichts). `_widgets_by_name()` nutzt denselben Cache wie
+        # der Aufrufer und faellt bei einem Miss automatisch zurueck.
+        labels = self._widgets_by_name(label_name)
+        if labels:
+            targets.append(labels[0])
     try:
         line_edit = widget.lineEdit() if hasattr(widget, "lineEdit") else None
     except Exception:

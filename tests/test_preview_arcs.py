@@ -12,13 +12,19 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import build_contour_path, build_face_path
+from lathe_easystep.contour_features import _tessellate_arc
 
 
 # ---------------------------------------------------------------------------
-# Helper: minimal LathePreviewWidget._sample_arc extracted for testing
+# Helper: LathePreviewWidget._sample_arc extracted for testing
 # ---------------------------------------------------------------------------
-def _sample_arc_under_test(p1, p2, c, ccw, steps=48):
-    """Reproduce the fixed _sample_arc logic for unit testing."""
+def _sample_arc_under_test(p1, p2, c, ccw):
+    """Reproduce the current _sample_arc logic for unit testing.
+
+    LES-012 (2026-09-12): die Vorschau delegiert die eigentliche
+    Bogenzerlegung jetzt an `contour_features._tessellate_arc()` (adaptive,
+    sehnenabweichungsbegrenzte Zerlegung) statt einer eigenen, fest mit 48
+    Schritten sampelnden Kopie."""
     x1, z1 = p1[0] / 2.0, p1[1]
     x2, z2 = p2[0] / 2.0, p2[1]
     xc, zc = c[0] / 2.0, c[1]
@@ -26,21 +32,7 @@ def _sample_arc_under_test(p1, p2, c, ccw, steps=48):
     r2 = math.hypot(x2 - xc, z2 - zc)
     if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
         return [p1, p2]
-    a1 = math.atan2(z1 - zc, x1 - xc)
-    a2 = math.atan2(z2 - zc, x2 - xc)
-    # Inverted convention: G-code ccw → preview CW sweep, and vice versa
-    if not ccw:
-        if a2 <= a1:
-            a2 += 2 * math.pi
-    else:
-        if a2 >= a1:
-            a2 -= 2 * math.pi
-    pts = []
-    for k in range(steps + 1):
-        t = k / steps
-        a = a1 + (a2 - a1) * t
-        pts.append(((xc + r1 * math.cos(a)) * 2.0, zc + r1 * math.sin(a)))
-    return pts
+    return [p1, *_tessellate_arc(p1, p2, c, ccw)]
 
 
 # ===========================================================================
@@ -57,7 +49,7 @@ class TestSampleArcRadiusSpace:
         p1 = (20.0, 0.0)
         p2 = (40.0, -10.0)
         c = (20.0, -10.0)
-        pts = _sample_arc_under_test(p1, p2, c, ccw=True, steps=48)
+        pts = _sample_arc_under_test(p1, p2, c, ccw=True)
         assert len(pts) > 2, "Arc should have more than 2 points"
         # Start matches p1
         assert abs(pts[0][0] - p1[0]) < 0.01
@@ -72,7 +64,7 @@ class TestSampleArcRadiusSpace:
         p1 = (20.0, 0.0)
         p2 = (40.0, -10.0)
         c = (20.0, -10.0)
-        pts = _sample_arc_under_test(p1, p2, c, ccw=True, steps=48)
+        pts = _sample_arc_under_test(p1, p2, c, ccw=True)
         # Expected radius in radius-space: hypot(10-10, 0-(-10)) = 10
         expected_r = 10.0
         cx_r = c[0] / 2.0
@@ -91,9 +83,12 @@ class TestSampleArcRadiusSpace:
         p1 = (20.0, 0.0)
         p2 = (40.0, -10.0)
         c = (20.0, -10.0)
-        pts = _sample_arc_under_test(p1, p2, c, ccw=True, steps=48)
-        # If degenerate, len would be 2 (just [p1, p2])
-        assert len(pts) == 49, f"Expected 49 sample points, got {len(pts)}"
+        pts = _sample_arc_under_test(p1, p2, c, ccw=True)
+        # If degenerate, len would be 2 (just [p1, p2]) - the adaptive
+        # tessellation (LES-012) produces far more than 2 points for a
+        # 90 degree, 10mm-radius arc (segment count depends on the sagitta
+        # tolerance, not a fixed step count, so no exact number is asserted).
+        assert len(pts) > 10, f"Expected a finely tessellated arc, got {len(pts)} points"
 
 
 class TestSampleArcDirection:
@@ -108,7 +103,7 @@ class TestSampleArcDirection:
         p1 = (20.0, 0.0)
         p2 = (40.0, -10.0)
         c = (20.0, -10.0)
-        pts = _sample_arc_under_test(p1, p2, c, ccw=True, steps=48)
+        pts = _sample_arc_under_test(p1, p2, c, ccw=True)
 
         # The correct fillet arc (90° short arc) curves through the
         # upper-right of the center.  All midpoints must have:
@@ -130,7 +125,7 @@ class TestSampleArcDirection:
         p1 = (20.0, 0.0)
         p2 = (40.0, -10.0)
         c = (20.0, -10.0)
-        pts = _sample_arc_under_test(p1, p2, c, ccw=True, steps=48)
+        pts = _sample_arc_under_test(p1, p2, c, ccw=True)
         # Total arc length in radius-space ≈ r * π/2 ≈ 10 * 1.5708 ≈ 15.71
         total_len = 0.0
         for i in range(1, len(pts)):
@@ -160,7 +155,7 @@ class TestSampleArcFromBuildContourPath:
 
         arc = arcs[0]
         pts = _sample_arc_under_test(
-            arc["p1"], arc["p2"], arc["c"], arc["ccw"], steps=48
+            arc["p1"], arc["p2"], arc["c"], arc["ccw"]
         )
         # All points should have X >= 0 (not go to negative diameter)
         # and Z >= -30 (not go below the end of the second segment)

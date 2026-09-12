@@ -52,6 +52,16 @@ def generate_thread_gcode(
     first_depth = automatic_positive("first_depth", max(thread_depth * 0.1, pitch * 0.05))
     raw_peak_offset = op.params.get("peak_offset")
     peak_offset = abs(finite_float(raw_peak_offset, "peak_offset")) if raw_peak_offset not in (None, "") else 0.0
+    # LES-028: ein explizit gesetzter, aber winziger peak_offset (z. B.
+    # 0.00001) war bisher weder exakt 0 (der bestehende "or"-Fallback
+    # greift nur bei EXAKT 0.0) noch gross genug, um im vierstellig
+    # gerundeten I-Wort sichtbar zu bleiben - er verschwand lautlos zu
+    # "I0.0000" statt entweder den Fallback zu bekommen oder abzulehnen.
+    # Behandelt das konsistent mit dem bestehenden Verhalten fuer einen
+    # nicht gesetzten/exakt-0 Wert (derselbe Fallback), statt eine neue,
+    # inkonsistente Fehlerablehnung nur fuer diesen einen Fall einzufuehren.
+    if float(f"{peak_offset:.4f}") <= 0.0:
+        peak_offset = 0.0
     peak_offset = peak_offset or max(first_depth, pitch * 0.05)
     retract_r = finite_float(op.params.get("retract_r", 1.5), "retract_r")
     infeed_q = finite_float(op.params.get("infeed_q", 29.5), "infeed_q")

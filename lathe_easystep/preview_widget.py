@@ -16,6 +16,7 @@ from typing import Dict, List, Tuple
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from .contour_features import _tessellate_arc
 from .gcode_utils import is_internal_side
 from .model import Operation, OpType
 from .preview_geometry import (
@@ -559,10 +560,17 @@ class LathePreviewWidget(QtWidgets.QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def _sample_arc(self, p1, p2, c, ccw, steps=48):
-        # All X values in primitives are DIAMETER (LinuxCNC lathe convention).
-        # The fillet arc is a circle in physical (radius) space, so we must
-        # convert X to radius for correct geometry (angles, distances).
+    def _sample_arc(self, p1, p2, c, ccw):
+        # LES-012: nutzt jetzt dieselbe adaptive, sehnenabweichungs-begrenzte
+        # Bogenzerlegung wie der Generator (`contour_features._tessellate_arc`,
+        # Sehnenabweichung <0.0005mm) statt einer eigenen, fest mit 48
+        # Schritten sampelnden Kopie - Vorschau und erzeugter G-Code teilen
+        # sich damit dieselbe Primitive-Quelle statt zweier unabhaengiger
+        # Implementierungen, die bei sehr kleinen oder sehr grossen Boegen
+        # leicht auseinanderlaufen konnten. Die Degenerations-/Plausibilitaets-
+        # pruefung (r1 nahe 0 oder r1/r2 inkonsistent - kann waehrend der
+        # Live-Kontureingabe kurzzeitig auftreten) bleibt hier bestehen, da
+        # `_tessellate_arc` das nicht separat prueft.
         x1, z1 = p1[0] / 2.0, p1[1]
         x2, z2 = p2[0] / 2.0, p2[1]
         xc, zc = c[0] / 2.0, c[1]
@@ -570,25 +578,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         r2 = math.hypot(x2 - xc, z2 - zc)
         if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
             return [p1, p2]
-        a1 = math.atan2(z1 - zc, x1 - xc)
-        a2 = math.atan2(z2 - zc, x2 - xc)
-        # The primitive's ccw flag follows LinuxCNC G18 complex(Z,X)
-        # convention, but atan2(z,x) measures angle from X toward Z
-        # — opposite rotation sense.  Invert the sweep direction so
-        # the preview arc matches the physical fillet.
-        if not ccw:          # G-code CW (G2) → preview CCW sweep
-            if a2 <= a1:
-                a2 += 2 * math.pi
-        else:                # G-code CCW (G3) → preview CW sweep
-            if a2 >= a1:
-                a2 -= 2 * math.pi
-        pts = []
-        for k in range(steps + 1):
-            t = k / steps
-            a = a1 + (a2 - a1) * t
-            # Sample in radius-space, convert X back to diameter
-            pts.append(((xc + r1 * math.cos(a)) * 2.0, zc + r1 * math.sin(a)))
-        return pts
+        return [p1, *_tessellate_arc(p1, p2, c, ccw)]
 
     def primitives_to_points(self, prims):
         pts = []

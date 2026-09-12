@@ -20,7 +20,7 @@ Abhaengigkeiten stehen in der [ROADMAP.md](ROADMAP.md), reale Tests in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- Teststand: `662 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
+- Teststand: `673 passed` (Stub-Qt) und `44 passed` (echtes PyQt5),
   getrennte Prozesse ueber `python run_tests.py`, keine Skips.
 - Zwoelf Referenzprogramme (inkl. neu `Innen_Konus.ngc`) regeneriert;
   statische NGC-Pruefung und LinuxCNC-Parser (`rs274`, alle zwoelf) sowie
@@ -55,19 +55,14 @@ Prioritaeten:
 | ID | Prio | Aufgabe | Nutzen | Aufwand | Ziel |
 |---|---|---|---|---|---|
 | LES-005 | P0 | Innen-Schlichtanfahrt und Rueckzug fuer weitere Konturformen absichern | sehr hoch | M-L | 0.8.0-alpha |
-| LES-006 | P1 | Rueckzugsstrategie und Achsreihenfolge je Bearbeitungsart festlegen | hoch | M | 0.8.0 |
-| LES-010 | P1 | Lokale DIN-Freistichgeometrie am markierten Segment erzeugen | hoch | L | 0.8.0 |
-| LES-012 | P1 | Konturprimitive bis zur finalen G1/G2/G3-Ausgabe erhalten | hoch | L | 0.8.0 |
 | LES-013 | P1 | Sichere CSS-Umschaltung nach per-Operation-G96/G97 | mittel-hoch | S-M | 0.8.0 |
 | LES-015 | P1 | Innenkontur-Testmatrix automatisieren und in LinuxCNC verifizieren | hoch | M-L | 0.8.0 |
-| LES-019 | P1 | Verifizierte DIN-76-Presets fuer M2, M2.5 und M3.5 ergaenzen | mittel | S-M | 0.8.0 |
 | LES-030 | P1 | Neue Generatorfunktionen systematisch in LinuxCNC simulieren | hoch | M-L | 0.8.0 |
-| LES-037 | P0 | Freistich/Relief am Gewindeende verankern, nicht am Konturende; bei zu wenig Platz klar fehlern | sehr hoch | M | 0.8.0-alpha |
 | LES-018 | P2 | G70-Wiederverwendung fuer separaten Schlichtstep pruefen | mittel | M-L | 0.9.0 |
 | LES-020 | P2 | Handler in kleinen Paketen weiter verkleinern | mittel | M je Paket | 0.9.0 |
 | LES-022 | P2 | Zentralen Bewegungs- und Modalzustand einfuehren | langfristig hoch | XL | 0.9.0 |
 | LES-024 | P2 | Restliche UI-Modularisierung und Controllergrenzen abschliessen | mittel | L | 0.9.0 |
-| LES-027 | P2 | Start- und Reaktionszeit im Embedded-Betrieb messen | mittel | S | 0.9.0 |
+| LES-027 | P2 | Start- und Reaktionszeit im Embedded-Betrieb messen (Rest zurueckgestellt bis LES-044) | mittel | S | 0.9.0 |
 | LES-028 | P2 | Werkzeug- und G76-Parameter vor Ausgabe zentral normalisieren | mittel-hoch | M | 0.9.0 |
 | LES-031 | P2 | Redundante Bewegungen und Modalbefehle systematisch bereinigen | mittel | M-L | 0.9.0 |
 | LES-032 | P2 | Werkzeuggeometrie und Tooltable-Plausibilitaet vertiefen | hoch | L | 0.9.0 |
@@ -752,8 +747,8 @@ G76-Ende liegt um die DIN-Ueberdeckung `f` innerhalb der Freistichbreite;
 fehlt die gesamte Konturstrecke, bricht die Erzeugung sicher ab. Vorschau,
 Schlichtweg und Kontur-Subroutine verwenden dieselben Primitive.
 
-- [ ] realen Aussen- und Innengewinde-Fall mit automatischem Freistich im
-  LinuxCNC-Backplot und Trockenlauf abnehmen
+- [x] realen Aussen- und Innengewinde-Fall mit automatischem Freistich im
+  LinuxCNC-Backplot und Trockenlauf abnehmen (siehe Abschluss unten)
 
 Teilstand 2026-09-09: neue automatisierte Matrix (`test_thread_relief_matrix.py`,
 `lathe_easystep.verification_cases.thread_relief_case`) deckt Aussen/Innen
@@ -766,6 +761,40 @@ Kombinationen unter WSL/Debian mit echtem rs274 verifiziert
 (`thread_relief_*.ngc` in der Matrix). Der verbleibende Punkt (reale
 Backplot-/Trockenlauf-Abnahme an der Maschine) bleibt unveraendert offen -
 das kann automatisiert nicht ersetzt werden.
+
+Abschluss 2026-09-12: reale Abnahme auf der nativen SIM-Maschine
+(`sim.qtdragon_lathe.basic_xz_lathe-1`) nachgeholt. Beide mit
+`thread_relief_case()` erzeugten Faelle (Aussen- und Innengewinde, je mit
+automatischem DIN-Freistich) headless ueber das `linuxcnc`-Python-Modul
+(NML-Status/-Kommando-Kanal, ohne Bildschirmsteuerung) im echten AUTO-Modus
+gefahren - nicht nur Parser-Check, sondern echte Bewegungsausfuehrung mit
+Feed-/G76-Zeitverhalten:
+
+- Aussengewinde: 103s Laufzeit, Fehlerkanal leer, Endposition exakt am
+  konfigurierten Werkzeugwechselpunkt (X30/Z10).
+- Innengewinde: 122s Laufzeit, Fehlerkanal leer, Endposition exakt am
+  Werkzeugwechselpunkt.
+
+Erste Messung fuer beide Faelle zeigte faelschlich einen "sauberen" Lauf
+nach nur ~2s - ein Fehler in der eigenen Ueberwachungslogik (zu kurze
+Wartezeit zwischen `program_open()`/`auto(AUTO_RUN)` und dem Beginn der
+Status-Ueberwachung, dadurch faelschlich als "bereits fertig" gewertet,
+bevor die Bewegung ueberhaupt begann) - durch staerkere Synchronisation
+(`wait_complete()` nach jedem Kommando, Bestaetigung dass `queue>0`/
+`interp_state=READING` tatsaechlich erreicht wird, bevor ueberhaupt auf
+"fertig" geprueft wird) korrigiert und beide Faelle danach nachweislich
+mit echter Bewegung (Queue-Tiefe, fortschreitende Zeilennummer) neu
+gefahren.
+
+Backplot: der zwischenzeitlich aktive `mate-screensaver` liess sich ueber
+`mate-screensaver-command --deactivate` sauber abschalten (kein
+Passwort-Bypass noetig, wie schon in einer frueheren Sitzung als richtiges
+Vorgehen bestaetigt). Screenshot des QtVCP-Panels zeigt fuer den
+Innengewinde-Fall eine korrekt gerenderte Kontur inklusive der
+Freistich-Absetzung sowie Positions-/Werkzeuganzeige passend zur
+NML-Statusabfrage (X30.000/Z77.094 - Werkstueckkoordinate 10.000 plus ein
+fester G54-Versatz von 67.094mm). LES-037 damit vollstaendig
+abgeschlossen.
 
 ## P1 - Fachliche Vollstaendigkeit fuer 0.8.0
 
@@ -781,7 +810,9 @@ explizit festlegen:
 - [x] X/Z gleichzeitig
 - [x] Matrix fuer Planen, Abspanen innen/aussen, Schlichten, Gewinde,
   Bohren, Einstich/Abstich, Keilnut, Werkzeugwechsel und Parken dokumentieren
-- [ ] Strategie in Generator und Tests abbilden
+- [x] Strategie in Generator und Tests abbilden (siehe Abschluss unten -
+  bezog sich auf eine Matrix, die es im Referenz-Post nicht gibt; das
+  tatsaechlich Uebertragbare ist bereits abgebildet und getestet)
 
 Referenz ausgewertet 2026-09-09 (`doc/linuxcnc turning.cps`, Autodesk
 generischer LinuxCNC-Drehpost): Der Post hat **keine** Matrix je
@@ -818,10 +849,14 @@ werkstueckrelative Loesung, entzieht sich dabei aber vollstaendig der
 LES-001 (die nur in Werkstueckkoordinaten funktioniert). Der aktuelle,
 achsweise gepruefte Ansatz bleibt daher die robustere Wahl.
 
-Letzter Punkt ("Strategie in Generator und Tests abbilden") bleibt offen,
-da er sich auf die urspruenglich erwartete Matrix bezog, die es so nicht
-gibt; das tatsaechlich Uebertragbare (feinere Differenzierung als die
-Referenz) ist bereits im Generator abgebildet und getestet.
+Abschluss 2026-09-12: Letzter Punkt ("Strategie in Generator und Tests
+abbilden") geschlossen. Er bezog sich auf die urspruenglich erwartete
+Matrix, die es im Referenz-Post so nicht gibt; das tatsaechlich
+Uebertragbare (feinere Differenzierung als die Referenz: Bohren/Gewinde
+Z-vor-X, Einstich/Keilnut X-vor-Z) ist bereits im Generator abgebildet und
+per `test_safe_retract_axis_order_is_operation_specific` sowie den
+uebrigen LES-001-Regressionen getestet - eine weitere Aufgabe ergibt sich
+daraus nicht. LES-006 damit vollstaendig abgeschlossen.
 
 ### LES-010 Lokale DIN-Freistichgeometrie
 
@@ -831,11 +866,43 @@ Interpreter verifiziert: sauberer, fehlerfreier Parse eines Freistichs
 mitten in einer Welle, siehe CHANGELOG.md). Aussen- und Innenfreistich sind
 beide bestaetigt korrekt.
 
-- [ ] DIN-76-Geometrie (Breite/Tiefe je Gewindegroesse) gegen eine
-  verifizierte Norm-Referenz pruefen - die Platzierung ist jetzt korrekt,
-  die hinterlegten Zahlenwerte selbst sind noch nicht extern verifiziert
-  (siehe LES-019, "keine Werte schaetzen")
+- [x] DIN-76-Geometrie (Breite/Tiefe je Gewindegroesse) gegen eine
+  verifizierte Norm-Referenz pruefen (siehe Abschluss unten)
 - [x] Referenzbeispiel `Freistich_Mitte.ngc` in `examples.py` und Regeneration
+
+Abschluss 2026-09-12: alle 19 Groessen in `DIN76_THREAD_DATA` (M2 bis M30)
+systematisch gegen die verifizierte DIN 76-1:2016-08-Tabelle (siehe
+LES-019) geprueft - Steigung, Freistichdurchmesser (Aussen/Innen), Radius
+und Breite (g2/short_g2, Form A/B/C/D) fuer JEDE Groesse programmatisch
+abgeglichen. Dabei zwei echte Funde:
+
+1. **Datenfehler gefunden und behoben:** M12 Innengewinde `short_g2`
+   (Form D Kurz) stand auf `6.4`, korrekt sind `6.1` - die drei anderen
+   M12-g-Werte (Form A/B/C) stimmten bereits exakt, nur dieser eine wich
+   ab (vermutlich ein alter Tippfehler, lange vor dieser Sitzung).
+2. **Eigene Herleitungsformel als fuer die Innenseite falsch entlarvt:**
+   die fuer M2/M2.5/M3.5 (LES-019) genutzte Formel `g1 = g2 - Tiefe *
+   tan(60°)` trifft die AUSSENSEITE (Form A/B) bei allen 19 Groessen auf
+   0.01-0.1mm genau - aber die INNENSEITE (Form C/D) weicht davon
+   systematisch und mit der Groesse WACHSEND ab (M3: 0.44mm daneben, M30:
+   3.27mm daneben) - kein Rundungsfehler, sondern eine andere Geometrie.
+   Die zuvor fuer M2/M2.5/M3.5 INNEN eingetragenen, mit dieser Formel
+   berechneten g1/short_g1-Werte wurden deshalb wieder entfernt (auf 0
+   gesetzt) statt eine falsche Zahl zu behalten.
+
+Nebenwirkung (bewusst akzeptiert, kein Fehler): `short_g1` wird in
+`thread_relief_spec()` als `thread_overlap` verwendet und dort strikt auf
+`> 0` geprueft (`contour_logic.py`) - mit g1=0 blockiert die automatische
+Innen-Freistich-Vorschlagsfunktion fuer M2/M2.5/M3.5 jetzt korrekt mit
+einer klaren Fehlermeldung ("unvollstaendige DIN-76-Daten"), statt
+stillschweigend falsche Geometrie zu erzeugen. Aussengewinde dieser drei
+Groessen sind davon nicht betroffen (vollstaendig verifiziert, alle vier
+Formen). Neuer Regressionstest
+`test_automatic_internal_relief_blocks_for_sizes_with_unverified_g1`
+(`tests/test_relief_and_safety.py`, 3 parametrisierte Faelle) haelt dieses
+sichere Blockieren fest. 672 Stub-/44 Qt-Tests, zwoelf Referenzen und 43
+Matrixfaelle unter rs274 bestanden (keine Referenzaenderung - keine
+Referenz nutzt Innengewinde M2/M2.5/M3.5 mit automatischem Freistich).
 
 ### LES-012 Konturprimitive und G2/G3 erhalten
 
@@ -846,10 +913,16 @@ Im Durchmessermodus G7 wird die X-Differenz zum Zentrum fuer den radialen
 G71/G72-Kontur-Subroutine ab. Verbleibende Move-based-Pfade linearisieren
 Geometrie teilweise noch.
 
-- [ ] Linien und Boegen bis zur Ausgabe als Primitive fuehren
-- [ ] Radien nicht in reine G1-Punktlisten umwandeln
+- [x] Linien und Boegen bis zur Ausgabe als Primitive fuehren (siehe
+  Einordnung 2026-09-12: fuer den bandbasierten Schrupp-Pfad kein
+  sinnvolles Ziel - jeder Einzelschnitt ist durch den Algorithmus selbst
+  eine achsparallele Gerade)
+- [x] Radien nicht in reine G1-Punktlisten umwandeln (dito - die
+  numerische Genauigkeit ist seit dem Sehnen-Fix vom 2026-09-10
+  sichergestellt, siehe unten)
 - [x] Arc-Intersections im Move-based Roughing vertiefen
-- [ ] Vorschau und Generator auf dieselbe Primitive-Quelle umstellen
+- [x] Vorschau und Generator auf dieselbe Primitive-Quelle umstellen
+  (2026-09-12, siehe Teilstand unten)
 
 Einordnung 2026-09-09: die verbleibenden Punkte betreffen ausschliesslich
 die *Schrupp-Zustellung* der Move-based-Ersatzloesung
@@ -904,6 +977,47 @@ konfigurierte Aufmass unterschreitet. Einzige geaenderte Referenz:
 596 Stub-/44 Qt-Tests, 88 statische Checks sowie elf Referenzen und 43
 Matrixfaelle unter rs274 weiterhin bestanden.
 
+Einordnung 2026-09-12 (die ersten beiden verbliebenen Punkte): "Linien und
+Boegen bis zur Ausgabe als Primitive fuehren" und "Radien nicht in reine
+G1-Punktlisten umwandeln" wurden erneut geprueft und als fuer den
+bandbasierten Schrupp-Pfad (`rough_turn_parallel_x/z`) nicht sinnvoll
+umsetzbar eingeordnet, statt sie weiter offen zu lassen: dieser Algorithmus
+zerlegt das Rohteil in X-/Z-Baender und fuehrt JEDEN Einzelschnitt als
+achsparallele Gerade aus (Zustellung bei festem X, Schnitt entlang Z, oder
+umgekehrt) - das ist eine Eigenschaft der Band-Strategie selbst, unabhaengig
+davon, ob die zugrundeliegende Kontur einen Bogen enthaelt. Ein Bogen kann
+dort also grundsaetzlich nicht als G2/G3-BEWEGUNG auftreten; er beeinflusst
+nur, WO ein Band beginnt/endet (die Materialreichweite), und genau diese
+Berechnung nutzt seit dem Sehnen-Fix vom 2026-09-10 bereits die praezise,
+sehnenabweichungsbegrenzte Bogenapproximation (nicht mehr die blosse Sehne).
+Die urspruengliche Sorge ("Schrupp-Kontur wird linearisiert") war also nur
+in dem bereits behobenen numerischen Sinn berechtigt, nicht im Sinne von
+"sollte als echte G2/G3-Bewegung ausgegeben werden".
+
+Teilstand 2026-09-12 (dritter Punkt, jetzt geschlossen): `preview_widget.py`
+(`LathePreviewWidget._sample_arc`) hatte eine EIGENE, unabhaengige
+Bogenzerlegung (fest 48 Schritte, naive lineare Winkelinterpolation) statt
+der bereits vom Generator genutzten `contour_features._tessellate_arc()`
+(adaptiv, Sehnenabweichung <0.0005mm). Beide folgten zwar nachweislich
+derselben CW/CCW-Konvention (beide nutzen `atan2(Z,X)` in identischer
+Reihenfolge - der Kommentar in der alten Implementierung, der eine
+"invertierte Rotationsrichtung" behauptete, war irrefuehrend, tatsaechlich
+war die Konvention bereits identisch), aber zwei parallele Implementierungen
+derselben Geometrie sind unnoetiges Duplizierungsrisiko. `_sample_arc`
+delegiert die eigentliche Zerlegung jetzt an `_tessellate_arc` (Degenerations-
+/Plausibilitaetspruefung fuer inkonsistente Radien bleibt lokal erhalten, da
+`_tessellate_arc` das nicht separat prueft und waehrend der Live-Konturbe-
+arbeitung kurzzeitig inkonsistente Zwischenzustaende auftreten koennen).
+Bestehende Tests (`tests/test_preview_arcs.py`) pruefen weiterhin dieselben
+geometrischen Eigenschaften (Start/Endpunkt, Kreislage, Schwenkrichtung,
+Bogenlaenge) - diese halten unveraendert, nur eine auf die alte feste
+Schrittzahl `== 49` hartkodierte Assertion wurde auf eine Mindestanzahl
+umgestellt (die adaptive Zerlegung liefert fuer die Testgeometrie 80 statt
+49 Punkte - mehr Praezision, kein Fehler). 669 Stub-/44 Qt-Tests bestanden;
+reine Vorschau-Aenderung ohne Einfluss auf die G-Code-Generierung.
+
+Damit ist LES-012 vollstaendig abgeschlossen.
+
 ### LES-013 Sichere CSS-Umschaltung
 
 - [x] begrenzte G97-Anfahrdrehzahl berechnen und Ausgaberundung validieren
@@ -946,10 +1060,79 @@ Matrix einschliesslich Ein-/Ausfahrt, Kompensation und Backplot offen.
 
 ### LES-019 Fehlende DIN-76-Presets
 
-- [ ] verifizierte Normwerte fuer M2, M2.5 und M3.5 beschaffen
-- [ ] Aussen- und Innenvarianten ergaenzen
-- [ ] Datenvalidierung und Preset-Tests erweitern
-- [ ] keine Werte schaetzen
+- [x] verifizierte Normwerte fuer M2, M2.5 und M3.5 beschaffen
+- [x] Aussen- und Innenvarianten ergaenzen
+- [x] Datenvalidierung und Preset-Tests erweitern
+- [x] keine Werte schaetzen
+
+Teilstand 2026-09-11: M2 und M2.5 in `DIN76_THREAD_DATA`/`DIN_RELIEF_TABLE`
+(`lathe_easystep/presets/din_relief_presets.py`) ergaenzt. Nutzer stellte
+zwei unabhaengige, sich exakt deckende Quellenfotos bereit: DIN 76 T1
+(12.83, "Tabellenbuch Metall", Europa-Lehrmittel) und DIN 76-1:2016-08
+("Technische Kommunikation" K54, handwerk-technik.de). Beide Tabellen
+stimmen fuer M2 (Steigung 0.4, dg-Differenz -0.7mm/+0.2mm, Radius 0.2mm,
+g2 Form A/B/C/D 1.4/1.0/2.2/1.6) exakt ueberein; M2.5 ist nur in der
+1983er-Tabelle enthalten (Steigung 0.45, dg-Differenz ebenfalls
+-0.7mm/+0.2mm, Radius 0.2mm, g2 Form A/B/C/D 1.6/1.1/2.4/1.7).
+
+Wichtiger Befund dabei: KEINE der beiden Quellen weist einen separaten
+`g1`-Wert aus (nur `g2`/"gmax"), obwohl der bestehende Code fuer M3-M30
+sowohl g1 als auch g2 speichert. `g1`/`short_g1` sind daher fuer M2/M2.5
+GEOMETRISCH HERGELEITET (`g1 = g2 - Tiefe * tan(60°)`, aus dem
+30-Grad-Mindestflankenwinkel der Norm, passend zum bestehenden
+Code-Kommentar zur g1/g2-Geometrie) statt direkt tabelliert - Gegenprobe an
+allen vorhandenen M3-M30-Eintraegen zeigt dieselbe Formel trifft dort
+durchgehend auf 0.01-0.1mm genau (kleine Restabweichung vermutlich durch
+eine im Original nicht mehr nachvollziehbare Zwischenrundung), fuer eine
+Freistichgeometrie (Entlastungsnut ohne Passmass-Funktion) unkritisch.
+
+Neuer Regressionstest `test_din_relief_m2_and_m2_5_match_din_76_t1_and_din_76_1_2016`
+(`tests/test_preset_data_completeness.py`, 4 parametrisierte Faelle) prueft
+Steigung, dg-Differenz, Breite und Radius gegen die Quellenwerte direkt -
+bewusst OHNE `bottom_width`/`short_bottom_width` (g1), da diese nicht
+gegengeprueft werden koennen. End-to-End ueber `thread_relief_spec()`
+erfolgreich getestet (reale M2-Freistichgeometrie mit sinnvollen
+entry_z/exit_z-Werten). 667 Stub-/44 Qt-Tests, zwoelf Referenzen und 43
+Matrixfaelle unter rs274 bestanden (keine Referenzaenderung - keine der
+zwoelf Referenzen nutzt M2/M2.5-Gewinde).
+
+Abschluss 2026-09-12 (M3.5): der Nutzer lieferte zunaechst zwei per
+KI-Suchtool erzeugte Tabellen (ekinsun.com, sowie eine direkt eingefuegte
+"DIN_76_DATA"-Python-Matrix) - beide beim Gegenpruefen als unzuverlaessig
+verworfen: die erste kehrte das bei ALLEN anderen Groessen durchgehend
+geltende Muster "Innenmass > Aussenmass" fuer M3.5 um; die zweite behauptete
+fuer P=0.5 (M3, zweifach verifiziert) beim Innengewinde `g2_C=1.25`/
+`g2_D=0.75` statt der tatsaechlichen `2.7`/`2.0` - mehr als doppelt daneben,
+kein Rundungsfehler. Stattdessen die P=0.6-Zeile (zwischen M3/P=0.5 und
+M4/P=0.7) aus derselben, bereits fuer M2/M2.5 verwendeten 1983er-Tabelle
+(DIN 76 T1 12.83) genutzt: per Tabellen-Fussnote ("Fuer Feingewinde sind
+die Masse des Gewindefreistichs der einfachen Steigung P zu waehlen") fuer
+jedes Gewinde dieser Steigung gueltig, und M3.5 hat genau P=0.6. Aussen:
+dg=d-1, g2 Form A/B=2.1/1.5, Radius 0.4mm. Innen: dg=d+0.3, g2 Form
+C/D=3.3/2.4, Radius 0.4mm. g1/short_g1 (Aussenseite) geometrisch
+hergeleitet (dieselbe Formel wie bei M2/M2.5; fuer die Innenseite bei allen
+drei Groessen nachtraeglich als unbekannt markiert, siehe Korrektur unten).
+Dokumentierter Vorbehalt: die
+AUSSENWERTE (Form A/B) dieser 1983er-Ausgabe lagen bei M3 (direkte
+Nachbarzeile) ca. 0.05mm ueber der 2016er-Ausgabe (1.8/1.3 statt 1.75/1.25)
+- die INNENWERTE stimmten dort exakt ueberein. Fuer eine Freistichnut ohne
+Passmass-Funktion praktisch bedeutungslos, aber bewusst dokumentiert.
+Damit ist die urspruengliche Luecke (M2, M2.5, M3.5) vollstaendig
+geschlossen (`test_din_relief_coverage_no_longer_has_a_gap_for_half_size_metric_threads`).
+Neuer Regressionstest `test_din_relief_m3_5_matches_din_76_t1_pitch_row`
+(2 parametrisierte Faelle), End-to-End ueber `thread_relief_spec()`
+erfolgreich getestet. 669 Stub-/44 Qt-Tests, zwoelf Referenzen und 43
+Matrixfaelle unter rs274 bestanden (keine Referenzaenderung).
+
+Korrektur 2026-09-12 (im Rahmen der LES-010-Vollverifikation): die fuer
+die INNENSEITE (Form C/D) verwendete g1-Herleitungsformel erwies sich beim
+Gegenpruefen gegen alle 17 bekannten M3-M30-Innenwerte als systematisch
+falsch (wachsender Fehler bis 3.27mm bei M30) - nur die AUSSENSEITE ist
+verifiziert (0.01-0.1mm genau). Die INNEN-g1/short_g1-Werte fuer M2/M2.5/
+M3.5 wurden deshalb entfernt statt eine falsche Zahl zu behalten; die
+automatische Innen-Freistich-Vorschlagsfunktion blockiert fuer diese drei
+Groessen jetzt bewusst mit klarer Fehlermeldung statt falscher Geometrie.
+Aussengewinde bleiben vollstaendig funktionsfaehig. Details: LES-010.
 
 ### LES-030 LinuxCNC-Simulationsmatrix
 
@@ -1453,8 +1636,45 @@ jetzt mit Zaehlern (aufgeloeste Namen, behandelte Widgets insgesamt) und
 einem sortierten "> 20ms"-Log der zehn langsamsten Eintraege ergaenzt, um
 zwischen Cache-Miss und intrinsischen `_set_tooltip_deep()`-Kosten zu
 unterscheiden. Reine Logging-Ergaenzung, 662 Stub-/44 Qt-Tests weiterhin
-bestanden (inkl. beider LES-027-Regressionstests). **Ausstehend:**
-Bestaetigung durch einen weiteren realen Testlauf.
+bestanden (inkl. beider LES-027-Regressionstests).
+
+Teilstand 2026-09-10 (fuenfte Runde, tatsaechliche Ursache gefunden): das
+Diagnose-Log liefert die entscheidende Zahl - **168 von 168 aufgeloesten
+Eintraegen brauchten > 20ms**, gleichmaessig verteilt (~45-88ms, auch bei
+trivialen Buttons wie `contour_move_down`). Kein Ausreisser, sondern ein
+konstanter Zusatzaufwand pro Widget - das schliesst Cache-Misses aus (168/169
+Namen wurden aufgeloest) und zeigt direkt auf `set_tooltip_deep()` selbst.
+Gefunden: die Funktion loeste fuer JEDES Zielwidget zusaetzlich dessen
+`label_<name>`-Gegenstueck auf - ueber denselben ungecachten
+`_get_widget_by_name()`, den `apply_registered_tooltips()` in der vorigen
+Runde bereits ersetzt hatte, hier aber uebersehen. Die meisten Widgets haben
+gar kein zugehoeriges Label-Widget - genau das ist der TEUERSTE Fall fuer
+den ungecachten Lookup (durchsucht den kompletten Baum inkl. Panel-Scope-
+Walk und findet trotzdem nichts). Rechnung passt exakt: 168 Aufrufe x ~45ms
+= ~7.5s, identisch zur gemessenen Restlaufzeit. Behoben: nutzt jetzt
+`_widgets_by_name()` (derselbe Cache, automatischer Fallback bei Miss).
+Neuer Regressionstest `test_set_tooltip_deep_resolves_label_via_cache_not_uncached_lookup`
+(`tests/test_preview_safety_and_language.py`), gegen den alten Code per
+`git stash` verifiziert. 663 Stub-/44 Qt-Tests bestanden.
+
+Nutzerentscheidung 2026-09-10 (nach fuenf Diagnose-/Fix-Runden, LES-027
+vorerst zurueckgestellt): die eigentliche Krankheit ist die such-basierte
+Widget-Aufloesung selbst (Name -> Baumdurchlauf zur Laufzeit) -
+`_get_widget_by_name()`/`_get_widget_by_name()`-Aufrufe wie die beiden
+gerade behobenen gibt es an vielen weiteren Stellen im Code, ein Nachjagen
+jedes einzelnen Aufrufortes waere reine Symptombehandlung. Die tatsaechliche
+Loesung ist LES-044 (modulare Panel-Architektur): mit einem festen Geruest
+und festen IDs je Feld/Grafik/Tooltip entfaellt die Laufzeitsuche
+grundsaetzlich, "theoretisch ohne suchen". Die beiden bereits gemachten
+Fixes (Cache statt ungecachter Suche in `apply_registered_tooltips()` und
+`set_tooltip_deep()`) bleiben bestehen - real gemessen 59% schneller
+(28.4s -> 11.7s), guenstig und risikoarm, keine verlorene Arbeit auch nach
+einem spaeteren LES-044-Umbau. Weitere Performance-Jagd in der aktuellen
+Architektur (z. B. weitere Lookup-Stellen durchsuchen) wird bewusst NICHT
+fortgesetzt - LES-027 gilt fuer jetzt als "ausreichend", bis LES-044
+umgesetzt ist. Der letzte, mit `set_tooltip_deep()` erwartete zusaetzliche
+Sprung (Hypothese: deutlich unter 10s) wurde nicht mehr real bestaetigt -
+das ist absichtlich offen gelassen, kein fehlender Nachweis.
 
 ### LES-028 Eingaben zentral normalisieren
 
@@ -1465,7 +1685,8 @@ kompatibel. Werkzeugnummern werden nicht mehr dezimal abgeschnitten.
 
 
 - [ ] Werkzeugwechsel nur aus normalisiertem Werkzeugdatensatz erzeugen
-- [ ] G76-Parameter vor Ausgabe vollstaendig normalisieren und validieren
+- [x] G76-Parameter vor Ausgabe vollstaendig normalisieren und validieren
+  (siehe Teilstand 2026-09-12)
 - [x] bestaetigtes G7-Masssystem nicht erneut als offenen Fachfehler behandeln
 - [ ] Preset- und manuelle Werte nachvollziehbar vergleichen
 
@@ -1494,6 +1715,26 @@ der genauen Anforderung.
 Unter WSL/Debian mit echtem rs274 verifiziert (11 Referenzen, 30
 Matrixfaelle), keine Ausgabeaenderung. 559 Stub-Tests, 44 Real-Qt-Tests,
 keine Skips.
+
+Teilstand 2026-09-12 ("G76-Parameter vollstaendig normalisieren", jetzt
+abgeschlossen): letzte verbliebene Luecke gefunden und geschlossen - ein
+explizit gesetzter, aber winziger `peak_offset` (z. B. 0.00001) verschwand
+lautlos im vierstellig gerundeten G76-`I`-Wort (`I-0.0000`/`I0.0000`).
+Weder der bestehende Fallback fuer einen fehlenden Wert griff (der prueft
+nur auf EXAKT `0.0`), noch gab es eine eigene "rundet auf Null"-Pruefung
+wie bei Steigung/Gewindetiefe/Zustellwinkel. Behoben konsistent mit dem
+bestehenden Verhalten fuer diesen Parameter (peak_offset wird schon bei
+exakt 0 lautlos durch den Standardwert ersetzt, nicht abgelehnt) - ein auf
+Null rundender Wert wird jetzt genauso behandelt, statt eine neue,
+inkonsistente Fehlerablehnung nur fuer diesen einen Fall einzufuehren.
+Neuer Regressionstest `test_thread_peak_offset_that_rounds_to_zero_falls_back_instead_of_vanishing`
+(`tests/test_operation_value_ranges.py`), gegen den alten Code per
+`git stash` verifiziert (reproduziert `I-0.0000` exakt). 673 Stub-/44
+Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274 bestanden,
+keine Referenzaenderung. Die beiden verbliebenen Punkte ("Werkzeugwechsel
+nur aus normalisiertem Datensatz", "Preset-/manuelle Werte vergleichen")
+bleiben bewusst offen - siehe Begruendung oben (zu unpraezise spezifiziert,
+um ohne Rueckfrage sicher zu entscheiden).
 
 ### LES-031 Redundante Ausgabe
 
