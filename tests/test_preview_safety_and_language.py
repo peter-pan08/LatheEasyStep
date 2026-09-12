@@ -8,7 +8,7 @@ from lathe_easystep.presets import validate_thread_preset_data
 from lathe_easystep.preview_geometry import build_chuck_nogo_primitives
 from lathe_easystep.ui_signals import connect_language_signal
 from lathe_easystep.ui_signals import connect_global_form_signals
-from lathe_easystep.ui_tooltips import apply_registered_tooltips
+from lathe_easystep.ui_tooltips import apply_registered_tooltips, set_tooltip_deep
 from lathe_easystep.ui_visibility import handle_global_change
 from lathe_easystep.translations import TRANSLATIONS
 from lathe_easystep_handler import (
@@ -526,6 +526,41 @@ def test_apply_registered_tooltips_uses_widget_name_cache_and_covers_all_matches
     assert widget_b in [w for w, _ in calls]
     assert widget_a.props.get("tooltip_key") == "tooltip.program_npv"
     assert widget_b.props.get("tooltip_key") == "tooltip.program_npv"
+
+
+def test_set_tooltip_deep_resolves_label_via_cache_not_uncached_lookup():
+    """Perf-Fund LES-027 2026-09-10 (dritte Runde): der eigentliche
+    verbleibende Flaschenhals lag nicht in `apply_registered_tooltips()`
+    selbst, sondern in `set_tooltip_deep()` - fuer JEDES Zielwidget rief
+    sie den teuren, ungecachten `_get_widget_by_name()` fuer das
+    zugehoerige `label_*`-Widget auf, auch wenn (der haeufigste Fall) gar
+    kein solches Label existiert (real gemessen: 168 Aufrufe x ~45ms =
+    ~7.5s, gleichmaessig auf praktisch jeden Eintrag verteilt - passt exakt
+    zur verbleibenden Laufzeit nach dem vorherigen Fix). Muss jetzt den
+    Cache (`_widgets_by_name()`) nutzen, findet das Label aber weiterhin."""
+    class _Widget:
+        def __init__(self, name):
+            self._name = name
+            self.tooltip_calls = []
+
+        def objectName(self):
+            return self._name
+
+        def setToolTip(self, text):
+            self.tooltip_calls.append(text)
+
+    widget = _Widget("foo")
+    label = _Widget("label_foo")
+    handler = object.__new__(HandlerClass)
+    handler._widgets_by_name = lambda name: [label] if name == "label_foo" else []
+    handler._get_widget_by_name = lambda name: (_ for _ in ()).throw(
+        AssertionError(f"ungecachter Lookup fuer '{name}' haette vermieden werden sollen")
+    )
+
+    set_tooltip_deep(handler, widget, "Hallo")
+
+    assert "Hallo" in widget.tooltip_calls
+    assert "Hallo" in label.tooltip_calls
 
 
 def test_apply_widget_property_translations_skips_already_registered_tooltips():

@@ -2,6 +2,163 @@
 
 ## [Unreleased]
 
+### LES-037 abgeschlossen: reale Aussen-/Innengewinde-Freistichfaelle auf SIM-Maschine gefahren und Backplot geprueft 2026-09-12
+
+- Letzter offener Punkt von LES-037 (reale Backplot-/Trockenlauf-Abnahme,
+  nicht nur automatisierte rs274-Parserpruefung) auf der nativen SIM-Maschine
+  `sim.qtdragon_lathe.basic_xz_lathe-1` nachgeholt: beide mit
+  `lathe_easystep.verification_cases.thread_relief_case()` erzeugten Faelle
+  (Aussen- und Innengewinde, je mit automatischem DIN-Freistich) headless
+  ueber das `linuxcnc`-Python-Modul im echten AUTO-Modus gefahren.
+- Aussengewinde 103s, Innengewinde 122s Laufzeit, beide mit leerem
+  Fehlerkanal und Endposition exakt am konfigurierten Werkzeugwechselpunkt.
+  Backplot per Screenshot visuell bestaetigt (inkl. sichtbarer
+  Freistich-Absetzung).
+- Eigener Messfehler im ersten Anlauf gefunden und behoben: die
+  Ueberwachungslogik wertete beide Laeufe zunaechst faelschlich nach ~2s als
+  "sauber abgeschlossen", weil die Statusabfrage begann, bevor die Bewegung
+  ueberhaupt gestartet war. Durch staerkere Synchronisation
+  (`wait_complete()` je Kommando, Bestaetigung von `queue>0`/
+  `interp_state=READING` vor jeder "fertig"-Pruefung) korrigiert und beide
+  Faelle danach mit nachweislich echter Bewegung neu gefahren.
+- Keine Code-/Testaenderung in diesem Schritt (reine Maschinenabnahme). 673
+  Stub-/44 Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274
+  weiterhin unveraendert bestanden. Details: TODO.md.
+
+### LES-028 G76-Parametervalidierung abgeschlossen: peak_offset konnte lautlos verschwinden 2026-09-12
+
+- Ein explizit gesetzter, aber winziger `peak_offset` (z. B. 0.00001)
+  verschwand lautlos im vierstellig gerundeten G76-`I`-Wort
+  (`I-0.0000`/`I0.0000`) - weder der bestehende Fallback (nur fuer exakt
+  `0.0`) noch eine "rundet auf Null"-Pruefung (wie bei Steigung/
+  Gewindetiefe/Zustellwinkel bereits vorhanden) griff.
+- Behoben konsistent mit dem bestehenden Verhalten: ein auf Null
+  rundender Wert wird jetzt wie ein fehlender behandelt und durch den
+  Standardwert ersetzt, statt eine neue, inkonsistente Fehlerablehnung
+  nur fuer diesen einen Parameter einzufuehren. Neuer Regressionstest,
+  gegen den alten Code verifiziert (reproduziert `I-0.0000` exakt). 673
+  Stub-/44 Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274
+  bestanden, keine Referenzaenderung. LES-028 ("G76-Parameter vollstaendig
+  normalisieren") damit abgeschlossen; zwei bewusst offen gebliebene
+  Punkte sind zu unpraezise spezifiziert fuer eine Entscheidung ohne
+  Rueckfrage. Details: TODO.md.
+
+### LES-010 abgeschlossen: komplette DIN-76-Tabelle verifiziert, ein Datenfehler und eine falsche Herleitung gefunden 2026-09-12
+
+- Alle 19 Groessen in `DIN76_THREAD_DATA` (M2-M30) systematisch gegen die
+  verifizierte DIN 76-1:2016-08-Tabelle geprueft (Steigung, dg, Radius,
+  g2/short_g2 fuer alle vier Formen).
+- **Datenfehler gefunden und behoben:** M12 Innengewinde `short_g2` (Form
+  D Kurz) stand auf `6.4`, korrekt sind `6.1` (die drei anderen M12-Werte
+  stimmten bereits exakt).
+- **Eigene g1-Herleitungsformel als fuer die Innenseite falsch entlarvt:**
+  `g1 = g2 - Tiefe*tan(60°)` trifft die Aussenseite bei allen 19 Groessen
+  auf 0.01-0.1mm genau, weicht bei der Innenseite aber systematisch und
+  mit der Groesse wachsend ab (M3: 0.44mm daneben, M30: 3.27mm daneben) -
+  kein Rundungsfehler. Die damit berechneten Innen-g1-Werte fuer M2/M2.5/
+  M3.5 (LES-019) wurden deshalb wieder entfernt statt eine falsche Zahl zu
+  behalten.
+- Nebenwirkung (bewusst akzeptiert): die automatische Innen-Freistich-
+  Vorschlagsfunktion blockiert fuer M2/M2.5/M3.5 jetzt korrekt mit klarer
+  Fehlermeldung statt stillschweigend falscher Geometrie (`short_g1` wird
+  als `thread_overlap` streng auf `>0` geprueft). Aussengewinde dieser
+  Groessen bleiben vollstaendig funktionsfaehig. Neuer Regressionstest (3
+  parametrisierte Faelle) haelt das sichere Blockieren fest. 672 Stub-/44
+  Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274 bestanden
+  (keine Referenzaenderung). Details: TODO.md LES-010/LES-019.
+
+### LES-012 abgeschlossen: Vorschau nutzt jetzt dieselbe Bogenzerlegung wie der Generator 2026-09-12
+
+- `LathePreviewWidget._sample_arc()` hatte eine eigene, unabhaengige
+  Bogenzerlegung (fest 48 Schritte, naive lineare Winkelinterpolation)
+  statt der vom Generator bereits genutzten `contour_features._tessellate_arc()`
+  (adaptiv, Sehnenabweichung <0.0005mm). Delegiert die eigentliche
+  Zerlegung jetzt dorthin - Vorschau und erzeugter G-Code teilen sich
+  damit dieselbe Primitive-Quelle statt zweier parallel gepflegter
+  Implementierungen. Die Degenerations-/Plausibilitaetspruefung fuer
+  inkonsistente Radien (kann waehrend der Live-Konturbearbeitung
+  kurzzeitig auftreten) bleibt lokal in der Vorschau erhalten.
+- Die beiden anderen verbliebenen LES-012-Punkte ("Linien/Boegen bis zur
+  Ausgabe als Primitive fuehren", "Radien nicht in reine G1-Punktlisten
+  umwandeln") wurden erneut geprueft und als fuer den bandbasierten
+  Schrupp-Pfad (`rough_turn_parallel_x/z`) nicht sinnvoll umsetzbar
+  eingeordnet: jeder Einzelschnitt ist durch die Band-Strategie selbst
+  eine achsparallele Gerade, ein Bogen kann dort grundsaetzlich nicht als
+  G2/G3-Bewegung auftreten. Die numerische Genauigkeit der Materialreich-
+  weiten-Berechnung (wo ein Band beginnt/endet) ist bereits seit dem
+  Sehnen-Fix vom 2026-09-10 sichergestellt.
+- Bestehende Tests (`tests/test_preview_arcs.py`) pruefen weiterhin
+  dieselben geometrischen Eigenschaften; eine auf die alte feste
+  Schrittzahl hartkodierte Assertion wurde auf eine Mindestanzahl
+  umgestellt (adaptive Zerlegung liefert fuer die Testgeometrie 80 statt
+  49 Punkte). 669 Stub-/44 Qt-Tests bestanden; reine Vorschau-Aenderung
+  ohne Einfluss auf die G-Code-Generierung. LES-012 damit vollstaendig
+  abgeschlossen. Details: TODO.md.
+
+### LES-019 M3.5 DIN-76-Freistichpreset ergaenzt, Luecke vollstaendig geschlossen 2026-09-12
+
+- Zwei vom Nutzer gefundene, per KI-Suchtool erzeugte Tabellen fuer M3.5
+  beim Gegenpruefen als unzuverlaessig verworfen (eine kehrte das bei allen
+  anderen Groessen geltende Muster "Innenmass > Aussenmass" um; die andere
+  behauptete fuer das bereits zweifach verifizierte M3 beim Innengewinde
+  Werte, die um mehr als das Doppelte von den echten abweichen).
+- Stattdessen die P=0.6-Zeile (zwischen M3 und M4) aus derselben, fuer
+  M2/M2.5 bereits genutzten 1983er-Tabelle (DIN 76 T1 12.83) verwendet -
+  per Tabellen-Fussnote fuer jedes Gewinde dieser Steigung gueltig, und
+  M3.5 hat genau P=0.6. g1/short_g1 wieder geometrisch hergeleitet.
+  Dokumentierter Vorbehalt: die Aussenwerte dieser 1983er-Ausgabe lagen bei
+  M3 ca. 0.05mm ueber der 2016er-Ausgabe - fuer eine Freistichnut ohne
+  Passmass-Funktion praktisch bedeutungslos.
+- Die urspruengliche Luecke (M2, M2.5, M3.5 ohne DIN-76-Freistichdaten)
+  ist damit vollstaendig geschlossen. Neuer Regressionstest, End-to-End
+  verifiziert. 669 Stub-/44 Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle
+  unter rs274 bestanden (keine Referenzaenderung). Details: TODO.md
+  LES-019.
+
+### LES-019 M2/M2.5 DIN-76-Freistichpresets ergaenzt 2026-09-11
+
+- Nutzer stellte zwei unabhaengige, sich exakt deckende Quellenfotos bereit
+  (DIN 76 T1 12.83, "Tabellenbuch Metall" Europa-Lehrmittel, sowie DIN
+  76-1:2016-08, "Technische Kommunikation" K54 handwerk-technik.de). M2 und
+  M2.5 in `DIN76_THREAD_DATA`/`DIN_RELIEF_TABLE` ergaenzt (Steigung,
+  Freistichdurchmesser-Differenz, Breite g2 Form A/B/C/D, Radius - alles
+  direkt aus den Quellen).
+- Keine der beiden Quellen weist einen separaten `g1`-Wert aus (nur `g2`) -
+  `g1`/`short_g1` daher geometrisch hergeleitet (`g1 = g2 - Tiefe *
+  tan(60°)`, aus dem 30°-Mindestflankenwinkel der Norm), gegen alle
+  vorhandenen M3-M30-Eintraege verifiziert (trifft durchgehend auf
+  0.01-0.1mm genau).
+- M3.5 bleibt offen - fehlt in beiden Quellen (kein eigener
+  Tabelleneintrag), explizit dokumentiert statt geschaetzt.
+- Neuer Regressionstest (4 parametrisierte Faelle), End-to-End ueber
+  `thread_relief_spec()` verifiziert. 667 Stub-/44 Qt-Tests, zwoelf
+  Referenzen und 43 Matrixfaelle unter rs274 bestanden (keine
+  Referenzaenderung). Details: TODO.md LES-019.
+
+### LES-027 Fix: tatsaechliche Ursache der restlichen 6.7s gefunden 2026-09-10
+
+- Diagnose-Log zeigte 168/168 aufgeloeste Eintraege gleichmaessig > 20ms
+  (~45-88ms, auch bei trivialen Buttons) - kein Ausreisser, sondern
+  konstanter Zusatzaufwand pro Widget. `set_tooltip_deep()` loeste fuer
+  JEDES Zielwidget zusaetzlich dessen `label_<name>`-Gegenstueck ueber den
+  ungecachten `_get_widget_by_name()` auf - denselben teuren Pfad, den die
+  vorige Runde in `apply_registered_tooltips()` bereits ersetzt hatte,
+  hier aber uebersehen. Die meisten Widgets haben gar kein Label-Widget -
+  der teuerste Fall fuer den ungecachten Lookup (kompletter Baum-/
+  Panel-Scope-Walk, findet trotzdem nichts). 168 x ~45ms ≈ 7.5s - passt
+  exakt zur gemessenen Restlaufzeit.
+- Behoben: nutzt jetzt `_widgets_by_name()` (Cache mit automatischem
+  Fallback). Neuer Regressionstest, gegen den alten Code verifiziert
+  (`git stash`). 663 Stub-/44 Qt-Tests bestanden.
+- **Nutzerentscheidung:** LES-027 damit vorerst zurueckgestellt. Die
+  eigentliche Krankheit ist die such-basierte Widget-Aufloesung selbst,
+  nicht nur diese zwei Fundstellen - die echte Loesung ist LES-044
+  (modulare Panel-Architektur mit festen IDs statt Laufzeitsuche). Die
+  beiden bereits gemachten Fixes bleiben bestehen (real 59% schneller,
+  28.4s -> 11.7s), weitere Performance-Jagd in der aktuellen Architektur
+  wird bewusst nicht fortgesetzt. Details: TODO.md
+  LES-027.
+
 ### LES-027 Bestaetigt: -59% Startzeit, Restbefund bei apply_registered_tooltips 2026-09-10
 
 - Realer Testlauf bestaetigt den vorherigen Fix: Gesamtstartzeit sank von

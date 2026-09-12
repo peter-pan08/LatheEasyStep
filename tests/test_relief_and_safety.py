@@ -268,6 +268,36 @@ def test_automatic_thread_relief_uses_din_short_form_before_a_near_shoulder():
     assert vertical_rough_lines[0]["p2"] == [30.0, -35.0]
 
 
+@pytest.mark.parametrize("size,diameter", [("M2", 2.0), ("M2.5", 2.5), ("M3.5", 3.5)])
+def test_automatic_internal_relief_blocks_for_sizes_with_unverified_g1(size, diameter):
+    """LES-010/LES-019 2026-09-12: fuer M2/M2.5/M3.5 sind Steigung, dg,
+    Radius und g2 (Breite) extern verifiziert (siehe TODO.md), aber `g1`
+    (`short_g1`, hier als `thread_overlap` verwendet) NUR fuer die
+    Aussenseite - die fuer die Aussenseite verifizierte Herleitungsformel
+    (g1 = g2 - Tiefe*tan(60 Grad)) erwies sich bei der Vollverifikation der
+    gesamten Tabelle (M3-M30) fuer die INNENSEITE als nachweislich falsch
+    (wachsender Fehler bis 3.27mm bei M30, keine kleine Rundungsungenauigkeit).
+    Statt eines geratenen Werts blockiert die automatische Innen-Freistich-
+    Erzeugung fuer diese drei Groessen deshalb bewusst mit einer klaren
+    Fehlermeldung, statt stillschweigend falsche Geometrie zu erzeugen -
+    dieser Test haelt genau dieses sichere Blockieren fest. Aussengewinde
+    dieser Groessen sind davon nicht betroffen (vollstaendig verifiziert)."""
+    with pytest.raises(ValueError, match="unvollstaendige DIN-76-Daten"):
+        thread_relief_spec({
+            "major_diameter": diameter, "length": 8.0, "thread_start_z": 0.0,
+            "orientation": "internal", "hand": "right",
+            "relief_mode": "suggest_din_relief", "relief_norm": "DIN 76-A",
+        })
+    # Aussengewinde derselben Groesse funktioniert weiterhin vollstaendig.
+    feature = thread_relief_spec({
+        "major_diameter": diameter, "length": 8.0, "thread_start_z": 0.0,
+        "orientation": "external", "hand": "right",
+        "relief_mode": "suggest_din_relief", "relief_norm": "DIN 76-A",
+    })
+    assert feature is not None
+    assert feature["thread_overlap"] > 0.0
+
+
 def test_toolchange_has_m5_before_each_m6():
     settings = make_program_settings()
     operations = [
