@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+### LES-047 (Teil 1): "Aenderungen speichern" liess fehlende Step-Datei-Verknuepfung unbemerkt 2026-09-13
+
+- Nutzerbericht: nach dem Laden eines Programms mit urspruenglich einzeln
+  gespeicherten Steps wurden Aenderungen ueber "Aenderungen speichern"
+  scheinbar nicht in die Step-Dateien uebernommen.
+- Der Kern-Mechanismus selbst ist korrekt (direkt getestet: die Step-
+  Datei-Verknuepfung uebersteht einen vollstaendigen Speichern/Laden-
+  Rundlauf, und die Formular-Sync-Logik ist bereits gezielt dagegen
+  abgesichert, sie beim Bearbeiten zu verlieren).
+- Aber ein echter, real reproduzierter Fehler in `handle_save_changes()`
+  gefunden: ein geaenderter Step OHNE Verknuepfung wurde bisher VOELLIG
+  STILL uebersprungen - die Abschlussmeldung zeigte trotzdem "Erfolg" (nur
+  die Anzahl der TATSAECHLICH gespeicherten Steps), ohne zu erwaehnen,
+  dass ein anderer geaenderter Step dabei komplett uebersprungen wurde.
+  Genau das erklaert den Bericht.
+- Behoben: eine explizite Warnung mit der Anzahl betroffener Steps wird
+  jetzt angehaengt. Neuer Regressionstest, per `git stash` gegen den alten
+  Code verifiziert (reproduziert exakt die alte, irrefuehrende Meldung).
+
+### LES-047 (Teil 2): "Aenderungen speichern" fordert fehlende Step-Datei-Verknuepfung jetzt automatisch ein 2026-09-13
+
+- Nutzervorgabe ("Das soll automatisch funktionieren"): der bereits beim
+  Anlegen eines neuen Steps geltende Zwang (Step-Datei anlegen ODER eine
+  bestehende laden, geloest erst durch Loeschen des Steps im Panel) galt
+  bisher nicht fuer "Aenderungen speichern" - ein unverknuepfter Step
+  wurde dort nur noch gewarnt.
+- Jetzt konsistent: `handle_save_changes()` ruft fuer jeden geaenderten,
+  unverknuepften Step denselben Verknuepfungs-Dialog auf wie "Programm
+  speichern". Akzeptiert der Nutzer, wird der Step automatisch verknuepft
+  und sein aktueller Inhalt sofort gespeichert - keine separate manuelle
+  Aktion mehr noetig. Bricht der Nutzer ab, bleibt es bei der Warnung aus
+  Teil 1 (kein harter Abbruch der gesamten Aktion).
+- Zwei neue Regressionstests, je per `git stash` gegen den alten Code
+  verifiziert. 683 Stub-/44 Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle
+  unter rs274 bestanden, keine Referenzaenderung. Details: TODO.md.
+
+### LES-042 abgeschlossen: TURN/BORE-Kuehlmittelfehler behoben (reale Belege statt Vermutung) 2026-09-13
+
+- Die Kernfrage ("muessen alte gespeicherte TURN/BORE-Programme weiter
+  ladbar sein?") liess sich mit realen Belegen beantworten: das
+  Speicherformat hat seit Projektbeginn nur eine einzige Version, keine
+  op-typ-spezifische Ablehnung oder Migration existiert. Ein alt
+  gespeichertes Programm mit TURN/BORE-Step laedt deshalb heute
+  unveraendert und wird vom Dispatcher weiterhin an `gcode_for_turn`/
+  `gcode_for_bore` gereicht - kein toter Code.
+- Damit war der urspruengliche Fund ein echter, ueber alte Dateien
+  erreichbarer Bug: beide Funktionen gaben Kuehlmittel per direktem `M8`
+  aus, ohne je `M9` auszugeben - eine Operation mit `coolant=False` liess
+  zuvor aktiviertes Kuehlmittel einfach weiterlaufen. Behoben: beide
+  nutzen jetzt `emit_coolant()` wie alle anderen Operationstypen.
+- Neuer Regressionstest, per `git stash` gegen den alten Code verifiziert
+  (beide Faelle schlagen ohne den Fix fehl). 681 Stub-/44 Qt-Tests, zwoelf
+  Referenzen und 43 Matrixfaelle unter rs274 bestanden, keine
+  Referenzaenderung. Details: TODO.md.
+
 ### LES-022 (vierte Etappe): Positions-Nachverfolgung durch die Schrupp-Baender 2026-09-13
 
 - Die zuvor als "deutlich groessere Etappe" zurueckgestellte Positions-

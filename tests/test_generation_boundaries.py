@@ -644,6 +644,11 @@ def test_save_changes_preserves_dirty_state_when_not_all_steps_saved(tmp_path, m
         _step_file_path=lambda op: op.params.get("__step_file_path"),
         _operation_to_step_data=operation_to_step_data, _remember_dialog_path=lambda *a, **k: None,
         _normalized_file_path=lambda path: path, _clear_dirty_state=lambda: cleared.append(True),
+        # LES-047: "Aenderungen speichern" fordert eine fehlende Step-Datei-
+        # Verknuepfung jetzt genauso ein wie "Programm speichern" - hier
+        # simuliert als vom Nutzer abgebrochener Dialog (weiterhin
+        # unverknuepft, kein harter Fehler).
+        _ensure_step_file_link=lambda *a, **k: False,
     )
     monkeypatch.setattr(ui_persistence, "_tr",
                         lambda handler, key, **kw: f"{key} {kw}")

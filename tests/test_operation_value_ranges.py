@@ -71,6 +71,32 @@ def test_legacy_turn_and_bore_reject_invalid_feed(generator, op_type, feed):
         generator(op, {})
 
 
+@pytest.mark.parametrize("generator,op_type", [(gcode_for_turn, OpType.TURN), (gcode_for_bore, OpType.BORE)])
+def test_legacy_turn_and_bore_switch_coolant_off_instead_of_leaving_it_running(generator, op_type):
+    """LES-042 SICHERHEITSFUND 2026-09-13: TURN/BORE gaben Kuehlmittel bisher
+    per direktem 'M8' aus, aber NIE ein zugehoeriges 'M9' - eine Operation
+    mit coolant=False liess ein zuvor per M8 laufendes Kuehlmittel einfach
+    weiterlaufen, statt es abzuschalten. Diese Operationstypen sind ueber
+    die UI nicht mehr erstellbar, aber ueber alte gespeicherte Programme
+    (unveraendertes Dateiformat seit Version 1, keine ablehnende Migration)
+    weiterhin ladbar und generierbar - kein toter Code. `emit_coolant()`
+    gibt jetzt wie bei jeder anderen Operation immer explizit den
+    aktuellen Sollzustand aus."""
+    # Zeile direkt nach dem Spindelstart ("G97 S.. M3") ist die
+    # Kuehlmittel-Ausgabe dieser Operation - nicht einfach "M9" IRGENDWO in
+    # der Ausgabe suchen, das erscheint bereits unabhaengig davon im
+    # Werkzeugwechsel-Vorlauf (M5/M9 vor jedem Toolchange).
+    settings = {"xt": 150.0, "zt": 300.0}
+    op_on = Operation(op_type, {"tool": 1, "spindle": 800.0, "feed": 0.2, "coolant": True}, [(20.0, 0.0), (20.0, -10.0)])
+    lines_on = generator(op_on, dict(settings))
+    spindle_idx = next(i for i, l in enumerate(lines_on) if l.startswith("G97 "))
+    assert lines_on[spindle_idx + 1] == "M8"
+    op_off = Operation(op_type, {"tool": 1, "spindle": 800.0, "feed": 0.2, "coolant": False}, [(20.0, 0.0), (20.0, -10.0)])
+    lines_off = generator(op_off, dict(settings))
+    spindle_idx = next(i for i, l in enumerate(lines_off) if l.startswith("G97 "))
+    assert lines_off[spindle_idx + 1] == "M9"
+
+
 def test_thread_peak_offset_that_rounds_to_zero_falls_back_instead_of_vanishing():
     """LES-028 2026-09-12: ein explizit gesetzter, aber winziger
     `peak_offset` (0.00001) verschwand bisher lautlos im vierstellig

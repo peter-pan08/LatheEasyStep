@@ -287,6 +287,113 @@ def test_save_changes_writes_only_dirty_steps_and_dirty_program(tmp_path):
     assert gcode_calls == [str(gcode_path)]
 
 
+def _save_changes_two_ops_handler(tmp_path, *, op_a_linked: bool):
+    orig_init = HandlerClass.__init__
+    HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
+    handler = HandlerClass(None, None, None)
+    HandlerClass.__init__ = orig_init
+
+    step_a = tmp_path / "01.step.json"
+    step_b = tmp_path / "02.step.json"
+    program_path = tmp_path / "test.lse"
+    gcode_path = tmp_path / "test.ngc"
+    op_a_params = {"tool": 1}
+    if op_a_linked:
+        op_a_params["__step_file_path"] = str(step_a)
+    op_a = Operation(OpType.FACE, params=op_a_params, path=[])
+    op_b = Operation(OpType.FACE, params={"tool": 2, "__step_file_path": str(step_b)}, path=[])
+    handler.model = type("M", (), {"operations": [op_a, op_b]})()
+    handler.root_widget = None
+    handler._find_root_widget = lambda: None
+    handler._saving_changes = False
+    handler._current_program_path = str(program_path)
+    handler._current_gcode_path = str(gcode_path)
+    handler._dirty_operation_indices = {0, 1}
+    handler._program_dirty = False
+    handler._dirty_program_header = False
+    handler._dirty_program_structure = False
+    handler._update_selected_operation = lambda force=False: None
+    handler._step_file_path = lambda op: op.params.get("__step_file_path")
+    handler._operation_to_step_data = lambda op: {"tool": op.params.get("tool")}
+    handler._remember_dialog_path = lambda *args, **kwargs: None
+    handler._normalized_file_path = lambda path: str(path) if path else None
+    handler._write_program_file = lambda path: (_ for _ in ()).throw(AssertionError("program must not be rewritten"))
+    handler._write_gcode_file = lambda path: None
+    handler._clear_dirty_state = lambda: (setattr(handler, "_dirty_operation_indices", set()), setattr(handler, "_program_dirty", False))
+    handler._log = lambda *args, **kwargs: None
+    return handler, op_a, step_a, step_b
+
+
+def test_save_changes_warns_when_user_cancels_auto_link_prompt(tmp_path):
+    """Nutzerbericht 2026-09-13: ein geladenes Programm, dessen Steps
+    urspruenglich als eigene Dateien angelegt wurden, meldete beim
+    'Aenderungen speichern' keinen Fehler, aber die urspruengliche
+    Step-Datei blieb unveraendert - der geaenderte Step hatte (aus welchem
+    Grund auch immer) keine `__step_file_path`-Verknuepfung mehr, und
+    `handle_save_changes()` uebersprang das bisher VOELLIG STILL. Jetzt
+    fordert 'Aenderungen speichern' die fehlende Verknuepfung genauso ein
+    wie 'Programm speichern' (`_ensure_step_file_link`) - bricht der
+    Nutzer diesen Dialog ab, bleibt der Step unverknuepft, aber die
+    Abschlussmeldung muss das jetzt explizit nennen statt zu schweigen."""
+    handler, op_a, step_a, step_b = _save_changes_two_ops_handler(tmp_path, op_a_linked=False)
+    handler._ensure_step_file_link = lambda *a, **k: False  # Nutzer bricht Dialog ab
+
+    class _Settings:
+        pass
+
+    sys.modules["qtpy.QtCore"].QSettings = lambda: _Settings()
+    infos = []
+    sys.modules["qtpy.QtWidgets"].QMessageBox.information = staticmethod(lambda *args: infos.append(args))
+    sys.modules["qtpy.QtWidgets"].QMessageBox.critical = staticmethod(lambda *args: (_ for _ in ()).throw(AssertionError(args)))
+
+    handler._handle_save_changes()
+
+    assert step_a.exists() is False
+    assert json.loads(step_b.read_text()) == {"tool": 2}
+    assert len(infos) == 1
+    shown_text = infos[0][-1]
+    assert "1" in shown_text
+    # Das Wort "missing_link" ist nicht Teil des Textes selbst, aber die
+    # deutsche Uebersetzung muss auf die fehlende Verknuepfung hinweisen.
+    assert "keine verknuepfte Step-Datei" in shown_text
+
+
+def test_save_changes_automatically_links_and_saves_unlinked_dirty_step(tmp_path):
+    """Nutzerentscheidung 2026-09-13 ('Das soll automatisch funktionieren'):
+    jeder Step MUSS mit einer Datei verknuepft sein - dieser Zwang gilt
+    jetzt auch fuer 'Aenderungen speichern', nicht nur fuer 'Programm
+    speichern'. Nimmt der Nutzer den Anlegen-Dialog an, wird der Step
+    automatisch verknuepft UND sofort mit dem aktuellen (geaenderten)
+    Inhalt gespeichert - keine separate manuelle 'Step speichern'-Aktion
+    noetig."""
+    handler, op_a, step_a, step_b = _save_changes_two_ops_handler(tmp_path, op_a_linked=False)
+
+    def _link_op_a(op, *, index_hint=None, parent=None, settings=None, base_dir=None, force_create=False):
+        assert op is op_a
+        op.params["__step_file_path"] = str(step_a)
+        return True
+
+    handler._ensure_step_file_link = _link_op_a
+
+    class _Settings:
+        pass
+
+    sys.modules["qtpy.QtCore"].QSettings = lambda: _Settings()
+    infos = []
+    sys.modules["qtpy.QtWidgets"].QMessageBox.information = staticmethod(lambda *args: infos.append(args))
+    sys.modules["qtpy.QtWidgets"].QMessageBox.critical = staticmethod(lambda *args: (_ for _ in ()).throw(AssertionError(args)))
+
+    handler._handle_save_changes()
+
+    assert json.loads(step_a.read_text()) == {"tool": 1}
+    assert json.loads(step_b.read_text()) == {"tool": 2}
+    assert op_a.params["__step_file_path"] == str(step_a)
+    assert len(infos) == 1
+    shown_text = infos[0][-1]
+    assert "keine verknuepfte Step-Datei" not in shown_text
+    assert "2" in shown_text
+
+
 def test_save_step_clears_unlinked_structure_dirty_after_new_step_save(tmp_path):
     orig_init = HandlerClass.__init__
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
