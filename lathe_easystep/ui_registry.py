@@ -27,11 +27,29 @@ TAB_TRANSLATIONS = {
 
 
 def _looks_like_panel_widget(widget: QtWidgets.QWidget | None) -> bool:
-    """Return True when a widget is the actual LatheEasyStep panel root."""
+    """Return True when a widget is the actual LatheEasyStep panel root.
+
+    LES-024: `listOperations` selbst ist seit der Auslagerung von Step-
+    Liste/Programmverwaltung in ein eigenes Panel-Modul (`ui_parts/
+    stepListPanel.ui`) nicht mehr statisch im Geruest vorhanden - es wird
+    erst asynchron in `finalize_ui_ready()` nachgeladen. Diese Funktion
+    wird aber bereits VOR diesem Ladeschritt aufgerufen (synchron in
+    `bootstrap_widget_refs()`, u. a. fuer die Embedded-Root-Erkennung ueber
+    mehrdeutig benannte Host-Fenster wie "MainWindow"/"VCPWindow") - ein
+    reiner Check auf `listOperations` wuerde die korrekte Panel-Wurzel in
+    diesem fruehen Zeitfenster also faelschlich verfehlen. `stepListPanel`
+    (der noch leere Container-Widget, das den Inhalt aufnimmt) existiert
+    dagegen bereits sofort nach `uic.loadUi()`, unabhaengig vom Ladezustand
+    - deshalb zusaetzlich zu `listOperations` pruefen (oder-verknuepft),
+    damit die Erkennung sowohl vor als auch nach dem Nachladen zuverlaessig
+    funktioniert."""
     if widget is None:
         return False
     try:
-        has_ops = widget.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
+        has_ops = (
+            widget.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
+            or widget.findChild(QtWidgets.QWidget, "stepListPanel", QtCore.Qt.FindChildrenRecursively) is not None
+        )
         has_tabs = widget.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
         return bool(has_ops and has_tabs)
     except Exception:
