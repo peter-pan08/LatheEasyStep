@@ -619,6 +619,122 @@ def test_delete_no_selection_does_nothing():
 
 
 # ---------------------------------------------------------------------------
+# SICHERHEITSFUND 2026-09-13 (Nutzerbericht LES-047 Folgeuntersuchung):
+# _dirty_operation_indices sind reine Listenpositionen. Loeschen/Verschieben
+# einer Operation verschob bisher alle betroffenen Operationen in der Liste,
+# ohne die dirty-Menge je nachzuziehen - eine zuvor als geaendert markierte
+# Operation "wanderte" dadurch stillschweigend auf eine ANDERE, tatsaechlich
+# unveraenderte Operation (und die wirklich geaenderte verlor ihre
+# Markierung komplett). "Aenderungen speichern" haette dadurch die falsche
+# Step-Datei aktualisiert und die echte Aenderung verloren, ohne Warnung.
+# ---------------------------------------------------------------------------
+
+def test_delete_before_dirty_step_reindexes_dirty_tracking():
+    """Loeschen einer Operation VOR einem als geaendert markierten Step
+    muss dessen dirty-Index um eins nach vorne verschieben, damit er
+    weiterhin auf DIESELBE Operation zeigt."""
+    h = _make_handler()
+    ops = [
+        Operation(OpType.PROGRAM_HEADER, {}, []),
+        Operation(OpType.FACE, {"tool": 1}, []),          # index 1: wird geloescht
+        Operation(OpType.FACE, {"tool": 2}, []),           # index 2: dirty, tatsaechlich geaendert
+        Operation(OpType.FACE, {"tool": 3}, []),           # index 3: unveraendert
+    ]
+    for i, op in enumerate(ops):
+        h.model.add_operation(op)
+        h.list_ops.addItem(f"{i+1}: {op.op_type}")
+    h._dirty_operation_indices = {2}
+
+    h.list_ops.setCurrentRow(1)
+    h._handle_delete_operation()
+
+    assert h._dirty_operation_indices == {1}
+    assert h.model.operations[1].params["tool"] == 2
+
+
+def test_delete_dirty_step_itself_drops_it_from_tracking():
+    """Wird der geaenderte Step selbst geloescht, muss sein Index
+    vollstaendig aus der dirty-Menge verschwinden statt auf den
+    nachruckenden (unveraenderten) Nachbarn zu zeigen."""
+    h = _make_handler()
+    ops = [
+        Operation(OpType.PROGRAM_HEADER, {}, []),
+        Operation(OpType.FACE, {"tool": 1}, []),
+        Operation(OpType.FACE, {"tool": 2}, []),  # index 2: dirty, wird geloescht
+        Operation(OpType.FACE, {"tool": 3}, []),  # index 3: unveraendert
+    ]
+    for i, op in enumerate(ops):
+        h.model.add_operation(op)
+        h.list_ops.addItem(f"{i+1}: {op.op_type}")
+    h._dirty_operation_indices = {2}
+
+    h.list_ops.setCurrentRow(2)
+    h._handle_delete_operation()
+
+    assert h._dirty_operation_indices == set()
+
+
+def test_move_up_swaps_dirty_tracking_with_the_operation_it_passes():
+    """Ein geaenderter Step, der per 'nach oben' an einem unveraenderten
+    Nachbarn vorbeigeschoben wird, muss seine dirty-Markierung MITNEHMEN -
+    nicht an der alten Listenposition zuruecklassen."""
+    h = _make_handler()
+    ops = [
+        Operation(OpType.PROGRAM_HEADER, {}, []),
+        Operation(OpType.FACE, {"tool": 1}, []),  # index 1: unveraendert
+        Operation(OpType.FACE, {"tool": 2}, []),  # index 2: dirty, wird nach oben verschoben
+        Operation(OpType.FACE, {"tool": 3}, []),
+    ]
+    for i, op in enumerate(ops):
+        h.model.add_operation(op)
+        h.list_ops.addItem(f"{i+1}: {op.op_type}")
+    h._dirty_operation_indices = {2}
+    h._moving_up = False
+
+    h.list_ops.setCurrentRow(2)
+    h._handle_move_up()
+
+    assert h.model.operations[1].params["tool"] == 2
+    assert h._dirty_operation_indices == {1}
+
+
+def test_move_down_swaps_dirty_tracking_with_the_operation_it_passes():
+    """Dasselbe fuer 'nach unten verschieben'."""
+    h = _make_handler()
+    ops = [
+        Operation(OpType.PROGRAM_HEADER, {}, []),
+        Operation(OpType.FACE, {"tool": 1}, []),  # index 1: dirty, wird nach unten verschoben
+        Operation(OpType.FACE, {"tool": 2}, []),  # index 2: unveraendert
+        Operation(OpType.FACE, {"tool": 3}, []),
+    ]
+    for i, op in enumerate(ops):
+        h.model.add_operation(op)
+        h.list_ops.addItem(f"{i+1}: {op.op_type}")
+    h._dirty_operation_indices = {1}
+    h._moving_down = False
+
+    h.list_ops.setCurrentRow(1)
+    h._handle_move_down()
+
+    assert h.model.operations[2].params["tool"] == 1
+    assert h._dirty_operation_indices == {2}
+
+
+def test_reindex_dirty_operations_after_insert_shifts_existing_indices():
+    """Gegenstueck zum Loeschen-Fall: wird eine Operation VOR bereits
+    vorhandenen eingefuegt (aktuell nur beim nachtraeglichen Einfuegen
+    eines Programmkopfs an Position 0, `_handle_add_operation()`),
+    muessen alle bereits dirty markierten Indizes um eins nach HINTEN
+    verschoben werden, damit sie weiterhin auf DIESELBE Operation zeigen."""
+    from types import SimpleNamespace
+    from lathe_easystep.ui_dirty import reindex_dirty_operations_after_insert
+
+    handler = SimpleNamespace(_dirty_operation_indices={0, 2}, _update_dirty_status=lambda: None)
+    reindex_dirty_operations_after_insert(handler, 0)
+    assert handler._dirty_operation_indices == {1, 3}
+
+
+# ---------------------------------------------------------------------------
 # _ui_loading leak fix
 # ---------------------------------------------------------------------------
 

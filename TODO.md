@@ -515,6 +515,54 @@ explizit, und Innenbearbeitung explizit inklusive Vorschub-Unterbrechung.
 637 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle unter rs274
 bestanden (keine neue Referenzaenderung, reiner Testzuwachs).
 
+### LES-048 Loeschen/Verschieben eines Steps verschob dessen dirty-Markierung nicht mit
+
+**SICHERHEITSKRITISCHER FUND 2026-09-13**, gefunden als direkte
+Folgeuntersuchung von LES-047 (dieselbe Fragestellung: "bleibt die
+Step-Datei-Verknuepfung nach einer Listenaenderung korrekt einer
+bestimmten Operation zugeordnet?"): `_dirty_operation_indices` ist eine
+reine Menge von LISTENPOSITIONEN. Loeschen einer Operation
+(`ProgramModel.remove_operation()`) verschiebt alle nachfolgenden
+Operationen um eine Position nach vorn, Verschieben nach oben/unten
+(`move_up()`/`move_down()`) vertauscht zwei Positionen - in BEIDEN Faellen
+wurde die dirty-Menge bisher NIE nachgezogen. Ergebnis: eine zuvor als
+geaendert markierte Operation "wanderte" stillschweigend auf eine ANDERE,
+tatsaechlich unveraenderte Operation, waehrend die wirklich geaenderte
+Operation ihre Markierung komplett verlor. "Aenderungen speichern" haette
+dadurch die FALSCHE Step-Datei mit fremdem Inhalt ueberschrieben und die
+echte Aenderung stillschweigend verloren - ohne jede Warnung, in einem in
+der Praxis sehr gewoehnlichen Workflow (Steps umsortieren oder loeschen
+gehoert zum normalen Bearbeiten eines Programms).
+
+Real reproduziert (direkter Aufruf der echten Handler-Methoden): vier
+Operationen, Index 2 als dirty markiert (tatsaechlich geaendert). Nach
+Loeschen von Index 1 (davor) zeigte die dirty-Menge weiterhin auf Index 2,
+jetzt aber die FALSCHE (unveraenderte) Operation, waehrend die wirklich
+geaenderte (jetzt bei Index 1) gar nicht mehr als dirty erkannt wurde.
+Dasselbe Muster bei "nach oben verschieben".
+
+- [x] Loeschen einer Operation: `_dirty_operation_indices` muss
+  reindexiert werden (geloeschter Index entfaellt, alle groesseren Indizes
+  ruecken um eins vor)
+- [x] Verschieben (oben/unten): `_dirty_operation_indices` muss den
+  beiden vertauschten Positionen folgen, nicht an der alten Position
+  verbleiben
+- [x] Einfuegen VOR bestehenden Operationen (nachtraeglicher Programmkopf
+  an Position 0): dieselbe Reindexierung in die Gegenrichtung
+- [x] real reproduziert und mit `git stash` gegen den alten Code
+  verifiziert
+
+Behoben: drei neue Hilfsfunktionen in `ui_dirty.py`
+(`reindex_dirty_operations_after_removal()`, `swap_dirty_operation_indices()`,
+`reindex_dirty_operations_after_insert()`), eingebunden in
+`_handle_delete_operation()` und den Programmkopf-Einfuege-Zweig von
+`_handle_add_operation()` (beide `lathe_easystep_handler.py`) sowie
+`handle_move_up()`/`handle_move_down()` (`ui_flow.py`). Fuenf neue
+Regressionstests (`tests/test_step_double_click.py`), alle fuenf schlagen
+ohne die Aenderung fehl (per `git stash` bestaetigt). 688 Stub-/44
+Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274 bestanden
+(reine UI-Logik, keine Referenzaenderung).
+
 ### LES-047 "Aenderungen speichern" liess fehlende Step-Datei-Verknuepfung unbemerkt
 
 **Nutzerbericht 2026-09-13:** "Wenn ich ein komplettes Programm in das
