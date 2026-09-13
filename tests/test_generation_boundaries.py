@@ -20,6 +20,7 @@ from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.motion_state import MotionState
 from lathe_easystep.persistence import step_data_to_operation
 from lathe_easystep.storage import parse_program_payload
+from lathe_easystep.verification_cases import chuck_nogo_case
 from lathe_easystep import ui_persistence
 
 
@@ -96,6 +97,25 @@ def test_chuck_segment_crossing_with_both_endpoints_outside(direction):
     with pytest.raises(ValueError, match="Futter-Sperrzone"):
         validate_chuck_segment(settings, (-10, -45 * direction), (110, -45 * direction))
     validate_chuck_segment(settings, (-10, 5 * direction), (110, 5 * direction))
+
+
+def test_chuck_nogo_case_is_safely_avoided_via_z_side_in_full_program():
+    """LES-030 ('Maschinenprofile und Futter-Sperrzonen mit Beispielen
+    verifizieren'): `verification_cases.chuck_nogo_case()` konfiguriert
+    eine Futter-Sperrzone, deren X-Bereich (0..90) den tatsaechlichen
+    Rueckzugsdurchmesser (X80) einschliesst - die Zone wird nur ueber die
+    Z-Seite sicher umgangen (ZRA=2.0 oberhalb der Sperrgrenze Z<=-45), nicht
+    trivial durch einen ausserhalb liegenden X-Wert. Muss deshalb weiterhin
+    fehlerfrei generieren; eine zu eng gesetzte Sperrgrenze (die den
+    tatsaechlichen Z-Rueckzug einschliesst) muss dagegen blockieren."""
+    ops, settings = chuck_nogo_case()
+    lines = generate_program_gcode(ops, settings)
+    assert "G0 X80.000" in lines
+    assert lines[-1] == "%"
+
+    blocked_settings = dict(settings, chuck_no_go_z_limit=1.0)
+    with pytest.raises(ValueError, match="Futter-Sperrzone"):
+        generate_program_gcode(ops, blocked_settings)
 
 
 def _stock_settings():

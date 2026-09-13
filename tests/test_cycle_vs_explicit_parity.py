@@ -16,6 +16,11 @@ from lathe_easystep.model import Operation, OpType
 # Siemens-Zyklus angelehnter Vorschub-Unterbrecher) genutzt wird. LinuxCNC
 # kennt diesen Zyklus nicht - das Feature erzwingt deshalb IMMER den
 # expliziten Move-based-Pfad, auch fuer sonst G71/G72-taugliche Konturen.
+# SICHERHEITSFUND 2026-09-13: bis zu diesem Datum wurde Spanbruch als
+# "o<step_line_pause> call [...]" ausgegeben, dessen Subroutine NUR eine
+# Verweilzeit enthielt - keine Bewegung. Die Schnittstrecke wurde dadurch
+# nie tatsaechlich geschnitten. Jetzt echte, in `pause_distance`-Schritte
+# zerlegte G1/G4-Folge.
 
 # Aussenkontur mit kleinem Bogen (identisch zur Innen_Radius-Kontur, nur
 # als Aussenkontur interpretiert) - deckt genau den Fall ab, an dem der
@@ -41,10 +46,10 @@ def _true_wall_radius_at_z(z: float) -> float:
 
 
 def _rough_g1_points(lines):
-    """Endpunkte jeder Schrupp-Schnittbewegung - als normales `G1 X.. Z..`
-    ODER, bei aktivem Spanbruch, als `o<step_line_pause> call [x0] [z0]
-    [x1] [z1] ...` (die eigentliche Bewegung steckt dann in den Klammer-
-    Parametern 3/4, kein `G1` wird dafuer ausgegeben)."""
+    """Endpunkte jeder Schrupp-Schnittbewegung (`G1 X.. Z..`) - bei aktivem
+    Spanbruch als mehrere, in `pause_distance`-Schritte zerlegte G1-Zeilen
+    mit G4-Pausen dazwischen (SICHERHEITSFUND 2026-09-13: vorher eine
+    wirkungslose `o<step_line_pause> call [...]`-Subroutine ohne Bewegung)."""
     start_idx = next(i for i, l in enumerate(lines) if l.startswith("(ABSPANEN Rough"))
     finish_idx = next(i for i, l in enumerate(lines) if l.startswith("(Schlichtschnitt"))
     points = []
@@ -53,10 +58,6 @@ def _rough_g1_points(lines):
             m = re.search(r"X(-?[0-9.]+) Z(-?[0-9.]+)", line)
             if m:
                 points.append((float(m.group(1)), float(m.group(2))))
-        elif "step_line_pause" in line and "call" in line:
-            nums = re.findall(r"\[(-?[0-9.]+)\]", line)
-            if len(nums) >= 4:
-                points.append((float(nums[2]), float(nums[3])))
     return points
 
 
@@ -134,6 +135,8 @@ def test_external_arc_contour_with_chip_breaking_forces_explicit_and_keeps_allow
 
     assert not any(l.startswith(("G71 ", "G72 ")) for l in lines)
     assert any(l.startswith("(Fallback-Grund: Spanbruch") for l in lines)
+    assert not any("step_line_pause" in l for l in lines)
+    assert any(l.startswith("G4 ") for l in lines)
 
     allow_radius = 0.1
     checked = 0

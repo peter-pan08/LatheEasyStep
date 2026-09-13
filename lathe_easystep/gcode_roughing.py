@@ -375,19 +375,36 @@ def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: in
     return lines
 
 
-def _emit_segment_with_pauses(lines: List[str], start: Point, end: Point, feed: float, pause_enabled: bool, pause_distance: float, pause_duration: float, state: Dict[str, object] | None = None):
+def _emit_segment_with_pauses(lines: List[str], start: Point, end: Point, feed: float, pause_enabled: bool, pause_distance: float, pause_duration: float):
+    # Spanbruch/Vorschub-Unterbrechung: SICHERHEITSFUND 2026-09-13 - die
+    # vorherige Ausgabe rief "o<step_line_pause> call [...]" auf, dessen
+    # Subroutine-Definition (`step_line_pause_sub_definition()`, inzwischen
+    # entfernt) NUR ein `G4 P[#7]` (Verweilzeit) enthielt - KEINE Bewegung.
+    # Die gesamte Strecke von `start` nach `end` wurde dadurch NIE
+    # tatsaechlich geschnitten, obwohl das Programm anschliessend so
+    # weiterlief, als sei das Material entfernt worden (realer Fund per
+    # rs274-Bewegungsspur bestaetigt: STRAIGHT_FEED nur fuer die kurze
+    # Einfahrt, dann DWELL, dann direkter Eilgang-Rueckzug). Alle
+    # bestehenden Tests pruefen nur die TEXTLICHEN Call-Parameter, nie die
+    # tatsaechliche Bewegung - das hat den Fehler seit Einfuehrung der
+    # Funktion (Commit e82d47c) unentdeckt gelassen. Jetzt: echte,
+    # explizite G1/G4-Folge statt einer Laufzeit-Subroutine, damit die
+    # gefahrene Strecke direkt aus dem G-Code ablesbar und von Hand
+    # nachvollziehbar bleibt (siehe LES-022 "robuste explizite Ausgabe").
     x0, z0 = start
     x1, z1 = end
     single_axis_segment = abs(x1 - x0) < 1e-9 or abs(z1 - z0) < 1e-9
     long_enough = max(abs(x1 - x0), abs(z1 - z0)) > pause_distance
     if pause_enabled and pause_distance > 0 and single_axis_segment and long_enough:
-        if state is not None:
-            state["needs_step_line_pause_sub"] = True
-        lines.append(
-            "o<step_line_pause> call "
-            f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
-            f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
-        )
+        length = max(abs(x1 - x0), abs(z1 - z0))
+        steps = max(1, math.ceil(length / pause_distance - 1e-9))
+        for i in range(1, steps + 1):
+            t = i / steps
+            xi = x0 + (x1 - x0) * t
+            zi = z0 + (z1 - z0) * t
+            lines.append(f"G1 X{xi:.3f} Z{zi:.3f} F{feed:.3f}")
+            if i < steps:
+                lines.append(f"G4 P{pause_duration:.3f}")
         return
     lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
 
@@ -411,6 +428,14 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
             lines.append(f"G0 Z{start_rz:.3f}")
         if start_rx is not None:
             lines.append(f"G0 X{start_rx:.3f}")
+    # LES-022 (vierte Etappe): reale Endposition durch die Baender
+    # mitfuehren, statt sie dem Aufrufer unbekannt zu lassen. Startwert ist
+    # (start_rx, start_rz) - dahin fuehrt entweder der obige Rueckzug
+    # deterministisch hin, oder die Position war laut `already_safe`
+    # bereits nachweislich dort. `resolve_retract_targets` ist eine reine
+    # Funktion von cfg/x_stock/safe_z, liefert also in beiden Faellen
+    # denselben Wert wie die tatsaechlich emittierte Bewegung.
+    last_x, last_z = start_rx, start_rz
     z_dir = -1 if (min([p[1] for p in path]) if path else 0) < 0 else 1
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
@@ -467,32 +492,43 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
             else:
                 pass_lines.append(f"G0 Z{safe_z:.3f}")
                 pass_lines.append(f"G0 X{x_cut:.3f}")
+            last_x, last_z = x_cut, safe_z
             z_low = min(za, zb)
             z_high = max(za, zb)
             z_entry, z_exit = (z_high, z_low) if z_dir < 0 else (z_low, z_high)
             activate_pending_css(pass_lines, pause_state)
             if abs(z_entry - safe_z) > 1e-9:
                 pass_lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
-            _emit_segment_with_pauses(pass_lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
+                last_z = z_entry
+            _emit_segment_with_pauses(pass_lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration)
+            last_x, last_z = x_cut, z_exit
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=x_cut, current_z=z_exit, safe_z=safe_z)
             suspend_css(pass_lines, pause_state, resume=True)
             if external:
                 cmd = ["G0"]
                 if rx_eff is not None:
                     cmd.append(f"X{rx_eff:.3f}")
+                    last_x = rx_eff
                 if rz_eff is not None:
                     cmd.append(f"Z{rz_eff:.3f}")
+                    last_z = rz_eff
                 if len(cmd) > 1:
                     pass_lines.append(" ".join(cmd))
             elif rx_eff is not None:
                 # XRI ist die harte Freigrenze. Z wird zu Beginn des naechsten
                 # Passes ausschliesslich auf dieser freien X-Position bewegt.
                 pass_lines.append(f"G0 X{rx_eff:.3f}")
+                last_x = rx_eff
         if not pass_lines:
             lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
             continue
         lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
         lines.extend(pass_lines)
+    if pause_state is not None:
+        if last_x is not None and last_z is not None:
+            _motion_state(pause_state).record(last_x, last_z)
+        else:
+            _motion_state(pause_state).clear()
     return lines
 
 
@@ -524,6 +560,10 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
     cfg = retract_cfg or RetractCfg(None, None, True, True)
     lines.append(f"G0 Z{safe_z:.3f}")
     lines.append(f"G0 X{start_x:.3f}")
+    # LES-022 (vierte Etappe): siehe Kommentar in rough_turn_parallel_x -
+    # die beiden vorangehenden G0-Zeilen fuehren deterministisch immer auf
+    # (start_x, safe_z), unbedingt (kein already_safe-Kurzschluss hier).
+    last_x, last_z = start_x, safe_z
     for pass_i, (z_hi, z_lo) in enumerate(passes, 1):
         band_lo, band_hi = (z_lo, z_hi) if z_lo <= z_hi else (z_hi, z_lo)
         x_intervals: List[Tuple[float, float]] = []
@@ -543,17 +583,26 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
                     continue
             activate_pending_css(lines, pause_state)
             lines.append(f"G1 Z{band_lo:.3f} F{feed:.3f}")
+            last_z = band_lo
             cut_target = min(xa, xb) if external else max(xa, xb)
-            _emit_segment_with_pauses(lines, (start_x, band_lo), (cut_target, band_lo), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
+            _emit_segment_with_pauses(lines, (start_x, band_lo), (cut_target, band_lo), feed, pause_enabled, pause_distance, pause_duration)
+            last_x, last_z = cut_target, band_lo
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=cut_target, current_z=band_lo, safe_z=safe_z)
             suspend_css(lines, pause_state, resume=True)
             cmd = ["G0"]
             if rx_eff is not None:
                 cmd.append(f"X{rx_eff:.3f}")
+                last_x = rx_eff
             if rz_eff is not None:
                 cmd.append(f"Z{rz_eff:.3f}")
+                last_z = rz_eff
             if len(cmd) > 1:
                 lines.append(" ".join(cmd))
+    if pause_state is not None:
+        if last_x is not None and last_z is not None:
+            _motion_state(pause_state).record(last_x, last_z)
+        else:
+            _motion_state(pause_state).clear()
     return lines
 
 
@@ -571,8 +620,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     pause_distance = finite_float(p.get("pause_distance", 0.0), "ABSPANEN pause_distance")
     pause_duration = 0.5
     mode_idx = resolve_enum_index(p.get("mode", 0), PARTING_MODE_INDEX, default=0)
-    if pause_enabled and pause_distance > 0.0 and mode_idx in (0, 2):
-        settings["needs_step_line_pause_sub"] = True
     finish_allow_x = finite_float(p.get("finish_allow_x", 0.0), "ABSPANEN finish_allow_x")
     finish_allow_z = finite_float(p.get("finish_allow_z", 0.0), "ABSPANEN finish_allow_z")
     if float(f"{feed:.3f}") <= 0.0:
@@ -889,8 +936,15 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             if cycle_finish_done:
                 fx, fz = finish_path[-1]
                 _motion_state(settings).record(fx, fz)
-            else:
+            elif rough_done:
+                # G71/G72-Zyklus ohne abschliessendes G70 (reines Schruppen):
+                # der Zyklus fuehrt alle Passes intern selbst aus, seine
+                # tatsaechliche Endposition ist von aussen nicht bekannt.
                 _motion_state(settings).clear()
+            # else: der bewegungsbasierte Pfad (rough_turn_parallel_x/z) hat
+            # seine tatsaechlich erreichte Endposition bereits selbst
+            # eingetragen (LES-022, vierte Etappe, 2026-09-13) - hier NICHT
+            # erneut ueberschreiben.
     if relief_mode == "separate" and feature_path:
         _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
     # LES-018: ein REINER Schlichtstep (eigene Operation, typischerweise eigenes
@@ -1031,14 +1085,6 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     return lines
 
 
-def step_line_pause_sub_definition() -> List[str]:
-    return ["o<step_line_pause> sub", "(Step line pause helper)", "G4 P[#7]", "o<step_line_pause> endsub"]
-
-
-def step_x_pause_sub_definition() -> List[str]:
-    return ["o<step_x_pause> sub", "(Step X pause helper)", "G4 P0.1", "o<step_x_pause> endsub"]
-
-
 __all__ = [
     "LEADOUT_LENGTH_DEFAULT",
     "RetractCfg",
@@ -1053,6 +1099,4 @@ __all__ = [
     "rough_turn_parallel_x",
     "rough_turn_parallel_z",
     "segments_from_polyline",
-    "step_line_pause_sub_definition",
-    "step_x_pause_sub_definition",
 ]

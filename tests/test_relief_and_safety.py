@@ -505,28 +505,28 @@ def test_separate_relief_with_chip_breaking_keeps_allowance_and_leaves_groove_un
     # ausschliessen - erst die tatsaechlich emittierten Pausen-Zeilen
     # beweisen, dass das Spanbruch-Feature in diesem (durch die Nut-
     # Ueberbrueckung veraenderten) Schrupp-Pfad wirklich aktiv ist.
-    assert any("step_line_pause" in l for l in lines[rough_start:relief_start])
+    # SICHERHEITSFUND 2026-09-13: Spanbruch wurde frueher als
+    # "o<step_line_pause> call [...]" ausgegeben, dessen Subroutine NUR
+    # eine Verweilzeit enthielt - keine Bewegung. Jetzt echte G1/G4-Folge;
+    # G4-Pausen im Schrupp-Bereich beweisen, dass Spanbruch hier aktiv ist.
+    assert any(l.startswith("G4 ") for l in lines[rough_start:relief_start])
+    assert not any("step_line_pause" in l for l in lines)
 
     rough_points = variants["rough_points"]
     allow_radius = 0.3 / 2.0
     checked = 0
     for line in lines[rough_start:relief_start]:
-        if "step_line_pause" not in line or "call" not in line:
+        m = re.match(r"G1 X(-?[0-9.]+) Z(-?[0-9.]+) F", line)
+        if not m:
             continue
-        nums = re.findall(r"\[(-?[0-9.]+)\]", line)
-        if len(nums) < 4:
-            continue
-        x0, z0, x1, z1 = (float(nums[0]), float(nums[1]), float(nums[2]), float(nums[3]))
-        # Diese Baender fahren bei konstantem X ueber eine ganze Z-Spanne -
-        # sicher ist der Schnitt nur, wenn er ENTLANG DER GESAMTEN Spanne
-        # Abstand zur wahren Kontur haelt, nicht nur am Endpunkt.
-        assert abs(x0 - x1) < 1e-6, "Erwartet: Band bei konstantem X"
-        lo_z, hi_z = sorted((z0, z1))
-        max_wall_r = _max_wall_radius_over_z_range(rough_points, lo_z, hi_z)
-        clearance = x0 / 2.0 - max_wall_r
+        x1, z1 = float(m.group(1)), float(m.group(2))
+        # Jeder tatsaechlich gefahrene Schrupp-Punkt (nicht nur ein
+        # deklarierter Bandendpunkt) muss Abstand zur wahren Kontur halten.
+        max_wall_r = _max_wall_radius_over_z_range(rough_points, z1, z1)
+        clearance = x1 / 2.0 - max_wall_r
         checked += 1
         assert clearance >= allow_radius - 1e-6, (
-            f"Schrupp-Band X{x0} Z[{lo_z};{hi_z}] verletzt das Aufmass: nur "
+            f"Schrupp-Schnitt X{x1} Z{z1} verletzt das Aufmass: nur "
             f"{clearance * 2:.3f}mm statt 0.300mm Restaufmass"
         )
     assert checked > 3
@@ -536,7 +536,7 @@ def test_separate_relief_with_chip_breaking_keeps_allowance_and_leaves_groove_un
     # in einem Zug bis auf Endmass, siehe _emit_relief_pass()).
     relief_end = next(i for i, l in enumerate(lines) if l == "(Schlichtschnitt Kontur)")
     relief_lines = lines[relief_start:relief_end]
-    assert not any("step_line_pause" in l for l in relief_lines)
+    assert not any(l.startswith("G4 ") for l in relief_lines)
     groove_points = [
         (float(m.group(1)), float(m.group(2)))
         for l in relief_lines if l.startswith("G1 ")

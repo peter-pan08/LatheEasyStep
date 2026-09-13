@@ -85,6 +85,21 @@ def generate_face_gcode(
         raise ValueError("spindle must be >= 0")
     if pause_distance < 0.0:
         raise ValueError("pause_distance must be >= 0")
+    # SICHERHEITSFUND 2026-09-13: PLANEN-Schruppen nutzt ausschliesslich den
+    # G72-Zyklus (siehe unten) - es gibt keinen bewegungsbasierten Pfad, in
+    # den eine Vorschub-Unterbrechung eingefuegt werden koennte. Bisher
+    # wurde die Checkbox stillschweigend ignoriert: eine Subroutine-
+    # Definition landete zwar im Programm, wurde aber nie aufgerufen (die
+    # Pause hatte ueberhaupt keine Wirkung). Jetzt lauter Abbruch statt
+    # stiller Wirkungslosigkeit - konsistent mit LES-002 ("kein Schnitt"
+    # bricht hart ab statt still durchzulaufen).
+    if mode in (0, 2) and pause_enabled and pause_distance > 0.0:
+        raise ValueError(
+            "PLANEN: Vorschub-Unterbrechung (Spanbruch) wird beim Schruppen "
+            "aktuell nicht unterstuetzt - Planen verwendet ausschliesslich den "
+            "G72-Zyklus, der keine Zwischenpausen zulaesst. Bitte 'Spanbruch' "
+            "fuer diesen Step deaktivieren."
+        )
 
     append_tool_and_spindle(
         lines, tool_num, spindle, settings,
@@ -127,6 +142,4 @@ def generate_face_gcode(
         else:
             _motion_state(settings).clear()
 
-    if mode in (0, 2) and pause_enabled and pause_distance > 0.0:
-        settings["needs_step_x_pause_sub"] = True
     return lines

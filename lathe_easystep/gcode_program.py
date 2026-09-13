@@ -17,8 +17,6 @@ from .gcode_roughing import (
     contour_sub_from_points,
     contour_sub_from_primitives,
     generate_abspanen_gcode,
-    step_line_pause_sub_definition,
-    step_x_pause_sub_definition,
 )
 from .gcode_safety import (
     append_initial_tool_check,
@@ -528,11 +526,6 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             if re.search(rf"\bQ{sub_num}\b", referenced_text)
         ]
         all_subs[0:0] = referenced_blocks
-
-    if settings.get("needs_step_line_pause_sub"):
-        all_subs.append(step_line_pause_sub_definition())
-    if settings.get("needs_step_x_pause_sub"):
-        all_subs.append(step_x_pause_sub_definition())
 
     lines: List[str] = []
     lines.extend(header_lines)
