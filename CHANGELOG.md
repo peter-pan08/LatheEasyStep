@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### LES-044 Architekturdokument fuer die Panel-Modularisierung 2026-09-13
+
+- Nutzerauftrag "eines der grossen Architektur-Themen anfangen": LES-044
+  fordert selbst, die Zielarchitektur (Geruest/Panel-Module/Text/
+  Darstellung/Generator) als kurzes Dokument festzuhalten, BEVOR weitere
+  LES-020/024/034-Extraktionen vorgenommen werden - das ist jetzt erste
+  Voraussetzung fuer die weitere LES-024-Arbeit.
+- Neu: [doc/ARCHITECTURE_MODULES.md](doc/ARCHITECTURE_MODULES.md)
+  beschreibt Ist-Stand je Schicht (Geruest/`ui_split.py` und Text/
+  `TRANSLATIONS` erfuellen die Vorgabe bereits, Generator ist bereits
+  vollstaendig Qt-unabhaengig), definierte Schnittstellen zwischen den
+  Schichten und eine begruendete Reihenfolge fuer die naechsten
+  Schritte (zuerst `render_tool_preview()` als kleinster konkreter
+  Umbaukandidat, dann Step-Liste/Programmverwaltung, dann Vorschau/
+  Schnittansicht als eigene Panel-Module).
+- Reine Dokumentation, keine Codeaenderung.
+
+### LES-044 render_tool_preview() entkoppelt (erster konkreter Umbau) 2026-09-13
+
+- Neue reine Funktion `compute_tool_preview_layout()` (`tool_logic.py`)
+  uebernimmt die komplette Geometrieberechnung fuer die Werkzeug-Vorschau
+  (Einsatz-Polygon, Schaft, Winkel, Nasenradius-Position); `render_tool_preview()`
+  enthaelt jetzt nur noch `QPainter`-Zeichenaufrufe. Reine Verschiebung,
+  kein beabsichtigter Verhaltensunterschied.
+- Diese Funktion hatte bisher KEINE Testabdeckung. Sechs neue Tests
+  (`tests/test_tool_preview_layout.py`, echtes PyQt5) decken alle vier
+  Werkzeugfamilien und die Innen-/Aussenlage der Nasenradius-Position ab,
+  per `git stash` gegen den alten Code verifiziert.
+- 691 Stub-/50 Qt-Tests bestanden, zwoelf Referenzen unveraendert (reine
+  UI-Aenderung). Details: TODO.md (LES-044).
+
 ### LES-022 abgeschlossen: zentraler Bewegungs- und Modalzustand 2026-09-13
 
 - Alle Checklistenpunkte erledigt (Positions-Tracking in allen sechs

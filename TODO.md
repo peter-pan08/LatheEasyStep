@@ -1679,18 +1679,51 @@ Bestandsaufnahme (was die Vorgabe schon erfuellt / wo sie noch fehlt):
   Widgetzugriffe zwischen Modulen durch definierte Schnittstellen
   ersetzen) - LES-024 bleibt die naechste konkrete Arbeit dafuer.
 
-- [ ] Zielarchitektur (Geruest / Panel-Module / Text / Darstellung /
+- [x] Zielarchitektur (Geruest / Panel-Module / Text / Darstellung /
   Generator als getrennte, je fuer sich testbare Schichten mit
   definierten Schnittstellen dazwischen) als kurzes Architekturdokument
   festhalten, BEVOR LES-020/024/034 weitere Extraktionen vornehmen - sonst
   entstehen wieder Ad-hoc-Grenzen statt der hier vorgegebenen Struktur
-- [ ] `render_tool_preview()`/Schneidplatten-Darstellung als erstes
+  (siehe Teilstand 2026-09-13 unten:
+  [doc/ARCHITECTURE_MODULES.md](doc/ARCHITECTURE_MODULES.md))
+- [x] `render_tool_preview()`/Schneidplatten-Darstellung als erstes
   konkretes Beispiel fuer "Darstellungselement austauschbar, Funktion
-  bleibt" umbauen (Geometrie-Berechnung von Zeichenaufruf trennen)
+  bleibt" umbauen (Geometrie-Berechnung von Zeichenaufruf trennen) -
+  siehe Teilstand 2026-09-13 unten
 - [ ] pruefen, ob/wie G-Code-Kommentare und Fehlertexte an den
   bestehenden Sprachmechanismus angebunden werden sollen (siehe oben)
 - [ ] nach jedem Modularisierungsschritt: voller Testlauf, echtes
   `uic.loadUi`, Embedded- und Standalone-Start vergleichen (LES-035)
+
+Teilstand 2026-09-13: Architekturdokument
+[doc/ARCHITECTURE_MODULES.md](doc/ARCHITECTURE_MODULES.md) erstellt -
+beschreibt den Ist-Stand je Schicht (Geruest/`ui_split.py` und
+Text/`TRANSLATIONS` erfuellen die Vorgabe bereits; Generator ist bereits
+vollstaendig entkoppelt; Darstellung hat mit `preview_widget.py` ein
+gutes und mit `tool_logic.py::render_tool_preview()` ein schlechtes
+Beispiel; Panel-Module fehlt noch fuer Step-Liste/Programmverwaltung und
+Vorschau/Schnittansicht) sowie die vorgegebenen Schnittstellen zwischen
+den Schichten und eine begruendete Reihenfolge fuer die naechsten
+Schritte. Keine Codeaenderung, reine Dokumentation als Grundlage fuer
+die folgenden LES-024-Extraktionen.
+
+Teilstand 2026-09-13 (render_tool_preview() entkoppelt): neue reine
+Funktion `compute_tool_preview_layout(handler, tool)` (`tool_logic.py`)
+uebernimmt die komplette Geometrieberechnung (Einsatz-Polygon,
+Schaft-Rechteck, Orientierungs-/Halterwinkel, Nasenradius-Position,
+Infotext) als reine Wertermittlung ohne einen einzigen `QPainter`-
+Aufruf; `render_tool_preview()` liest das Ergebnis nur noch aus und
+enthaelt ausschliesslich Zeichenaufrufe. Reine Verschiebung derselben
+Formeln (kein Verhaltensunterschied beabsichtigt). Vorher gab es fuer
+diese Funktion KEINE Tests (weder stub noch real) - sechs neue Tests
+(`tests/test_tool_preview_layout.py`, echtes PyQt5, da die verwendeten
+Qt-Geometrietypen im projektweiten Stub bedeutungslos sind) decken jetzt
+alle vier Werkzeugfamilien (turning/thread/groove/holder), Innen-/
+Aussenlage der Nasenradius-Position und einen End-zu-End-Smoke-Test
+von `render_tool_preview()` ab. Per `git stash` gegen den alten Code
+verifiziert (ImportError, da `compute_tool_preview_layout` dort nicht
+existiert). 691 Stub-/50 Qt-Tests bestanden (+6 gegenueber vorher), zwoelf
+Referenzen unveraendert (reine UI-/Vorschau-Aenderung ohne G-Code-Bezug).
 
 ### LES-018 G70 fuer separaten Schlichtstep
 

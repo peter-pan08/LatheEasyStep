@@ -107,6 +107,7 @@ from lathe_easystep.tool_logic import (
     build_insert_geometry,
     build_program_filepath,
     collect_tool_orientation_warnings,
+    compute_tool_preview_layout,
     infer_insert_profile,
     infer_insert_shape_key,
     operation_side_hint,
@@ -3258,6 +3259,9 @@ class HandlerClass:
 
     def _render_tool_preview(self, tool: Tool) -> QtGui.QPixmap:
         return render_tool_preview(self, tool)
+
+    def _compute_tool_preview_layout(self, tool: Tool) -> Dict[str, object]:
+        return compute_tool_preview_layout(self, tool)
 
     def _infer_insert_shape_key(self, tool: Tool) -> str:
         self._INSERT_SHAPE_KEYS = _INSERT_SHAPE_KEYS
