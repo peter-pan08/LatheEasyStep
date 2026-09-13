@@ -9,7 +9,7 @@ REAL_QT_TESTS = {
     "test_dirty_state_signal_blocking.py", "test_per_operation_spindle_mode_ui.py",
     "test_preview_widget_paint_no_crash.py", "test_slice_strategy_ui_roundtrip.py",
     "test_split_ui_loader.py", "test_tool_combo_selection.py",
-    "test_ui_static_translation_split_tabs.py",
+    "test_ui_static_translation_split_tabs.py", "test_tool_preview_layout.py",
 }
 
 
