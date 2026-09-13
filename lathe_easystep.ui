@@ -124,70 +124,7 @@
              </widget>
             </item>
             <item>
-             <layout class="QVBoxLayout" name="previewContainerLayout">
-              <item>
-               <layout class="QHBoxLayout" name="previewControlsLayout">
-                <item>
-                 <spacer name="horizontalSpacer_previewControls">
-                  <property name="orientation">
-                   <enum>Qt::Horizontal</enum>
-                  </property>
-                  <property name="sizeHint" stdset="0">
-                   <size>
-                    <width>40</width>
-                    <height>20</height>
-                   </size>
-                  </property>
-                 </spacer>
-                </item>
-                <item>
-                 <widget class="QToolButton" name="btn_slice_view">
-                  <property name="text">
-                   <string>Schnittansicht</string>
-                  </property>
-                  <property name="checkable">
-                   <bool>true</bool>
-                  </property>
-                  <property name="checked">
-                   <bool>false</bool>
-                  </property>
-                  <property name="toolTip">
-                   <string>Zeigt zusätzlich eine Schnittansicht. In der Seitenansicht die Schnittlinie mit der Maus verschieben.</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </item>
-              <item>
-               <widget class="LathePreviewWidget" name="previewWidget" native="true">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="LathePreviewWidget" name="previewSliceWidget" native="true">
-                <property name="visible">
-                 <bool>false</bool>
-                </property>
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>140</height>
-                 </size>
-                </property>
-               </widget>
-              </item>
-             </layout>
+             <widget class="QWidget" name="previewPanel"/>
             </item>
            </layout>
           </widget>

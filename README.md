@@ -439,13 +439,13 @@ Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
 ## Aktuelle Modulstruktur
 
-Die acht Bearbeitungsreiter sowie Step-Liste/Programmverwaltung und die
-Aktionsleiste sind bereits aus der Shell geloest:
+Die acht Bearbeitungsreiter, Step-Liste/Programmverwaltung, Aktionsleiste
+und Vorschau/Schnittansicht sind bereits aus der Shell geloest:
 
-- `lathe_easystep.ui`: Shell mit leeren Containern (Tab-Container,
-  `stepListPanel`, `stepActionsPanel`) und Vorschau
+- `lathe_easystep.ui`: Shell mit ausschliesslich leeren Containern
+  (Tab-Container, `stepListPanel`, `stepActionsPanel`, `previewPanel`)
 - `lathe_easystep/ui_parts/*.ui`: Program, Face, Contour, Parting, Thread,
-  Groove, Drill, Keyway, `stepListPanel`, `stepActionsPanel`
+  Groove, Drill, Keyway, `stepListPanel`, `stepActionsPanel`, `previewPanel`
 - `lathe_easystep/ui_split.py`: Laufzeit-Lader der Teil-UIs
 - `lathe_easystep/*.py`: Fach-, UI-, Persistenz-, Vorschau- und Generatorlogik
 

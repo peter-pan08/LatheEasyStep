@@ -2069,7 +2069,8 @@ zusaetzliches Wissen ueber die reale Endposition.
 
 ### LES-024 Restliche UI-Modularisierung
 
-- [ ] Vorschau/Schnittansicht in eigene UI-Struktur auslagern
+- [x] Vorschau/Schnittansicht in eigene UI-Struktur auslagern (siehe
+  Teilstand 2026-09-13 "Vorschau ausgelagert" unten)
 - [x] Step-Liste und Programmverwaltung auslagern (siehe Teilstand
   2026-09-13 unten)
 - [ ] je Modul Controller, Tooltips, Sprach-IDs und Validierung zuordnen
@@ -2110,6 +2111,48 @@ aus einer eigenen `.ui`-Datei:
   erhalten), per `git stash` verifiziert (ImportError ohne die Aenderung).
   694 Stub-/53 Qt-Tests bestanden, zwoelf Referenzen unveraendert (reine
   UI-Struktur-Aenderung ohne G-Code-Bezug).
+
+Teilstand 2026-09-13 (Vorschau ausgelagert, DABEI ein echter Layout-Bug
+gefunden und behoben): `previewWidget`/`previewSliceWidget`/
+`btn_slice_view` liegen jetzt in `ui_parts/previewPanel.ui`, geladen in
+einen anfangs leeren Container `previewPanel` an genau der bisherigen
+Stelle im Geruest (innerhalb `scrollAreaLayout`, neben `tabParams`) -
+bewusst NICHT an der Stelle, wo die Vorschau am Ende sichtbar ist: die
+bereits bestehende Laufzeitfunktion `_dock_preview_below_scroll()`
+(`ui_lifecycle.py`) findet diese drei Widgets ueber eine rekursive
+objectName-Suche und verschiebt sie beim Start IMMER in einen eigenen
+`previewDockContainer` unterhalb des Scroll-Bereichs - unabhaengig davon,
+wo sie anfangs im Baum stehen.
+
+**Echter Fund beim Screenshot-Vergleich (nicht nur Anti-Aliasing wie bei
+Step-Liste/Aktionsleiste):** nach dem Verschieben blieb der jetzt leere
+`previewPanel`-Container im Scroll-Bereich zurueck. Blosses Verstecken
+(`hide()`) reichte NICHT aus, um seinen Platzanspruch im umgebenden
+`QVBoxLayout` zu beseitigen (Zwischenraum-Spacing bleibt auch bei einem
+versteckten/auf 0 gesetzten Widget bestehen) - real per Offscreen-
+Screenshot gemessen: die angedockte Vorschau wurde dadurch sichtbar zu
+gross (`previewWidget` 220px statt der vorgesehenen 140px Hoehe, ganze
+170.129 von 700.000 Pixeln des Screenshots unterschiedlich - zusaetzliche
+Legendenzeile "Futter-Sperrzone" und Achsbeschriftung sichtbar, die bei
+korrekter Groesse nicht angezeigt werden). Behoben: `_dock_preview_below_scroll()`
+entfernt den leeren Container jetzt VOLLSTAENDIG aus seinem Eltern-Layout
+(`removeWidget()` + `setParent(None)`), nicht nur verstecken. Nach dem Fix
+exakt wieder 140px/172px wie vor der Umstrukturierung, Screenshot-Diff auf
+37 von 700.000 Pixel (dieselbe Groessenordnung wie die Anti-Aliasing-Linie
+bei Step-Liste/Aktionsleiste) reduziert.
+
+Nebenbefund beim Testen: `tests/test_ui_static_translation_split_tabs.py`
+suchte `btn_slice_view` nur nach `load_split_tab_uis()`, ohne die neuen
+Lader - musste ergaenzt werden, sonst waere der Test grundlos rot
+gewesen (kein Produktivcode-Bug, nur unvollstaendige Testvorbereitung).
+
+Vier neue Tests (`tests/test_preview_panel_ui_loader.py`: Laden, Idempotenz,
+UND ein gezielter Regressionstest fuer genau den gefundenen Layout-Bug -
+per direkter Code-Entfernung des Fixes verifiziert, dass der Test dann
+wieder 220 statt 140 meldet), per `git stash` zusaetzlich fuer die
+Lade-Funktion selbst verifiziert (ImportError ohne die Aenderung). 694
+Stub-/56 Qt-Tests bestanden, zwoelf Referenzen unter rs274 bestanden,
+keine Referenzaenderung.
 
 ### LES-027 Performance
 

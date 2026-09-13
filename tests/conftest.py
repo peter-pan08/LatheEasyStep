@@ -10,7 +10,7 @@ REAL_QT_TESTS = {
     "test_preview_widget_paint_no_crash.py", "test_slice_strategy_ui_roundtrip.py",
     "test_split_ui_loader.py", "test_tool_combo_selection.py",
     "test_ui_static_translation_split_tabs.py", "test_tool_preview_layout.py",
-    "test_step_management_ui_loader.py",
+    "test_step_management_ui_loader.py", "test_preview_panel_ui_loader.py",
 }
 
 
