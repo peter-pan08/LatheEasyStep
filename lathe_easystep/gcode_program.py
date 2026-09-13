@@ -87,8 +87,12 @@ def gcode_for_turn(op: Operation, settings: Dict[str, object] | None = None) -> 
         raise ValueError("TURN: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
     lines: List[str] = []
     append_tool_and_spindle(lines, get_tool_number(p), p.get("spindle"), settings)
-    if bool(p.get("coolant", False)):
-        lines.append("M8")
+    # SICHERHEITSFUND 2026-09-13 (LES-042): direktes "M8" ohne zugehoeriges
+    # "M9" - Kuehlmittel blieb nach dieser (heute nur noch ueber alte
+    # gespeicherte Programme erreichbaren, siehe TODO.md) Operation dauerhaft
+    # an. `emit_coolant()` gibt immer explizit den aktuellen Sollzustand aus
+    # (M7/M8/M9), wie alle anderen Operationstypen es bereits tun.
+    emit_coolant(lines, p.get("coolant_mode", p.get("coolant", False)))
     lines.extend(gcode_from_path(path, feed, safe_z))
     return lines
 
@@ -108,8 +112,8 @@ def gcode_for_bore(op: Operation, settings: Dict[str, object] | None = None) -> 
         raise ValueError("BORE: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
     lines: List[str] = []
     append_tool_and_spindle(lines, get_tool_number(p), p.get("spindle"), settings)
-    if bool(p.get("coolant", False)):
-        lines.append("M8")
+    # SICHERHEITSFUND 2026-09-13 (LES-042): siehe gcode_for_turn oben.
+    emit_coolant(lines, p.get("coolant_mode", p.get("coolant", False)))
     lines.extend(gcode_from_path(path, feed, safe_z))
     return lines
 

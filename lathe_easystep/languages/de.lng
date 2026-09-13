@@ -815,6 +815,7 @@ message.changes.program_unchanged=Programm unveraendert oder nicht verknuepft
 message.changes.program_updated=Programm aktualisiert
 message.changes.save_failed=Aenderungen konnten nicht gespeichert werden
 message.changes.steps_embedded_in_program=Die geaenderten Steps wurden im Programm gespeichert.
+message.changes.steps_missing_link=Achtung: {count} geaenderte(r) Step(s) haben keine verknuepfte Step-Datei und wurden NICHT als eigene Datei aktualisiert - nur ueber "Programm speichern" mit einer Step-Datei verknuepfen.
 message.changes.steps_unchanged=Keine geaenderten Step-Dateien gespeichert
 message.changes.steps_updated=Step-Dateien aktualisiert: {count}
 message.delete.program_header_forbidden=Der Programmkopf kann nicht geloescht werden.

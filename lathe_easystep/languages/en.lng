@@ -815,6 +815,7 @@ message.changes.program_unchanged=Program unchanged or not linked
 message.changes.program_updated=Program updated
 message.changes.save_failed=Changes could not be saved
 message.changes.steps_embedded_in_program=The modified steps were saved into the program file.
+message.changes.steps_missing_link={count} modified step(s) have no linked step file and were NOT updated as a separate file - link a step file via "Save program" first.
 message.changes.steps_unchanged=No modified step files were saved
 message.changes.steps_updated=Step files updated: {count}
 message.delete.program_header_forbidden=The program header cannot be deleted.

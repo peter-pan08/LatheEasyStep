@@ -206,6 +206,9 @@ Wichtig fuer den aktuellen Workflow:
 - bestehende Programme koennen dadurch spaeter geladen und gezielt in ihre Einzel-Steps zurueckgeschrieben werden
 - Dateidialoge starten immer im zuletzt verwendeten Ordner
 - offene Aenderungen werden im UI sichtbar markiert; Reiter- und Stepwechsel warnen, speichern aber weiterhin nichts automatisch
+- `Aenderungen speichern` warnt jetzt explizit, wenn ein geaenderter Step
+  keine verknuepfte Step-Datei hat - die Aenderung landet dann nur im
+  Programm, nicht in einer eigenen Datei (LES-047)
 
 ## Reiter "Kontur"
 

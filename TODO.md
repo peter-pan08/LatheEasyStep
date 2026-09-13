@@ -63,7 +63,6 @@ Prioritaeten:
 | LES-034 | P2 | Preview-Pipeline fachlich in Werkstueck, Werkzeugweg und Hilfsgeometrie trennen | mittel | L | 0.9.0 |
 | LES-035 | P2 | Embedded- und Standalone-Verhalten weiter angleichen | mittel | M | 0.9.0 |
 | LES-036 | P1 | Kantenform "Radius" beim Planen umsetzen | mittel | M | 0.8.0 |
-| LES-042 | P2 | Legacy-Operationstypen TURN/BORE bereinigen oder korrigieren | gering | S | 0.9.0 |
 | LES-043 | P2 | Entscheidung ueber spaetere Gegenspindelunterstuetzung oder Entfernung der gesperrten UI | mittel | XL | 0.9.0 |
 | LES-044 | P2 | Modulare Panel-Architektur: Geruest, Text, Darstellung und Generator strikt trennen | langfristig hoch | XL | 0.9.0 |
 
@@ -515,6 +514,88 @@ automatisiert abgesichert: Aussenbearbeitung per Zyklus, Aussenbearbeitung
 explizit, und Innenbearbeitung explizit inklusive Vorschub-Unterbrechung.
 637 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle unter rs274
 bestanden (keine neue Referenzaenderung, reiner Testzuwachs).
+
+### LES-047 "Aenderungen speichern" liess fehlende Step-Datei-Verknuepfung unbemerkt
+
+**Nutzerbericht 2026-09-13:** "Wenn ich ein komplettes Programm in das
+Panel lade, habe ich das vorher mal erstellt. Beim erstellen sind die
+Steps auch als Datei angelegt worden. Wenn ich daran etwas ändere, dann
+soll das ja nicht nur im globalen Programm geändert werden, sondern die
+step Dateien müssen mit geändert werden. Scheinbar fehlt die Verknüpfung,
+denn die werden beim speichern der Änderungen nicht gefunden."
+
+- [x] pruefen, ob der Speichern/Laden-Rundlauf der Step-Datei-Verknuepfung
+  (`__step_file_path` in `op.params`) selbst fehlerhaft ist
+- [x] pruefen, ob `sync_form_to_operation()` die Verknuepfung beim
+  Bearbeiten eines Steps verliert
+- [x] konkreten, real reproduzierten Fehler in `handle_save_changes()`
+  gefunden und behoben (siehe Abschluss unten)
+- [x] Design-Entscheidung: Nutzer bestaetigt "Das soll automatisch
+  funktionieren" - Zwang zur Step-Datei-Verknuepfung (anlegen ODER laden,
+  geloest erst durch Loeschen des Steps im Panel) gilt konsistent auch fuer
+  "Aenderungen speichern", siehe Abschluss (Teil 2) unten
+
+Abschluss (Teil 1) 2026-09-13: **der Kern-Mechanismus selbst ist korrekt.**
+Direkt getestet (`build_program_data()` -> JSON-Rundlauf ->
+`parse_program_payload()` -> `step_data_to_operation()`, sowohl isoliert
+als auch ueber die echten Handler-Methoden `_write_program_file()`/
+`_step_data_to_operation()`): `__step_file_path` uebersteht einen
+vollstaendigen Speichern/Laden-Rundlauf unveraendert. Ebenso ist
+`sync_form_to_operation()` (`ui_program.py`) bereits gezielt gegen genau
+dieses Risiko abgesichert (expliziter Erhalt aller `__`-praefigierten
+internen Schluessel nach jedem Formular-Sync).
+
+**Aber ein echter, real reproduzierter Fehler in `handle_save_changes()`
+selbst gefunden:** ein geaenderter (als "dirty" markierter) Step OHNE
+Verknuepfung wurde bisher VOELLIG STILL uebersprungen - keine Warnung,
+kein Hinweis, welcher Step betroffen war. Die Abschlussmeldung nannte nur
+die ANZAHL der tatsaechlich gespeicherten Steps (z. B. "Step-Dateien
+aktualisiert: 1"), ohne zu erwaehnen, dass ein ZWEITER geaenderter Step
+dabei komplett uebersprungen wurde - eine irrefuehrende Erfolgsmeldung
+trotz teilweisem Fehlschlag. Genau das erklaert den Nutzerbericht: die
+Original-Step-Datei blieb unveraendert, aber das Programm meldete
+trotzdem Erfolg, sodass die fehlende Verknuepfung unbemerkt blieb.
+
+Real reproduziert (Test faengt die tatsaechlich angezeigte Meldung ab):
+alter Code zeigte bei zwei geaenderten Steps (einer verknuepft, einer
+nicht) exakt "Step-Dateien aktualisiert: 1\nProgramm unveraendert oder
+nicht verknuepft\nG-Code aktualisiert" - keinerlei Hinweis auf den
+uebersprungenen zweiten Step. Neuer Uebersetzungsschluessel
+`message.changes.steps_missing_link` in allen drei Sprachdateien.
+
+Was die urspruengliche Verknuepfung des Nutzers konkret verloren haben
+koennte, bleibt ohne Zugriff auf die reale Datei unbekannt (aeltere
+Codeversion beim urspruenglichen Erstellen, abgebrochener
+"Step-Datei anlegen"-Dialog, oder eine verschobene/nicht mehr aufloesbare
+absolute Pfadangabe sind alles plausible Ursachen).
+
+Abschluss (Teil 2) 2026-09-13 ("Das soll automatisch funktionieren"):
+Nutzervorgabe praezisiert das Grundprinzip: beim Anlegen eines neuen Steps
+im Panel besteht bereits heute ein Zwang, entweder eine neue Step-Datei
+anzulegen ODER eine bestehende zu laden (`_ensure_step_file_link()` in
+`_handle_add_operation()`, bricht der Nutzer den Dialog ab, wird der Step
+gar nicht erst hinzugefuegt) - diese Verknuepfung loest sich erst, wenn
+der Step im Panel geloescht wird. Dieses Prinzip galt bisher NICHT fuer
+"Aenderungen speichern": ein (aus welchem Grund auch immer) unverknuepfter
+Step wurde dort nur noch gewarnt, nicht mehr zum Verknuepfen aufgefordert.
+Jetzt konsistent: `handle_save_changes()` ruft fuer jeden geaenderten,
+unverknuepften Step denselben `_ensure_step_file_link()`-Dialog auf wie
+"Programm speichern" - akzeptiert der Nutzer, wird der Step automatisch
+verknuepft UND sein aktueller (geaenderter) Inhalt sofort gespeichert,
+keine separate manuelle Aktion mehr noetig. Bricht der Nutzer den Dialog
+ab, bleibt es (im Unterschied zum Neuanlegen) bei der Warnung statt einem
+harten Abbruch, da "Aenderungen speichern" bewusst mehrere unabhaengige
+Dinge auf einmal sichert (Programm, G-Code, andere Steps) und ein
+einzelner abgebrochener Dialog diese nicht verhindern soll.
+
+Zwei neue Regressionstests (`test_save_changes_warns_when_user_cancels_auto_link_prompt`,
+`test_save_changes_automatically_links_and_saves_unlinked_dirty_step`,
+`tests/test_step_path_persistence.py`), je per `git stash` gegen den alten
+Code verifiziert (beide schlagen ohne die Aenderung fehl - die Cancel-
+Variante wegen der jetzt praeziseren Meldung, die Auto-Link-Variante weil
+die Step-Datei nie geschrieben wird). 683 Stub-/44 Qt-Tests, zwoelf
+Referenzen und 43 Matrixfaelle unter rs274 bestanden (reine UI-Logik,
+keine Referenzaenderung).
 
 ### LES-046 Vorschub-Unterbrechung (Spanbruch) schnitt kein Material
 
@@ -2166,12 +2247,35 @@ ABSPANEN mit `side`-Parameter) - noch reachable nur ueber den Dispatcher
 in `gcode_for_operation()` und ggf. alte gespeicherte Programme/direkte
 Tests.
 
-- [ ] klaeren, ob `OpType.TURN`/`BORE` fuer alte gespeicherte Programme
-  noch geladen werden koennen muessen (Migrationspfad noetig?)
-- [ ] falls ja: `gcode_for_turn`/`gcode_for_bore` auf `emit_coolant()`
-  umstellen (inkl. `M9` beim Operationsende)
-- [ ] falls nein: `OpType.TURN`/`BORE`, `gcode_for_turn`/`gcode_for_bore`
-  und zugehoerige Dispatcher-/Registry-Eintraege vollstaendig entfernen
+- [x] klaeren, ob `OpType.TURN`/`BORE` fuer alte gespeicherte Programme
+  noch geladen werden koennen muessen (Migrationspfad noetig?) - JA, siehe
+  Abschluss unten: reale Belege statt Vermutung gefunden
+- [x] `gcode_for_turn`/`gcode_for_bore` auf `emit_coolant()` umstellen
+  (inkl. `M9` beim Operationsende)
+
+Abschluss 2026-09-13: die Frage liess sich mit realen Belegen beantworten
+statt raten zu muessen. `storage.py::parse_program_payload()` prueft nur
+eine einzige, seit Projektbeginn unveraenderte `expected_version=1` -
+keine op-typ-spezifische Ablehnung, keine Migrationsfunktion existiert
+ueberhaupt (das Format hatte nie eine zweite Version). Ein Programm, das
+in einer AELTEREN UI-Version einen TURN/BORE-Step gespeichert hat, laedt
+deshalb heute unveraendert und landet als normales `OpType.TURN`/`BORE`-
+Objekt in `operations` - der Dispatcher in `gcode_for_operation()`
+(`gcode_program.py`) reicht das direkt an `gcode_for_turn`/`gcode_for_bore`
+weiter. Das ist also KEIN toter Code, sondern ein ueber alte Dateien
+weiterhin real erreichbarer Pfad - Entfernen wuerde solche alten Programme
+mit einem harten Fehler beim Laden brechen. Damit ist die Antwort JA
+(Migrationspfad muss weiterhin funktionieren), und der urspruengliche
+Kuehlmittel-Fund ein echter, ueber alte Dateien erreichbarer Bug: direktes
+`M8` ohne `M9` liess Kuehlmittel nach einer TURN/BORE-Operation mit
+`coolant=False` einfach weiterlaufen (`coolant=True` einer vorherigen
+Operation blieb aktiv). Behoben: beide Funktionen nutzen jetzt
+`emit_coolant()`, wie alle anderen Operationstypen bereits. Neuer
+Regressionstest `test_legacy_turn_and_bore_switch_coolant_off_instead_of_leaving_it_running`
+(`tests/test_operation_value_ranges.py`), per `git stash` gegen den alten
+Code verifiziert (beide Faelle schlagen ohne den Fix fehl). 681 Stub-/44
+Qt-Tests, zwoelf Referenzen und 43 Matrixfaelle unter rs274 bestanden
+(keine Referenzaenderung, TURN/BORE wird von keiner Referenz genutzt).
 
 ### LES-043 Gegenspindel-Checkbox taeuscht Generatorunterstuetzung vor
 

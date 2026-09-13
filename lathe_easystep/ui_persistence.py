@@ -363,6 +363,20 @@ def handle_save_changes(handler) -> None:
 
         saved_steps = 0
         linked_steps = 0
+        # SICHERHEITSFUND 2026-09-13 (Nutzerbericht): ein geaenderter Step
+        # OHNE verknuepfte Step-Datei wurde hier bisher stillschweigend
+        # uebersprungen - die urspruengliche, individuell gespeicherte
+        # Step-Datei blieb unveraendert, ohne dass die Zusammenfassung am
+        # Ende das erkennbar machte. Nutzerentscheidung: jeder Step MUSS mit
+        # einer Datei verknuepft sein (Zwang wie bei "Programm speichern" -
+        # anlegen ODER eine bestehende laden -, geloest erst durch Loeschen
+        # des Steps im Panel). "Aenderungen speichern" fordert eine fehlende
+        # Verknuepfung deshalb jetzt genauso ein wie "Programm speichern"
+        # (`_ensure_step_file_link()`), statt sie nur stillschweigend zu
+        # ignorieren. Bricht der Nutzer den Dialog ab, bleibt der Step
+        # unverknuepft und wird weiterhin uebersprungen, aber explizit
+        # gezaehlt/gewarnt statt still.
+        unlinked_dirty_steps = 0
         dirty_step_indices = sorted(int(idx) for idx in getattr(handler, "_dirty_operation_indices", set()) if int(idx) >= 0)
         for idx in dirty_step_indices:
             if idx >= len(handler.model.operations):
@@ -371,11 +385,15 @@ def handle_save_changes(handler) -> None:
             if op.op_type == OpType.PROGRAM_HEADER:
                 continue
             step_path = handler._step_file_path(op)
+            if not step_path:
+                if handler._ensure_step_file_link(op, index_hint=idx, parent=parent, settings=settings):
+                    step_path = handler._step_file_path(op)
             handler._log(
                 f"[LatheEasyStep] save_changes op#{idx+1} type={op.op_type} step_path={step_path!r}",
                 level="info",
             )
             if not step_path:
+                unlinked_dirty_steps += 1
                 continue
             linked_steps += 1
             data = handler._operation_to_step_data(op)
@@ -434,9 +452,11 @@ def handle_save_changes(handler) -> None:
         messages.append(_tr(handler, "message.changes.gcode_updated") if saved_gcode else _tr(handler, "message.changes.gcode_unchanged"))
         if saved_program and not linked_steps:
             messages.append(_tr(handler, "message.changes.steps_embedded_in_program"))
+        if unlinked_dirty_steps:
+            messages.append(_tr(handler, "message.changes.steps_missing_link", count=unlinked_dirty_steps))
         handler._log(
             f"[LatheEasyStep] save_changes done: linked_steps={linked_steps} steps={saved_steps} "
-            f"program={saved_program} gcode={saved_gcode}",
+            f"unlinked_dirty_steps={unlinked_dirty_steps} program={saved_program} gcode={saved_gcode}",
             level="info",
         )
         QtWidgets.QMessageBox.information(

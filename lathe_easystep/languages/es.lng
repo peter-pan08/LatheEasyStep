@@ -815,6 +815,7 @@ message.changes.program_unchanged=El programa no ha cambiado o no está vinculad
 message.changes.program_updated=Programa actualizado
 message.changes.save_failed=No se pudieron guardar los cambios
 message.changes.steps_embedded_in_program=Los steps modificados se guardaron dentro del archivo de programa.
+message.changes.steps_missing_link=Atencion: {count} step(s) modificado(s) no tienen un archivo step vinculado y NO se actualizaron como archivo propio - vincule un archivo step primero mediante "Guardar programa".
 message.changes.steps_unchanged=No se guardaron archivos step modificados
 message.changes.steps_updated=Archivos step actualizados: {count}
 message.delete.program_header_forbidden=La cabecera del programa no se puede eliminar.
