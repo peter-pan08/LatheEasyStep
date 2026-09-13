@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### LES-020 187 Zeilen toten Code aus dem Handler entfernt 2026-09-13
+
+- Systematischer Scan aller privaten Handler-Methoden auf Null-Referenzen
+  (kein Aufrufer irgendwo im Repo) im Rahmen der LES-024/LES-044-Arbeit
+  fand 17 bestaetigt tote Methoden, darunter eine komplette, nie
+  aufgerufene Zweit-Implementierung der Kern-Widget-Suche
+  (`_find_all_core_widgets_comprehensive()`, parallel zur tatsaechlich
+  genutzten `ensure_core_widgets()`-Familie) und ein komplett
+  deaktivierter Init-Queue-Mechanismus (`_schedule_post_start_init()`/
+  `_post_start_init()` plus sechs nie aufgerufene Step-Methoden).
+- Vor jeder Entfernung einzeln geprueft, dass die zugrunde liegende
+  Funktionalitaet entweder anderswo direkt genutzt wird oder tatsaechlich
+  folgenlos tot ist (kein String-Dispatch, keine Tests, kein indirekter
+  Aufruf uebersehen). Details: TODO.md (LES-020).
+- **Separater Fund, bewusst NICHT geloescht:** drei zusammengehoerige
+  Methoden (`_tool_orientation_mismatch`, `_collect_tool_orientation_warnings`,
+  `_radius_warning_details`) bilden ein vollstaendig implementiertes, aber
+  nie an die tatsaechliche Warnungs-Pipeline angebundenes Warnsystem fuer
+  Werkzeug-Orientierung/-Radius. Ob das absichtlich inaktiv ist oder
+  unvollendet blieb, ist eine fachliche Entscheidung - siehe TODO.md.
+- 691 Stub-/50 Qt-Tests bestanden, `lathe_easystep_handler.py` importiert
+  weiterhin fehlerfrei mit echtem PyQt5, zwoelf Referenzen unveraendert.
+
 ### LES-044 Architekturdokument fuer die Panel-Modularisierung 2026-09-13
 
 - Nutzerauftrag "eines der grossen Architektur-Themen anfangen": LES-044
