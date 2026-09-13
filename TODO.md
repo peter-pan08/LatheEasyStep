@@ -515,6 +515,34 @@ explizit, und Innenbearbeitung explizit inklusive Vorschub-Unterbrechung.
 637 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle unter rs274
 bestanden (keine neue Referenzaenderung, reiner Testzuwachs).
 
+### LES-049 Geloeschte/umbenannte Kontur blieb bei referenzierendem Abspanen-Step unbemerkt
+
+Fund 2026-09-13 waehrend der LES-047/LES-048-Nachuntersuchung (dieselbe
+Fragestellung: "bleibt eine Referenz nach einer Listenaenderung korrekt
+gueltig?", diesmal NAME- statt INDEX-basiert): eine ABSPANEN-Operation
+verweist per `contour_name` auf eine CONTOUR-Operation. Wird diese Kontur
+spaeter geloescht oder umbenannt, blieb `validate_program_setup()` (dieselbe
+Funktion, die bereits andere Inkonsistenzen wie abweichende Gewinde-Preset-
+Werte waehrend der Bearbeitung meldet) dazu bisher STUMM - keine Warnung
+in Vorschau/Programmkopf, erst ein harter `ValueError` beim naechsten
+"Programm erzeugen"/"Speichern" (`gcode_program.py`: "Kontur X fehlt oder
+ist leer."). Das ist kein Sicherheitsrisiko wie LES-046/047/048 (der
+Fehler ist bereits ein LAUTER Abbruch, keine still falsche Ausgabe), aber
+eine vermeidbare Ueberraschung erst beim naechsten Speicherversuch statt
+sofort sichtbar waehrend der Bearbeitung.
+
+- [x] Warnung in `validate_program_setup()` ergaenzt, sobald `contour_name`
+  gesetzt, aber nicht aufloesbar ist
+- [x] bewusst NICHT ausgeloest bei leerem `contour_name` (ueber die UI beim
+  Anlegen einer neuen Abspanen-Operation bereits ausgeschlossen - das waere
+  eine irrefuehrende Ursachenzuschreibung)
+- [x] real reproduziert (Warnung fehlte, jetzt vorhanden) und mit
+  `git stash` gegen den alten Code verifiziert
+
+Drei neue Tests (`tests/test_dangling_contour_reference_check.py`), einer
+schlaegt ohne die Aenderung fehl. 691 Stub-/44 Qt-Tests, zwoelf Referenzen
+und 43 Matrixfaelle unter rs274 bestanden (keine Referenzaenderung).
+
 ### LES-048 Loeschen/Verschieben eines Steps verschob dessen dirty-Markierung nicht mit
 
 **SICHERHEITSKRITISCHER FUND 2026-09-13**, gefunden als direkte

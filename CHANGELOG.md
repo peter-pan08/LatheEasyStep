@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### LES-049 geloeschte/umbenannte Kontur bei Abspanen-Step wird jetzt sofort gewarnt 2026-09-13
+
+- Fund waehrend der LES-047/LES-048-Nachuntersuchung: eine ABSPANEN-
+  Operation, deren `contour_name` auf eine spaeter geloeschte oder
+  umbenannte CONTOUR-Operation verweist, blieb in `validate_program_setup()`
+  bisher stumm - keine Warnung waehrend der Bearbeitung, erst ein harter
+  Fehler beim naechsten Speicherversuch.
+- Kein Sicherheitsrisiko wie LES-046/047/048 (bereits ein lauter Abbruch,
+  keine still falsche Ausgabe), aber eine vermeidbare Ueberraschung.
+  Warnung ergaenzt, sobald `contour_name` gesetzt aber nicht aufloesbar
+  ist (leerer Name bleibt bewusst unbemerkt - ueber die UI beim Anlegen
+  bereits ausgeschlossen).
+- Drei neue Tests, per `git stash` verifiziert. 691 Stub-/44 Qt-Tests,
+  zwoelf Referenzen und 43 Matrixfaelle unter rs274 bestanden, keine
+  Referenzaenderung. Details: TODO.md.
+
 ### LES-048 SICHERHEITSKRITISCHER FIX: Loeschen/Verschieben eines Steps verschob dessen dirty-Markierung nicht mit 2026-09-13
 
 - Gefunden als direkte Folgeuntersuchung von LES-047: `_dirty_operation_indices`
