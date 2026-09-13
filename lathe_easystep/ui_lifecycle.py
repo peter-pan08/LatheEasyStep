@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtWidgets
 from .ui_advanced import ensure_advanced_widgets
-from .ui_split import load_split_tab_uis
+from .ui_split import load_split_tab_uis, load_step_management_uis
 
 
 def bootstrap_widget_refs(handler) -> None:
@@ -172,6 +172,9 @@ def finalize_ui_ready(handler) -> None:
             handler._startup_mark("_finalize_ui_ready: load_split_tab_uis begin")
             load_split_tab_uis(handler)
             handler._startup_mark("_finalize_ui_ready: load_split_tab_uis end")
+            handler._startup_mark("_finalize_ui_ready: load_step_management_uis begin")
+            load_step_management_uis(handler)
+            handler._startup_mark("_finalize_ui_ready: load_step_management_uis end")
             handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
         except Exception as exc:
             handler._log(f"[LatheEasyStep] split UI load failed: {exc}", level="warning")

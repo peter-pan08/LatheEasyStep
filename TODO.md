@@ -2070,10 +2070,46 @@ zusaetzliches Wissen ueber die reale Endposition.
 ### LES-024 Restliche UI-Modularisierung
 
 - [ ] Vorschau/Schnittansicht in eigene UI-Struktur auslagern
-- [ ] Step-Liste und Programmverwaltung auslagern
+- [x] Step-Liste und Programmverwaltung auslagern (siehe Teilstand
+  2026-09-13 unten)
 - [ ] je Modul Controller, Tooltips, Sprach-IDs und Validierung zuordnen
 - [ ] direkte Widgetzugriffe zwischen Modulen durch definierte Schnittstellen ersetzen
 - [ ] Embedded- und Standalone-Laden testen
+
+Teilstand 2026-09-13 (Step-Liste/Programmverwaltung ausgelagert): nach
+demselben, bereits bewaehrten Muster wie der Reiter-Split
+(`ui_split.py::load_split_tab_uis()`) - der Container bleibt im Geruest
+(`lathe_easystep.ui`) leer, der tatsaechliche Inhalt kommt zur Laufzeit
+aus einer eigenen `.ui`-Datei:
+
+- `listOperations` + Step/Programm speichern/laden-Buttons -> neuer
+  leerer Container `stepListPanel` im Geruest, Inhalt aus neuer Datei
+  `ui_parts/stepListPanel.ui`.
+- Schritt hinzufuegen/loeschen/verschieben/Neues Programm/Programm
+  erzeugen/Aenderungen speichern -> neuer leerer Container
+  `stepActionsPanel`, Inhalt aus `ui_parts/stepActionsPanel.ui`.
+- Alle bisherigen objectNames (`listOperations`, `btnAdd`, `btnSaveChanges`,
+  ...) blieben unveraendert - deshalb musste KEIN anderer Code (Widget-
+  Lookup, Signalanschluesse, Sprach-IDs, Tooltips, Tests) angepasst
+  werden. `ui_split.py` wurde dafuer intern auf eine gemeinsame Ladefunktion
+  `_load_ui_fragments_into()` verallgemeinert (bisher nur fuer Reiter,
+  jetzt wiederverwendet fuer die neuen Container); `load_step_management_uis()`
+  wird in `finalize_ui_ready()` direkt neben `load_split_tab_uis()` aufgerufen.
+- Dies ist die erste Aenderung dieser Sitzung, die die Haupt-`.ui`-Datei
+  selbst umstrukturiert (nicht nur Python-Logik) - deshalb per Nutzer-
+  entscheidung zusaetzlich zur automatisierten Pruefung mit einem echten
+  Screenshot-Vergleich abgesichert: die Shell vor und nach der Aenderung
+  offscreen mit echtem PyQt5 gerendert (kein LinuxCNC/HAL/SIM noetig) und
+  Pixel-fuer-Pixel verglichen - 25 von 700.000 Pixeln unterschiedlich,
+  alle auf einer einzelnen 1px breiten Trennlinie an der neuen
+  Container-Grenze (Anti-Aliasing-Randeffekt zwischen zwei benachbarten
+  Rahmen), keine strukturelle Abweichung.
+- Drei neue Tests (`tests/test_step_management_ui_loader.py`, echtes
+  PyQt5: Widgets fehlen vor dem Laden/sind danach vorhanden, doppeltes
+  Laden dupliziert nichts, deutsche Button-Beschriftungen bleiben
+  erhalten), per `git stash` verifiziert (ImportError ohne die Aenderung).
+  694 Stub-/53 Qt-Tests bestanden, zwoelf Referenzen unveraendert (reine
+  UI-Struktur-Aenderung ohne G-Code-Bezug).
 
 ### LES-027 Performance
 
