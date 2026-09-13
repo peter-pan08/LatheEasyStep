@@ -1812,22 +1812,43 @@ fand 20 Kandidaten, davon 17 bestaetigt und entfernt (187 Zeilen):
   entweder anderswo direkt (ohne den Wrapper) genutzt wird oder
   tatsaechlich folgenlos tot ist.
 
-**Bewusst NICHT entfernt, sondern separat zurueckgestellt:** drei
-zusammengehoerige Methoden (`_tool_orientation_mismatch`,
+**Bewusst NICHT sofort entfernt, sondern per Nutzerrueckfrage geklaert:**
+drei zusammengehoerige Methoden (`_tool_orientation_mismatch`,
 `_collect_tool_orientation_warnings`, `_radius_warning_details` in
-`tool_logic.py`) sind ebenfalls ohne jeden Aufrufer, aber kein einfacher
+`tool_logic.py`) waren ebenfalls ohne jeden Aufrufer, aber kein einfacher
 Wrapper-Leichenfund - sie bilden ein vollstaendig implementiertes, aber
 nie an die tatsaechliche Warnungs-Pipeline (`prog["__warnings"]` in
 `ui_preview.py`, gespeist aus `get_machine_limit_warnings()` +
 `checks.py::validate_program_setup()`) angebundenes Warnsystem (Werkzeug-
 Orientierung passt laut Kommentartext nicht zur Operation; Werkzeug ohne
-bekannten Radius deaktiviert die Kompensation). Ob das absichtlich nie
-aktiviert wurde (z. B. weil die Kommentar-Heuristik zu viele Fehlalarme
-liefert) oder schlicht unvollendet blieb, ist eine fachliche Entscheidung,
-die nicht stillschweigend per Loeschung oder Anbindung getroffen wird -
-siehe CHANGELOG.md.
+bekannten Radius deaktiviert die Kompensation).
 
-691 Stub-/50 Qt-Tests bestanden, `lathe_easystep_handler.py` importiert
+Nutzerentscheidung 2026-09-13: anbinden, da eine real gepflegte
+Werkzeugtabelle Orientierung und Radius grundsaetzlich enthaelt - ein
+Fehlen ist ein sinnvolles Warnsignal. Bei der Umsetzung zeigte sich: nur
+der Radius-Teil war tatsaechlich neu. Der Orientierungs-Abgleich
+(`collect_tool_orientation_warnings`) ist eine bereits vollstaendig
+redundante Zweitimplementierung - `checks.py::validate_program_setup()`
+(Zeilen ~129-132) hat laengst einen eigenen, bereits aktiven und in
+`prog["__warnings"]` angebundenen Orientierungs-Check ("Tool T.. wirkt
+wie Innenwerkzeug, Operation aber wie Aussenbearbeitung"). Eine Anbindung
+der `tool_logic.py`-Version haette diese Warnung doppelt ausgegeben.
+
+Umgesetzt: `_radius_warning_details()` in `ui_preview.py::collect_preview_state()`
+eingehaengt (`prog["__warnings"]` faengt jetzt auch Werkzeuge ohne
+bekannten Radius ab). `collect_tool_orientation_warnings`/
+`tool_orientation_mismatch`/`_operation_side_hint`/`_tool_comment_side_hint`
+bleiben unveraendert bestehen (redundant, aber nicht falsch) - ein
+Aufraeumen dieser Dopplung ist ein spaeterer, eigener LES-020-Kandidat,
+kein Teil dieser Aenderung. Zwei neue Unit-Tests fuer
+`radius_warning_details()` plus ein Integrationstest fuer die Anbindung
+selbst (`tests/test_tool_warning_wiring.py`), per `git stash` verifiziert
+(Integrationstest schlaegt ohne die Aenderung fehl). 694 Stub-/50
+Qt-Tests bestanden, zwoelf Referenzen unveraendert (reine UI-Warnungs-
+Aenderung ohne G-Code-Bezug).
+
+Zum Vergleich, der urspruengliche LES-020-Aufraeum-Teilstand: 691
+Stub-/50 Qt-Tests bestanden, `lathe_easystep_handler.py` importiert
 weiterhin fehlerfrei mit echtem PyQt5, zwoelf Referenzen unveraendert
 (reine Bereinigung ohne Verhaltensaenderung).
 
