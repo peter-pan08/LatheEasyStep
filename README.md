@@ -48,7 +48,7 @@ weiter als ein reiner Prototyp:
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
 - die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `673 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped` validiert
-- `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter liegen unter `lathe_easystep/ui_parts/`
+- `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter, die Step-Liste/Programmverwaltung und die Aktionsleiste liegen als eigene `.ui`-Fragmente unter `lathe_easystep/ui_parts/`
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
@@ -153,8 +153,11 @@ liegt.
 Zur UI-Struktur:
 
 - `lathe_easystep.ui` ist die Start-Shell des Panels.
-- Die einzelnen Reiterinhalte liegen getrennt in `lathe_easystep/ui_parts/*.ui`.
-- Der Handler laedt diese Teil-UIs beim Start in die vorhandenen Tab-Container nach.
+- Die einzelnen Reiterinhalte sowie die Step-Liste/Programmverwaltung und
+  die Aktionsleiste (hinzufuegen/loeschen/verschieben/erzeugen/speichern)
+  liegen getrennt in `lathe_easystep/ui_parts/*.ui`.
+- Der Handler laedt diese Teil-UIs beim Start in die vorhandenen, im
+  Geruest leeren Container nach.
 
 ## Grundsaetzlicher Workflow
 
@@ -436,11 +439,13 @@ Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
 ## Aktuelle Modulstruktur
 
-Die acht Bearbeitungsreiter sind bereits aus der Shell geloest:
+Die acht Bearbeitungsreiter sowie Step-Liste/Programmverwaltung und die
+Aktionsleiste sind bereits aus der Shell geloest:
 
-- `lathe_easystep.ui`: Shell, Step-Liste, Tab-Container und Vorschau
+- `lathe_easystep.ui`: Shell mit leeren Containern (Tab-Container,
+  `stepListPanel`, `stepActionsPanel`) und Vorschau
 - `lathe_easystep/ui_parts/*.ui`: Program, Face, Contour, Parting, Thread,
-  Groove, Drill und Keyway
+  Groove, Drill, Keyway, `stepListPanel`, `stepActionsPanel`
 - `lathe_easystep/ui_split.py`: Laufzeit-Lader der Teil-UIs
 - `lathe_easystep/*.py`: Fach-, UI-, Persistenz-, Vorschau- und Generatorlogik
 
@@ -486,7 +491,7 @@ early prototype:
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
 - the current development baseline is validated with `673 passed (Stub-Qt), 44 passed (Real-Qt), 0 skipped`
-- `lathe_easystep.ui` is now the shell and eight operation tabs live under `lathe_easystep/ui_parts/`
+- `lathe_easystep.ui` is now the shell; eight operation tabs, the step list/program management area and the action button bar live as separate `.ui` fragments under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 
 ## Branch Status

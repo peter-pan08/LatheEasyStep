@@ -17,12 +17,20 @@ TAB_UI_FILES: Dict[str, str] = {
     "tabKeyway": "tabKeyway.ui",
 }
 
+# LES-024: Step-Liste/Programmverwaltung als eigenes Panel-Modul, nach
+# demselben Muster wie die acht Reiter oben - der Container bleibt im
+# Geruest (lathe_easystep.ui) leer, der tatsaechliche Inhalt (gleiche
+# objectNames wie zuvor direkt im Geruest) kommt aus einer eigenen
+# .ui-Datei. Kein anderer Code (Widget-Lookup, Signale, Uebersetzungen)
+# musste dafuer angepasst werden, da alle objectNames unveraendert blieben.
+STEP_MANAGEMENT_UI_FILES: Dict[str, str] = {
+    "stepListPanel": "stepListPanel.ui",
+    "stepActionsPanel": "stepActionsPanel.ui",
+}
 
-def load_split_tab_uis(handler) -> None:
-    root = getattr(handler, "root_widget", None)
-    if root is None or not isinstance(root, QtWidgets.QWidget):
-        return
-    if getattr(handler, "_split_tabs_loaded", False):
+
+def _load_ui_fragments_into(handler, root: QtWidgets.QWidget, ui_files: Dict[str, str], loaded_flag: str) -> None:
+    if getattr(handler, loaded_flag, False):
         return
     try:
         from PyQt5 import uic
@@ -34,25 +42,25 @@ def load_split_tab_uis(handler) -> None:
 
     base_dir = Path(__file__).resolve().parent / "ui_parts"
     loaded_any = False
-    for tab_name, file_name in TAB_UI_FILES.items():
-        tab = root.findChild(QtWidgets.QWidget, tab_name)
-        if tab is None:
+    for container_name, file_name in ui_files.items():
+        container = root.findChild(QtWidgets.QWidget, container_name)
+        if container is None:
             continue
         ui_file = base_dir / file_name
         if not ui_file.exists():
             continue
-        # Skip tabs that already contain loaded split content.
-        existing_content = tab.findChild(QtWidgets.QWidget, f"{tab_name}_content")
+        # Skip containers that already contain loaded split content.
+        existing_content = container.findChild(QtWidgets.QWidget, f"{container_name}_content")
         if existing_content is not None:
             continue
         content = uic.loadUi(str(ui_file))
-        content.setObjectName(f"{tab_name}_content")
-        if tab.layout() is None:
-            layout = QtWidgets.QVBoxLayout(tab)
+        content.setObjectName(f"{container_name}_content")
+        if container.layout() is None:
+            layout = QtWidgets.QVBoxLayout(container)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
         else:
-            layout = tab.layout()
+            layout = container.layout()
             while layout.count():
                 item = layout.takeAt(0)
                 child = item.widget()
@@ -61,7 +69,26 @@ def load_split_tab_uis(handler) -> None:
         layout.addWidget(content)
         loaded_any = True
     if loaded_any:
-        handler._split_tabs_loaded = True
+        setattr(handler, loaded_flag, True)
 
 
-__all__ = ["TAB_UI_FILES", "load_split_tab_uis"]
+def load_split_tab_uis(handler) -> None:
+    root = getattr(handler, "root_widget", None)
+    if root is None or not isinstance(root, QtWidgets.QWidget):
+        return
+    _load_ui_fragments_into(handler, root, TAB_UI_FILES, "_split_tabs_loaded")
+
+
+def load_step_management_uis(handler) -> None:
+    root = getattr(handler, "root_widget", None)
+    if root is None or not isinstance(root, QtWidgets.QWidget):
+        return
+    _load_ui_fragments_into(handler, root, STEP_MANAGEMENT_UI_FILES, "_step_management_ui_loaded")
+
+
+__all__ = [
+    "TAB_UI_FILES",
+    "STEP_MANAGEMENT_UI_FILES",
+    "load_split_tab_uis",
+    "load_step_management_uis",
+]

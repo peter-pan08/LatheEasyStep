@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### LES-024 Step-Liste/Programmverwaltung als eigenes Panel-Modul ausgelagert 2026-09-13
+
+- Nach dem im Architekturdokument (LES-044) festgelegten Muster: Step-Liste
+  (`listOperations` + Step/Programm speichern/laden) und Aktionsleiste
+  (hinzufuegen/loeschen/verschieben/erzeugen/Aenderungen speichern) liegen
+  jetzt in eigenen `.ui`-Dateien (`ui_parts/stepListPanel.ui`,
+  `ui_parts/stepActionsPanel.ui`), analog zum bestehenden Reiter-Split.
+  Alle objectNames blieben unveraendert, kein anderer Code musste
+  angepasst werden.
+- Erste Sitzungs-Aenderung, die die Haupt-`.ui`-Datei selbst umstrukturiert.
+  Zusaetzlich zur automatisierten Pruefung per Nutzerentscheidung mit
+  einem echten Screenshot-Vergleich abgesichert (offscreen-Rendering vor/
+  nach der Aenderung, Pixel-fuer-Pixel verglichen): 25 von 700.000 Pixeln
+  unterschiedlich, alle auf einer einzelnen Anti-Aliasing-Trennlinie -
+  keine strukturelle Abweichung.
+- Drei neue Tests, per `git stash` verifiziert. 694 Stub-/53 Qt-Tests
+  bestanden, zwoelf Referenzen unveraendert. Details: TODO.md (LES-024).
+
 ### LES-020 Radius-Warnung an die Vorschau-Warnungspipeline angebunden 2026-09-13
 
 - Nutzerrueckfrage zum LES-020-Fund (Werkzeug-Orientierung/-Radius-
