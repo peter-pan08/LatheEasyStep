@@ -160,15 +160,18 @@ def test_internal_rough_passes_never_undercut_allowance_through_arc_with_chip_br
     an dem sowohl der Sehnen-Fix als auch das Spanbruch-Feature
     (`pause_enabled`) ansetzen. Diese Regression kombiniert beides an
     derselben Bogenkontur wie oben: mit aktivem Spanbruch duerfen die
-    Schrupp-Schnittpunkte (jetzt als `o<step_line_pause> call [...]`
-    statt als `G1`-Zeile ausgegeben) weiterhin nicht in das Schlichtaufmass
-    hineinschneiden."""
+    Schrupp-Schnittpunkte (als echte, in Teilschnitte zerlegte `G1`-Zeilen
+    ausgegeben, siehe SICHERHEITSFUND 2026-09-13 - vorher eine wirkungslose
+    `o<step_line_pause> call [...]`-Subroutine ohne Bewegung) weiterhin
+    nicht in das Schlichtaufmass hineinschneiden."""
     ops, settings = deepcopy(example_programs()["Innen_Radius.ngc"])
     ops[-1].params.update(pause_enabled=True, pause_distance=3.0)
     lines = generate_program_gcode(ops, settings)
     finish_allow_x = ops[-1].params["finish_allow_x"]
 
     assert not any(l.startswith(("G71 ", "G72 ")) for l in lines)
+    assert not any("step_line_pause" in l for l in lines)
+    assert any(l.startswith("G4 ") for l in lines)
 
     def wall_radius_at_z(z):
         if z <= -16.0 - 1e-9:
@@ -184,18 +187,12 @@ def test_internal_rough_passes_never_undercut_allowance_through_arc_with_chip_br
     allow_radius = finish_allow_x / 2.0
     checked = 0
     for line in rough:
-        if line.startswith("G1 "):
-            m = re.search(r"X(-?[0-9.]+) Z(-?[0-9.]+)", line)
-            if not m:
-                continue
-            x, z = float(m.group(1)), float(m.group(2))
-        elif "step_line_pause" in line and "call" in line:
-            nums = re.findall(r"\[(-?[0-9.]+)\]", line)
-            if len(nums) < 4:
-                continue
-            x, z = float(nums[2]), float(nums[3])
-        else:
+        if not line.startswith("G1 "):
             continue
+        m = re.search(r"X(-?[0-9.]+) Z(-?[0-9.]+)", line)
+        if not m:
+            continue
+        x, z = float(m.group(1)), float(m.group(2))
         clearance = wall_radius_at_z(z) - x / 2.0
         assert clearance >= allow_radius - 1e-6, (
             f"Schrupp-Schnitt X{x} Z{z} verletzt das Aufmass: nur "

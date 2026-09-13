@@ -2,6 +2,208 @@
 
 ## [Unreleased]
 
+### LES-022 (vierte Etappe): Positions-Nachverfolgung durch die Schrupp-Baender 2026-09-13
+
+- Die zuvor als "deutlich groessere Etappe" zurueckgestellte Positions-
+  Nachverfolgung durch `rough_turn_parallel_x()`/`rough_turn_parallel_z()`
+  ist jetzt umgesetzt: beide Funktionen tragen ihre tatsaechlich erreichte
+  Endposition selbst in den zentralen Bewegungszustand ein, statt dass der
+  Aufrufer danach bedingungslos `clear()` setzen muss.
+- Nutzen: ein kombinierter Schruppen+Schlichten-Step (ein Funktionsaufruf)
+  kann den Rueckzug vor dem Schlichtschnitt jetzt korrekt ueberspringen,
+  wenn das Schruppen bereits nachweislich exakt dort endete - vorher wurde
+  dieser ungefaehrliche, aber unnoetige Rueckzug immer zusaetzlich
+  ausgegeben. Drei neue Tests, per `git stash` gegen den alten Code
+  verifiziert (schlagen ohne die Aenderung fehl).
+- Ausserdem zwei bereits durch Codeaudit abgesicherte Punkte formal
+  abgeschlossen: die uebrigen modalen G-Codes (G90/91, G94/95, G18,
+  G40/41/42) und M-Codes/Werkstuecknullpunkt (M3/4/5, M7/8/9, G54) haben
+  keinen dynamisch umgeschalteten Zustand, der ueberhaupt "verwaltet"
+  werden muesste - strukturell dasselbe Argument wie bei G40/41/42
+  (Aktivierung und Ausgabe im selben Funktionsaufruf zwingend gepaart).
+- Keine der zwoelf Referenzen oder 43 Matrixfaelle nutzt die absolute
+  Rueckzugskonfiguration, die den konkreten Optimierungsfall ausloest -
+  keine Referenzaenderung. 679 Stub-/44 Qt-Tests bestanden. Details:
+  TODO.md.
+
+### LES-046 SICHERHEITSKRITISCHER FIX: Vorschub-Unterbrechung (Spanbruch) schnitt kein Material 2026-09-13
+
+- Gefunden waehrend der LES-022-Codeaudit-Arbeit: die "Vorschub-
+  Unterbrechung"/"Spanbruch"-Checkbox (`pause_enabled`/`pause_distance`)
+  hat seit ihrer Einfuehrung (Juli 2026) NIE tatsaechlich Material
+  geschnitten, wenn sie aktiv war. ABSPANEN gab statt einer G1-Schnittzeile
+  einen Subroutinenaufruf aus, dessen Definition NUR eine Verweilzeit
+  (`G4`) enthielt - keine Bewegung. Die gesamte Schnittstrecke (oft
+  10-20mm) wurde durch einen kurzen Halt ersetzt; das Programm lief danach
+  unveraendert weiter, als sei das Material entfernt worden - der naechste
+  Pass bzw. Schlichtschnitt haette auf praktisch unbearbeitetes Rohmass
+  statt auf das erwartete Restaufmass getroffen. Per rs274-Bewegungsspur
+  (STRAIGHT_FEED/DWELL) zweifelsfrei bestaetigt. PLANEN war noch
+  weitergehender wirkungslos: die Subroutine wurde dort nie aufgerufen.
+- **Warum das nie auffiel:** alle bestehenden Tests pruefen nur, ob der
+  Subroutinenaufruf mit den richtigen Zahlen im Text auftaucht - nie, ob
+  die Subroutine diese Zahlen tatsaechlich anfaehrt. Betrifft auch direkt
+  die urspruengliche Anfrage ganz am Anfang dieser Sitzung zur Verifikation
+  von Zyklus-/ISO-Pfad mit Vorschub-Unterbrechung - die damalige
+  "erledigt"-Einschaetzung beruhte auf demselben blinden Fleck.
+- **Fix:** `_emit_segment_with_pauses()` zerlegt die Schnittstrecke jetzt
+  selbst in `pause_distance`-lange Teilschnitte mit echten `G1`-Zeilen,
+  gefolgt von `G4`-Pausen zum Spanbrechen - als explizite, direkt lesbare
+  Folge statt einer Laufzeit-Subroutine. PLANEN wirft jetzt einen klaren
+  `ValueError` statt die Checkbox still zu ignorieren (kein
+  bewegungsbasierter Ersatzpfad fuer den dortigen G72-Zyklus vorhanden -
+  eigener, groesserer Folgeschritt).
+- Alle betroffenen Bestandstests repariert (pruefen jetzt echte G1/G4-
+  Bewegung statt Makro-Textparameter), per `git stash` gegen den alten Code
+  verifiziert (3 von 6 aktualisierten/neuen Tests schlagen ohne den Fix
+  fehl). Per rs274-Bewegungsspur UND echtem SIM-Maschinenlauf bestaetigt
+  (fehlerfrei, korrekte Endposition). Keine der zwoelf Referenzen oder 43
+  Matrixfaelle nutzt `pause_enabled=True` - keine Referenzaenderung. 676
+  Stub-/44 Qt-Tests bestanden. Details: TODO.md (LES-046).
+
+### LES-033 abgeschlossen: Gewindevorschau-Geometrie numerisch gegen echten G76-Befehl verifiziert 2026-09-13
+
+- `build_thread_path()` war bereits die einzige, reale (nicht symbolische)
+  Vorschau-Geometriefunktion fuer Gewindeoperationen - abgeleitet aus
+  Steigung, Tiefe, Start-Z und Laenge, inklusive Vorlauf/Auslauf-Taper und
+  Rechts-/Linksgewinde. Bisher aber nie numerisch gegen den tatsaechlich
+  erzeugten G76-Befehl verifiziert, nur strukturell getestet.
+- Neuer Regressionstest vergleicht Z-Endwert, Kronen-/Kerndurchmesser und
+  Vorlauf-Taperlaenge der Vorschau direkt gegen den geparsten G76-Befehl,
+  fuer alle vier Kombinationen Aussen/Innen x Rechts/Links, mit und ohne
+  Vorlauf - alle stimmen exakt ueberein.
+- Eine kleine, bewusst nicht geratene Detailfrage bleibt offen: der
+  Innen-Vorlaufpunkt liegt auf dem Kerndurchmesser statt dem Major-
+  Durchmesser (konsistent zur eigenen Kronen-/Kerndurchmesser-Definition
+  der Funktion) - ob das die anschaulichste Darstellung ist, wurde nicht
+  gegen einen realen Backplot fuer diesen speziellen Fall geprueft (betrifft
+  nur die Vorschau-Optik, LinuxCNCs eigene G76-Zyklusimplementierung fuehrt
+  den tatsaechlichen Taper aus). 676 Stub-/44 Qt-Tests bestanden. Details:
+  TODO.md.
+
+### Dokumentationspflege: drei laengst abgeschlossene Punkte hatten noch eine Prioritaetszeile 2026-09-13
+
+- LES-018 (G70-Wiederverwendung fuer separaten Schlichtstep), LES-020
+  (Handler-Verkleinerung) und LES-031 (redundante Ausgabe bereinigen)
+  waren laut ihrer eigenen Detail-Abschnitte (alle Checkboxen abgehakt,
+  mit Umsetzungsnotiz) bereits vollstaendig abgeschlossen, standen aber
+  noch in der Prioritaetstabelle. Keine Code-/Testaenderung, reine
+  Nachpflege gemaess der projekteigenen Regel ("Erledigte Punkte werden
+  entfernt").
+
+### LES-015 abgeschlossen: Innenkontur-Testmatrix war bereits vollstaendig abgedeckt 2026-09-12
+
+- Bei genauerer Pruefung deckt die bestehende, bei jeder Sitzung real
+  gegen rs274 verifizierte 43-Matrix bereits alle neun offenen Punkte ab -
+  nur ohne dass es in dieser TODO-Sektion nachvollzogen war.
+- Vier Profilformen (Zylinder, Stufe, Konus, Radius mit I != 0) x zwei
+  Konturrichtungen x drei Modi (Schruppen/Schlichten/beides) = 24
+  Matrixfaelle, plus zwei Werkzeugradiuskorrektur-Faelle, alle unter
+  rs274 bestanden und zusaetzlich pytest-seitig geometrisch geprueft
+  (XRI-Grenze, Bogenerhalt, Materialgrenze).
+- Reale SIM-Backplot-Bestaetigung ist bewusst repraesentativ (ein Fall je
+  Profilform, inkl. dem neuen LES-005-Freistichfall), nicht alle 26
+  Matrixfaelle einzeln - Begruendung: dieselbe geteilte Generatorlogik,
+  nur variierende Koordinaten/Flags, kein eigener Codepfad je
+  Kombination (Praezedenzfall LES-012). Details: TODO.md.
+
+### LES-030 Futter-Sperrzone mit realem Beispiel verifiziert 2026-09-12
+
+- Bisher war die Futter-Sperrzone (`chuck_no_go_x_min/x_max/z_limit`) nur
+  in isolierten Unit-Tests geprueft, nicht in einem vollstaendigen
+  Programm gegen einen echten Interpreter/Maschine.
+- Neuer Verifikationsfall `chuck_nogo_case()` (basierend auf `Einstich.ngc`)
+  setzt eine Sperrzone, deren X-Bereich den tatsaechlichen
+  Rueckzugsdurchmesser bewusst einschliesst - sicher umgangen wird sie nur
+  ueber die Z-Seite, nicht trivial durch einen ausserhalb liegenden X-Wert.
+  Neuer Regressionstest bestaetigt sowohl den sicheren Fall (generiert
+  fehlerfrei) als auch die Gegenprobe (engere Sperrgrenze blockiert korrekt).
+- Real auf der SIM-Maschine gefahren (925s, fehlerfrei, korrekte
+  Endposition, Backplot bestaetigt). 675 Stub-/44 Qt-Tests, zwoelf
+  Referenzen und 43 Matrixfaelle unter rs274 bestanden.
+- Bewusst NICHT geprueft: unterschiedliche physische Maschinenprofile
+  (fehlen mangels realer Vergleichsdaten) - dafuer neue, separate
+  Checkbox in TODO.md ergaenzt statt den Punkt stillschweigend
+  mitzuschliessen. Details: TODO.md.
+
+### LES-030 Teilabschluss: letzte zwei Referenzen (Abdrehen.ngc, Einstich.ngc) real bis M30 gefahren 2026-09-12
+
+- Beide seit 2026-09-10 offen gebliebenen Referenzen mit grosszuegigem
+  Zeitbudget real auf der SIM-Maschine zu Ende gefahren: `Abdrehen.ngc`
+  (769s, materialintensivste Referenz mit vielen feinen Schrupppaessen) und
+  `Einstich.ngc` (928s) - beide fehlerfrei, beide mit Endposition exakt am
+  konfigurierten Werkzeugwechselpunkt.
+- Damit haben jetzt alle zwoelf Referenzen einen dokumentierten nativen
+  LinuxCNC-Trockenlauf bis M30 (mit einer bewussten Ausnahme: `CSS_Wechsel.ngc`
+  selbst nutzt eine fuer eine reale Abnahme unpraktikabel feine 0.05mm-
+  Zustellung - der zugrunde liegende Mechanismus ist stattdessen ueber
+  LES-013s `css_switch_case()` verifiziert).
+- Eigener Messfehler gefunden und korrigiert: ein Hilfsskript uebergab sein
+  Zeitbudget-Argument nicht an die Laufzeitfunktion (fixer 180s-Default
+  wurde stillschweigend verwendet) - dadurch wurde der erste `Abdrehen.ngc`-
+  Lauf faelschlich als Timeout gemeldet, obwohl die Maschine nachweislich
+  fehlerfrei weiterlief (Queue-Tiefe wuchs kontinuierlich). Keine
+  Code-/Testaenderung in LatheEasyStep selbst noetig.
+- Drei weitere Checkboxen per Dokumentation geschlossen (kein neuer Code,
+  nur bereits vorhandene Belege zusammengefuehrt): Nichtnull-I-Boegen unter
+  G7 in Schlichtweg UND G71-Subroutine sind bereits durch
+  `Kontur_Radius_Fase.ngc` (Teil der zwoelf rs274-/SIM-Referenzen) und
+  `tests/test_g71_arc_profile.py` abgedeckt; "Innen-G71" ist keine
+  offene Testluecke, sondern eine per Design nie eintretende Situation
+  (G71/G72 werden fuer Innenbearbeitung wegen eines bestaetigten
+  Interpreter-Fehlers grundsaetzlich nie verwendet, der bewegungsbasierte
+  Ersatzpfad deckt Z-Monotonie und Bohrung-als-Materialgrenze bereits ab).
+  Details: TODO.md.
+
+### LES-013 abgeschlossen: CSS/G96-Sicherheit fuer Zyklen und Groove-Makro analysiert und real verifiziert 2026-09-12
+
+- Codeaudit fuer die drei verbleibenden Bewertungspunkte: `css_start_diameter`
+  (`stock_x` bei ABSPANEN) wird NUR fuer die einmalige, begrenzte G97-Anfahr-/
+  Freifahrtdrehzahl verwendet - jeder tatsaechliche Schnitt aktiviert vorher
+  echtes G96, das LinuxCNC selbst live anhand der tatsaechlichen X-Position
+  nachfuehrt. "stock_x ist nicht jeder einzelne Passdurchmesser" ist deshalb
+  kein Bug.
+- G71/G72/G76 und das Groove-Makro (`o220 call`) lassen G96 fuer ihre gesamte
+  interne Bewegung aktiv, was sicher ist, weil die EINZIGE Stelle im
+  gesamten Generator, die je "G96" ausgibt, IMMER ein D-Wort (harte
+  Maximaldrehzahl) mitgibt (per Grep verifiziert) - eine interne
+  Zyklusbewegung nahe X=0 kann die Drehzahl nie ueber das Limit treiben.
+  Bereits automatisiert abgedeckt durch einen bestehenden Test fuer alle
+  vier Schnittarten.
+- Neuer Verifikationsfall (`verification_cases.css_switch_case()`, grobe
+  1mm-Zustellung statt der 400-Pass-Produktionsreferenz) real auf der
+  SIM-Maschine gefahren (53s, fehlerfrei): Live-Protokoll der Spindeldreh-
+  zahl bestaetigt quantitativ, dass die Drehzahl waehrend des Zyklus korrekt
+  bis exakt auf die D-Wort-Grenze steigt und nie darueber, und nach dem
+  Zyklus korrekt auf die begrenzte Freifahrtdrehzahl zurueckfaellt (nicht
+  auf dem CSS-Wert stehen bleibt). 674 Stub-/44 Qt-Tests, zwoelf Referenzen
+  und 43 Matrixfaelle unter rs274 bestanden, keine Referenzaenderung.
+  Details: TODO.md.
+
+### LES-005 abgeschlossen: eigenstaendiger Innenfreistich (nicht THREAD-abgeleitet) mitten in Innenkontur verifiziert 2026-09-12
+
+- Letzter offener Punkt von LES-005: der eigenstaendige `din_relief`-
+  Kontur-Feature (nicht das automatisch aus einer THREAD-Operation
+  abgeleitete, siehe LES-037) hatte fuer die Innenseite mitten in einer
+  Bohrungskontur bisher keine Testabdeckung, nur die Aussenseite war
+  automatisiert geprueft.
+- Neuer Regressionstest bestaetigt: die Geometriefunktion war bereits
+  generisch (`x_relief = x_anchor + 2*depth` fuer Innen statt `-2*depth`
+  fuer Aussen), produziert fuer eine M12-Innenbohrung korrekt einen zu
+  GROESSEREM X wachsenden Freistich (mehr Material aus der Bohrungswand
+  entfernt) an der richtigen Position - kein Bug, reine fehlende
+  Testabdeckung.
+- Neuer Verifikationsfall (`verification_cases.internal_relief_case()`)
+  real auf der SIM-Maschine gefahren: rs274 fehlerfrei, 412s AUTO-
+  Trockenlauf ohne Eintrag im NML-Fehlerkanal, Endposition exakt am
+  Werkzeugwechselpunkt. Die 0,25mm tiefe Freistichnut ist gegenueber dem
+  4mm-Stufensprung im Backplot bei praktikablem Zoom nicht pixelgenau
+  sichtbar (physikalische Eigenschaft eines flachen DIN-76-Innenfreistichs
+  bei kleinem Gewindedurchmesser, bereits durch den Geometrietest
+  algebraisch nachgewiesen). 674 Stub-/44 Qt-Tests, zwoelf Referenzen und
+  43 Matrixfaelle unter rs274 bestanden, keine Referenzaenderung. Details:
+  TODO.md.
+
 ### LES-037 abgeschlossen: reale Aussen-/Innengewinde-Freistichfaelle auf SIM-Maschine gefahren und Backplot geprueft 2026-09-12
 
 - Letzter offener Punkt von LES-037 (reale Backplot-/Trockenlauf-Abnahme,

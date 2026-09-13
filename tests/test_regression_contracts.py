@@ -496,6 +496,54 @@ def test_string_orientation_and_hand_produce_correct_internal_left_geometry():
     assert new_style  # not empty
 
 
+def test_thread_preview_geometry_matches_actual_g76_output():
+    """LES-033: die Vorschau-Geometrie (`build_thread_path()`, aus Steigung/
+    Tiefe/Start/Ende hergeleitet) muss dieselben Z-Endwerte und denselben
+    Durchmesserbereich zeigen wie der TATSAECHLICH erzeugte G76-Befehl -
+    nicht nur strukturell nicht-leer sein. Geprueft fuer alle vier
+    Kombinationen aus Aussen/Innen und Rechts/Links sowie mit aktivem
+    Gewinde-Vorlauf (E-Wort/Taper)."""
+    import re
+    from lathe_easystep.preview_geometry import build_thread_path
+
+    settings = dict(make_program_settings(), xi=6.0, xri=5.0, zri=2.0,
+                     xri_absolute=True, zri_absolute=True)
+    for orientation in ("external", "internal"):
+        for hand in ("right", "left"):
+            for lead_in in (0.0, 1.0):
+                params = {
+                    "tool": 3, "spindle": 400.0, "pitch": 1.5, "major_diameter": 10.0,
+                    "length": 15.0, "thread_start_z": 0.0, "hand": hand,
+                    "orientation": orientation, "safe_z": 2.0, "lead_in": lead_in,
+                }
+                op = Operation(OpType.THREAD, params)
+                lines = generate_program_gcode([op], dict(settings))
+                g76 = next(line for line in lines if line.startswith("G76"))
+                end_z = float(re.search(r"\bZ(-?[0-9.]+)", g76).group(1))
+                # K ist im G76-Befehl bereits die VOLLE (verdoppelte) Gewindetiefe,
+                # siehe `full_thread_depth = abs(major_diameter - minor_diameter)`
+                # in gcode_thread.py - Aussen wie Innen identisch, kein Vorzeichen.
+                full_depth = float(re.search(r"\bK(-?[0-9.]+)", g76).group(1))
+                minor_diameter = params["major_diameter"] - full_depth
+
+                path = build_thread_path(params)
+                xs = [p[0] for p in path]
+                zs = [p[1] for p in path]
+                assert abs(min(xs) - minor_diameter) < 1e-6, (orientation, hand, lead_in)
+                assert abs(max(xs) - params["major_diameter"]) < 1e-6, (orientation, hand, lead_in)
+                assert abs(zs[-1] - end_z) < 1e-6, (orientation, hand, lead_in)
+                if lead_in:
+                    # Vorlauf-Punkt liegt E-Wort weit VOR dem Gewindestart, auf dem
+                    # "Kronendurchmesser" IM SINNE DER FUNKTION (Major aussen,
+                    # Minor innen - dieselbe crest_dia-Rolle, die auch der Rest des
+                    # Gewindeprofils verwendet; siehe Kommentar in der TODO.md-
+                    # Abschlussnotiz zu einer offenen Detailfrage bei Innen-Vorlauf).
+                    crest_dia = params["major_diameter"] if orientation == "external" else minor_diameter
+                    e_val = float(re.search(r"\bE(-?[0-9.]+)", g76).group(1))
+                    assert abs(path[0][0] - crest_dia) < 1e-6
+                    assert abs(abs(path[0][1] - params["thread_start_z"]) - e_val) < 1e-6
+
+
 def test_drill_mode_string_id_selects_correct_gcode_cycle():
     from lathe_easystep.gcode_drill import generate_drill_gcode
     from lathe_easystep.gcode_safety import append_tool_and_spindle, emit_approach

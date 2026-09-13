@@ -4,7 +4,12 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lathe_easystep.gcode_groove import generate_groove_gcode
-from lathe_easystep.gcode_roughing import generate_abspanen_gcode, rough_turn_parallel_x
+from lathe_easystep.gcode_roughing import (
+    RetractCfg,
+    generate_abspanen_gcode,
+    rough_turn_parallel_x,
+    rough_turn_parallel_z,
+)
 from lathe_easystep.gcode_safety import emit_approach
 from lathe_easystep.gcode_thread import generate_thread_gcode
 from lathe_easystep.contour_logic import thread_relief_spec
@@ -282,3 +287,71 @@ def test_external_thread_records_real_end_position_not_stale_approach():
     # Nachkommastellen gerundeten Textausgabe geparst, der Zustand haelt die
     # ungerundeten internen Werte.
     assert state.at(expected_x, expected_z, tol=1e-3)
+
+
+def test_rough_turn_parallel_x_records_real_end_position_after_last_band():
+    """LES-022 (vierte Etappe, 2026-09-13): `rough_turn_parallel_x()` fuehrte
+    bisher KEINEN Bewegungszustand mit - der Aufrufer musste nach dem
+    Schruppen bewusst konservativ `_motion_state().clear()` setzen, obwohl
+    die tatsaechliche Endposition (der letzte Rueckzug des letzten
+    Bandes) rein aus cfg/x_cut/z_exit deterministisch berechenbar ist.
+    Jetzt traegt die Funktion ihre reale Endposition selbst ein."""
+    pause_state = {}
+    cfg = RetractCfg(40.0, 2.0, True, True)
+    lines = rough_turn_parallel_x(
+        [(0.0, 0.0), (30.0, 0.0), (30.0, -20.0)], external=True, x_stock=40.0,
+        x_target=0.0, step_x=5.0, safe_z=2.0, feed=0.15, retract_cfg=cfg,
+        pause_state=pause_state,
+    )
+    last_retract = next(ln for ln in reversed(lines) if ln.startswith("G0 X"))
+    assert last_retract == "G0 X40.000 Z2.000"
+    state = pause_state["_motion"]
+    assert isinstance(state, MotionState)
+    assert state.at(40.0, 2.0)
+
+
+def test_rough_turn_parallel_z_records_real_end_position_after_last_band():
+    """LES-022 (vierte Etappe): dieselbe Nachverfolgung fuer die andere
+    Schrupp-Strategie (`rough_turn_parallel_z`)."""
+    pause_state = {}
+    cfg = RetractCfg(40.0, 2.0, True, True)
+    lines = rough_turn_parallel_z(
+        [(0.0, 0.0), (30.0, 0.0), (30.0, -20.0)], external=True, z_stock=0.0,
+        z_target=-20.0, step_z=5.0, safe_z=2.0, feed=0.15, start_x=40.0,
+        retract_cfg=cfg, pause_state=pause_state,
+    )
+    last_retract = next(ln for ln in reversed(lines) if ln.startswith("G0 X"))
+    assert last_retract == "G0 X40.000 Z2.000"
+    state = pause_state["_motion"]
+    assert isinstance(state, MotionState)
+    assert state.at(40.0, 2.0)
+
+
+def test_abspanen_combined_rough_finish_skips_redundant_retract_when_positions_match():
+    """LES-022 (vierte Etappe): direkte Nutzniessung der Positions-
+    Nachverfolgung - ein kombinierter Schruppen+Schlichten-Step (EIN
+    Funktionsaufruf) darf den Rueckzug vor dem Schlichtschnitt ueberspringen,
+    wenn das Schruppen bereits nachweislich exakt dort endete (hier: absolute
+    XRA/ZRA, die mit dem letzten Bandrueckzug uebereinstimmen). Vorher wurde
+    nach JEDEM Schruppen bedingungslos `_motion_state().clear()` gesetzt -
+    der anschliessende `emit_approach()`-Aufruf fuer den Schlichtschnitt
+    konnte die bereits sichere Position nie erkennen und fuhr immer
+    zusaetzlich (aber ungefaehrlich) auf XRA/ZRA zurueck, bevor er auf den
+    Konturstart zufuhr."""
+    settings = {
+        "xt": 150.0, "zt": 300.0, "xra": 40.0, "zra": 2.0,
+        "xra_absolute": True, "zra_absolute": True, "xi": 0.0, "xa": 40.0,
+    }
+    params = {
+        "side": "outside", "mode": "rough_finish", "tool": 1, "spindle": 800.0,
+        "feed": 0.15, "depth_per_pass": 5.0, "finish_allow_x": 0.0,
+        "finish_allow_z": 0.0, "slice_strategy": "parallel_x",
+        "output_preference": "prefer_explicit",
+    }
+    path = [(0.0, 0.0), (30.0, 0.0), (30.0, -20.0)]
+    lines = generate_abspanen_gcode(params, path, settings)
+    finish_idx = lines.index("(Schlichtschnitt Kontur)")
+    # Direkt die eine noetige Anfahrt, keine vorgeschaltete, bereits erfuellte
+    # Rueckzugsbewegung auf XRA/ZRA mehr.
+    assert lines[finish_idx + 1] == "G0 X0.000"
+    assert not lines[finish_idx + 1].startswith("G0 Z")
