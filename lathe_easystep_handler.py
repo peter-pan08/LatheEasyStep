@@ -23,7 +23,7 @@ from lathe_easystep.comments import update_auto_comment
 from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.gcode_utils import is_internal_side
-from lathe_easystep.tools import Tool, parse_tool_table, extract_iso_from_comment, tool_kind_from_orientation
+from lathe_easystep.tools import Tool, parse_tool_table
 from lathe_easystep.persistence import (
     build_program_data as build_program_data_payload,
     operation_to_step_data,
@@ -113,7 +113,6 @@ from lathe_easystep.tool_logic import (
     operation_side_hint,
     radius_warning_details,
     render_tool_preview,
-    tool_combo_label,
     tool_comment_side_hint,
     tool_holder_angle,
     tool_orientation_angle,
@@ -151,7 +150,6 @@ from lathe_easystep.ui_dirty import (
     clear_dirty_operation,
     clear_program_dirty,
     clear_dirty_state,
-    current_operation_is_dirty,
     has_unsaved_changes,
     init_dirty_state,
     mark_all_operations_dirty,
@@ -160,7 +158,6 @@ from lathe_easystep.ui_dirty import (
     reindex_dirty_operations_after_insert,
     reindex_dirty_operations_after_removal,
     swap_dirty_operation_indices,
-    tab_label as dirty_tab_label,
     update_dirty_status,
     warn_if_dirty,
 )
@@ -168,7 +165,6 @@ from lathe_easystep.ui_signals import (
     connect_core_signals,
     connect_global_form_signals,
     connect_language_signal,
-    connect_list_ops_signals,
     connect_mode_visibility_signals,
     connect_param_change_signals,
     connect_resolver_fallbacks,
@@ -804,7 +800,6 @@ from lathe_easystep.ui_widget_lookup import (  # noqa: E402
     get_widget_by_name,
     panel_from_widget,
     poll_for_widget,
-    process_deferred_lookups,
     rebuild_widget_name_cache,
     register_known_widgets,
     resolve_core_widgets_strict,
@@ -870,9 +865,6 @@ def _debug_mode_enabled() -> bool:
 class HandlerClass:
     def _register_known_widgets(self):
         return register_known_widgets(self)
-
-    def _process_deferred_lookups(self):
-        return process_deferred_lookups(self)
 
     def __init__(self, halcomp, widgets, paths):
         self.hal = halcomp
@@ -952,9 +944,6 @@ class HandlerClass:
         self._startup_complete = False
         self._startup_in_progress = False
         self._parting_choices_initialized = False
-        self._post_start_init_scheduled = False
-        self._post_start_init_done = False
-        self._post_start_init_steps = []
         self._widget_name_cache: Dict[str, List[QtWidgets.QWidget]] = {}
         self._startup_epoch = time.monotonic()
         self._startup_heartbeat_scheduled = False
@@ -1134,14 +1123,8 @@ class HandlerClass:
     def _has_unsaved_changes(self) -> bool:
         return has_unsaved_changes(self)
 
-    def _current_operation_is_dirty(self, row: int | None = None) -> bool:
-        return current_operation_is_dirty(self, row=row)
-
     def _warn_if_dirty(self, context: str, *, row: int | None = None) -> None:
         warn_if_dirty(self, context, row=row)
-
-    def _tab_label_for_dirty_state(self, op_type: str | None) -> str:
-        return dirty_tab_label(self, op_type)
 
     def _startup_mark(self, label: str):
         try:
@@ -1613,109 +1596,8 @@ class HandlerClass:
         QtCore.QTimer.singleShot(500, self._finalize_ui_ready)
         QtCore.QTimer.singleShot(2000, self._finalize_ui_ready)
 
-    def _find_all_core_widgets_comprehensive(self):
-        """Umfassende Suche nach Kern-Widgets mit mehreren Fallback-Strategien."""
-        root = self._ensure_root_widget() or self._find_root_widget()
-        if not root:
-            return
-        
-        def _find_widget_multi(attr_name, obj_names, widget_type):
-            """Suche nach einem Widget mit mehreren Strategien."""
-            current = getattr(self, attr_name, None)
-            if current and isinstance(current, widget_type):
-                return current
-            
-            # Strategie 1-2: Nach objectName suchen (direkt und rekursiv)
-            for obj_name in obj_names:
-                w = root.findChild(widget_type, obj_name, QtCore.Qt.FindChildrenRecursively)
-                if w:
-                    setattr(self, attr_name, w)
-                    return w
-            
-            # Strategie 3: Nach Widget-Typ suchen
-            children = root.findChildren(widget_type)
-            if len(children) == 1:
-                setattr(self, attr_name, children[0])
-                return children[0]
-            
-            return None
-        
-        # Kern-Widgets suchen und speichern
-        self.list_ops = _find_widget_multi("list_ops", ["listOperations"], QtWidgets.QListWidget) or self.list_ops
-        self.tab_params = _find_widget_multi("tab_params", ["tabParams"], QtWidgets.QTabWidget) or self.tab_params
-        self.btn_add = _find_widget_multi("btn_add", ["btnAdd"], QtWidgets.QPushButton) or self.btn_add
-        self.btn_delete = _find_widget_multi("btn_delete", ["btnDelete"], QtWidgets.QPushButton) or self.btn_delete
-        self.btn_move_up = _find_widget_multi("btn_move_up", ["btnMoveUp"], QtWidgets.QPushButton) or self.btn_move_up
-        self.btn_move_down = _find_widget_multi("btn_move_down", ["btnMoveDown"], QtWidgets.QPushButton) or self.btn_move_down
-        self.btn_new_program = _find_widget_multi("btn_new_program", ["btnNewProgram"], QtWidgets.QPushButton) or self.btn_new_program
-        self.btn_generate = _find_widget_multi("btn_generate", ["btnGenerate"], QtWidgets.QPushButton) or self.btn_generate
-        self.btn_save_step = _find_widget_multi("btn_save_step", ["btnSaveStep", "btn_save_step"], QtWidgets.QPushButton) or self.btn_save_step
-        self.btn_load_step = _find_widget_multi("btn_load_step", ["btnLoadStep", "btn_load_step"], QtWidgets.QPushButton) or self.btn_load_step
-        self.contour_segments = _find_widget_multi("contour_segments", ["contour_segments"], QtWidgets.QTableWidget) or self.contour_segments
-        self.contour_add_segment = _find_widget_multi("contour_add_segment", ["contour_add_segment"], QtWidgets.QPushButton) or self.contour_add_segment
-        self.contour_delete_segment = _find_widget_multi("contour_delete_segment", ["contour_delete_segment"], QtWidgets.QPushButton) or self.contour_delete_segment
-        self.contour_move_up = _find_widget_multi("contour_move_up", ["contour_move_up"], QtWidgets.QPushButton) or self.contour_move_up
-        self.contour_move_down = _find_widget_multi("contour_move_down", ["contour_move_down"], QtWidgets.QPushButton) or self.contour_move_down
-
-    def _ensure_root_widget(self) -> QtWidgets.QWidget | None:
-        """Stellt sicher, dass self.root_widget gesetzt ist."""
-        if self.root_widget:
-            return self.root_widget
-        self.root_widget = self._find_root_widget()
-        return self.root_widget
-
     def _finalize_ui_ready(self):
         finalize_ui_ready(self)
-
-    def _schedule_post_start_init(self):
-        """Disabled: startup follow-up work must happen lazily on demand."""
-        self._post_start_init_scheduled = True
-        self._post_start_init_done = True
-        self._post_start_init_steps = []
-        self._startup_mark("post_start_init disabled")
-
-    def _post_start_init(self):
-        """Deferred startup work that should not block the visible panel startup."""
-        if getattr(self, "_post_start_init_done", False):
-            return
-        try:
-            steps = getattr(self, "_post_start_init_steps", [])
-            if not steps:
-                self._post_start_init_done = True
-                self._startup_mark("post_start_init complete")
-                return
-            step = steps.pop(0)
-            self._startup_mark(f"post_start_init step {getattr(step, '__name__', 'unknown')} begin")
-            step()
-            self._startup_mark(f"post_start_init step {getattr(step, '__name__', 'unknown')} end")
-        except Exception:
-            pass
-        if getattr(self, "_post_start_init_steps", []):
-            QtCore.QTimer.singleShot(120, self._post_start_init)
-        else:
-            self._post_start_init_done = True
-            self._startup_mark("post_start_init complete")
-
-    def _post_start_init_step_prepare_signals(self):
-        self._setup_param_maps()
-        self._prepare_signal_connection_context()
-        self._connect_resolver_fallbacks()
-
-    def _post_start_init_step_param_signals(self):
-        self._connect_param_change_signals()
-
-    def _post_start_init_step_global_signals(self):
-        self._connect_global_form_signals()
-
-    def _post_start_init_step_language_signal(self):
-        self._connect_language_signal()
-
-    def _post_start_init_step_mode_signals(self):
-        self._connect_mode_visibility_signals()
-
-    def _post_start_init_step_live_update_signals(self):
-        self._connect_tool_preview_signals()
-        self._connect_live_update_signals()
 
     def _ensure_contour_widgets(self):
         """Sucht fehlende Kontur-Widgets (Start X/Z, Tabelle, Name) robust über objectName."""
@@ -1962,18 +1844,6 @@ class HandlerClass:
         except Exception:
             pass
 
-    def _debug_widget_names(self):
-        """Debug-Ausgabe: vorhandene Buttons/ListWidgets im Baum."""
-        root = self.root_widget or self._find_root_widget()
-        if root is None:
-            self._log("[LatheEasyStep] debug: no root widget", level="debug")
-            return
-        btns = [w.objectName() for w in root.findChildren(QtWidgets.QPushButton)]
-        lists = [w.objectName() for w in root.findChildren(QtWidgets.QListWidget)]
-        self._log(f"[LatheEasyStep] debug root: {root.objectName()}", level="debug")
-        self._log(f"[LatheEasyStep] debug buttons: {btns}", level="debug")
-        self._log(f"[LatheEasyStep] debug list widgets: {lists}", level="debug")
-
     def _connect_button_once(self, button, handler, flag_name: str):
 
         """Verbindet Buttons stabil (keine Doppel-Auslösung).
@@ -2064,25 +1934,6 @@ class HandlerClass:
         setup_param_maps(self)
 
     # ---- Signalanschlüsse ---------------------------------------------
-    
-    
-    def _find_by_idx(self, cls, idx: str, fallback_name: str = None):
-        """Find widget by custom Qt property 'idx' (preferred) or objectName as fallback."""
-        try:
-            w = None
-            # First pass: idx property
-            for cand in self.w.findChildren(cls):
-                try:
-                    if cand.property("idx") == idx:
-                        return cand
-                except Exception:
-                    continue
-            # Fallback: objectName
-            if fallback_name:
-                return self.w.findChild(cls, fallback_name)
-        except Exception:
-            pass
-        return None
 
     def _connect_live_update(self, widget):
             """Connect changes of a widget to live-update the currently selected operation."""
@@ -2171,9 +2022,6 @@ class HandlerClass:
                 getattr(self, "face_tool", None), getattr(self, "face_coolant", None),
             ]:
                 self._connect_live_update(w)
-
-    def _connect_list_ops_signals(self):
-            connect_list_ops_signals(self)
 
     def _connect_core_signals(self):
             connect_core_signals(self)
@@ -2607,17 +2455,6 @@ class HandlerClass:
                 pass
         return name
 
-    def _contour_sequence_index(self, target: Operation) -> int | None:
-        """Zählt nur Kontur-Operationen und gibt deren Reihenindex zurück."""
-        idx = 0
-        for op in self.model.operations:
-            if op.op_type != OpType.CONTOUR:
-                continue
-            if op is target:
-                return idx
-            idx += 1
-        return None
-
     # ---- Helfer -------------------------------------------------------
     def _current_op_type(self) -> str:
         if self.tab_params is None:
@@ -2656,20 +2493,6 @@ class HandlerClass:
         except Exception:
             return None
         return None
-
-    def _widget_set_value(self, widget, value):
-        """Best-effort value setter for common Qt widgets used in LatheEasyStep."""
-        if widget is None or value is None:
-            return
-        try:
-            if hasattr(widget, "setValue"):
-                widget.setValue(value)
-                return
-            if hasattr(widget, "setText"):
-                widget.setText(str(value))
-                return
-        except Exception:
-            return
 
     def _collect_params(self, op_type: str) -> Dict[str, object]:
         return collect_params(self, op_type)
@@ -3216,17 +3039,8 @@ class HandlerClass:
         """Parse LinuxCNC tool table file and return structured tool info plus ISO warnings."""
         return parse_tool_table(filepath, log=self._log)
 
-    def _extract_iso_from_comment(self, comment: str) -> tuple[str | None, str | None, float | None]:
-        return extract_iso_from_comment(comment)
-
-    def _tool_kind_from_orientation(self, orientation: int | None) -> str:
-        return tool_kind_from_orientation(orientation)
-
     def _populate_tool_combos(self, tools: Dict[int, Tool]):
         populate_tool_combos(self, tools)
-
-    def _tool_combo_label(self, tool: Tool, max_comment: int = 32) -> str:
-        return tool_combo_label(self, tool, max_comment)
 
     def _ensure_tool_preview_widgets(self):
         ensure_tool_preview_widgets(self)

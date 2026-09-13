@@ -1774,6 +1774,62 @@ Jede Extraktion einzeln mit vollem Testlauf und echtem `uic.loadUi` pruefen.
       per `except Exception: pass` verschluckt hatte). 589 Stub-/44
       Qt-Tests bestanden, NGC-Referenzen unveraendert.
 - [x] Tooltip-Erzwingung nach `ui_tooltips.py`
+- [x] toten Code entfernt (Teilstand 2026-09-13, siehe unten)
+
+Teilstand 2026-09-13 (totes Widget-Lookup/Init-Geruest entfernt, im
+Rahmen von LES-024/LES-044s "Panel-Module statt Ad-hoc-Widgetzugriffe"):
+systematischer Scan aller privaten Handler-Methoden auf Null-Referenzen
+(kein Aufrufer irgendwo im Repo, auch nicht ueber String-Dispatch)
+fand 20 Kandidaten, davon 17 bestaetigt und entfernt (187 Zeilen):
+
+- `_find_all_core_widgets_comprehensive()` - eine komplette, nie
+  aufgerufene Zweit-Implementierung der Widget-Suche fuer `list_ops`/
+  `btn_add`/`btn_delete`/... parallel zur tatsaechlich genutzten
+  `ensure_core_widgets()`-Familie in `ui_widget_lookup.py`. Genau die Art
+  von doppeltem, nicht ueber eine definierte Schnittstelle laufendem
+  Widgetzugriff, die LES-024/LES-044 vermeiden wollen.
+- `_schedule_post_start_init()`/`_post_start_init()` plus sechs
+  `_post_start_init_step_*()`-Methoden - ein komplett deaktivierter
+  Init-Queue-Mechanismus (`_schedule_post_start_init()` setzt die Queue
+  bewusst sofort leer, Kommentar "Disabled: startup follow-up work must
+  happen lazily on demand"); die sechs Step-Methoden wurden nie
+  aufgerufen, ihre tatsaechliche Arbeit passiert laengst synchron in
+  `_connect_signals()`.
+- `_process_deferred_lookups()` (Wrapper) - die zugrunde liegende
+  `_deferred_lookup_queue` wird zwar befuellt (`ui_lifecycle.py`), aber
+  nichts leert sie je; harmlos, weil `finalize_ui_ready()` dieselben
+  Widgets unabhaengig davon robust ueber `_find_any_widget()`/
+  `_get_widget_by_name()` erneut aufloest (real gegengeprueft, siehe
+  `ui_lifecycle.py::finalize_ui_ready`).
+- Weitere unbenutzte Wrapper/Methoden ohne einen einzigen Aufrufer im
+  gesamten Repo (weder Testcode noch String-Dispatch):
+  `_current_operation_is_dirty`, `_tab_label_for_dirty_state`,
+  `_ensure_root_widget`, `_debug_widget_names`,
+  `_connect_list_ops_signals`, `_extract_iso_from_comment`,
+  `_tool_kind_from_orientation`, `_find_by_idx`, `_widget_set_value`,
+  `_contour_sequence_index`, `_tool_combo_label` - jeweils vor dem
+  Entfernen einzeln geprueft, dass die zugrunde liegende Funktionalitaet
+  entweder anderswo direkt (ohne den Wrapper) genutzt wird oder
+  tatsaechlich folgenlos tot ist.
+
+**Bewusst NICHT entfernt, sondern separat zurueckgestellt:** drei
+zusammengehoerige Methoden (`_tool_orientation_mismatch`,
+`_collect_tool_orientation_warnings`, `_radius_warning_details` in
+`tool_logic.py`) sind ebenfalls ohne jeden Aufrufer, aber kein einfacher
+Wrapper-Leichenfund - sie bilden ein vollstaendig implementiertes, aber
+nie an die tatsaechliche Warnungs-Pipeline (`prog["__warnings"]` in
+`ui_preview.py`, gespeist aus `get_machine_limit_warnings()` +
+`checks.py::validate_program_setup()`) angebundenes Warnsystem (Werkzeug-
+Orientierung passt laut Kommentartext nicht zur Operation; Werkzeug ohne
+bekannten Radius deaktiviert die Kompensation). Ob das absichtlich nie
+aktiviert wurde (z. B. weil die Kommentar-Heuristik zu viele Fehlalarme
+liefert) oder schlicht unvollendet blieb, ist eine fachliche Entscheidung,
+die nicht stillschweigend per Loeschung oder Anbindung getroffen wird -
+siehe CHANGELOG.md.
+
+691 Stub-/50 Qt-Tests bestanden, `lathe_easystep_handler.py` importiert
+weiterhin fehlerfrei mit echtem PyQt5, zwoelf Referenzen unveraendert
+(reine Bereinigung ohne Verhaltensaenderung).
 
 ### LES-022 Zentraler Bewegungs- und Modalzustand
 
