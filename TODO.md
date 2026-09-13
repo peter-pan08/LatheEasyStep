@@ -2075,7 +2075,8 @@ zusaetzliches Wissen ueber die reale Endposition.
   2026-09-13 unten)
 - [ ] je Modul Controller, Tooltips, Sprach-IDs und Validierung zuordnen
 - [ ] direkte Widgetzugriffe zwischen Modulen durch definierte Schnittstellen ersetzen
-- [ ] Embedded- und Standalone-Laden testen
+- [x] Embedded- und Standalone-Laden testen (siehe Teilstand 2026-09-13
+  "Embedded-Root-Erkennung" unten - SICHERHEITSFUND UND -FIX)
 
 Teilstand 2026-09-13 (Step-Liste/Programmverwaltung ausgelagert): nach
 demselben, bereits bewaehrten Muster wie der Reiter-Split
@@ -2153,6 +2154,41 @@ wieder 220 statt 140 meldet), per `git stash` zusaetzlich fuer die
 Lade-Funktion selbst verifiziert (ImportError ohne die Aenderung). 694
 Stub-/56 Qt-Tests bestanden, zwoelf Referenzen unter rs274 bestanden,
 keine Referenzaenderung.
+
+Teilstand 2026-09-13 (Embedded-Root-Erkennung, SICHERHEITSFUND beim
+gezielten Nachpruefen des letzten offenen LES-024-Punkts "Embedded- und
+Standalone-Laden testen"): `ui_registry.py::_looks_like_panel_widget()`
+entscheidet an mehreren Stellen (`widget_resolver.py::_pick_best_root()`,
+mehrere Host-Suchen in `lathe_easystep_handler.py`), OB ein Kandidat-
+Widget ueberhaupt die echte LatheEasyStep-Panel-Wurzel ist - insbesondere
+im EINGEBETTETEN Betrieb, wenn das Panel unter einem generisch benannten
+Host ("MainWindow"/"VCPWindow") haengt und mehrdeutig ist, welcher Teil
+davon unser Panel ist. Dieser Check pruefte bisher auf das Vorhandensein
+von `listOperations` - und lief bereits SYNCHRON in
+`bootstrap_widget_refs()` (`__init__`), also BEVOR
+`load_split_tab_uis()`/`load_step_management_uis()`/`load_preview_uis()`
+in `finalize_ui_ready()` (per `QTimer.singleShot(0, ...)` erst auf dem
+naechsten Event-Loop-Durchlauf) das Panel vollstaendig nachladen.
+
+Vor der LES-024-Auslagerung von Step-Liste/Programmverwaltung war
+`listOperations` direkt statisch im Geruest vorhanden - seit der
+Auslagerung in `ui_parts/stepListPanel.ui` (heutiger Sitzung) existiert es
+in diesem fruehen Zeitfenster nicht mehr. Ohne Gegenmassnahme haette das
+die Panel-Erkennung in genau dem Embedded-Szenario, fuer das dieser
+Mechanismus gebaut wurde, faelschlich verfehlt - ein potenziell
+folgenschweres Nebenprodukt der eigenen LES-024-Aenderungen dieser
+Sitzung, das ohne dieses gezielte Nachpruefen unentdeckt geblieben waere.
+Behoben: `_looks_like_panel_widget()` prueft jetzt zusaetzlich (oder-
+verknuepft) auf `stepListPanel` - den noch leeren Container, der bereits
+sofort nach `uic.loadUi()` existiert, unabhaengig vom Ladezustand.
+
+Drei neue Tests (`tests/test_panel_root_detection_before_lazy_load.py`):
+Erkennung vor JEDEM Nachladen (reproduziert exakt das kritische fruehe
+Zeitfenster), Erkennung nach vollstaendigem Nachladen, kein Fehlalarm bei
+einem unrelatierten Widget. Per direkter Code-Entfernung der Oder-
+Verknuepfung verifiziert, dass der erste Test dann fehlschlaegt
+(`assert False is True`). 694 Stub-/59 Qt-Tests bestanden, zwoelf
+Referenzen unveraendert (reine Erkennungslogik, kein G-Code-Bezug).
 
 ### LES-027 Performance
 

@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### LES-024 SICHERHEITSFUND: Embedded-Panel-Erkennung nach Step-Liste-Auslagerung repariert 2026-09-13
+
+- Beim gezielten Nachpruefen des letzten offenen LES-024-Punkts
+  ("Embedded- und Standalone-Laden testen") gefunden: `_looks_like_panel_widget()`
+  (`ui_registry.py`) - zentral fuer die Panel-Root-Erkennung im
+  eingebetteten Betrieb unter generisch benannten Host-Fenstern
+  ("MainWindow"/"VCPWindow") - prueft SYNCHRON in `bootstrap_widget_refs()`,
+  also bevor die asynchron nachgeladenen Panel-Module (Step-Liste,
+  Aktionsleiste, Vorschau) ueberhaupt existieren.
+- Der Check verliess sich bisher auf `listOperations`, das durch die
+  vorherige LES-024-Aenderung dieser Sitzung (Step-Liste als eigenes
+  Panel-Modul) in diesem fruehen Zeitfenster nicht mehr existiert -
+  eigenes Nebenprodukt der eigenen Umbauten, ohne dieses Nachpruefen
+  unentdeckt geblieben.
+- Behoben: zusaetzlich auf `stepListPanel` pruefen (der Container-
+  Widget, das sofort nach `uic.loadUi()` existiert, unabhaengig vom
+  Ladezustand).
+- Drei neue Tests, per direkter Code-Entfernung der Korrektur verifiziert.
+  694 Stub-/59 Qt-Tests bestanden, zwoelf Referenzen unveraendert.
+  Details: TODO.md (LES-024).
+
 ### LES-024 SICHERHEITSRELEVANTER LAYOUT-FIX: Vorschau als eigenes Panel-Modul ausgelagert 2026-09-13
 
 - Vorschau/Schnittansicht (`previewWidget`/`previewSliceWidget`/
