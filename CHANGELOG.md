@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### LES-022 abgeschlossen: zentraler Bewegungs- und Modalzustand 2026-09-13
+
+- Alle Checklistenpunkte erledigt (Positions-Tracking in allen sechs
+  Operations-Generatoren, G90/G91/G94/G95/G96/G97/G18/G40-42-Verwaltung,
+  M3/M4/M5/M7/M8/M9 und Werkstuecknullpunkt-Pruefung). Aus der
+  Prioritaetstabelle entfernt.
+- Ein Punkt bleibt bewusst dauerhaft offen (Design-Entscheidung, kein
+  TODO): die Nutbreiten-Nachverfolgung im `gcode_groove.py`-`o220`-Zyklus
+  wird nicht in Python nachgerechnet, um keine Duplizierung der
+  Zustelllogik des Makros einzugehen - Details: TODO.md.
+
 ### LES-049 geloeschte/umbenannte Kontur bei Abspanen-Step wird jetzt sofort gewarnt 2026-09-13
 
 - Fund waehrend der LES-047/LES-048-Nachuntersuchung: eine ABSPANEN-

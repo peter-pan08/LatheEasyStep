@@ -55,7 +55,6 @@ Prioritaeten:
 | ID | Prio | Aufgabe | Nutzen | Aufwand | Ziel |
 |---|---|---|---|---|---|
 | LES-030 | P1 | Neue Generatorfunktionen systematisch in LinuxCNC simulieren | hoch | M-L | 0.8.0 |
-| LES-022 | P2 | Zentralen Bewegungs- und Modalzustand einfuehren | langfristig hoch | XL | 0.9.0 |
 | LES-024 | P2 | Restliche UI-Modularisierung und Controllergrenzen abschliessen | mittel | L | 0.9.0 |
 | LES-027 | P2 | Start- und Reaktionszeit im Embedded-Betrieb messen (Rest zurueckgestellt bis LES-044) | mittel | S | 0.9.0 |
 | LES-028 | P2 | Werkzeug- und G76-Parameter vor Ausgabe zentral normalisieren | mittel-hoch | M | 0.9.0 |
@@ -1948,6 +1947,15 @@ Sehnen-/D-I-Diffs von heute - reines Positions-Tracking ohne Ausgabe-
 aenderung, mit der einen Ausnahme des real gefundenen Thread-Bugs, der
 aber in keiner der zwoelf Referenzen beobachtbar war, da keine davon einen
 Schritt direkt nach einem Gewinde-Step hat).
+
+Abschluss 2026-09-13: alle Checklistenpunkte erledigt. Aus der Prioritaets-
+tabelle entfernt. Ein Punkt bleibt bewusst dauerhaft offen (nicht als
+TODO, sondern als dokumentierte Design-Entscheidung): die Nutbreiten-
+Nachverfolgung in `gcode_groove.py` (`o220`-Zyklus) wird NICHT in Python
+nachgerechnet, um keine Duplizierung der Zustelllogik des Makros
+einzugehen (siehe "Bewusst NICHT geloest" oben) - die Bewegung bleibt dort
+explizit `clear()` statt geraten, kein Stale-State-Risiko, aber auch kein
+zusaetzliches Wissen ueber die reale Endposition.
 
 ### LES-024 Restliche UI-Modularisierung
 
