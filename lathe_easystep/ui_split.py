@@ -28,6 +28,18 @@ STEP_MANAGEMENT_UI_FILES: Dict[str, str] = {
     "stepActionsPanel": "stepActionsPanel.ui",
 }
 
+# LES-024: Vorschau/Schnittansicht als eigenes Panel-Modul, gleiches
+# Muster. `_dock_preview_below_scroll()` (ui_lifecycle.py) findet
+# `previewWidget`/`previewSliceWidget`/`btn_slice_view` bereits ueber
+# eine rekursive objectName-Suche und verschiebt sie zur Laufzeit an ihre
+# endgueltige Position unterhalb des Scroll-Bereichs - unabhaengig davon,
+# wo sie anfangs im Baum stehen. Der Container bleibt deshalb an genau
+# der bisherigen Stelle im Geruest (innerhalb von `scrollAreaLayout`),
+# um das bereits funktionierende Docking-Verhalten unveraendert zu lassen.
+PREVIEW_UI_FILES: Dict[str, str] = {
+    "previewPanel": "previewPanel.ui",
+}
+
 
 def _load_ui_fragments_into(handler, root: QtWidgets.QWidget, ui_files: Dict[str, str], loaded_flag: str) -> None:
     if getattr(handler, loaded_flag, False):
@@ -86,9 +98,18 @@ def load_step_management_uis(handler) -> None:
     _load_ui_fragments_into(handler, root, STEP_MANAGEMENT_UI_FILES, "_step_management_ui_loaded")
 
 
+def load_preview_uis(handler) -> None:
+    root = getattr(handler, "root_widget", None)
+    if root is None or not isinstance(root, QtWidgets.QWidget):
+        return
+    _load_ui_fragments_into(handler, root, PREVIEW_UI_FILES, "_preview_ui_loaded")
+
+
 __all__ = [
     "TAB_UI_FILES",
     "STEP_MANAGEMENT_UI_FILES",
+    "PREVIEW_UI_FILES",
     "load_split_tab_uis",
     "load_step_management_uis",
+    "load_preview_uis",
 ]

@@ -18,14 +18,26 @@ _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 import lathe_easystep_handler  # noqa: E402,F401  # re-exported custom widgets for uic
 from lathe_easystep.translations import TRANSLATIONS  # noqa: E402
-from lathe_easystep.ui_split import load_split_tab_uis  # noqa: E402
+from lathe_easystep.ui_split import (  # noqa: E402
+    load_preview_uis,
+    load_split_tab_uis,
+    load_step_management_uis,
+)
 from lathe_easystep.ui_static import apply_ui_static_translations, load_ui_static_map  # noqa: E402
 
 
 def _load_full_root():
     root = uic.loadUi(os.path.join(os.path.dirname(__file__), "..", "lathe_easystep.ui"))
-    handler = SimpleNamespace(root_widget=root, _split_tabs_loaded=False, _log=lambda *_args, **_kwargs: None)
+    handler = SimpleNamespace(
+        root_widget=root,
+        _split_tabs_loaded=False,
+        _step_management_ui_loaded=False,
+        _preview_ui_loaded=False,
+        _log=lambda *_args, **_kwargs: None,
+    )
     load_split_tab_uis(handler)
+    load_step_management_uis(handler)
+    load_preview_uis(handler)
     return root
 
 

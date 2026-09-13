@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtWidgets
 from .ui_advanced import ensure_advanced_widgets
-from .ui_split import load_split_tab_uis, load_step_management_uis
+from .ui_split import load_split_tab_uis, load_step_management_uis, load_preview_uis
 
 
 def bootstrap_widget_refs(handler) -> None:
@@ -175,6 +175,9 @@ def finalize_ui_ready(handler) -> None:
             handler._startup_mark("_finalize_ui_ready: load_step_management_uis begin")
             load_step_management_uis(handler)
             handler._startup_mark("_finalize_ui_ready: load_step_management_uis end")
+            handler._startup_mark("_finalize_ui_ready: load_preview_uis begin")
+            load_preview_uis(handler)
+            handler._startup_mark("_finalize_ui_ready: load_preview_uis end")
             handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
         except Exception as exc:
             handler._log(f"[LatheEasyStep] split UI load failed: {exc}", level="warning")
@@ -355,6 +358,16 @@ def _dock_preview_below_scroll(handler) -> None:
         return
     container = root.findChild(QtWidgets.QWidget, "previewDockContainer", QtCore.Qt.FindChildrenRecursively)
     if container is None:
+        # LES-024: previewWidget/previewSliceWidget/btn_slice_view koennen
+        # heute aus einem eigenen Panel-Modul (ui_parts/previewPanel.ui,
+        # geladen in einen anfangs leeren "previewPanel"-Container im
+        # Scroll-Bereich) stammen. Nach dem Reparenting unten bleibt dieser
+        # Container leer im Scroll-Bereich zurueck - ohne Kollabieren
+        # beansprucht er weiterhin Platz in dessen Layout und verschiebt
+        # dadurch sichtbar die Groesse der angedockten Vorschau (real per
+        # Screenshot-Vergleich gefunden, siehe TODO.md LES-024).
+        old_parent = preview.parentWidget()
+
         container = QtWidgets.QWidget(scroll.parentWidget())
         container.setObjectName("previewDockContainer")
         container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum)
@@ -384,4 +397,32 @@ def _dock_preview_below_scroll(handler) -> None:
         except Exception:
             pass
         right_layout.insertWidget(1, container, 1)
+        try:
+            # addWidget() above already reparented preview/preview_slice/
+            # button away from old_parent (Qt removes a widget from its
+            # previous layout automatically). Only a leftover spacer item
+            # (no QWidget) can remain. Merely hiding the now-empty widget
+            # was NOT enough (real screenshot comparison, LES-024): its
+            # outer shell container (previewPanel) still occupied a
+            # QVBoxLayout item slot in the scroll area, and that leftover
+            # inter-item spacing was enough to shift how much height the
+            # docked preview vs. the tab area received (140px vs 220px in
+            # testing) - so the empty container must be fully REMOVED from
+            # its parent layout, not just hidden.
+            if (
+                old_parent is not None
+                and old_parent is not container
+                and old_parent is not scroll
+                and not old_parent.findChildren(QtWidgets.QWidget)
+            ):
+                empty_shell = old_parent.parentWidget()
+                target = empty_shell if empty_shell is not None and empty_shell is not scroll else old_parent
+                grandparent = target.parentWidget()
+                parent_layout = grandparent.layout() if grandparent is not None else None
+                if parent_layout is not None:
+                    parent_layout.removeWidget(target)
+                target.setParent(None)
+                target.deleteLater()
+        except Exception:
+            pass
     handler._preview_docked = True

@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### LES-024 SICHERHEITSRELEVANTER LAYOUT-FIX: Vorschau als eigenes Panel-Modul ausgelagert 2026-09-13
+
+- Vorschau/Schnittansicht (`previewWidget`/`previewSliceWidget`/
+  `btn_slice_view`) liegen jetzt in `ui_parts/previewPanel.ui`, analog
+  zum Step-Liste/Aktionsleiste-Split.
+- **Echter Fund beim vorgeschriebenen Screenshot-Vergleich:** die
+  bestehende Laufzeit-Verschiebung der Vorschau (`_dock_preview_below_scroll()`)
+  liess den nach dem Verschieben leeren neuen Container im Scroll-Bereich
+  zurueck - blosses Verstecken reichte nicht, der Platzanspruch im
+  Eltern-Layout blieb bestehen und machte die angedockte Vorschau sichtbar
+  zu gross (220px statt 140px Hoehe, 170.129 von 700.000 Pixeln des
+  Vergleichs-Screenshots unterschiedlich). Behoben: der leere Container
+  wird jetzt vollstaendig aus seinem Layout entfernt statt nur versteckt.
+  Nach dem Fix: 37 von 700.000 Pixeln (reine Anti-Aliasing-Groessenordnung).
+- Ohne den vom Nutzer angeordneten Screenshot-Vergleich waere dieser
+  Fehler nicht durch die automatisierte Testsuite erkannt worden.
+- Vier neue Tests (`tests/test_preview_panel_ui_loader.py`, inkl. gezieltem
+  Regressionstest fuer den gefundenen Layout-Bug), per `git stash`
+  verifiziert. 694 Stub-/56 Qt-Tests bestanden, zwoelf Referenzen unter
+  rs274 bestanden. Details: TODO.md (LES-024).
+
 ### LES-024 Step-Liste/Programmverwaltung als eigenes Panel-Modul ausgelagert 2026-09-13
 
 - Nach dem im Architekturdokument (LES-044) festgelegten Muster: Step-Liste
