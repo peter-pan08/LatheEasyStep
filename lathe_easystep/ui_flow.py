@@ -126,6 +126,10 @@ def handle_move_up(handler):
             return
         handler.model.move_up(idx)
         try:
+            handler._swap_dirty_operation_indices(idx - 1, idx)
+        except Exception:
+            pass
+        try:
             handler._mark_program_structure_dirty()
         except Exception:
             pass
@@ -147,6 +151,10 @@ def handle_move_down(handler):
         if idx < 0 or idx >= handler.list_ops.count() - 1:
             return
         handler.model.move_down(idx)
+        try:
+            handler._swap_dirty_operation_indices(idx, idx + 1)
+        except Exception:
+            pass
         try:
             handler._mark_program_structure_dirty()
         except Exception:

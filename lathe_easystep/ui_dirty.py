@@ -73,6 +73,66 @@ def clear_dirty_operation(handler, operation_index: int) -> None:
     handler._update_dirty_status()
 
 
+def reindex_dirty_operations_after_removal(handler, removed_index: int) -> None:
+    """SICHERHEITSFUND 2026-09-13: `_dirty_operation_indices` sind reine
+    Listenpositionen. Loeschen einer Operation verschiebt alle NACHFOLGENDEN
+    Operationen um eine Position nach vorn (`ProgramModel.remove_operation()`),
+    ohne dass die dirty-Menge das je nachvollzogen hat - ein zuvor dirty
+    markierter Step "wanderte" dadurch stillschweigend auf einen ANDEREN,
+    tatsaechlich unveraenderten Step (und der wirklich geaenderte Step verlor
+    seine dirty-Markierung komplett). "Aenderungen speichern" haette dadurch
+    die falsche Step-Datei aktualisiert und die echte Aenderung verloren,
+    ohne jede Warnung. Muss VOR oder NACH dem eigentlichen Entfernen
+    aufgerufen werden (reine Index-Arithmetik, kein Zugriff auf die Liste
+    selbst noetig)."""
+    old = getattr(handler, "_dirty_operation_indices", set())
+    removed_index = int(removed_index)
+    new = set()
+    for idx in old:
+        if idx == removed_index:
+            continue
+        new.add(idx - 1 if idx > removed_index else idx)
+    handler._dirty_operation_indices = new
+    handler._update_dirty_status()
+
+
+def reindex_dirty_operations_after_insert(handler, inserted_index: int) -> None:
+    """SICHERHEITSFUND 2026-09-13: Gegenstueck zu
+    `reindex_dirty_operations_after_removal` - wird eine Operation VOR
+    bereits vorhandenen eingefuegt (aktuell nur der Sonderfall "Programmkopf
+    nachtraeglich an Position 0 einfuegen", `operations.insert(0, op)`),
+    verschieben sich alle Operationen AB `inserted_index` um eine Position
+    nach hinten. Ohne Nachziehen der dirty-Menge waere jeder bereits
+    dirty markierte Index um eins zu niedrig und zeigte dadurch auf die
+    FALSCHE (eine Position zu frueh liegende) Operation."""
+    old = getattr(handler, "_dirty_operation_indices", set())
+    inserted_index = int(inserted_index)
+    new = {(idx + 1 if idx >= inserted_index else idx) for idx in old}
+    handler._dirty_operation_indices = new
+    handler._update_dirty_status()
+
+
+def swap_dirty_operation_indices(handler, index_a: int, index_b: int) -> None:
+    """SICHERHEITSFUND 2026-09-13: siehe `reindex_dirty_operations_after_removal`
+    - dasselbe Problem fuer "Step nach oben/unten verschieben"
+    (`ProgramModel.move_up()`/`move_down()`, reines Vertauschen zweier
+    Listenplaetze). Eine dirty-Markierung muss der OPERATION folgen, nicht
+    der Position, sonst "wandert" sie beim Verschieben auf den falschen
+    Nachbar-Step."""
+    old = getattr(handler, "_dirty_operation_indices", set())
+    index_a, index_b = int(index_a), int(index_b)
+    new = set()
+    for idx in old:
+        if idx == index_a:
+            new.add(index_b)
+        elif idx == index_b:
+            new.add(index_a)
+        else:
+            new.add(idx)
+    handler._dirty_operation_indices = new
+    handler._update_dirty_status()
+
+
 def mark_all_operations_dirty(handler) -> None:
     dirty = set()
     for idx, op in enumerate(getattr(handler.model, "operations", []) or []):

@@ -156,6 +156,9 @@ from lathe_easystep.ui_dirty import (
     mark_all_operations_dirty,
     mark_dirty,
     mark_program_structure_dirty,
+    reindex_dirty_operations_after_insert,
+    reindex_dirty_operations_after_removal,
+    swap_dirty_operation_indices,
     tab_label as dirty_tab_label,
     update_dirty_status,
     warn_if_dirty,
@@ -1114,6 +1117,15 @@ class HandlerClass:
 
     def _clear_dirty_operation(self, operation_index: int) -> None:
         clear_dirty_operation(self, operation_index)
+
+    def _reindex_dirty_operations_after_removal(self, removed_index: int) -> None:
+        reindex_dirty_operations_after_removal(self, removed_index)
+
+    def _reindex_dirty_operations_after_insert(self, inserted_index: int) -> None:
+        reindex_dirty_operations_after_insert(self, inserted_index)
+
+    def _swap_dirty_operation_indices(self, index_a: int, index_b: int) -> None:
+        swap_dirty_operation_indices(self, index_a, index_b)
 
     def _update_dirty_status(self) -> None:
         update_dirty_status(self)
@@ -2925,6 +2937,10 @@ class HandlerClass:
                 op = Operation(op_type, params)
                 self.model.update_geometry(op)
                 self.model.operations.insert(0, op)
+                try:
+                    self._reindex_dirty_operations_after_insert(0)
+                except Exception:
+                    pass
                 self._refresh_operation_list(select_index=0)
                 self._refresh_preview()
             else:
@@ -3013,6 +3029,10 @@ class HandlerClass:
                     )
                 return
             self.model.remove_operation(idx)
+            try:
+                self._reindex_dirty_operations_after_removal(idx)
+            except Exception:
+                pass
             try:
                 self._mark_program_structure_dirty()
             except Exception:

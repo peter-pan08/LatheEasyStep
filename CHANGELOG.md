@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### LES-048 SICHERHEITSKRITISCHER FIX: Loeschen/Verschieben eines Steps verschob dessen dirty-Markierung nicht mit 2026-09-13
+
+- Gefunden als direkte Folgeuntersuchung von LES-047: `_dirty_operation_indices`
+  ist eine reine Menge von Listenpositionen. Loeschen einer Operation
+  verschiebt alle nachfolgenden Operationen um eine Position nach vorn,
+  Verschieben nach oben/unten vertauscht zwei Positionen - in beiden
+  Faellen wurde die dirty-Menge bisher nie nachgezogen.
+- Ergebnis: eine zuvor als geaendert markierte Operation "wanderte"
+  stillschweigend auf eine ANDERE, tatsaechlich unveraenderte Operation,
+  waehrend die wirklich geaenderte Operation ihre Markierung komplett
+  verlor. "Aenderungen speichern" haette dadurch die falsche Step-Datei
+  mit fremdem Inhalt ueberschrieben und die echte Aenderung
+  stillschweigend verloren - in einem sehr gewoehnlichen Workflow (Steps
+  umsortieren oder loeschen).
+- Real reproduziert (direkter Aufruf der echten Handler-Methoden) und
+  behoben: drei neue Hilfsfunktionen in `ui_dirty.py`
+  (`reindex_dirty_operations_after_removal()`, `swap_dirty_operation_indices()`,
+  `reindex_dirty_operations_after_insert()`), eingebunden in Loeschen,
+  Verschieben nach oben/unten und den Sonderfall "Programmkopf
+  nachtraeglich an Position 0 einfuegen".
+- Fuenf neue Regressionstests, alle fuenf per `git stash` gegen den alten
+  Code verifiziert. 688 Stub-/44 Qt-Tests, zwoelf Referenzen und 43
+  Matrixfaelle unter rs274 bestanden, keine Referenzaenderung. Details:
+  TODO.md.
+
 ### LES-047 (Teil 1): "Aenderungen speichern" liess fehlende Step-Datei-Verknuepfung unbemerkt 2026-09-13
 
 - Nutzerbericht: nach dem Laden eines Programms mit urspruenglich einzeln
