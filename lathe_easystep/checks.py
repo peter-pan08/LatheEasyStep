@@ -192,6 +192,21 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
         contour_name = str(params.get("contour_name") or "").strip()
         contour_op = contour_by_name.get(contour_name)
         if contour_op is None:
+            # SICHERHEITSFUND 2026-09-13: eine ABSPANEN-Operation verweist
+            # per contour_name auf eine CONTOUR-Operation. Wird diese Kontur
+            # spaeter geloescht (oder umbenannt), blieb das bisher hier
+            # STUMM - erst bei "Programm erzeugen"/"Speichern" kam ein
+            # harter ValueError ("Kontur X fehlt oder ist leer"). Diese
+            # Funktion liefert aber genau die Warnungen, die schon waehrend
+            # der Bearbeitung in Vorschau/Programmkopf angezeigt werden -
+            # der Nutzer sollte den kaputten Verweis SOFORT sehen, nicht
+            # erst beim naechsten Speicherversuch.
+            if contour_name:
+                warnings.append(
+                    f"Abspanen-Step verweist auf Kontur '{contour_name}', "
+                    "die nicht (mehr) existiert - vermutlich geloescht oder "
+                    "umbenannt. Kontur neu auswaehlen, bevor gespeichert wird."
+                )
             continue
         contour_params = getattr(contour_op, "params", {}) or {}
         segments = contour_params.get("segments") or []
