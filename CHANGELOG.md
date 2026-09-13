@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### LES-020 Radius-Warnung an die Vorschau-Warnungspipeline angebunden 2026-09-13
+
+- Nutzerrueckfrage zum LES-020-Fund (Werkzeug-Orientierung/-Radius-
+  Warnsystem implementiert, aber nie angezeigt): Nutzerentscheidung
+  "anbinden", da eine real gepflegte Werkzeugtabelle Radius und
+  Orientierung grundsaetzlich enthaelt.
+- Bei der Umsetzung zeigte sich: der Orientierungs-Abgleich
+  (`tool_logic.py::collect_tool_orientation_warnings`) ist eine bereits
+  vollstaendig redundante Zweitimplementierung - `checks.py::validate_program_setup()`
+  hat laengst einen eigenen, bereits aktiven Orientierungs-Check in
+  `prog["__warnings"]`. Eine Anbindung haette dieselbe Warnung doppelt
+  ausgegeben, deshalb NICHT verdrahtet.
+- Nur `radius_warning_details()` ist tatsaechlich neu: jetzt in
+  `ui_preview.py::collect_preview_state()` eingehaengt. Werkzeuge ohne
+  bekannten Radius (Kompensation wird dadurch stillschweigend
+  deaktiviert) erscheinen jetzt als Warnung im Panel.
+- Drei neue Tests (`tests/test_tool_warning_wiring.py`), per `git stash`
+  verifiziert. 694 Stub-/50 Qt-Tests bestanden, zwoelf Referenzen
+  unveraendert. Details: TODO.md (LES-020).
+
 ### LES-020 187 Zeilen toten Code aus dem Handler entfernt 2026-09-13
 
 - Systematischer Scan aller privaten Handler-Methoden auf Null-Referenzen

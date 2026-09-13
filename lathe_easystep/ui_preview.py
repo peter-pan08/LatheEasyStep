@@ -246,6 +246,7 @@ def collect_preview_state(
         prog["__warnings"] = (
             get_machine_limit_warnings(prog)
             + validate_program_setup(handler.model.operations, {**prog, "tools": getattr(handler, "tools", {})})
+            + [detail["message"] for detail in handler._radius_warning_details()]
         )
     except Exception:
         prog["__warnings"] = []
