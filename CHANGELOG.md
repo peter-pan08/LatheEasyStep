@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### LES-034 Nut-Vorschaugeometrie erstmals getestet (kein Fund) 2026-09-14
+
+- Nachuntersuchung der bewusst ausgeklammerten Operationstypen: `build_drill_path()`
+  ist bereits umfassend getestet; Seiten- und Schnittansicht teilen sich
+  dieselbe Interpolationsfunktion (strukturell konsistent, kein Fund).
+- `build_groove_preview_path()` hatte dagegen KEINE Testabdeckung, obwohl
+  es die Vorschau fuer jede GROOVE-Operation liefert. Acht neue Unit-Tests
+  sichern die interne Korrektheit ab: Uebereinstimmung mit dem
+  handgepflegten Referenz-Fixture, alle Bezugskanten, radiale/axiale Nut,
+  und das sicherheitsrelevante Vorzeichen Innen-/Aussenbearbeitung
+  (Innen-Nut vergroessert den Durchmesser am Nutgrund).
+- Kein Bug gefunden - die bestehende Logik war bereits korrekt, jetzt
+  aber gegen eine Regression abgesichert (Test-Wirksamkeit direkt per
+  vertauschtem Vorzeichen nachgewiesen). 711 Stub-/59 Qt-Tests bestanden,
+  zwoelf Referenzen unveraendert. Details: TODO.md (LES-034).
+
 ### LES-034 Vorschau-Pfad gegen tatsaechliche G-Code-Ausgabe verifiziert (kein Fund) 2026-09-14
 
 - Nutzerauftrag: dargestellten Werkzeugweg der zwoelf Referenzprogramme
