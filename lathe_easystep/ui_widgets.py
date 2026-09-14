@@ -91,5 +91,9 @@ def ensure_core_widgets(handler) -> None:
     handler._connect_button_once(handler.btn_generate, handler._handle_generate_gcode, "_btn_generate_connected")
     handler._connect_button_once(handler.btn_save_changes, handler._handle_save_changes, "_btn_save_changes_connected")
     handler._connect_button_once(handler.btn_save_step, handler._handle_save_step, "_btn_save_step_connected")
+    try:
+        handler._update_save_step_button_state()
+    except Exception:
+        pass
     handler._connect_button_once(handler.btn_load_step, handler._handle_load_step, "_btn_load_step_connected")
     handler._connect_button_once(handler.btn_thread_preset, handler._apply_thread_preset_force, "_thread_preset_connected")

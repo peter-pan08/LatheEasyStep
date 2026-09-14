@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### LES-024: "Step speichern" per Buttonzustand gesperrt (erstes Muster-Paket) 2026-09-14
+
+- Nutzerentscheidung in Umsetzung: ungueltige Aktionen sollen kuenftig
+  per Buttonzustand verhindert werden statt nur beim Klick eine
+  Fehlermeldung zu zeigen. Klarster Fall zuerst umgesetzt: "Step
+  speichern" ist jetzt nur aktiv, wenn eine Operation in der Step-Liste
+  ausgewaehlt ist. Neue Funktion `update_save_step_button_state()`
+  (`ui_persistence.py`), aufgerufen bei jeder Auswahlaenderung
+  (`handle_selection_change()` in `ui_selection.py`, inklusive des
+  fruehen Rueckgabepfads fuer eine ungueltige Zeile - sonst waere der
+  Button nach dem Loeschen der letzten Operation faelschlich aktiv
+  geblieben) sowie zentral am Ende von `_refresh_operation_list()`
+  (`lathe_easystep_handler.py`). Letzteres deckt Hinzufuegen/Loeschen/
+  Verschieben/Laden automatisch mit ab, ohne jede einzelne Aktion in
+  `ui_flow.py`/`ui_operations.py` separat verdrahten zu muessen. Die
+  bestehende Klick-Meldung ("message.step.select_operation_first")
+  bleibt unveraendert als letzte Sicherung bestehen.
+- Sechs neue Tests (`tests/test_save_step_button_state.py`): die reine
+  Funktion isoliert (Button gesperrt/aktiv, fehlender Button, Ausnahme
+  beim Lesen der Auswahl wird geschluckt) sowie die Verdrahtung in
+  `handle_selection_change()` fuer eine gueltige und eine ungueltige
+  Zeile. Per zwei unabhaengig entfernten Aufrufen als echte Regression
+  verifiziert, danach zurueckgesetzt.
+- Real in der SIM verifiziert: Embedded-Start fehlerfrei (`critical done`
+  nach 8,233 s), "Step speichern" startet sichtbar gesperrt (kein Programm
+  geladen, keine Auswahl) - deutlich erkennbar am gedimmten Button
+  gegenueber den anderen, aktiven Buttons in derselben Reihe.
+- 801 Stub-/76 Real-Qt-Tests bestanden, keine Skips. Noch offen: die
+  uebrigen zehn+ QMessageBox-Klick-Validierungen in `ui_flow.py`/
+  `ui_persistence.py` nach demselben Muster umstellen. Details: TODO.md
+  (LES-024).
+
 ### LES-044: G-Code-Werkstattkommentare sind jetzt sprachabhaengig 2026-09-14
 
 - Nutzerentscheidung umgesetzt: G-Code-Kommentare folgen jetzt der

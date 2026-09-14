@@ -96,6 +96,10 @@ def handle_selection_change(handler, row: int) -> None:
             step_list.is_bound()
             and (step_list.has_focus() or handler._op_row_user_selected)
         )
+        try:
+            handler._update_save_step_button_state()
+        except Exception:
+            pass
         if row < 0 or row >= len(handler.model.operations):
             return
         op = handler.model.operations[row]
