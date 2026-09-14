@@ -625,3 +625,199 @@ def build_chuck_nogo_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]
         {"type": "line", "p1": (hi, z1), "p2": (lo, z1), "role": "chuck_nogo"},
         {"type": "line", "p1": (lo, z1), "p2": (lo, z0), "role": "chuck_nogo"},
     ]
+
+
+# LES-024/LES-034: reine Geometrieberechnung fuer die Schnittansicht, aus
+# preview_widget.py (LathePreviewWidget) extrahiert - keine QPainter-Aufrufe,
+# keine Widget-Seiteneffekte. Die Widget-Methoden bleiben als duenne
+# Delegierungen bestehen, damit Seiten- und Schnittansicht weiterhin
+# dieselbe Datenquelle (op.path) nutzen und nicht auseinanderlaufen koennen
+# (siehe TODO.md/CHANGELOG.md LES-034 "komplexe Endgeometrien vergleichen").
+
+def interp_x_hits_at_z(path: List[Point], z: float) -> List[float]:
+    """Alle X-Treffer eines Punktpfads bei einem festen Z, aufsteigend und
+    entdoppelt. Eine vertikale Flanke (z1 == z2 == z) liefert beide Enden,
+    nicht nur eines - sonst wuerde eine Nutflanke in der Schnittansicht nur
+    einen von zwei tatsaechlichen Durchmessern zeigen."""
+    if not path or len(path) < 2:
+        return []
+    hits: List[float] = []
+    for (x1, z1), (x2, z2) in zip(path[:-1], path[1:]):
+        if abs(z2 - z1) < 1e-9:
+            if abs(z - z1) < 1e-6:
+                hits.append(x1)
+                hits.append(x2)
+            continue
+        if (z1 <= z <= z2) or (z2 <= z <= z1):
+            t = (z - z1) / (z2 - z1)
+            hits.append(x1 + t * (x2 - x1))
+    uniq: List[float] = []
+    for val in sorted(float(h) for h in hits):
+        if not uniq or abs(val - uniq[-1]) > 1e-6:
+            uniq.append(val)
+    return uniq
+
+
+def interp_x_at_z(path: List[Point], z: float) -> float | None:
+    hits = interp_x_hits_at_z(path, z)
+    return min(hits) if hits else None
+
+
+def path_hits_at_slice(path, z: float, to_points) -> List[float]:
+    """Wie interp_x_hits_at_z(), akzeptiert aber auch einen Primitive-Pfad
+    (Liste von line/arc-Dicts statt Punkten) via `to_points`."""
+    if not path:
+        return []
+    if isinstance(path[0], dict):
+        try:
+            path = to_points(path)
+        except Exception:
+            return []
+    return interp_x_hits_at_z(path, z)
+
+
+def front_operation_side(op: Operation) -> str | None:
+    params = getattr(op, "params", {}) or {}
+    if op.op_type in (OpType.DRILL, OpType.BORE):
+        return "inside"
+    if op.op_type == OpType.GROOVE:
+        try:
+            return "inside" if int(float(params.get("lage", 0) or 0)) == 1 else "outside"
+        except Exception:
+            return "outside"
+    if op.op_type == OpType.THREAD:
+        return "inside" if is_internal_side(params.get("orientation", 0)) else "outside"
+    if op.op_type == OpType.ABSPANEN:
+        return "inside" if is_internal_side(params.get("side", 0)) else "outside"
+    if op.op_type == OpType.KEYWAY:
+        return None
+    return "outside"
+
+
+def front_slice_profile(
+    *,
+    front_program: Dict[str, object],
+    front_operations: List[Operation],
+    paths: List[list],
+    active_index: int | None,
+    slice_z: float,
+    to_points,
+) -> Dict[str, List[float] | float | None]:
+    try:
+        stock_od = abs(float(front_program.get("xa", 0.0) or 0.0))
+    except Exception:
+        stock_od = 0.0
+    try:
+        stock_id = abs(float(front_program.get("xi", 0.0) or 0.0))
+    except Exception:
+        stock_id = 0.0
+
+    outer_hits: List[float] = []
+    inner_hits: List[float] = []
+    neutral_hits: List[float] = []
+
+    if not front_operations and paths:
+        idx = active_index if active_index is not None else 0
+        idx = max(0, min(idx, len(paths) - 1))
+        raw_hits = [abs(d) for d in path_hits_at_slice(paths[idx], slice_z, to_points) if abs(d) > 1e-6]
+        return {
+            "outer_hits": sorted(raw_hits, reverse=True),
+            "inner_hits": [],
+            "neutral_hits": [],
+            "all_hits": sorted(raw_hits, reverse=True),
+            "outer_fill": max(raw_hits) if raw_hits else (stock_od if stock_od > 1e-6 else None),
+            "inner_fill": stock_id if stock_id > 1e-6 else None,
+        }
+
+    for op in front_operations:
+        if op is None or getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
+            continue
+        if getattr(op, "op_type", None) == OpType.KEYWAY:
+            continue
+        hits = [abs(d) for d in path_hits_at_slice(getattr(op, "path", []) or [], slice_z, to_points) if abs(d) > 1e-6]
+        if not hits:
+            continue
+        side = front_operation_side(op)
+        if side == "inside":
+            inner_hits.extend(hits)
+        elif side == "outside":
+            outer_hits.extend(hits)
+        else:
+            neutral_hits.extend(hits)
+
+    def _uniq_desc(values: List[float]) -> List[float]:
+        uniq: List[float] = []
+        for val in sorted((abs(float(v)) for v in values if abs(float(v)) > 1e-6), reverse=True):
+            if not uniq or abs(val - uniq[-1]) > 1e-6:
+                uniq.append(val)
+        return uniq
+
+    outer_hits = _uniq_desc(outer_hits)
+    inner_hits = _uniq_desc(inner_hits)
+    neutral_hits = _uniq_desc(neutral_hits)
+    all_hits = _uniq_desc(outer_hits + inner_hits + neutral_hits)
+
+    outer_fill = outer_hits[0] if outer_hits else (stock_od if stock_od > 1e-6 else None)
+    inner_fill = inner_hits[-1] if inner_hits else (stock_id if stock_id > 1e-6 else None)
+
+    return {
+        "outer_hits": outer_hits,
+        "inner_hits": inner_hits,
+        "neutral_hits": neutral_hits,
+        "all_hits": all_hits,
+        "outer_fill": outer_fill,
+        "inner_fill": inner_fill,
+    }
+
+
+def front_reference_diameter(
+    *,
+    front_program: Dict[str, object],
+    front_operations: List[Operation],
+    to_points,
+) -> float:
+    candidates: List[float] = []
+
+    for key in ("xa", "xi"):
+        try:
+            val = abs(float(front_program.get(key, 0.0) or 0.0))
+        except Exception:
+            val = 0.0
+        if val > 1e-6:
+            candidates.append(val)
+
+    for op in front_operations:
+        if op is None or getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
+            continue
+        path = getattr(op, "path", None) or []
+        if not path:
+            continue
+        if isinstance(path[0], dict):
+            try:
+                pts = to_points(path)
+            except Exception:
+                pts = []
+        else:
+            pts = path
+        for pt in pts:
+            try:
+                dia = abs(float(pt[0]))
+            except Exception:
+                continue
+            if dia > 1e-6:
+                candidates.append(dia)
+
+        if getattr(op, "op_type", None) == OpType.KEYWAY:
+            params = getattr(op, "params", {}) or {}
+            try:
+                start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
+                nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
+                radial_side = int(float(params.get("radial_side", 0) or 0))
+            except Exception:
+                continue
+            if start_dia > 1e-6:
+                candidates.append(start_dia)
+                if radial_side != 0 and nut_depth > 1e-6:
+                    candidates.append(start_dia + (2.0 * nut_depth))
+
+    return max(candidates, default=10.0)

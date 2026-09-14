@@ -17,14 +17,19 @@ from typing import Dict, List, Tuple
 from qtpy import QtCore, QtGui, QtWidgets
 
 from .contour_features import _tessellate_arc
-from .gcode_utils import is_internal_side
 from .model import Operation, OpType
 from .preview_scene import PreviewLayer, primitive_strokes
 from .preview_geometry import (
     build_keyway_slot_angles,
+    front_operation_side,
+    front_reference_diameter,
+    front_slice_profile,
     front_view_polar_to_cartesian,
+    interp_x_at_z,
+    interp_x_hits_at_z,
     keyway_radial_slot_radii,
     keyway_slice_bounds,
+    path_hits_at_slice,
 )
 
 
@@ -172,28 +177,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.set_slice_z(z, emit=True)
 
     def _interp_x_at_z(self, path, z: float):
-        hits = self._interp_x_hits_at_z(path, z)
-        if not hits:
-            return None
-        return min(hits)
+        return interp_x_at_z(path, z)
 
     def _interp_x_hits_at_z(self, path, z: float):
-        if not path or len(path) < 2:
-            return []
-        hits = []
-        for (x1, z1), (x2, z2) in zip(path[:-1], path[1:]):
-            if abs(z2 - z1) < 1e-9:
-                if abs(z - z1) < 1e-6:
-                    hits.append(x1); hits.append(x2)
-                continue
-            if (z1 <= z <= z2) or (z2 <= z <= z1):
-                t = (z - z1) / (z2 - z1)
-                hits.append(x1 + t * (x2 - x1))
-        uniq: List[float] = []
-        for val in sorted(float(h) for h in hits):
-            if not uniq or abs(val - uniq[-1]) > 1e-6:
-                uniq.append(val)
-        return uniq
+        return interp_x_hits_at_z(path, z)
 
     def _paint_slice_view(self, painter: QtGui.QPainter):
         painter.fillRect(self.rect(), QtCore.Qt.black)
@@ -228,14 +215,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def _path_hits_at_slice(self, path) -> List[float]:
-        if not path:
-            return []
-        if isinstance(path[0], dict):
-            try:
-                path = self.primitives_to_points(path)
-            except Exception:
-                return []
-        return self._interp_x_hits_at_z(path, self.slice_z)
+        return path_hits_at_slice(path, self.slice_z, self.primitives_to_points)
 
     def _front_program_operations(self) -> List[Operation]:
         ops = getattr(self, "front_program", {}).get("__operations")
@@ -245,90 +225,17 @@ class LathePreviewWidget(QtWidgets.QWidget):
         return [op] if isinstance(op, Operation) else []
 
     def _front_operation_side(self, op: Operation) -> str | None:
-        params = getattr(op, "params", {}) or {}
-        if op.op_type in (OpType.DRILL, OpType.BORE):
-            return "inside"
-        if op.op_type == OpType.GROOVE:
-            try:
-                return "inside" if int(float(params.get("lage", 0) or 0)) == 1 else "outside"
-            except Exception:
-                return "outside"
-        if op.op_type == OpType.THREAD:
-            return "inside" if is_internal_side(params.get("orientation", 0)) else "outside"
-        if op.op_type == OpType.ABSPANEN:
-            return "inside" if is_internal_side(params.get("side", 0)) else "outside"
-        if op.op_type == OpType.KEYWAY:
-            return None
-        return "outside"
+        return front_operation_side(op)
 
     def _front_slice_profile(self) -> Dict[str, List[float] | float | None]:
-        prog = getattr(self, "front_program", {}) or {}
-        try:
-            stock_od = abs(float(prog.get("xa", 0.0) or 0.0))
-        except Exception:
-            stock_od = 0.0
-        try:
-            stock_id = abs(float(prog.get("xi", 0.0) or 0.0))
-        except Exception:
-            stock_id = 0.0
-
-        outer_hits: List[float] = []
-        inner_hits: List[float] = []
-        neutral_hits: List[float] = []
-
-        ops = self._front_program_operations()
-        if not ops and self.paths:
-            idx = self.active_index if self.active_index is not None else 0
-            idx = max(0, min(idx, len(self.paths) - 1))
-            raw_hits = [abs(d) for d in self._path_hits_at_slice(self.paths[idx]) if abs(d) > 1e-6]
-            return {
-                "outer_hits": sorted(raw_hits, reverse=True),
-                "inner_hits": [],
-                "neutral_hits": [],
-                "all_hits": sorted(raw_hits, reverse=True),
-                "outer_fill": max(raw_hits) if raw_hits else (stock_od if stock_od > 1e-6 else None),
-                "inner_fill": stock_id if stock_id > 1e-6 else None,
-            }
-
-        for op in ops:
-            if op is None or getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
-                continue
-            if getattr(op, "op_type", None) == OpType.KEYWAY:
-                continue
-            hits = [abs(d) for d in self._path_hits_at_slice(getattr(op, "path", []) or []) if abs(d) > 1e-6]
-            if not hits:
-                continue
-            side = self._front_operation_side(op)
-            if side == "inside":
-                inner_hits.extend(hits)
-            elif side == "outside":
-                outer_hits.extend(hits)
-            else:
-                neutral_hits.extend(hits)
-
-        def _uniq_desc(values: List[float]) -> List[float]:
-            uniq: List[float] = []
-            for val in sorted((abs(float(v)) for v in values if abs(float(v)) > 1e-6), reverse=True):
-                if not uniq or abs(val - uniq[-1]) > 1e-6:
-                    uniq.append(val)
-            return uniq
-
-        outer_hits = _uniq_desc(outer_hits)
-        inner_hits = _uniq_desc(inner_hits)
-        neutral_hits = _uniq_desc(neutral_hits)
-        all_hits = _uniq_desc(outer_hits + inner_hits + neutral_hits)
-
-        outer_fill = outer_hits[0] if outer_hits else (stock_od if stock_od > 1e-6 else None)
-        inner_fill = inner_hits[-1] if inner_hits else (stock_id if stock_id > 1e-6 else None)
-
-        return {
-            "outer_hits": outer_hits,
-            "inner_hits": inner_hits,
-            "neutral_hits": neutral_hits,
-            "all_hits": all_hits,
-            "outer_fill": outer_fill,
-            "inner_fill": inner_fill,
-        }
+        return front_slice_profile(
+            front_program=getattr(self, "front_program", {}) or {},
+            front_operations=self._front_program_operations(),
+            paths=self.paths,
+            active_index=self.active_index,
+            slice_z=self.slice_z,
+            to_points=self.primitives_to_points,
+        )
 
     def _front_active_diameters(self) -> List[float]:
         profile = self._front_slice_profile()
@@ -336,52 +243,11 @@ class LathePreviewWidget(QtWidgets.QWidget):
         return list(hits) if isinstance(hits, list) else []
 
     def _front_reference_diameter(self) -> float:
-        prog = getattr(self, "front_program", {}) or {}
-        candidates: List[float] = []
-
-        for key in ("xa", "xi"):
-            try:
-                val = abs(float(prog.get(key, 0.0) or 0.0))
-            except Exception:
-                val = 0.0
-            if val > 1e-6:
-                candidates.append(val)
-
-        for op in self._front_program_operations():
-            if op is None or getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
-                continue
-            path = getattr(op, "path", None) or []
-            if not path:
-                continue
-            if isinstance(path[0], dict):
-                try:
-                    pts = self.primitives_to_points(path)
-                except Exception:
-                    pts = []
-            else:
-                pts = path
-            for pt in pts:
-                try:
-                    dia = abs(float(pt[0]))
-                except Exception:
-                    continue
-                if dia > 1e-6:
-                    candidates.append(dia)
-
-            if getattr(op, "op_type", None) == OpType.KEYWAY:
-                params = getattr(op, "params", {}) or {}
-                try:
-                    start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
-                    nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
-                    radial_side = int(float(params.get("radial_side", 0) or 0))
-                except Exception:
-                    continue
-                if start_dia > 1e-6:
-                    candidates.append(start_dia)
-                    if radial_side != 0 and nut_depth > 1e-6:
-                        candidates.append(start_dia + (2.0 * nut_depth))
-
-        return max(candidates, default=10.0)
+        return front_reference_diameter(
+            front_program=getattr(self, "front_program", {}) or {},
+            front_operations=self._front_program_operations(),
+            to_points=self.primitives_to_points,
+        )
 
     def _draw_front_keyway_overlay(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float):
         painter.save()

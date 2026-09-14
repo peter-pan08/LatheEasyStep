@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### LES-024/LES-034: Schnittansicht-Diagrammberechnung aus preview_widget.py extrahiert 2026-09-14
+
+- Erstes Verkleinerungspaket fuer `preview_widget.py` (LES-024/LES-044:
+  "reine Vorschaugeometrie von Qt-Zeichenbefehlen trennen", Muster
+  `compute_tool_preview_layout()`): die komplette Schnittansicht-
+  Diagrammberechnung (`_interp_x_hits_at_z`, `_interp_x_at_z`,
+  `_path_hits_at_slice`, `_front_operation_side`, `_front_slice_profile`,
+  `_front_active_diameters`, `_front_reference_diameter`) als reine,
+  Qt-freie Funktionen nach `preview_geometry.py` gezogen. Die
+  Widget-Methoden sind jetzt einzeilige Delegierungen; Verhalten
+  unveraendert. `preview_widget.py`: 1049 -> 909 Zeilen.
+- Acht neue Tests (`tests/test_preview_front_slice_geometry.py`) laufen
+  jetzt direkt gegen die reinen Funktionen, ohne echtes PyQt5 - vorher nur
+  indirekt ueber das Widget erreichbar und ungetestet
+  (`_front_operation_side`, `_front_slice_profile`,
+  `_front_reference_diameter` hatten bisher keinen eigenen Test). Per zwei
+  unabhaengig injizierten Bugs (Klassifikations- und Kandidatenfehler) als
+  echte Regression verifiziert, danach zurueckgesetzt.
+- Real in der SIM verifiziert: Embedded-Start fehlerfrei (9,2 s), Reiter
+  UTILS/LatheEasyStep geoeffnet und "Schnittansicht" live umgeschaltet -
+  kein Fehler im Log, kein Absturz.
+- 740 Stub-/75 Real-Qt-Tests bestanden, keine Skips. Noch offen:
+  `_sample_arc`/`primitives_to_points` (ebenfalls reine Geometrie, aber
+  noch Widget-Methoden) sowie die `_paint_*`-Zeichenroutinen selbst.
+  Details: TODO.md (LES-024, LES-034).
+
 ### LES-034 abgeschlossen: Schnittansicht-Interpolation fuer GROOVE/THREAD/ABSPANEN abgesichert 2026-09-14
 
 - Letzter offener LES-034-Punkt ("komplexe Endgeometrien in Seiten- und
