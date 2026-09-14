@@ -6,6 +6,7 @@ from qtpy import QtWidgets
 
 from .model import OpType
 from .comments import update_auto_comment
+from .ui_step_list_view import StepListView
 
 
 def apply_program_header_to_handler(
@@ -160,8 +161,5 @@ def sync_form_to_operation(handler, idx: int) -> None:
             pass
         raise
     description = handler._describe_operation(op, idx + 1)
-    if handler.list_ops:
-        item = handler.list_ops.item(idx)
-        if item:
-            item.setText(description)
+    StepListView(handler).set_item_text(idx, description)
     update_auto_comment(op, description)

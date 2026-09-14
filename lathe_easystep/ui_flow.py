@@ -12,6 +12,7 @@ from .model import OpType
 from .comments import is_generated_comment, update_auto_comment
 from .ui_helpers import translate as _tr
 from .ui_messages import format_user_error, parse_error_location
+from .ui_step_list_view import StepListView
 
 _ERROR_HIGHLIGHT_STYLE = "border: 2px solid #d9534f; background-color: #fff3f3;"
 
@@ -119,9 +120,10 @@ def handle_move_up(handler):
         return
     handler._moving_up = True
     try:
-        if handler.list_ops is None:
+        step_list = StepListView(handler)
+        if not step_list.is_bound():
             return
-        idx = handler.list_ops.currentRow()
+        idx = step_list.selected_row()
         if idx <= 0:
             return
         handler.model.move_up(idx)
@@ -145,10 +147,11 @@ def handle_move_down(handler):
         return
     handler._moving_down = True
     try:
-        if handler.list_ops is None:
+        step_list = StepListView(handler)
+        if not step_list.is_bound():
             return
-        idx = handler.list_ops.currentRow()
-        if idx < 0 or idx >= handler.list_ops.count() - 1:
+        idx = step_list.selected_row()
+        if idx < 0 or idx >= step_list.count() - 1:
             return
         handler.model.move_down(idx)
         try:
@@ -348,12 +351,12 @@ def describe_operation(handler, op, number=None):
 
 def renumber_operations(handler):
     """Refresh list numbers and generated descriptions, preserving user comments."""
-    if handler.list_ops is None:
+    step_list = StepListView(handler)
+    if not step_list.is_bound():
         return
-    for i in range(handler.list_ops.count()):
-        item = handler.list_ops.item(i)
+    for i in range(step_list.count()):
         op = handler.model.operations[i]
         description = handler._describe_operation(op, i + 1)
-        item.setText(description)
+        step_list.set_item_text(i, description)
         if op.op_type != OpType.PROGRAM_HEADER:
             update_auto_comment(op, description)

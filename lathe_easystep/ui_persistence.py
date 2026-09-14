@@ -13,6 +13,7 @@ from .ui_helpers import translate as _tr
 from .persistence import build_program_data as build_program_data_payload
 from .storage import parse_program_payload, atomic_write_json
 from .ui_messages import format_user_error
+from .ui_step_list_view import StepListView
 
 
 def build_program_data(handler):
@@ -320,11 +321,9 @@ def handle_load_program(handler) -> None:
         # Operationen das geladene Programm enthaelt.
         selected_row = 0
         handler._refresh_operation_list(select_index=selected_row)
-        if handler.list_ops is not None and 0 <= selected_row < handler.list_ops.count():
-            try:
-                handler.list_ops.setCurrentRow(selected_row)
-            except Exception:
-                pass
+        step_list = StepListView(handler)
+        if step_list.is_bound() and 0 <= selected_row < step_list.count():
+            step_list.select_row(selected_row)
             handler._op_row_user_selected = False
             handler._handle_selection_change(selected_row)
         handler._refresh_preview()

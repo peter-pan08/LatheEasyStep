@@ -5,6 +5,7 @@ from qtpy import QtWidgets
 from .model import OpType
 from .translations import TRANSLATIONS
 from .ui_helpers import current_language as _lang, tab_label
+from .ui_step_list_view import StepListView
 
 
 def init_dirty_state(handler) -> None:
@@ -147,7 +148,7 @@ def mark_all_operations_dirty(handler) -> None:
 def current_operation_is_dirty(handler, row: int | None = None) -> bool:
     if row is None:
         try:
-            row = int(handler.list_ops.currentRow()) if handler.list_ops is not None else -1
+            row = int(StepListView(handler).selected_row())
         except Exception:
             row = -1
     if row < 0:
