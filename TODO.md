@@ -28,7 +28,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
 | LES-028 | P2 | Werkzeugdatensatz und Preset-/Manuell-Normalisierung festlegen | M | 0.9.0 |
 | LES-032 | P2 | reale Werkzeuggeometrie fuer Plausibilitaet/Kollision auswerten | L | 0.9.0 |
-| LES-043 | P2 | Gegenspindel-UI entfernen oder Funktion als eigenes Projekt spezifizieren | S/XL | 0.9.0 |
+| LES-043 | P2 | Gegenspindelfunktion als eigenes Projekt spezifizieren (UI bleibt gesperrt sichtbar) | XL | separat |
 | LES-030 | extern | weitere physische Maschinenprofile verifizieren | extern | offen |
 
 ## LES-024 Modulschnittstellen
@@ -54,23 +54,41 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   721/70 bis zuletzt 772/76 Tests); je nach Paket zusaetzlich Tab-Wechsel,
   Schnittansicht-Toggle und Legende-Klick live im UTILS-Panel geprueft.
   Einzelergebnisse je Paket in CHANGELOG.md.
-- [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
-  oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
+- [ ] Entscheidung (2026-09-14): ungueltige Aktionen kuenftig per Buttonzustand
+  verhindern statt nur beim Klick zu melden. Umsetzung: pro Button, der heute
+  eine QMessageBox-Fehlermeldung ausloest (u. a. `ui_flow.py`/
+  `ui_persistence.py`, zehn+ Stellen), den zugrundeliegenden Gueltigkeits-
+  check als eigene, wiederverwendbare Funktion herausziehen und sowohl beim
+  Klick (bestehende Meldung bleibt als letzte Sicherung) als auch bei
+  Zustandsaenderungen (Signal-Handler) zum Enable/Disable des Buttons
+  aufrufen. Reihenfolge klaeren, welcher Button zuerst (kleinster, klarster
+  Fall zum Muster-Etablieren, dann die uebrigen paketweise).
 
 ## LES-044 Darstellung und Texte
 
 - [ ] reine Vorschaugeometrie von Qt-Zeichenbefehlen weiter trennen; das Muster
   von `compute_tool_preview_layout()` verwenden.
-- [ ] entscheiden, ob G-Code-Kommentare sprachabhaengig sein sollen. Fehlertexte
-  der UI sollen langfristig ueber die Sprachdateien laufen; Werkstattkommentare
-  koennen bewusst sprachstabil bleiben.
+- [ ] Entscheidung (2026-09-14): G-Code-Kommentare (Werkstattkommentare im
+  erzeugten `.ngc`) werden sprachabhaengig wie die UI-Texte. Umsetzung:
+  `comments.py`/`update_auto_comment()` und die `_describe_operation()`-
+  Textbausteine auf `TRANSLATIONS`/Sprachdateien umstellen (analog zu
+  `runtime.*`-Schluesseln); Referenzprogramme betroffen, da Kommentare Teil
+  der `.ngc`-Ausgabe sind - nach der Umstellung alle Referenzen neu
+  generieren, Diff pruefen (nur Kommentartext, keine Bewegungsaenderung)
+  und mit `rs274` bestaetigen (Abschlussregeln Punkt 3/4).
 - [ ] breite `except Exception`-Fallbacks pro migriertem Modul pruefen: erwartete
   Qt-/Host-Ausnahmen gezielt behandeln, unerwartete Fehler mindestens loggen.
 
 ## LES-028 Eingaben normalisieren
 
-- [ ] fachlich festlegen, ob jede verwendete Werkzeugnummer zwingend einen
-  Eintrag in der geladenen Werkzeugtabelle benoetigt.
+- [ ] Entscheidung (2026-09-14): jede verwendete Werkzeugnummer muss zwingend
+  einen Eintrag in der geladenen Werkzeugtabelle haben. Umsetzung: den
+  bisherigen Hinweis ("ISO/Radius fehlt bei: ...", optional) fuer fehlende
+  Eintraege durch eine harte Fehlermeldung ersetzen, die den Werkzeugwechsel/
+  die Programmerzeugung blockiert statt nur zu warnen - Fundstelle:
+  `_auto_load_tool_table()`/Tool-Validierung in `lathe_easystep_handler.py`
+  bzw. `tools.py`. Bestehende Referenzprogramme/Matrixfaelle muessen weiter
+  fehlerfrei durchlaufen (alle nutzen bereits vollstaendige Tooltables).
 - [ ] Werkzeugwechsel nur aus einem normalisierten Werkzeugdatensatz erzeugen.
 - [ ] Preset- und manuelle Werte nachvollziehbar vergleichen und Konflikte
   sichtbar machen.
@@ -88,11 +106,13 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 Die nicht implementierten Bedienelemente sind derzeit sichtbar, aber gesperrt.
 
-- [ ] entscheiden: Checkbox/S3-Feld samt Settings entfernen oder eine echte
-  Gegenspindelfunktion als separates Projekt planen.
-- [ ] bei Umsetzung zuerst Operationen, Spindelsynchronisation, S3-Grenzen und
-  Kollisionsmodell spezifizieren; keine Generatorimplementierung ohne
-  LinuxCNC-SIM-/Maschinenkonzept.
+- [x] Entscheidung (2026-09-14): keine UI-Entfernung - Gegenspindelfunktion
+  wird als eigenes, separates Projekt geplant statt jetzt in LatheEasyStep
+  umgesetzt. Bedienelemente bleiben bis dahin sichtbar, aber gesperrt.
+- [ ] Spezifikation fuer das separate Projekt erstellen, bevor irgendeine
+  Generatorimplementierung beginnt: Operationen, Spindelsynchronisation,
+  S3-Grenzen und Kollisionsmodell. Kein LatheEasyStep-Codepaket ohne
+  LinuxCNC-SIM-/Maschinenkonzept fuer diese Spezifikation.
 
 ## LES-030 Externe Maschinenverifikation
 
