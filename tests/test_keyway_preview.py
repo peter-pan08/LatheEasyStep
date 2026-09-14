@@ -8,10 +8,12 @@ from lathe_easystep_handler import (
     HandlerClass,
     OpType,
     Operation,
+    build_keyway_path,
     build_keyway_slot_angles,
     default_slice_z_for_operation,
     front_view_polar_to_cartesian,
 )
+from lathe_easystep.preview_geometry import keyway_radial_slot_radii
 
 
 def test_keyway_slot_angles_default_to_even_distribution():
@@ -51,6 +53,40 @@ def test_front_view_angle_uses_clockface_orientation():
     assert tuple(round(v, 9) for v in front_view_polar_to_cartesian(math.radians(0.0), 2.0)) == (0.0, -2.0)
     assert tuple(round(v, 9) for v in front_view_polar_to_cartesian(math.radians(90.0), 2.0)) == (2.0, 0.0)
     assert tuple(round(v, 9) for v in front_view_polar_to_cartesian(math.radians(180.0), 2.0)) == (0.0, 2.0)
+
+
+def test_radial_keyway_front_overlay_matches_side_view_depth_when_cutting_inward():
+    """LES-034: Seitenansicht (build_keyway_path) und Schnittansicht-Overlay
+    (keyway_radial_slot_radii) muessen fuer dieselben Parameter dieselbe
+    Nuttiefe beschreiben - nur einmal als Durchmesser entlang Z, einmal als
+    Radius bei einem festen Z."""
+    params = {
+        "mode": 0, "radial_side": 0,
+        "start_x_dia": 40.0, "nut_depth": 3.0,
+        "start_z": 0.0, "nut_length": 10.0,
+    }
+    side_path = build_keyway_path(params)
+    final_dia = side_path[2][0]
+    assert final_dia == 34.0
+
+    inner_r, outer_r = keyway_radial_slot_radii(params)
+    assert outer_r * 2 == params["start_x_dia"]
+    assert inner_r * 2 == final_dia
+
+
+def test_radial_keyway_front_overlay_matches_side_view_depth_when_cutting_outward():
+    params = {
+        "mode": 0, "radial_side": 1,
+        "start_x_dia": 40.0, "nut_depth": 3.0,
+        "start_z": 0.0, "nut_length": 10.0,
+    }
+    side_path = build_keyway_path(params)
+    final_dia = side_path[2][0]
+    assert final_dia == 46.0
+
+    inner_r, outer_r = keyway_radial_slot_radii(params)
+    assert inner_r * 2 == params["start_x_dia"]
+    assert outer_r * 2 == final_dia
 
 
 def test_default_slice_z_for_axial_keyway_uses_slot_center():

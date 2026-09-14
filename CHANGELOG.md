@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### LES-034 Radiale Keilnut: Schnittansicht-Overlay gegen Seitenansicht abgesichert 2026-09-14
+
+- Bisher inline in `preview_widget.py._draw_front_keyway_overlay()`
+  verborgene Radius-Berechnung des Schnittansicht-Overlays als eigene,
+  reine Funktion `keyway_radial_slot_radii()` nach `preview_geometry.py`
+  gezogen (analog zu `build_keyway_path`, `keyway_slice_bounds`,
+  `build_keyway_slot_angles`, die dort bereits lagen).
+- Direkt verglichen: fuer die radiale Keilnut (mode 0) liefert
+  `keyway_radial_slot_radii()` (Schnittansicht, Radius bei festem Z) fuer
+  beide `radial_side`-Werte exakt dieselbe Nuttiefe wie `build_keyway_path()`
+  (Seitenansicht, Durchmesser entlang der Nutlaenge) - keine Abweichung
+  gefunden, jetzt aber strukturell garantiert statt zufaellig konsistent,
+  da beide Ansichten dieselbe Funktion nutzen.
+- Zwei neue Tests (`tests/test_keyway_preview.py`), per gezielt injizierter
+  Abweichung (`* 0.5` auf einen der beiden Radien) als echte Regression
+  verifiziert, danach zurueckgesetzt. 732 Stub-/71 Real-Qt-Tests bestanden.
+- Noch offen (LES-034): axiale Keilnut (mode != 0 - wird in der
+  Schnittansicht aktuell gar nicht gezeichnet, daher kein Fund aber auch
+  kein Vergleich moeglich) sowie GROOVE-/THREAD-Endgeometrien. Details:
+  TODO.md (LES-034).
+
 ### LES-034 Anfahrt/Rueckzug/Werkzeugwechsel/Parken: Bestandsaufnahme, kein Fund 2026-09-14
 
 - Geprueft, ob die Vorschau Anfahrt-, Rueckzug-, Werkzeugwechsel- oder
