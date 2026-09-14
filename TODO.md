@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 713 Stub-Qt-Tests und 67 Tests mit echtem PyQt5, keine Skips.
+- 713 Stub-Qt-Tests und 70 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -24,7 +24,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| LES-035 | P1 | Embedded-/Standalone-Paritaet nach UI-Auslagerungen absichern | M | 0.8.0 |
 | LES-027 | P1 | reale Startzeit nach Tooltip-/Modulumbauten erneut messen | S | 0.8.0 |
 | LES-034 | P2 | Vorschau fachlich in Endkontur, Werkzeugweg und Hilfsgeometrie trennen | L | 0.9.0 |
 | LES-024 | P2 | direkte moduluebergreifende Widgetzugriffe durch Schnittstellen ersetzen | L | 0.9.0 |
@@ -33,15 +32,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | LES-032 | P2 | reale Werkzeuggeometrie fuer Plausibilitaet/Kollision auswerten | L | 0.9.0 |
 | LES-043 | P2 | Gegenspindel-UI entfernen oder Funktion als eigenes Projekt spezifizieren | S/XL | 0.9.0 |
 | LES-030 | extern | weitere physische Maschinenprofile verifizieren | extern | offen |
-
-## LES-035 Embedded-/Standalone-Paritaet
-
-- [ ] Widget-Binding beider Startarten gezielt vergleichen.
-- [ ] Tooltips, Dialoge und Dateipfade vergleichen.
-- [ ] sicherstellen, dass Embedded-Betrieb keine globalen Host-Widgets bindet.
-- [ ] Real-Qt-Smoke-Test fuer beide Startarten pflegen.
-- [ ] Resolver-Warn-/Fehlerpfade nach `ui_ready` testen; der am 2026-09-14
-  real gefundene fehlende Modul-Logger ist behoben und regressionstestet.
 
 ## LES-027 Performance
 
