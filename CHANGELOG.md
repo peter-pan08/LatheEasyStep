@@ -2,6 +2,114 @@
 
 ## [Unreleased]
 
+### LES-024/LES-034: Sperrzonen-Fuellgeometrie aus Paint-Code entfernt 2026-09-14
+
+- `stroke_bounding_rectangle()` berechnet jetzt Qt-frei das Modellrechteck
+  um alle Primitive-Striche der Futter-Sperrzone. Das Widget transformiert
+  nur noch dessen vier Eckpunkte und zeichnet die Fuellung.
+- Primitive werden pro Pfad nur einmal in Striche zerlegt und anschliessend
+  sowohl fuer Fuellung als auch Kontur verwendet; die bisherige doppelte
+  Bogenzerlegung entfaellt.
+- Zwei direkte Tests sichern getrennte Striche und leere Eingaben ab.
+  `preview_widget.py` schrumpft von 681 auf 679 Zeilen. Vollstaendige Suite:
+  757 Stub-Qt- und 75 Real-Qt-Tests, keine Skips. Das eingebettete Panel
+  erreichte in der QtDragon-SIM `_finalize_ui_ready critical done` nach
+  8,505 s und wurde anschliessend sauber beendet. Details: TODO.md (LES-024,
+  LES-034).
+
+### LES-024/LES-034: Zeichenreihenfolge und semantische Stile ausgelagert 2026-09-14
+
+- `build_preview_draw_plan()` in `preview_scene.py` bestimmt jetzt Qt-frei
+  Reihenfolge, erste Primitive-Rolle, Szenenebene und semantischen Stil jedes
+  Pfads. Das Widget ordnet dem Stil nur noch konkrete Qt-Farbe, Breite und
+  Strichart zu.
+- Zwei direkte Tests sichern, dass der aktive Pfad zuletzt gezeichnet wird,
+  Werkstueck-/Hilfs-/Werkzeugwege ihre Ebenenstile behalten und Sonderrollen
+  wie `chuck_nogo` auch beim aktiven Pfad Vorrang besitzen.
+- `preview_widget.py` schrumpft von 739 auf 681 Zeilen. Vollstaendige Suite:
+  755 Stub-Qt- und 75 Real-Qt-Tests, keine Skips. Das eingebettete Panel
+  erreichte in der QtDragon-SIM `_finalize_ui_ready critical done` nach
+  8,294 s und wurde anschliessend sauber beendet. Details: TODO.md (LES-024,
+  LES-034).
+
+### LES-024/LES-034: Tickwerte und Positionen aus Paint-Code entfernt 2026-09-14
+
+- `side_view_ticks()` berechnet jetzt Qt-frei die 1/2/5-Tickwerte, deren
+  Bildschirmpositionen und die Durchmesserbeschriftung der X-Achse. Der
+  Paint-Code iteriert nur noch ueber fertige Werte und zeichnet sie.
+- Ein direkter Test sichert beide Achsen inklusive negativer Werte,
+  Ursprung, Bildschirmpositionen und X-Durchmesserlabels ab. Ein dadurch
+  unbenutzter Transformationsadapter wurde entfernt; `preview_widget.py`
+  schrumpft von 748 auf 739 Zeilen.
+- Vollstaendige Suite bestanden: 753 Stub-Qt- und 75 Real-Qt-Tests, keine
+  Skips. Das eingebettete Panel erreichte in der QtDragon-SIM
+  `_finalize_ui_ready critical done` nach 8,364 s und wurde anschliessend
+  sauber beendet. Details: TODO.md (LES-024, LES-034).
+
+### LES-024/LES-034: Bildschirmtransformation und Achsen ausgelagert 2026-09-14
+
+- Modellkoordinaten-Transformation, Achsenlage und Schnittlinie der
+  Seitenansicht als `side_view_to_screen()`, `side_view_axis_lines()` und
+  `side_view_slice_line()` Qt-frei nach `preview_geometry.py` verschoben.
+  Das Widget wandelt die gelieferten Tupel nur noch in `QPointF` um.
+- Drei direkte Tests sichern Durchmesserhalbierung, Bildschirmorientierung,
+  Maschinenursprung und Schnittlinienausdehnung ab. Die duennen Qt-Adapter
+  lassen `preview_widget.py` gegenueber dem vorigen Paket leicht von 741 auf
+  748 Zeilen wachsen, entfernen jedoch die Koordinatenfachlogik aus dem
+  Widget.
+- Vollstaendige Suite bestanden: 752 Stub-Qt- und 75 Real-Qt-Tests, keine
+  Skips. Das eingebettete Panel erreichte in der QtDragon-SIM
+  `_finalize_ui_ready critical done` nach 8,141 s und wurde anschliessend
+  sauber beendet. Details: TODO.md (LES-024, LES-034).
+
+### LES-024/LES-034: Seitenansicht-Viewport und Ticks Qt-frei berechnet 2026-09-14
+
+- Grenzenermittlung, Durchmesser-/Radiusumrechnung, Mindestspanne, Rand und
+  Skalierung aus `paintEvent()` als `compute_side_viewport()` nach
+  `preview_geometry.py` verschoben. Auch die 1/2/5-Auswahl der Achsenticks
+  liegt jetzt in der reinen Funktion `nice_tick_step()`.
+- Vier direkte Tests sichern leere Ansichten, Durchmesserkoordinaten,
+  Bogenprimitive und Tickabstaende ab. Die bestehenden echten Painttests
+  bleiben unveraendert gruen; `preview_widget.py` schrumpft von 808 auf 741
+  Zeilen.
+- Vollstaendige Suite bestanden: 749 Stub-Qt- und 75 Real-Qt-Tests, keine
+  Skips. Embedded-Start in der QtDragon-SIM ebenfalls fehlerfrei;
+  `_finalize_ui_ready critical done` nach 7,769 s, anschliessend sauber
+  beendet. Details: TODO.md (LES-024, LES-034).
+
+### LES-024/LES-034: Keilnut-Polygonberechnung aus Zeichenroutine extrahiert 2026-09-14
+
+- Die Berechnung der radialen Keilnut-Polygone aus
+  `_draw_front_keyway_overlay()` als Qt-freie Funktion
+  `build_keyway_front_polygons()` nach `preview_geometry.py` verschoben. Die
+  Zeichenroutine skaliert und zeichnet nur noch die fertigen Punkte;
+  `preview_widget.py` schrumpft von 856 auf 808 Zeilen.
+- Zwei direkte Tests sichern Anzahl, Punktzahl, Innen-/Aussenradius und den
+  gueltigen axialen Schnittbereich ab. Der bestehende Real-Qt-Painttest wurde
+  auf einen tatsaechlich gueltigen Keilnutdatensatz korrigiert; zuvor lief er
+  ohne Absturz, erreichte aber wegen fehlender Parameter keinen Polygonpfad.
+- Vollstaendige Suite bestanden: 745 Stub-Qt- und 75 Real-Qt-Tests, keine
+  Skips. Embedded-Start in der QtDragon-SIM ebenfalls fehlerfrei;
+  `_finalize_ui_ready critical done` nach 8,075 s, anschliessend sauber
+  beendet. Details: TODO.md (LES-024, LES-034).
+
+### LES-024/LES-034: Primitive-Konvertierung aus dem Preview-Widget extrahiert 2026-09-14
+
+- `_sample_arc` und `primitives_to_points` aus `preview_widget.py` als reine,
+  Qt-freie Funktionen `sample_preview_arc()` und
+  `preview_primitives_to_points()` nach `preview_geometry.py` verschoben. Die
+  Widget-Methoden bleiben als schmale Kompatibilitaetsdelegierungen erhalten;
+  `preview_widget.py` schrumpft dadurch von 909 auf 856 Zeilen.
+- Drei direkte Regressionstests fuer degenerierte Boegen, verbundene
+  Linienprimitive und ungueltige Altdaten ergaenzt. Die bestehenden
+  Bogentests pruefen jetzt die echte Produktionsfunktion statt eine Kopie
+  ihres Algorithmus im Test zu unterhalten.
+- Vollstaendige Suite bestanden: 743 Stub-Qt- und 75 Real-Qt-Tests, keine
+  Skips. Embedded-Start in der QtDragon-SIM ebenfalls fehlerfrei;
+  `_finalize_ui_ready critical done` nach 8,409 s, anschliessend sauber
+  beendet. Noch offen ist die schrittweise Verkleinerung der an QPainter
+  gebundenen `_paint_*`-Routinen. Details: TODO.md (LES-024, LES-034).
+
 ### LES-024/LES-034: Schnittansicht-Diagrammberechnung aus preview_widget.py extrahiert 2026-09-14
 
 - Erstes Verkleinerungspaket fuer `preview_widget.py` (LES-024/LES-044:

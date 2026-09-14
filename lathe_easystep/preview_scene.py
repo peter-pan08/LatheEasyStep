@@ -40,6 +40,14 @@ class PreviewScene:
         return None
 
 
+@dataclass(frozen=True)
+class PreviewDrawItem:
+    index: int
+    role: str | None
+    layer: PreviewLayer | None
+    style_key: str
+
+
 _WORKPIECE_TYPES = {OpType.CONTOUR, OpType.GROOVE, OpType.KEYWAY}
 _TOOL_PATH_TYPES = {OpType.FACE, OpType.THREAD, OpType.ABSPANEN}
 _AUXILIARY_ROLES = {"stock", "retract", "worklimit", "chuck_nogo", "contour_rough"}
@@ -118,3 +126,67 @@ def primitive_strokes(
         if stroke:
             strokes.append(stroke)
     return strokes
+
+
+def stroke_bounding_rectangle(
+    strokes: Iterable[Iterable[tuple[float, float]]],
+) -> list[tuple[float, float]]:
+    """Return the axis-aligned model-space rectangle enclosing all strokes."""
+    points = [point for stroke in strokes for point in stroke]
+    if not points:
+        return []
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_z = min(point[1] for point in points)
+    max_z = max(point[1] for point in points)
+    return [
+        (min_x, min_z),
+        (min_x, max_z),
+        (max_x, max_z),
+        (max_x, min_z),
+    ]
+
+
+def build_preview_draw_plan(
+    paths: list[list], active_index: int | None, scene: PreviewScene | None = None
+) -> list[PreviewDrawItem]:
+    """Resolve draw order and semantic style without depending on Qt."""
+    order = [index for index in range(len(paths)) if index != active_index]
+    if active_index is not None and 0 <= active_index < len(paths):
+        order.append(active_index)
+
+    special_styles = {
+        "stock": "stock",
+        "retract": "retract",
+        "worklimit": "worklimit",
+        "chuck_nogo": "chuck_nogo",
+        "contour_rough": "contour_rough",
+        "feature": "feature",
+        "feature_separate": "feature_separate",
+    }
+    plan = []
+    for index in order:
+        path = paths[index]
+        if not path:
+            continue
+        roles = [
+            str(item.get("role")) for item in path
+            if isinstance(item, dict) and item.get("role")
+        ]
+        role = roles[0] if roles else None
+        try:
+            layer = scene.entries[index].layer if scene is not None else None
+        except (AttributeError, IndexError, TypeError):
+            layer = None
+        if role in special_styles:
+            style_key = special_styles[role]
+        elif index == active_index:
+            style_key = "active"
+        elif layer == PreviewLayer.WORKPIECE:
+            style_key = "workpiece"
+        elif layer == PreviewLayer.AUXILIARY:
+            style_key = "auxiliary"
+        else:
+            style_key = "tool_path"
+        plan.append(PreviewDrawItem(index, role, layer, style_key))
+    return plan

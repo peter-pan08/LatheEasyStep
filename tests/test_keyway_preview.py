@@ -13,7 +13,10 @@ from lathe_easystep_handler import (
     default_slice_z_for_operation,
     front_view_polar_to_cartesian,
 )
-from lathe_easystep.preview_geometry import keyway_radial_slot_radii
+from lathe_easystep.preview_geometry import (
+    build_keyway_front_polygons,
+    keyway_radial_slot_radii,
+)
 
 
 def test_keyway_slot_angles_default_to_even_distribution():
@@ -87,6 +90,33 @@ def test_radial_keyway_front_overlay_matches_side_view_depth_when_cutting_outwar
     inner_r, outer_r = keyway_radial_slot_radii(params)
     assert inner_r * 2 == params["start_x_dia"]
     assert outer_r * 2 == final_dia
+
+
+def test_radial_keyway_front_polygons_keep_the_physical_slot_radii():
+    params = {
+        "mode": 0, "radial_side": 0, "slot_count": 3,
+        "start_x_dia": 40.0, "nut_depth": 3.0,
+        "start_z": 0.0, "nut_length": 10.0, "slot_width": 4.0,
+    }
+
+    polygons = build_keyway_front_polygons(params, slice_z=-5.0, samples=4)
+
+    assert len(polygons) == 3
+    assert all(len(polygon) == 10 for polygon in polygons)
+    outer_distances = [math.hypot(x, y) for x, y in polygons[0][:5]]
+    inner_distances = [math.hypot(x, y) for x, y in polygons[0][5:]]
+    assert all(math.isclose(distance, 20.0) for distance in outer_distances)
+    assert all(math.isclose(distance, 17.0) for distance in inner_distances)
+
+
+def test_radial_keyway_front_polygons_are_limited_to_the_axial_slot_range():
+    params = {
+        "mode": 0, "start_x_dia": 40.0, "nut_depth": 3.0,
+        "start_z": 0.0, "nut_length": 10.0,
+    }
+
+    assert build_keyway_front_polygons(params, slice_z=0.001) == []
+    assert build_keyway_front_polygons(params, slice_z=-10.001) == []
 
 
 def test_default_slice_z_for_axial_keyway_uses_slot_center():

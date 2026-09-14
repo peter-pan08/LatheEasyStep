@@ -12,27 +12,15 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import build_contour_path, build_face_path
-from lathe_easystep.contour_features import _tessellate_arc
+from lathe_easystep.preview_geometry import sample_preview_arc
 
 
 # ---------------------------------------------------------------------------
-# Helper: LathePreviewWidget._sample_arc extracted for testing
+# Helper: production implementation behind LathePreviewWidget._sample_arc
 # ---------------------------------------------------------------------------
 def _sample_arc_under_test(p1, p2, c, ccw):
-    """Reproduce the current _sample_arc logic for unit testing.
-
-    LES-012 (2026-09-12): die Vorschau delegiert die eigentliche
-    Bogenzerlegung jetzt an `contour_features._tessellate_arc()` (adaptive,
-    sehnenabweichungsbegrenzte Zerlegung) statt einer eigenen, fest mit 48
-    Schritten sampelnden Kopie."""
-    x1, z1 = p1[0] / 2.0, p1[1]
-    x2, z2 = p2[0] / 2.0, p2[1]
-    xc, zc = c[0] / 2.0, c[1]
-    r1 = math.hypot(x1 - xc, z1 - zc)
-    r2 = math.hypot(x2 - xc, z2 - zc)
-    if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
-        return [p1, p2]
-    return [p1, *_tessellate_arc(p1, p2, c, ccw)]
+    """Exercise the production geometry without constructing a Qt widget."""
+    return sample_preview_arc(p1, p2, c, ccw)
 
 
 # ===========================================================================

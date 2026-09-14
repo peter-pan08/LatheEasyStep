@@ -10,26 +10,32 @@ bestehenden Header findet).
 
 from __future__ import annotations
 
-import math
 import os
 from typing import Dict, List, Tuple
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from .contour_features import _tessellate_arc
 from .model import Operation, OpType
-from .preview_scene import PreviewLayer, primitive_strokes
+from .preview_scene import (
+    build_preview_draw_plan,
+    primitive_strokes,
+    stroke_bounding_rectangle,
+)
 from .preview_geometry import (
-    build_keyway_slot_angles,
+    build_keyway_front_polygons,
+    compute_side_viewport,
     front_operation_side,
     front_reference_diameter,
     front_slice_profile,
-    front_view_polar_to_cartesian,
     interp_x_at_z,
     interp_x_hits_at_z,
-    keyway_radial_slot_radii,
-    keyway_slice_bounds,
     path_hits_at_slice,
+    preview_primitives_to_points,
+    sample_preview_arc,
+    side_view_axis_lines,
+    side_view_slice_line,
+    side_view_ticks,
+    side_view_to_screen,
 )
 
 
@@ -253,60 +259,15 @@ class LathePreviewWidget(QtWidgets.QWidget):
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 120, 120), 2))
         painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 80)))
-        samples = 14
-
         for op in self._front_program_operations():
             if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
                 continue
             params = getattr(op, "params", {}) or {}
-            try:
-                mode = int(float(params.get("mode", 0)))
-            except Exception:
-                mode = 0
-            if mode != 0:
-                continue
-
-            try:
-                start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
-                slot_width = abs(float(params.get("slot_width", params.get("cutting_width", 0.0)) or 0.0))
-            except Exception:
-                continue
-
-            bounds = keyway_slice_bounds(params)
-            if bounds is None:
-                continue
-            z_min, z_max = bounds
-            if self.slice_z < z_min - 1e-6 or self.slice_z > z_max + 1e-6 or start_dia <= 0.0:
-                continue
-
-            slot_inner_radius, slot_outer_radius = keyway_radial_slot_radii(params)
-
-            if slot_outer_radius <= 1e-9:
-                continue
-
-            if slot_width > 0.0:
-                half_opening = max(math.radians(2.0), min(math.radians(40.0), slot_width / max(slot_outer_radius, 1e-6)))
-            else:
-                half_opening = math.radians(6.0)
-
-            for a_mid in build_keyway_slot_angles(params):
-                a0 = a_mid - half_opening
-                a1 = a_mid + half_opening
-                poly = QtGui.QPolygonF()
-                for i in range(samples + 1):
-                    ang = a0 + ((a1 - a0) * i / samples)
-                    x_off, y_off = front_view_polar_to_cartesian(ang, slot_outer_radius * scale)
-                    poly.append(QtCore.QPointF(
-                        center.x() + x_off,
-                        center.y() + y_off,
-                    ))
-                for i in range(samples, -1, -1):
-                    ang = a0 + ((a1 - a0) * i / samples)
-                    x_off, y_off = front_view_polar_to_cartesian(ang, slot_inner_radius * scale)
-                    poly.append(QtCore.QPointF(
-                        center.x() + x_off,
-                        center.y() + y_off,
-                    ))
+            for points in build_keyway_front_polygons(params, self.slice_z):
+                poly = QtGui.QPolygonF([
+                    QtCore.QPointF(center.x() + x_off * scale, center.y() + y_off * scale)
+                    for x_off, y_off in points
+                ])
                 painter.drawPolygon(poly)
         painter.restore()
 
@@ -422,63 +383,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
         super().mouseReleaseEvent(event)
 
     def _sample_arc(self, p1, p2, c, ccw):
-        # LES-012: nutzt jetzt dieselbe adaptive, sehnenabweichungs-begrenzte
-        # Bogenzerlegung wie der Generator (`contour_features._tessellate_arc`,
-        # Sehnenabweichung <0.0005mm) statt einer eigenen, fest mit 48
-        # Schritten sampelnden Kopie - Vorschau und erzeugter G-Code teilen
-        # sich damit dieselbe Primitive-Quelle statt zweier unabhaengiger
-        # Implementierungen, die bei sehr kleinen oder sehr grossen Boegen
-        # leicht auseinanderlaufen konnten. Die Degenerations-/Plausibilitaets-
-        # pruefung (r1 nahe 0 oder r1/r2 inkonsistent - kann waehrend der
-        # Live-Kontureingabe kurzzeitig auftreten) bleibt hier bestehen, da
-        # `_tessellate_arc` das nicht separat prueft.
-        x1, z1 = p1[0] / 2.0, p1[1]
-        x2, z2 = p2[0] / 2.0, p2[1]
-        xc, zc = c[0] / 2.0, c[1]
-        r1 = math.hypot(x1 - xc, z1 - zc)
-        r2 = math.hypot(x2 - xc, z2 - zc)
-        if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
-            return [p1, p2]
-        return [p1, *_tessellate_arc(p1, p2, c, ccw)]
+        return sample_preview_arc(p1, p2, c, ccw)
 
     def primitives_to_points(self, prims):
-        pts = []
-        last = None
-        for pr in prims or []:
-            if isinstance(pr, (list, tuple)) and len(pr) >= 2:
-                try:
-                    p = (float(pr[0]), float(pr[1]))
-                except Exception:
-                    continue
-                pts.append(p)
-                last = p
-                continue
-            if not isinstance(pr, dict):
-                continue
-            typ = (pr.get("type") or "").lower()
-            if typ == "line":
-                p1 = tuple(pr.get("p1", (0.0, 0.0)))
-                p2 = tuple(pr.get("p2", (0.0, 0.0)))
-                if last is None:
-                    pts.append(p1)
-                elif math.hypot(p1[0] - last[0], p1[1] - last[1]) > 1e-6:
-                    pts.append(p1)
-                pts.append(p2)
-                last = p2
-            elif typ == "arc":
-                p1 = tuple(pr.get("p1", (0.0, 0.0)))
-                p2 = tuple(pr.get("p2", (0.0, 0.0)))
-                c = tuple(pr.get("c", (0.0, 0.0)))
-                ccw = bool(pr.get("ccw", True))
-                arc_pts = self._sample_arc(p1, p2, c, ccw)
-                if last is None:
-                    pts.extend(arc_pts)
-                else:
-                    if math.hypot(arc_pts[0][0] - last[0], arc_pts[0][1] - last[1]) > 1e-6:
-                        pts.append(arc_pts[0])
-                    pts.extend(arc_pts[1:])
-                last = arc_pts[-1]
-        return pts
+        return preview_primitives_to_points(prims)
 
     def set_paths(self, paths, active_index: int | None = None):
         # paths can be:
@@ -520,15 +428,6 @@ class LathePreviewWidget(QtWidgets.QWidget):
         """Retain semantic layers; path transfer remains separately compatible."""
         self.preview_scene = scene
 
-    def _layer_for_path_index(self, index: int):
-        scene = self.preview_scene
-        try:
-            if scene is not None and 0 <= index < len(scene.entries):
-                return scene.entries[index].layer
-        except Exception:
-            pass
-        return None
-
     def set_primitives(self, primitives):
         """
         Kompatibilität: Einige Teile des Codes arbeiten mit 'primitives'
@@ -559,75 +458,18 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self._legend_click_rect = None
         try:
             painter.fillRect(self.rect(), QtCore.Qt.black)
-            # Collect bounds across all paths (supports point lists and primitive lists)
-            inf = float('inf')
-            min_x, max_x = inf, -inf
-            min_z, max_z = inf, -inf
-
-            def _upd(xv: float, zv: float):
-                nonlocal min_x, max_x, min_z, max_z
-                x_draw = self._x_to_display(xv)
-                min_x = min(min_x, x_draw)
-                max_x = max(max_x, x_draw)
-                min_z = min(min_z, zv)
-                max_z = max(max_z, zv)
-
-            any_data = False
-            for path in self.paths:
-                if not path:
-                    continue
-                any_data = True
-                first = path[0]
-                if isinstance(first, dict):
-                    # primitives (line/arc with p1/p2/c) -> sample to points for bounds
-                    try:
-                        pts = self.primitives_to_points(path)
-                    except Exception:
-                        pts = []
-                    for (xv, zv) in pts:
-                        _upd(float(xv), float(zv))
-                else:
-                    for (xv, zv) in path:
-                        _upd(float(xv), float(zv))
-
-            if not any_data or min_x == inf or min_z == inf:
-                min_x = max_x = 0.0
-                min_z = max_z = 0.0
-            # Ursprung und Mindestgröße immer berücksichtigen
-            half_span = self._base_span / 2.0
-            min_x = min(min_x, -half_span, 0.0)
-            max_x = max(max_x, half_span, 0.0)
-            min_z = min(min_z, -half_span, 0.0)
-            max_z = max(max_z, half_span, 0.0)
-
-            dx = max_x - min_x
-            dz = max_z - min_z
-
-            def ensure_span(min_val: float, max_val: float, base_span: float) -> Tuple[float, float]:
-                span = max_val - min_val
-                if span < base_span:
-                    pad = (base_span - span) / 2.0
-                    return min_val - pad, max_val + pad
-                return min_val, max_val
-
-            min_x, max_x = ensure_span(min_x, max_x, self._base_span)
-            min_z, max_z = ensure_span(min_z, max_z, self._base_span)
-
-            # kleiner Rand um die Geometrie
-            dx = max(max_x - min_x, 1e-3)
-            dz = max(max_z - min_z, 1e-3)
-            pad = 0.05
-            min_x -= dx * pad
-            max_x += dx * pad
-            min_z -= dz * pad
-            max_z += dz * pad
-
             margin = 30
             rect = self.rect().adjusted(margin, margin, -margin, -margin)
-            scale_z = rect.width() / max(max_z - min_z, 1e-6)
-            scale_x = rect.height() / max(max_x - min_x, 1e-6)
-            scale = min(scale_x, scale_z)
-
+            viewport = compute_side_viewport(
+                self.paths,
+                rect.width(),
+                rect.height(),
+                x_is_diameter=self.x_is_diameter,
+                base_span=self._base_span,
+            )
+            min_x, max_x = viewport["min_x"], viewport["max_x"]
+            min_z, max_z = viewport["min_z"], viewport["max_z"]
+            scale = viewport["scale"]
 
             # store mapping for interactive slice
             self._view_rect = rect
@@ -636,23 +478,20 @@ class LathePreviewWidget(QtWidgets.QWidget):
             self._view_scale = scale
 
             def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
-                # Z horizontal, X vertikal
-                x_draw = self._x_to_display(x_val)
-                x_pix = rect.left() + (z_val - min_z) * scale
-                z_pix = rect.bottom() - (x_draw - min_x) * scale
-                return QtCore.QPointF(x_pix, z_pix)
-
-            def to_screen_display(x_display: float, z_val: float) -> QtCore.QPointF:
-                x_pix = rect.left() + (z_val - min_z) * scale
-                z_pix = rect.bottom() - (x_display - min_x) * scale
-                return QtCore.QPointF(x_pix, z_pix)
+                point = side_view_to_screen(
+                    x_val, z_val, viewport, left=rect.left(), bottom=rect.bottom(),
+                    x_is_diameter=self.x_is_diameter,
+                )
+                return QtCore.QPointF(*point)
 
             # optional slice indicator (selected Z)
             if getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
                 try:
                     zline = float(getattr(self, "slice_z", 0.0))
-                    p1 = to_screen_display(min_x, zline)
-                    p2 = to_screen_display(max_x, zline)
+                    line = side_view_slice_line(
+                        viewport, zline, left=rect.left(), bottom=rect.bottom()
+                    )
+                    p1, p2 = QtCore.QPointF(*line[0]), QtCore.QPointF(*line[1])
                     pen = QtGui.QPen(QtGui.QColor(255, 180, 0), 2, QtCore.Qt.DashLine)
                     painter.setPen(pen)
                     painter.drawLine(p1, p2)
@@ -665,125 +504,63 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             # Achsen und Skala (außen: links/unten)
             painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-            axis_x_val = 0.0 if min_x <= 0.0 <= max_x else min_x
-            axis_z_val = 0.0 if min_z <= 0.0 <= max_z else min_z
-            x_axis = to_screen_display(axis_x_val, min_z)
-            x_axis_end = to_screen_display(axis_x_val, max_z)
-            z_axis = to_screen_display(min_x, axis_z_val)
-            z_axis_end = to_screen_display(max_x, axis_z_val)
+            axes = side_view_axis_lines(
+                viewport, left=rect.left(), bottom=rect.bottom()
+            )
+            x_axis, x_axis_end = (QtCore.QPointF(*point) for point in axes["x_line"])
+            z_axis, z_axis_end = (QtCore.QPointF(*point) for point in axes["z_line"])
             painter.drawLine(z_axis, z_axis_end)  # Z-Achse horizontal
             painter.drawLine(x_axis, x_axis_end)  # X-Achse vertikal
-
-            def nice_step(span: float) -> float:
-                if span <= 0:
-                    return 1.0
-                raw = span / 5.0
-                power = 10 ** int(math.floor(math.log10(raw)))
-                for m in (1, 2, 5, 10):
-                    step = m * power
-                    if span / step <= 8:
-                        return step
-                return raw
 
             tick_pen = QtGui.QPen(QtGui.QColor(100, 100, 100), 1)
             font_pen = QtGui.QPen(QtGui.QColor(160, 160, 160), 1)
             painter.setFont(QtGui.QFont("Sans", 8))
 
+            ticks = side_view_ticks(
+                viewport, left=rect.left(), bottom=rect.bottom(),
+                x_is_diameter=self.x_is_diameter,
+            )
+
             # Z-Ticks (horizontal unten/oben)
-            step_z = nice_step(max_z - min_z)
-            val = (min_z // step_z) * step_z
-            while val <= max_z:
-                pt = to_screen_display(axis_x_val, val)
+            for _value, label_value, point in ticks["z"]:
+                pt = QtCore.QPointF(*point)
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 2))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 6, pt.y() + 14), f"{val:.0f}")
-                val += step_z
+                painter.drawText(QtCore.QPointF(pt.x() - 6, pt.y() + 14), f"{label_value:.0f}")
 
             # X-Ticks (vertikal links/rechts)
-            step_x = nice_step(max_x - min_x)
-            val = (min_x // step_x) * step_x
-            while val <= max_x:
-                pt = to_screen_display(val, axis_z_val)
+            for _value, label_value, point in ticks["x"]:
+                pt = QtCore.QPointF(*point)
                 painter.setPen(tick_pen)
                 painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{self._display_x_to_label(val):.0f}")
-                val += step_x
+                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{label_value:.0f}")
 
             # Achsbeschriftungen
             painter.setPen(font_pen)
             painter.drawText(QtCore.QPointF(rect.right() - 20, z_axis.y() - 6), "Z")
             painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X")
-            draw_order = [idx for idx in range(len(self.paths)) if idx != self.active_index]
-            if self.active_index is not None and 0 <= self.active_index < len(self.paths):
-                draw_order.append(self.active_index)
-
-            for idx in draw_order:
+            styles = {
+                "stock": (QtGui.QColor("gray"), 1, QtCore.Qt.DashLine),
+                "retract": (QtGui.QColor(0, 180, 180), 1, QtCore.Qt.DashLine),
+                "worklimit": (QtGui.QColor(220, 0, 0), 2, QtCore.Qt.DashLine),
+                "chuck_nogo": (QtGui.QColor(200, 60, 220), 1, QtCore.Qt.DashDotLine),
+                "contour_rough": (QtGui.QColor(240, 180, 0), 2, QtCore.Qt.DashLine),
+                "feature": (QtGui.QColor(0, 190, 255), 2, QtCore.Qt.SolidLine),
+                "feature_separate": (QtGui.QColor(0, 190, 255), 2, QtCore.Qt.DashDotLine),
+                "active": (QtGui.QColor("red"), 3, QtCore.Qt.SolidLine),
+                "workpiece": (QtGui.QColor(70, 155, 255), 2, QtCore.Qt.SolidLine),
+                "auxiliary": (QtGui.QColor(145, 145, 145), 1, QtCore.Qt.DashDotLine),
+                "tool_path": (QtGui.QColor("lime"), 2, QtCore.Qt.SolidLine),
+            }
+            draw_plan = build_preview_draw_plan(
+                self.paths, self.active_index, self.preview_scene
+            )
+            for item in draw_plan:
+                idx, role = item.index, item.role
                 path = self.paths[idx]
-                if not path:
-                    continue
-
-                # role based styling (e.g. raw stock reference)
-                role = None
-                if isinstance(path, list) and path:
-                    # path can be a list of primitive dicts; pick first non-empty role
-                    for d in path:
-                        if isinstance(d, dict):
-                            r = d.get("role")
-                            if r:
-                                role = r
-                                break
-
-                if role == "stock":
-                    color = QtGui.QColor("gray")
-                    width = 1
-                    style = QtCore.Qt.DashLine
-                elif role == "retract":
-                    # retract planes: visually distinct and clearly *not* a contour
-                    color = QtGui.QColor(0, 180, 180)
-                    width = 1
-                    style = QtCore.Qt.DashLine
-                elif role == "worklimit":
-                    # workpiece stick-out / chuck collision limit (Bearbeitungsmaß)
-                    color = QtGui.QColor(220, 0, 0)
-                    width = 2
-                    style = QtCore.Qt.DashLine
-                elif role == "chuck_nogo":
-                    # chuck safety no-go area
-                    color = QtGui.QColor(200, 60, 220)
-                    width = 1
-                    style = QtCore.Qt.DashDotLine
-                elif role == "contour_rough":
-                    color = QtGui.QColor(240, 180, 0)
-                    width = 2
-                    style = QtCore.Qt.DashLine
-                elif role == "feature":
-                    color = QtGui.QColor(0, 190, 255)
-                    width = 2
-                    style = QtCore.Qt.SolidLine
-                elif role == "feature_separate":
-                    color = QtGui.QColor(0, 190, 255)
-                    width = 2
-                    style = QtCore.Qt.DashDotLine
-                else:
-                    layer = self._layer_for_path_index(idx)
-                    if idx == self.active_index:
-                        color = QtGui.QColor("red")
-                        width = 3
-                        style = QtCore.Qt.SolidLine
-                    elif layer == PreviewLayer.WORKPIECE:
-                        color = QtGui.QColor(70, 155, 255)
-                        width = 2
-                        style = QtCore.Qt.SolidLine
-                    elif layer == PreviewLayer.AUXILIARY:
-                        color = QtGui.QColor(145, 145, 145)
-                        width = 1
-                        style = QtCore.Qt.DashDotLine
-                    else:
-                        color = QtGui.QColor("lime")
-                        width = 2
-                        style = QtCore.Qt.SolidLine
+                color, width, style = styles[item.style_key]
 
                 pen = QtGui.QPen(color, width)
                 pen.setStyle(style)
@@ -794,23 +571,17 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     # Every primitive is a separate stroke. Joining the sampled
                     # points of disconnected primitives would invent diagonal
                     # machine moves that neither model nor G-code contains.
+                    strokes = primitive_strokes(path, self._sample_arc)
                     if role == "chuck_nogo":
-                        region_pts = [point for stroke in primitive_strokes(path, self._sample_arc) for point in stroke]
-                        if region_pts:
-                            rx_min = min(p[0] for p in region_pts)
-                            rx_max = max(p[0] for p in region_pts)
-                            rz_min = min(p[1] for p in region_pts)
-                            rz_max = max(p[1] for p in region_pts)
-                            fill_poly = QtGui.QPolygonF([
-                                to_screen(rx_min, rz_min), to_screen(rx_min, rz_max),
-                                to_screen(rx_max, rz_max), to_screen(rx_max, rz_min),
-                            ])
+                        region = stroke_bounding_rectangle(strokes)
+                        if region:
+                            fill_poly = QtGui.QPolygonF([to_screen(*point) for point in region])
                             painter.save()
                             painter.setPen(QtCore.Qt.NoPen)
                             painter.setBrush(QtGui.QBrush(QtGui.QColor(200, 60, 220, 55)))
                             painter.drawPolygon(fill_poly)
                             painter.restore()
-                    for stroke in primitive_strokes(path, self._sample_arc):
+                    for stroke in strokes:
                         if len(stroke) >= 2:
                             painter.drawPolyline(QtGui.QPolygonF([to_screen(x, z) for x, z in stroke]))
                         elif len(stroke) == 1:

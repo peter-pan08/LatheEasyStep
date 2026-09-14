@@ -65,9 +65,18 @@ def test_front_view_paints_keyway_without_crash():
     w.set_view_mode("front")
     op = Operation(
         OpType.KEYWAY,
-        {"slot_count": 3, "width": 4.0, "depth": 2.0, "diameter": 20.0, "start_z": -5.0},
+        {
+            "mode": 0,
+            "slot_count": 3,
+            "start_x_dia": 20.0,
+            "nut_depth": 2.0,
+            "nut_length": 10.0,
+            "slot_width": 4.0,
+            "start_z": 0.0,
+        },
         path=[],
     )
     _set_front_operations(w, [op])
     w.front_operation = op
+    w.set_slice_z(-5.0)
     _paint(w)
