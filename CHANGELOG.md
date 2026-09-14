@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### LES-024 Restliche zwei Punkte konkretisiert (Bestandsaufnahme, kein Umbau) 2026-09-14
+
+- Tooltips/Sprach-IDs fuer die drei neuen Panel-Module bereits
+  vollstaendig erfuellt (der generische `ui_parts/*.ui`-Scan von
+  `ui_static.py` deckt sie automatisch ab) - real stichprobenartig
+  verifiziert (`ui.btn_slice_view.toolTip` in allen drei Sprachen).
+- "Controller"-Zuordnung bereits pro fachlichem Anliegen erfuellt (nicht
+  1:1 pro UI-Container) - bewusst nicht aufgebrochen.
+- "Validierung": kein Code-Mangel gefunden, sondern eine offene
+  Design-Frage (Buttons vorab sperren vs. beim Klick validieren) - nicht
+  ohne Nutzerentscheidung umgesetzt.
+- "Direkte Widgetzugriffe durch definierte Schnittstellen ersetzen":
+  Umfang ermittelt (zwoelf betroffene Dateien) - bewusst nicht blind als
+  invasiver Mehrdateien-Umbau umgesetzt, bleibt offen fuer einen separat
+  freizugebenden Schritt. Details: TODO.md (LES-024).
+
 ### LES-024 SICHERHEITSFUND: Embedded-Panel-Erkennung nach Step-Liste-Auslagerung repariert 2026-09-13
 
 - Beim gezielten Nachpruefen des letzten offenen LES-024-Punkts
