@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 730 Stub-Qt-Tests und 70 Tests mit echtem PyQt5, keine Skips.
+- 730 Stub-Qt-Tests und 71 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -47,8 +47,17 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
 - [x] Primitive grundsaetzlich als einzelne Striche zeichnen; unabhaengige
   Linien, Boegen und Polylinien werden nicht mehr ueber synthetische
   Diagonalen miteinander verbunden.
-- [ ] Anfahrt, Rueckzug, Werkzeugwechsel und Parken nur darstellen, wenn sie
-  aus demselben Bewegungsplan wie der G-Code stammen.
+- [x] Anfahrt, Rueckzug, Werkzeugwechsel und Parken nur darstellen, wenn sie
+  aus demselben Bewegungsplan wie der G-Code stammen: Bestandsaufnahme ergab
+  keinen Fund. Keine Preview-Quelle (`preview_geometry.py`, `preview_scene.py`,
+  `ui_preview.py`) baut Anfahrt-/Werkzeugwechsel-/Park-Segmente; die
+  "retract"-Rolle zeichnet nur die konfigurierten Rueckzugsebenen als
+  statische Referenzlinien, keine Bewegung. Strukturell abgesichert, weil
+  `paintEvent()` jeden Operationspfad ueber einen eigenen
+  `drawPolyline()`-Aufruf zeichnet statt mehrere Pfade zu verketten - jetzt
+  dauerhaft mit `tests/test_preview_no_synthetic_links_between_operations.py`
+  geprueft (per gezielt injizierter Verkettung als echte Regression
+  verifiziert, danach zurueckgesetzt).
 - [ ] komplexe Endgeometrien in Seiten- und Schnittansicht vergleichen.
 - [ ] `preview_widget.py` entlang dieser Ebenen verkleinern.
 
