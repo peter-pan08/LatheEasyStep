@@ -2073,8 +2073,14 @@ zusaetzliches Wissen ueber die reale Endposition.
   Teilstand 2026-09-13 "Vorschau ausgelagert" unten)
 - [x] Step-Liste und Programmverwaltung auslagern (siehe Teilstand
   2026-09-13 unten)
-- [ ] je Modul Controller, Tooltips, Sprach-IDs und Validierung zuordnen
+- [x] je Modul Controller, Tooltips, Sprach-IDs zuordnen (Teilstand
+  2026-09-14 unten: fuer die drei neuen Panel-Module bereits erfuellt,
+  ohne dass dafuer etwas geaendert werden musste)
+- [ ] je Modul Validierung zuordnen (siehe Teilstand 2026-09-14 - kein
+  eigener Code-Mangel, sondern eine noch unbeantwortete Design-Frage)
 - [ ] direkte Widgetzugriffe zwischen Modulen durch definierte Schnittstellen ersetzen
+  (siehe Teilstand 2026-09-14 - Umfang ermittelt, bewusst nicht blind
+  umgesetzt)
 - [x] Embedded- und Standalone-Laden testen (siehe Teilstand 2026-09-13
   "Embedded-Root-Erkennung" unten - SICHERHEITSFUND UND -FIX)
 
@@ -2189,6 +2195,57 @@ einem unrelatierten Widget. Per direkter Code-Entfernung der Oder-
 Verknuepfung verifiziert, dass der erste Test dann fehlschlaegt
 (`assert False is True`). 694 Stub-/59 Qt-Tests bestanden, zwoelf
 Referenzen unveraendert (reine Erkennungslogik, kein G-Code-Bezug).
+
+Teilstand 2026-09-14 (Nutzerauftrag "bei LES-024 bleiben, vage Restpunkte
+konkretisieren" - Bestandsaufnahme statt Blindumbau):
+
+- **Tooltips/Sprach-IDs fuer die drei neuen Panel-Module (`stepListPanel`,
+  `stepActionsPanel`, `previewPanel`): bereits vollstaendig erfuellt,
+  ohne dass dafuer irgendetwas geaendert werden musste.** `ui_static.py::_ui_source_paths()`
+  globbt bereits generisch `ui_parts/*.ui` (nicht auf eine feste Liste von
+  Reiter-Dateien beschraenkt) - jede neue `.ui`-Datei unter `ui_parts/`
+  wird automatisch von `load_ui_static_map()`/`apply_ui_static_translations()`
+  erfasst. Stichprobenartig verifiziert: `ui.btn_slice_view.toolTip` ist
+  bereits in allen drei `.lng`-Dateien vollstaendig uebersetzt vorhanden
+  und wird von `test_ui_static_translation_split_tabs.py` bereits real
+  gegen einen Sprachwechsel getestet (bestehender Test, gestern fuer die
+  neuen Lader ergaenzt). Die einfachen Aktions-Buttons (`btnAdd`,
+  `btnDelete`, ...) haben bewusst keine zusaetzlichen Tooltip-Texte ueber
+  `UI_TOOLTIP_KEYS` - deren Beschriftung selbst ist bereits eindeutig,
+  `UI_TOOLTIP_KEYS` dient nachweislich nur ergaenzenden Erklaerungen bei
+  Eingabefeldern (Combos/Spinboxen), nicht bei selbsterklaerenden
+  Aktions-Buttons - kein Mangel, kein Nachtrag noetig.
+- **"Controller": bereits weitgehend erfuellt, nicht 1:1 pro Panel-Modul,
+  aber pro fachlichem Anliegen.** Die Logik hinter den drei neuen Modulen
+  liegt schon in eigenen Dateien (`ui_persistence.py`/`ui_dirty.py`/
+  `ui_flow.py` fuer Step-Liste/Programmverwaltung, `ui_preview.py` fuer
+  die Vorschau) statt im Handler vermischt - entspricht dem Leitbild
+  "eigene Logik pro Bereich", auch wenn die Dateigrenzen nicht exakt den
+  drei UI-Containern folgen (mehrere Panel-Module teilen sich z. B.
+  `ui_flow.py`). Eine 1:1-Aufteilung wuerde bestehende, funktionierende
+  Struktur ohne fachlichen Gewinn aufbrechen - hier bewusst nicht
+  angefasst.
+- **"Validierung": kein gefundener Code-Mangel, sondern eine offene
+  Design-Frage.** Geprueft, ob `btnGenerate`/`btnSaveProgram`/... aktiv
+  ueber `setEnabled()` gesperrt werden, bis das Programm gueltig ist -
+  das ist NICHT der Fall, per Design: Validierung passiert bereits beim
+  Klick selbst (`validate_program_setup()` + Dialoge/Warnungen), nicht
+  vorab durch Button-Sperren. Das umzustellen (Buttons vorab sperren)
+  waere eine echte UX-Verhaltensaenderung, keine reine Code-Aufraeumung -
+  bewusst nicht ohne Nutzerentscheidung umgesetzt.
+- **"Direkte Widgetzugriffe durch definierte Schnittstellen ersetzen":
+  Umfang ermittelt, bewusst nicht blind umgesetzt.** `grep` zeigt zwoelf
+  verschiedene Dateien, die direkt auf `list_ops`/`btn_add`/
+  `btn_save_changes` zugreifen (`lathe_easystep_handler.py`,
+  `ui_contour.py`, `ui_dirty.py`, `ui_flow.py`, `ui_lifecycle.py`,
+  `ui_persistence.py`, `ui_preview.py`, `ui_program.py`, `ui_selection.py`,
+  `ui_signals.py`, `ui_widget_lookup.py`, `ui_widgets.py`) - ein
+  vollstaendiger Umbau auf eine schmale, definierte Schnittstelle ist ein
+  invasiver Mehrdateien-Umbau mit entsprechendem Regressionsrisiko fuer
+  ein Panel, das der Nutzer produktiv einsetzt, und passt nicht in eine
+  einzelne, sicher verifizierbare Aenderung. Bleibt bewusst als eigener,
+  separat zu planender Schritt offen (kein Automatismus ohne explizite
+  Freigabe fuer diesen konkreten Umfang).
 
 ### LES-027 Performance
 
