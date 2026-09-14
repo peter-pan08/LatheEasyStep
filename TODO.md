@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 732 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
+- 740 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -74,7 +74,21 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   echte Regression verifiziert, danach zurueckgesetzt. Bewusst nicht
   weiterverfolgt: axiale Keilnut (mode != 0) wird in der Schnittansicht gar
   nicht gezeichnet - kein Fund, aber auch kein Vergleich noetig.
-- [ ] `preview_widget.py` entlang dieser Ebenen verkleinern.
+- [ ] `preview_widget.py` entlang dieser Ebenen verkleinern. Erstes Paket:
+  die komplette Schnittansicht-Diagrammberechnung (`_interp_x_hits_at_z`,
+  `_interp_x_at_z`, `_path_hits_at_slice`, `_front_operation_side`,
+  `_front_slice_profile`, `_front_active_diameters`,
+  `_front_reference_diameter`) als reine, Qt-freie Funktionen nach
+  `preview_geometry.py` gezogen; die Widget-Methoden sind jetzt duenne
+  Delegierungen. `preview_widget.py` von 1049 auf 909 Zeilen geschrumpft.
+  Acht neue Tests laufen jetzt ohne echtes PyQt5 direkt gegen die reinen
+  Funktionen (vorher nur indirekt ueber das Widget erreichbar), per zwei
+  unabhaengig injizierten Bugs als echte Regression verifiziert. Noch
+  offen: `_sample_arc`/`primitives_to_points` (pure Geometrie, aber noch
+  Widget-Methoden) sowie die eigentlichen `_paint_*`-Zeichenroutinen
+  (bleiben an QPainter gebunden, koennen aber schlanker werden, wenn sie
+  nur noch die bereits extrahierte Geometrie abrufen statt sie selbst
+  aufzubauen).
 
 ## LES-024 Modulschnittstellen
 
@@ -89,15 +103,19 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   herstellen und bewusst nicht ueber `StepListView` laufen. Die sechs
   Fachlogik-Dateien sind auf `StepListView` migriert. Die Widget-Ausgabe der
   Vorschau ist auf `PreviewView` migriert und der Geometrieaufbau liefert
-  `PreviewScene`-Ebenen. Weiter offen ist die Verkleinerung des eigentlichen
-  Zeichenwidgets entlang dieser Ebenen.
+  `PreviewScene`-Ebenen. Die Schnittansicht-Diagrammberechnung ist als reine
+  Funktionen nach `preview_geometry.py` gezogen (siehe LES-034). Weiter offen
+  ist die Verkleinerung der eigentlichen `_paint_*`-Zeichenroutinen sowie von
+  `_sample_arc`/`primitives_to_points`.
 - [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
   keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
   (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
   den neuen Pfad). Das zweite Paket ist mit 725/70 sowie Embedded-Start bis
   `critical done` nach 8,567 s ebenfalls verifiziert. Das Szenenmodell-Paket
-  besteht mit 730/70 und Embedded-Start nach 8,465 s. Bei jedem weiteren Paket
-  erneut so pruefen.
+  besteht mit 730/70 und Embedded-Start nach 8,465 s. Die Schnittansicht-
+  Extraktion besteht mit 740/75 sowie Embedded-Start (9,2 s, fehlerfrei) und
+  Live-Toggle der Schnittansicht im UTILS-Panel ohne Absturz. Bei jedem
+  weiteren Paket erneut so pruefen.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
 
