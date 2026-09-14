@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 740 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
+- 757 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -80,12 +80,27 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   `_front_slice_profile`, `_front_active_diameters`,
   `_front_reference_diameter`) als reine, Qt-freie Funktionen nach
   `preview_geometry.py` gezogen; die Widget-Methoden sind jetzt duenne
-  Delegierungen. `preview_widget.py` von 1049 auf 909 Zeilen geschrumpft.
+  Delegierungen. Im zweiten Paket wurden `_sample_arc` und
+  `primitives_to_points` ebenfalls als Qt-freie Funktionen ausgelagert. Im
+  dritten Paket wurde die Berechnung der radialen Keilnut-Polygone aus
+  `_draw_front_keyway_overlay` als `build_keyway_front_polygons()` ausgelagert;
+  das vierte Paket verschiebt Seitenansicht-Grenzen, Skalierung und
+  Tickabstaende nach `compute_side_viewport()`/`nice_tick_step()`. Das fuenfte
+  Paket verlagert Modell-/Bildschirmtransformation, Achsen und Schnittlinie
+  in drei weitere Qt-freie Funktionen. Das sechste Paket berechnet auch
+  Tickwerte, Durchmesserbeschriftung und Bildschirmpositionen vorab in
+  `side_view_ticks()`. Das siebte Paket zieht Zeichenreihenfolge,
+  Sonderrollen- und Ebenenklassifikation in `build_preview_draw_plan()`.
+  Das achte Paket lagert das Begrenzungsrechteck der Futter-Sperrzonenfuellung
+  aus und verwendet bereits zerlegte Primitive wieder. `preview_widget.py`
+  liegt damit bei 679 statt urspruenglich 1049 Zeilen.
   Acht neue Tests laufen jetzt ohne echtes PyQt5 direkt gegen die reinen
   Funktionen (vorher nur indirekt ueber das Widget erreichbar), per zwei
-  unabhaengig injizierten Bugs als echte Regression verifiziert. Noch
-  offen: `_sample_arc`/`primitives_to_points` (pure Geometrie, aber noch
-  Widget-Methoden) sowie die eigentlichen `_paint_*`-Zeichenroutinen
+  unabhaengig injizierten Bugs als echte Regression verifiziert. Drei weitere
+  Tests pruefen die Primitive-Konvertierung direkt; die Bogentests rufen nun
+  die Produktionsfunktion auf statt ihren Algorithmus zu kopieren. Noch
+  offen: die verbleibenden Berechnungen in den eigentlichen
+  `_paint_*`-Zeichenroutinen
   (bleiben an QPainter gebunden, koennen aber schlanker werden, wenn sie
   nur noch die bereits extrahierte Geometrie abrufen statt sie selbst
   aufzubauen).
@@ -104,9 +119,17 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   Fachlogik-Dateien sind auf `StepListView` migriert. Die Widget-Ausgabe der
   Vorschau ist auf `PreviewView` migriert und der Geometrieaufbau liefert
   `PreviewScene`-Ebenen. Die Schnittansicht-Diagrammberechnung ist als reine
-  Funktionen nach `preview_geometry.py` gezogen (siehe LES-034). Weiter offen
-  ist die Verkleinerung der eigentlichen `_paint_*`-Zeichenroutinen sowie von
-  `_sample_arc`/`primitives_to_points`.
+  Funktionen nach `preview_geometry.py` gezogen (siehe LES-034). Auch
+  `_sample_arc`/`primitives_to_points` delegieren inzwischen an reine
+  Geometriefunktionen. Auch die radiale Keilnut-Polygonberechnung ist aus der
+  Zeichenroutine entfernt. Seitenansicht-Viewport und Tickabstaende werden
+  ebenfalls Qt-frei berechnet, ebenso Koordinatentransformation, Achsenlage
+  und Schnittlinie. Auch die Tickwerte und -positionen kommen fertig aus der
+  Geometrieschicht. Zeichenreihenfolge und semantische Stilwahl kommen aus
+  `preview_scene.py`; nur die konkrete Qt-Farbe und Strichart bleibt im
+  Widget. Auch das Modellrechteck der Futter-Sperrzonenfuellung entsteht in
+  `preview_scene.py`. Weiter offen ist die Verkleinerung der restlichen
+  `_paint_*`-Zeichenroutinen.
 - [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
   keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
   (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
@@ -114,8 +137,18 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   `critical done` nach 8,567 s ebenfalls verifiziert. Das Szenenmodell-Paket
   besteht mit 730/70 und Embedded-Start nach 8,465 s. Die Schnittansicht-
   Extraktion besteht mit 740/75 sowie Embedded-Start (9,2 s, fehlerfrei) und
-  Live-Toggle der Schnittansicht im UTILS-Panel ohne Absturz. Bei jedem
-  weiteren Paket erneut so pruefen.
+  Live-Toggle der Schnittansicht im UTILS-Panel ohne Absturz. Das zweite
+  Geometriepaket besteht mit 743/75 und Embedded-Start bis `critical done`
+  nach 8,409 s ebenfalls fehlerfrei. Die Keilnut-Polygonextraktion besteht
+  mit 745/75 und Embedded-Start bis `critical done` nach 8,075 s. Das
+  Viewport-/Tick-Paket besteht mit 749/75 und Embedded-Start bis
+  `critical done` nach 7,769 s. Das Transformations-/Achsenpaket besteht mit
+  752/75; das eingebettete Panel erreichte `critical done` nach 8,141 s. Bei
+  der Tickextraktion bestehen 753/75; das eingebettete Panel erreichte
+  `critical done` nach 8,364 s. Das Zeichenplan-Paket besteht mit 755/75 und
+  Embedded-Start bis `critical done` nach 8,294 s. Die Sperrzonenextraktion
+  besteht mit 757/75 und Embedded-Start bis `critical done` nach 8,505 s. Bei
+  jedem weiteren Paket erneut so pruefen.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
 

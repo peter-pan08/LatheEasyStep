@@ -3,13 +3,236 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Tuple
 
-from .contour_features import primitive_to_points
+from .contour_features import _tessellate_arc, primitive_to_points
 from .contour_logic import build_contour_path as build_contour_primitives
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType, Operation
 from .face_geometry import face_primitives
 
 Point = Tuple[float, float]
+
+
+def sample_preview_arc(p1: Point, p2: Point, center: Point, ccw: bool) -> List[Point]:
+    """Tessellate an X-diameter/Z arc after validating it in radius space."""
+    x1, z1 = p1[0] / 2.0, p1[1]
+    x2, z2 = p2[0] / 2.0, p2[1]
+    xc, zc = center[0] / 2.0, center[1]
+    r1 = math.hypot(x1 - xc, z1 - zc)
+    r2 = math.hypot(x2 - xc, z2 - zc)
+    if r1 <= 1e-9 or abs(r1 - r2) > 1e-3:
+        return [p1, p2]
+    return [p1, *_tessellate_arc(p1, p2, center, ccw)]
+
+
+def preview_primitives_to_points(primitives) -> List[Point]:
+    """Flatten legacy line/arc primitives for interpolation compatibility."""
+    points: List[Point] = []
+    last = None
+    for primitive in primitives or []:
+        if isinstance(primitive, (list, tuple)) and len(primitive) >= 2:
+            try:
+                point = (float(primitive[0]), float(primitive[1]))
+            except Exception:
+                continue
+            points.append(point)
+            last = point
+            continue
+        if not isinstance(primitive, dict):
+            continue
+        primitive_type = (primitive.get("type") or "").lower()
+        if primitive_type == "line":
+            p1 = tuple(primitive.get("p1", (0.0, 0.0)))
+            p2 = tuple(primitive.get("p2", (0.0, 0.0)))
+            if last is None or math.hypot(p1[0] - last[0], p1[1] - last[1]) > 1e-6:
+                points.append(p1)
+            points.append(p2)
+            last = p2
+        elif primitive_type == "arc":
+            p1 = tuple(primitive.get("p1", (0.0, 0.0)))
+            p2 = tuple(primitive.get("p2", (0.0, 0.0)))
+            center = tuple(primitive.get("c", (0.0, 0.0)))
+            arc_points = sample_preview_arc(p1, p2, center, bool(primitive.get("ccw", True)))
+            if last is None:
+                points.extend(arc_points)
+            else:
+                if math.hypot(arc_points[0][0] - last[0], arc_points[0][1] - last[1]) > 1e-6:
+                    points.append(arc_points[0])
+                points.extend(arc_points[1:])
+            last = arc_points[-1]
+    return points
+
+
+def compute_side_viewport(
+    paths,
+    width: float,
+    height: float,
+    *,
+    x_is_diameter: bool = True,
+    base_span: float = 10.0,
+    padding: float = 0.05,
+) -> Dict[str, float]:
+    """Return padded side-view bounds and scale without any Qt dependency."""
+    min_x = min_z = float("inf")
+    max_x = max_z = float("-inf")
+
+    for path in paths or []:
+        if not path:
+            continue
+        try:
+            points = preview_primitives_to_points(path) if isinstance(path[0], dict) else path
+        except Exception:
+            points = []
+        for x_value, z_value in points:
+            x_display = float(x_value) * (0.5 if x_is_diameter else 1.0)
+            z_number = float(z_value)
+            min_x = min(min_x, x_display)
+            max_x = max(max_x, x_display)
+            min_z = min(min_z, z_number)
+            max_z = max(max_z, z_number)
+
+    if min_x == float("inf") or min_z == float("inf"):
+        min_x = max_x = min_z = max_z = 0.0
+
+    span_floor = max(0.0, float(base_span))
+    half_span = span_floor / 2.0
+    min_x, max_x = min(min_x, -half_span, 0.0), max(max_x, half_span, 0.0)
+    min_z, max_z = min(min_z, -half_span, 0.0), max(max_z, half_span, 0.0)
+
+    def ensure_span(minimum: float, maximum: float) -> tuple[float, float]:
+        missing = span_floor - (maximum - minimum)
+        if missing > 0.0:
+            return minimum - missing / 2.0, maximum + missing / 2.0
+        return minimum, maximum
+
+    min_x, max_x = ensure_span(min_x, max_x)
+    min_z, max_z = ensure_span(min_z, max_z)
+    x_span = max(max_x - min_x, 1e-3)
+    z_span = max(max_z - min_z, 1e-3)
+    pad = max(0.0, float(padding))
+    min_x, max_x = min_x - x_span * pad, max_x + x_span * pad
+    min_z, max_z = min_z - z_span * pad, max_z + z_span * pad
+    scale = min(
+        float(width) / max(max_z - min_z, 1e-6),
+        float(height) / max(max_x - min_x, 1e-6),
+    )
+    return {
+        "min_x": min_x,
+        "max_x": max_x,
+        "min_z": min_z,
+        "max_z": max_z,
+        "scale": scale,
+    }
+
+
+def nice_tick_step(span: float) -> float:
+    """Choose a 1/2/5-based tick distance yielding at most eight intervals."""
+    if span <= 0.0:
+        return 1.0
+    raw = span / 5.0
+    power = 10 ** int(math.floor(math.log10(raw)))
+    for multiplier in (1, 2, 5, 10):
+        step = multiplier * power
+        if span / step <= 8:
+            return step
+    return raw
+
+
+def side_view_to_screen(
+    x_value: float,
+    z_value: float,
+    viewport: Dict[str, float],
+    *,
+    left: float,
+    bottom: float,
+    x_is_diameter: bool = True,
+    x_is_display: bool = False,
+) -> Point:
+    """Map lathe coordinates to screen coordinates (Z right, X up)."""
+    x_display = float(x_value)
+    if x_is_diameter and not x_is_display:
+        x_display *= 0.5
+    scale = float(viewport["scale"])
+    screen_x = float(left) + (float(z_value) - float(viewport["min_z"])) * scale
+    screen_y = float(bottom) - (x_display - float(viewport["min_x"])) * scale
+    return (screen_x, screen_y)
+
+
+def side_view_axis_lines(
+    viewport: Dict[str, float], *, left: float, bottom: float
+) -> Dict[str, object]:
+    """Return screen-space X/Z axes and their display-coordinate positions."""
+    min_x, max_x = float(viewport["min_x"]), float(viewport["max_x"])
+    min_z, max_z = float(viewport["min_z"]), float(viewport["max_z"])
+    axis_x = 0.0 if min_x <= 0.0 <= max_x else min_x
+    axis_z = 0.0 if min_z <= 0.0 <= max_z else min_z
+
+    def display_point(x_display: float, z_value: float) -> Point:
+        return side_view_to_screen(
+            x_display,
+            z_value,
+            viewport,
+            left=left,
+            bottom=bottom,
+            x_is_display=True,
+        )
+
+    return {
+        "axis_x": axis_x,
+        "axis_z": axis_z,
+        "x_line": (display_point(axis_x, min_z), display_point(axis_x, max_z)),
+        "z_line": (display_point(min_x, axis_z), display_point(max_x, axis_z)),
+    }
+
+
+def side_view_slice_line(
+    viewport: Dict[str, float], slice_z: float, *, left: float, bottom: float
+) -> tuple[Point, Point]:
+    """Return the vertical screen-space line for a selected axial slice."""
+    return (
+        side_view_to_screen(
+            viewport["min_x"], slice_z, viewport,
+            left=left, bottom=bottom, x_is_display=True,
+        ),
+        side_view_to_screen(
+            viewport["max_x"], slice_z, viewport,
+            left=left, bottom=bottom, x_is_display=True,
+        ),
+    )
+
+
+def side_view_ticks(
+    viewport: Dict[str, float], *, left: float, bottom: float,
+    x_is_diameter: bool = True,
+) -> Dict[str, list]:
+    """Return tick values, label values and screen positions for both axes."""
+    axes = side_view_axis_lines(viewport, left=left, bottom=bottom)
+
+    def values(minimum: float, maximum: float) -> List[float]:
+        step = nice_tick_step(maximum - minimum)
+        value = (minimum // step) * step
+        result = []
+        while value <= maximum:
+            result.append(value)
+            value += step
+        return result
+
+    x_ticks = []
+    for value in values(float(viewport["min_x"]), float(viewport["max_x"])):
+        point = side_view_to_screen(
+            value, axes["axis_z"], viewport,
+            left=left, bottom=bottom, x_is_display=True,
+        )
+        label_value = value * 2.0 if x_is_diameter else value
+        x_ticks.append((value, label_value, point))
+
+    z_ticks = []
+    for value in values(float(viewport["min_z"]), float(viewport["max_z"])):
+        point = side_view_to_screen(
+            axes["axis_x"], value, viewport,
+            left=left, bottom=bottom, x_is_display=True,
+        )
+        z_ticks.append((value, value, point))
+    return {"x": x_ticks, "z": z_ticks}
 
 
 def build_face_path(params: Dict[str, float]) -> List[Point]:
@@ -269,6 +492,63 @@ def keyway_slice_bounds(params: Dict[str, object]) -> tuple[float, float] | None
     z_min = min(z_start, z_start - nut_length)
     z_max = max(z_start, z_start - nut_length)
     return (z_min, z_max)
+
+
+def build_keyway_front_polygons(
+    params: Dict[str, object], slice_z: float, samples: int = 14
+) -> List[List[Point]]:
+    """Build radial-keyway overlay polygons in unscaled front-view space."""
+    try:
+        mode = int(float(params.get("mode", 0) or 0))
+        start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
+        slot_width = abs(
+            float(params.get("slot_width", params.get("cutting_width", 0.0)) or 0.0)
+        )
+        slice_value = float(slice_z)
+    except Exception:
+        return []
+    if mode != 0 or start_dia <= 0.0:
+        return []
+
+    bounds = keyway_slice_bounds(params)
+    if bounds is None:
+        return []
+    z_min, z_max = bounds
+    if slice_value < z_min - 1e-6 or slice_value > z_max + 1e-6:
+        return []
+
+    inner_radius, outer_radius = keyway_radial_slot_radii(params)
+    if outer_radius <= 1e-9:
+        return []
+    if slot_width > 0.0:
+        half_opening = max(
+            math.radians(2.0),
+            min(math.radians(40.0), slot_width / max(outer_radius, 1e-6)),
+        )
+    else:
+        half_opening = math.radians(6.0)
+
+    sample_count = max(1, int(samples))
+    polygons: List[List[Point]] = []
+    for middle_angle in build_keyway_slot_angles(params):
+        start_angle = middle_angle - half_opening
+        end_angle = middle_angle + half_opening
+        polygon = [
+            front_view_polar_to_cartesian(
+                start_angle + ((end_angle - start_angle) * index / sample_count),
+                outer_radius,
+            )
+            for index in range(sample_count + 1)
+        ]
+        polygon.extend(
+            front_view_polar_to_cartesian(
+                start_angle + ((end_angle - start_angle) * index / sample_count),
+                inner_radius,
+            )
+            for index in range(sample_count, -1, -1)
+        )
+        polygons.append(polygon)
+    return polygons
 
 
 def default_slice_z_for_operation(op: Operation | None) -> float | None:

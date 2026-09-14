@@ -1,5 +1,13 @@
 from lathe_easystep.model import OpType, Operation
-from lathe_easystep.preview_scene import PreviewLayer, primitive_strokes, scene_from_legacy_paths
+from lathe_easystep.preview_scene import (
+    PreviewLayer,
+    PreviewPath,
+    PreviewScene,
+    build_preview_draw_plan,
+    primitive_strokes,
+    scene_from_legacy_paths,
+    stroke_bounding_rectangle,
+)
 
 
 def test_scene_separates_workpiece_tool_path_and_auxiliary_without_reordering():
@@ -49,3 +57,43 @@ def test_arc_and_polyline_each_form_their_own_stroke():
         [(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)],
         [(5.0, 5.0), (6.0, 6.0), (7.0, 5.0)],
     ]
+
+
+def test_draw_plan_puts_active_path_last_and_uses_scene_layers():
+    paths = [[(1, 1)], [(2, 2)], [(3, 3)]]
+    scene = PreviewScene((
+        PreviewPath(paths[0], PreviewLayer.WORKPIECE),
+        PreviewPath(paths[1], PreviewLayer.TOOL_PATH),
+        PreviewPath(paths[2], PreviewLayer.AUXILIARY),
+    ), active_index=1)
+
+    plan = build_preview_draw_plan(paths, 1, scene)
+
+    assert [item.index for item in plan] == [0, 2, 1]
+    assert [item.style_key for item in plan] == ["workpiece", "auxiliary", "active"]
+
+
+def test_draw_plan_keeps_special_role_style_even_when_path_is_active():
+    path = [{"type": "line", "role": "chuck_nogo", "p1": (0, 0), "p2": (1, 1)}]
+
+    plan = build_preview_draw_plan([path], 0)
+
+    assert len(plan) == 1
+    assert plan[0].role == "chuck_nogo"
+    assert plan[0].style_key == "chuck_nogo"
+
+
+def test_stroke_bounding_rectangle_encloses_disconnected_primitives():
+    strokes = [[(4.0, -8.0), (4.0, -2.0)], [(10.0, -6.0), (7.0, 1.0)]]
+
+    assert stroke_bounding_rectangle(strokes) == [
+        (4.0, -8.0),
+        (4.0, 1.0),
+        (10.0, 1.0),
+        (10.0, -8.0),
+    ]
+
+
+def test_stroke_bounding_rectangle_is_empty_without_drawable_points():
+    assert stroke_bounding_rectangle([]) == []
+    assert stroke_bounding_rectangle([[]]) == []
