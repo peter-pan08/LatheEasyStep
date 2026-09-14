@@ -30,7 +30,7 @@ o<les_first_tool> endif
 
 (Step 2: abspanen)
 (ABSPANEN)
-(Schlichtaufmaß X/Z: 0.200/0.100 mm)
+(Schlichtaufmass X/Z: 0.200/0.100 mm)
 G97 S800 M3
 F0.150
 (Strategie: parallel_z)

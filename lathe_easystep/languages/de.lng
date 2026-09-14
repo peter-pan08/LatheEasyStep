@@ -1101,3 +1101,4 @@ gcode.comment.fallback_automatic_movebased=Fallback-Grund: automatische Entschei
 gcode.comment.finish_contour_g70_reuse=Schlichtschnitt Kontur - G70 Wiederverwendung des Schruppzyklus
 gcode.comment.finish_contour=Schlichtschnitt Kontur
 gcode.comment.css_start_rpm=CSS-Anfahrdrehzahl bei X{diameter}
+gcode.comment.strategy_manual=manuell

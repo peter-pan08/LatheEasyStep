@@ -81,6 +81,23 @@ def test_toolchange_and_start_condition_comments_are_translated():
     assert "Tool change point" in en
 
 
+def test_roughing_strategy_and_allowance_comments_are_translated():
+    de = _joined(_lines_for("Innen_Stufe.ngc", None))
+    en = _joined(_lines_for("Innen_Stufe.ngc", "en"))
+    assert "(Strategie: parallel_z)" in de
+    assert "(Strategy: parallel_z)" in en
+    assert "Schlichtaufmass" in de
+    assert "Finish allowance" in en
+
+
+def test_abspanen_rough_label_is_translated():
+    de = _joined(_lines_for("Innen_Stufe.ngc", None))
+    en = _joined(_lines_for("Innen_Stufe.ngc", "en"))
+    assert "(ABSPANEN)" in de  # unveraendert - ABSPANEN ist der feste Operationsname
+    assert "ABSPANEN Rough" in de or "Schlichtschnitt Kontur" in de
+    assert "ABSPANEN rough" in en or "Finish pass contour" in en
+
+
 def test_missing_lang_key_defaults_to_the_historic_german_text():
     """settings ohne 'lang' (z. B. Referenzregeneration, aeltere Aufrufer)
     darf sich nicht aendern - das war die bisherige, feste Sprache."""

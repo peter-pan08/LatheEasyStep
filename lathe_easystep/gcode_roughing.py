@@ -11,6 +11,7 @@ from .gcode_safety import _motion_state, activate_pending_css, append_tool_and_s
 from .gcode_utils import (
     Point,
     float_or_none,
+    gcode_comment,
     get_tool_number,
     is_internal_side,
     is_monotonic_x,
@@ -205,7 +206,7 @@ def _emit_relief_pass(
         cutting_speed=op_params.get("cutting_speed"),
         css_start_diameter=abs(feature_points[0][0]),
     )
-    lines.append("(Hinterschnitt separat)")
+    lines.append(f"({gcode_comment('gcode.comment.relief_separate', settings.get('lang'))})")
     emit_approach(lines, feature_points[0][0], safe_z, settings)
     activate_pending_css(lines, settings)
     for idx, (x, z) in enumerate(feature_points):
@@ -409,10 +410,10 @@ def _emit_segment_with_pauses(lines: List[str], start: Point, end: Point, feed: 
     lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
 
 
-def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_target: float, step_x: float, safe_z: float, feed: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, retract_cfg: Optional[RetractCfg] = None, leadout_length: float = LEADOUT_LENGTH_DEFAULT, pause_state: Dict[str, object] | None = None) -> List[str]:
+def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_target: float, step_x: float, safe_z: float, feed: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, retract_cfg: Optional[RetractCfg] = None, leadout_length: float = LEADOUT_LENGTH_DEFAULT, pause_state: Dict[str, object] | None = None, lang: str | None = None) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
-    lines: List[str] = ["(ABSPANEN Rough - parallel Z)"]
+    lines: List[str] = [f"({gcode_comment('gcode.comment.abspanen_rough_parallel_z', lang)})"]
     xs = [p[0] for p in path] if path else []
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
@@ -532,7 +533,7 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
     return lines
 
 
-def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_target: float, step_z: float, safe_z: float, feed: float, start_x: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, leadout_length: float = LEADOUT_LENGTH_DEFAULT, retract_cfg: Optional[RetractCfg] = None, pause_state: Dict[str, object] | None = None) -> List[str]:
+def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_target: float, step_z: float, safe_z: float, feed: float, start_x: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, leadout_length: float = LEADOUT_LENGTH_DEFAULT, retract_cfg: Optional[RetractCfg] = None, pause_state: Dict[str, object] | None = None, lang: str | None = None) -> List[str]:
     segs = segments_from_polyline(path)
     passes: List[Tuple[float, float]] = []
     if step_z <= 0:
@@ -554,7 +555,7 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
     xs = [p[0] for p in path] if path else []
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
-    lines: List[str] = ["(ABSPANEN Rough - parallel X)"]
+    lines: List[str] = [f"({gcode_comment('gcode.comment.abspanen_rough_parallel_x', lang)})"]
     if not passes:
         return lines
     cfg = retract_cfg or RetractCfg(None, None, True, True)
@@ -607,7 +608,8 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
 
 
 def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: Dict[str, object]) -> List[str]:
-    lines: List[str] = ["(ABSPANEN)"]
+    lang = settings.get("lang")
+    lines: List[str] = [f"({gcode_comment('gcode.comment.abspanen', lang)})"]
     validate_finite_data(p, "ABSPANEN")
     validate_finite_data(path, "ABSPANEN path")
     validate_finite_data(settings, "Programmkopf")
@@ -629,7 +631,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     if min(pause_distance, finish_allow_x, finish_allow_z) < 0.0:
         raise ValueError("ABSPANEN: Spanbruchdistanz und Schlichtaufmasse duerfen nicht negativ sein.")
     if finish_allow_x > 0.0 or finish_allow_z > 0.0:
-        lines.append(f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm)")
+        lines.append(f"({gcode_comment('gcode.comment.finish_allowance', lang, x=f'{finish_allow_x:.3f}', z=f'{finish_allow_z:.3f}')})")
     tool_num = require_tool(p, "ABSPANEN")
     spindle = finite_float(p.get("spindle", 0.0), "ABSPANEN spindle")
     contour_variants = None
@@ -709,7 +711,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         # already contains the finished DIN geometry, so suppress only the
         # incompatible compensation mode for this case.
         nose_disabled = True
-        lines.append("(Werkzeugradiuskorrektur Innenfreistich deaktiviert: LinuxCNC-Konkavecke)")
+        lines.append(f"({gcode_comment('gcode.comment.internal_relief_no_radius_comp', lang)})")
     slice_strategy = p.get("slice_strategy")
     output_preference = _normalize_output_preference(p.get("output_preference", settings.get("output_preference")))
     strategy_code = None
@@ -731,11 +733,11 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         if feature_path:
             contour_sub_num = None
 
-    lines.append(f"(Strategie: {strategy_code or 'manuell'})")
-    lines.append(f"(Ausgabe bevorzugen: {output_preference})")
-    lines.append(f"(Hinterschnitt-Modus: {relief_mode})")
+    lines.append(f"({gcode_comment('gcode.comment.strategy', lang, strategy=strategy_code or gcode_comment('gcode.comment.strategy_manual', lang))})")
+    lines.append(f"({gcode_comment('gcode.comment.output_preference', lang, preference=output_preference)})")
+    lines.append(f"({gcode_comment('gcode.comment.relief_mode', lang, mode=relief_mode)})")
     if finish_allow_x > 0.0 or finish_allow_z > 0.0:
-        lines.append(f"(Aufmass X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f})")
+        lines.append(f"({gcode_comment('gcode.comment.allowance', lang, x=f'{finish_allow_x:.3f}', z=f'{finish_allow_z:.3f}')})")
 
     def _build_cycle_sub(sub_num: int) -> List[str]:
         active_primitives = primitives
@@ -810,10 +812,10 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         if can_use_cycles and external and is_monotonic_x_decreasing(rough_cycle_path):
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
-            lines.append("(ABSPANEN Rough - parallel X)")
+            lines.append(f"({gcode_comment('gcode.comment.abspanen_rough_parallel_x', lang)})")
             if contour_sub_num is None:
                 lines.extend(_build_cycle_sub(sub_num))
-            lines.append("(Anfahren vor Zyklus)")
+            lines.append(f"({gcode_comment('gcode.comment.approach_before_cycle', lang)})")
             emit_approach(lines, stock_x, safe_z, settings)
             activate_pending_css(lines, settings)
             # D = Aufmass (radial!), I = Zustelltiefe (radial!) - siehe
@@ -833,19 +835,19 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
         if not rough_done:
             if not external:
-                lines.append("(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_internal_unreliable', lang)})")
             elif output_preference == "prefer_cycle":
-                lines.append("(Fallback-Grund: Kontur nicht G72-zyklustauglich)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_contour_not_g72', lang)})")
             elif pause_enabled and pause_distance > 0.0:
-                lines.append("(Fallback-Grund: Spanbruch/Pausen aktiv)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_pauses_active', lang)})")
             elif finish_allow_z > finish_allow_x:
-                lines.append("(Fallback-Grund: Z-Aufmass groesser als X-Aufmass - Zyklus kennt nur ein Aufmass)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_z_allowance_larger', lang)})")
             elif output_preference == "prefer_explicit":
-                lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_explicit_code_preferred', lang)})")
             z_vals = [pp[1] for pp in rough_path] if rough_path else [0.0]
-            rough_lines = rough_turn_parallel_z(rough_path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
+            rough_lines = rough_turn_parallel_z(rough_path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings, lang=lang)
             if rough_lines:
-                rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
+                rough_lines[0] = f"({gcode_comment('gcode.comment.abspanen_rough_parallel_x_movebased', lang)})"
             lines.extend(rough_lines)
     elif strategy_code == "parallel_z" and mode_idx in (0, 2):
         # is_monotonic_z() (nicht nur "fallend") laesst auch Innenkonturen zu,
@@ -857,7 +859,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         if can_use_cycles and external and can_use_g71:
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
-            lines.append("(ABSPANEN Rough - parallel Z)")
+            lines.append(f"({gcode_comment('gcode.comment.abspanen_rough_parallel_z', lang)})")
             if contour_sub_num is None:
                 lines.extend(_build_cycle_sub(sub_num))
             emit_approach(lines, stock_x, safe_z, settings)
@@ -879,25 +881,25 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
             cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
         if not rough_done:
             if not external:
-                lines.append("(Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_internal_unreliable', lang)})")
             elif output_preference == "prefer_cycle":
-                lines.append("(Fallback-Grund: Kontur nicht G71-zyklustauglich)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_contour_not_g71', lang)})")
             elif relief_mode == "separate":
-                lines.append("(Fallback-Grund: Hinterschnitt separat)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_relief_separate', lang)})")
             elif feature_path and relief_mode == "full":
-                lines.append("(Fallback-Grund: Freistich in voller Kontur ist nicht G71-monoton)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_relief_not_monotonic', lang)})")
             elif pause_enabled and pause_distance > 0.0:
-                lines.append("(Fallback-Grund: Spanbruch/Pausen aktiv)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_pauses_active', lang)})")
             elif finish_allow_z > finish_allow_x:
-                lines.append("(Fallback-Grund: Z-Aufmass groesser als X-Aufmass - Zyklus kennt nur ein Aufmass)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_z_allowance_larger', lang)})")
             elif output_preference == "prefer_explicit":
-                lines.append("(Fallback-Grund: expliziten Code bevorzugt)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_explicit_code_preferred', lang)})")
             else:
-                lines.append("(Fallback-Grund: automatische Entscheidung -> Move-based)")
+                lines.append(f"({gcode_comment('gcode.comment.fallback_automatic_movebased', lang)})")
             xs = [pp[0] for pp in rough_path] if rough_path else [stock_x]
-            rough_lines = rough_turn_parallel_x(rough_path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
+            rough_lines = rough_turn_parallel_x(rough_path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings, lang=lang)
             if rough_lines:
-                rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
+                rough_lines[0] = f"({gcode_comment('gcode.comment.abspanen_rough_parallel_z_movebased', lang)})"
             lines.extend(rough_lines)
     if mode_idx in (0, 2):
         # LES-002: ein Schruppstep (oder der Schrupp-Anteil von "Schruppen +
@@ -968,7 +970,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
         and (contour_sub_num, external) in settings.get("_cycle_defined_subs", set())
     )
     if can_reuse_cycle_sub:
-        lines.append("(Schlichtschnitt Kontur - G70 Wiederverwendung des Schruppzyklus)")
+        lines.append(f"({gcode_comment('gcode.comment.finish_contour_g70_reuse', lang)})")
         emit_approach(lines, stock_x, safe_z, settings)
         activate_pending_css(lines, settings)
         lines.append(f"G70 Q{contour_sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
@@ -982,7 +984,7 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
                 fx, fz = finish_points[-1]
                 _motion_state(settings).record(fx, fz)
     elif mode_idx in (1, 2) and not cycle_finish_done:
-        lines.append("(Schlichtschnitt Kontur)")
+        lines.append(f"({gcode_comment('gcode.comment.finish_contour', lang)})")
         finish_points = rough_path if relief_mode == "ignore" else finish_path
         profile_start_x, profile_start_z = finish_points[0]
         if external:

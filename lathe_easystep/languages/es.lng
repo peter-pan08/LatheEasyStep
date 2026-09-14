@@ -1101,3 +1101,4 @@ gcode.comment.fallback_automatic_movebased=Motivo de reserva: decision automatic
 gcode.comment.finish_contour_g70_reuse=Pasada de acabado del contorno - G70 reutiliza el ciclo de desbaste
 gcode.comment.finish_contour=Pasada de acabado del contorno
 gcode.comment.css_start_rpm=RPM de arranque CSS en X{diameter}
+gcode.comment.strategy_manual=manual
