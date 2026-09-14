@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### LES-024 Erstes Migrationspaket: Step-Liste hinter schmaler View-Schnittstelle 2026-09-14
+
+- Schmale View-Klasse `StepListView` (`ui_step_list_view.py`) eingefuehrt:
+  buendelt die bisher verstreuten direkten `handler.list_ops`-Zugriffe
+  (currentRow/count/item/row/blockSignals+setCurrentRow/hasFocus) hinter
+  benannten Methoden (`selected_row()`, `count()`, `row_of()`,
+  `set_item_text()`, `select_row()`, `has_focus()`, `is_bound()`).
+  Zustandslos - liest `handler.list_ops` bei jedem Aufruf frisch, damit
+  spaeteres (Neu-)Binden ohne Cache-Invalidierung funktioniert.
+- Die zwoelf bereits in der vorherigen Bestandsaufnahme (2026-09-14,
+  "LES-024 Restliche zwei Punkte konkretisiert") ermittelten Dateien mit
+  `list_ops`-Zugriff zerfallen in zwei klar getrennte Gruppen: sechs
+  Fachlogik-Dateien (ui_dirty/ui_flow/ui_persistence/ui_preview/
+  ui_program/ui_selection) und sechs Bindungs-/Such-Dateien
+  (ui_lifecycle/ui_split/ui_signals/ui_widget_lookup/ui_widgets/
+  lathe_easystep_handler.py). Bewusste Entscheidung: nur die sechs
+  Fachlogik-Dateien migrieren, die Bindungs-/Such-Dateien bleiben
+  unveraendert - dort WIRD `handler.list_ops` erst gesucht/gebunden/
+  validiert, das ist keine Fachlogik, die eine View-Abstraktion braucht.
+- Acht neue Tests (`tests/test_step_list_view.py`) fuer die neue Klasse
+  selbst (inkl. Exception-Schlucken bei kaputtem Widget, kein Caching
+  von `handler.list_ops`). Per Wegverschieben der Implementierungsdatei
+  verifiziert (Tests schlagen ohne sie mit `ModuleNotFoundError` fehl).
+  721 Stub-/70 Real-Qt-Tests bestanden, keine Skips.
+- Real in der SIM verifiziert: vollstaendiger Embedded-Start fehlerfrei,
+  anschliessend mehrere Reiterwechsel (Programm/Planen/Kontur/Abspanen)
+  ausgeloest - `handle_tab_changed`/`handle_selection_change` liefen ueber
+  den neuen `StepListView`-Pfad ohne Fehler im Log. Der "Schritt
+  hinzufuegen"-Button wurde bewusst nicht geklickt (oeffnet einen echten
+  Speichern-Dialog, LES-047), da der zugrundeliegende Codepfad bereits
+  ueber Reiterwechsel/Tests abgedeckt ist.
+- Naechstes Paket (nicht Teil dieses Durchgangs): Vorschau-Geometrieaufbau
+  in `ui_preview.py` sowie die LES-034-Ebenentrennung. Details: TODO.md
+  (LES-024).
+
 ### LES-027 abgeschlossen: erster Reiterwechsel 4,682s -> 0,000s 2026-09-14
 
 - Letzter offener LES-027-Punkt real in der SIM gemessen: erster

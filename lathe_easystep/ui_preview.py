@@ -8,6 +8,7 @@ from .contour_logic import build_contour_variants, select_thread_relief_for_cont
 from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
 from .translations import TRANSLATIONS
+from .ui_step_list_view import StepListView
 
 
 def setup_slice_view(handler) -> None:
@@ -142,7 +143,7 @@ def collect_preview_state(
     active_operation: Operation | None = None
 
     if handler.model.operations:
-        selected_row = handler.list_ops.currentRow() if handler.list_ops else -1
+        selected_row = StepListView(handler).selected_row()
         for row_idx, op in enumerate(handler.model.operations):
             if not op.path:
                 continue

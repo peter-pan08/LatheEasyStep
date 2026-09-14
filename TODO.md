@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 713 Stub-Qt-Tests und 70 Tests mit echtem PyQt5, keine Skips.
+- 721 Stub-Qt-Tests und 70 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -47,10 +47,23 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
 
 ## LES-024 Modulschnittstellen
 
-- [ ] fuer Step-Verwaltung und Vorschau schmale Controller-/View-Schnittstellen
-  definieren, bevor direkte Widgetzugriffe ersetzt werden.
-- [ ] die dokumentierten zwoelf direkten Zugriffsstellen paketweise migrieren.
-- [ ] nach jedem Paket Stub-, Real-Qt-, Embedded- und Standalone-Test ausfuehren.
+- [x] fuer Step-Verwaltung schmale View-Schnittstelle definiert
+  (`ui_step_list_view.py`, `StepListView`), bevor die direkten
+  Widgetzugriffe ersetzt wurden. Vorschau (`ui_preview.py` als Modul,
+  nicht nur seine `list_ops`-Zeile) steht noch aus.
+- [ ] die zwoelf `list_ops`-Zugriffsstellen bestehen aus zwei Gruppen:
+  sechs Fachlogik-Dateien (ui_dirty/ui_flow/ui_persistence/ui_preview/
+  ui_program/ui_selection) und sechs Bindungs-/Such-Dateien
+  (ui_lifecycle/ui_split/ui_signals/ui_widget_lookup/ui_widgets/
+  lathe_easystep_handler.py), die `handler.list_ops` ueberhaupt erst
+  herstellen und bewusst nicht ueber `StepListView` laufen. Die sechs
+  Fachlogik-Dateien sind auf `StepListView` migriert; als naechstes Paket
+  offen: Vorschau-Geometrieaufbau (`ui_preview.py`, ueber die migrierte
+  `list_ops`-Zeile hinaus) sowie die uebrigen LES-034-Ebenen.
+- [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
+  keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
+  (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
+  den neuen Pfad). Bei jedem weiteren Paket erneut so pruefen.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .model import OpType
+from .ui_step_list_view import StepListView
 
 
 def handle_tab_changed(handler, *_args, **_kwargs) -> None:
@@ -39,9 +40,10 @@ def handle_tab_changed(handler, *_args, **_kwargs) -> None:
 def on_step_double_clicked(handler, item) -> None:
     """Flush current form values, select the clicked step, then load its tab/form."""
     try:
-        if handler.list_ops is None:
+        step_list = StepListView(handler)
+        if not step_list.is_bound():
             return
-        index = handler.list_ops.row(item)
+        index = step_list.row_of(item)
         if index < 0 or index >= len(handler.model.operations):
             return
 
@@ -51,14 +53,12 @@ def on_step_double_clicked(handler, item) -> None:
             level="info",
         )
 
-        prev_idx = handler.list_ops.currentRow()
+        prev_idx = step_list.selected_row()
         if 0 <= prev_idx < len(handler.model.operations) and prev_idx != index:
             handler._op_row_user_selected = True
             handler._update_selected_operation(force=True)
 
-        handler.list_ops.blockSignals(True)
-        handler.list_ops.setCurrentRow(index)
-        handler.list_ops.blockSignals(False)
+        step_list.select_row(index, block_signals=True)
 
         handler._op_row_user_selected = True
         handler._handle_selection_change(index)
@@ -91,9 +91,10 @@ def handle_selection_change(handler, row: int) -> None:
 
     handler._ui_loading = True
     try:
+        step_list = StepListView(handler)
         handler._op_row_user_selected = bool(
-            handler.list_ops
-            and (handler.list_ops.hasFocus() or handler._op_row_user_selected)
+            step_list.is_bound()
+            and (step_list.has_focus() or handler._op_row_user_selected)
         )
         if row < 0 or row >= len(handler.model.operations):
             return
