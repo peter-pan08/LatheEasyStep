@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 713 Stub-Qt-Tests und 66 Tests mit echtem PyQt5, keine Skips.
+- 713 Stub-Qt-Tests und 67 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -86,8 +86,15 @@ einzeln geprueft.
   gecacht, sobald der Widget-Baum vollstaendig ist. Real gemessen:
   `connect_param_change_signals` (der eigentliche Kostenpunkt in
   `connect_remaining_signals`) sank von 6,77 s auf 0,02 s.
-- [ ] `ensure_advanced_widgets` (~2,5-2,7 s) noch nicht einzeln profiliert -
-  naechster verbleibender Einzelposten.
+- [x] `ensure_advanced_widgets` (~2,5-2,7 s) einzeln profiliert und behoben
+  (siehe Nachmessung 3 unten) - selbe Root Cause wie `connect_remaining_signals`:
+  `_ensure_row()` (`ui_advanced.py`) ruft `get_widget_by_name()` ca. 28x
+  auf, aber FRUEHER als `connect_param_change_signals` - noch bevor
+  `_widget_name_cache_authoritative` gesetzt wird. Memoisierungs-Bedingung
+  deshalb auf den fruehstmoeglichen stabilen Zeitpunkt verallgemeinert
+  (`tab_params`/`list_ops` beide gebunden, statt auf das spaetere
+  `_widget_name_cache_authoritative`-Flag zu warten). Real gemessen:
+  `ensure_advanced_widgets` sank von ~2,5-2,7 s auf ~1,09 s.
 - [ ] ersten Reiterwechsel, Stepwechsel und Preview-Refresh messen.
 - [ ] nur nach gemessenem Befund optimieren.
 
@@ -103,6 +110,22 @@ done": **rund 10,8 s** (vorher ~18 s nach dem ersten Fix, urspruenglich
 neue Tests (`tests/test_panel_scope_root_memoization.py`), per `git stash`
 verifiziert. 713 Stub-/66 Qt-Tests bestanden, zwoelf Referenzen
 unveraendert (reine Performance-Aenderung, kein G-Code-Bezug).
+
+**Nachmessung 3 2026-09-14 (Memoisierungs-Bedingung verallgemeinert), real
+in der SIM:** die Memoisierung aus Nachmessung 2 half `ensure_advanced_widgets`
+noch nicht, weil dieser Aufruf VOR `_widget_name_cache_authoritative`
+laeuft. `tab_params`/`list_ops` sind aber schon durch `ensure_core_widgets()`
+(noch frueher) stabil gebunden und werden danach nicht mehr umgehaengt -
+die Memoisierungs-Bedingung nutzt jetzt direkt deren Praesenz statt auf
+das spaetere Flag zu warten. Real gemessen: `ensure_advanced_widgets`
+sank von ~2,5-2,7 s auf ~1,09 s. Gesamtzeit bis "critical done": **rund
+8,8 s** (vorher ~10,8 s, ~18 s nach dem ersten Fix, urspruenglich 69,1 s
+fuer zwei Durchlaeufe). Panel real funktional gegengeprueft (Tab-Wechsel
+Planen -> Abspanen, dynamische Felder wie Kontur/Seite/Werkzeug zeigen
+korrekte Werte). Ein vierter Test ergaenzt
+(`test_scope_root_caching_also_helps_before_widget_name_cache_is_authoritative`),
+alle vier per `git stash` verifiziert. 713 Stub-/67 Qt-Tests bestanden,
+zwoelf Referenzen unveraendert.
 
 ## LES-034 Preview-Pipeline
 

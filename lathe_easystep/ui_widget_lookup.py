@@ -832,16 +832,22 @@ def get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
 
     def _panel_scope_root() -> QtWidgets.QWidget | None:
         # Perf (LES-027, 2026-09-14): get_widget_by_name() is called ~100x
-        # per setup_param_maps() pass, and this walk previously ran fresh
-        # EVERY time - at each level up from tab_params it did TWO full
-        # recursive findChild() scans (tabParams/listOperations presence
-        # checks), typically 3-5 levels before satisfying both. Real SIM
-        # measurement: connect_param_change_signals() alone cost ~6.7s of
-        # the ~18s total startup. Once the widget tree is complete
-        # (_widget_name_cache_authoritative, set once in finalize_ui_ready
-        # after all lazy UI fragments and dynamic widgets exist), the scope
-        # root is structurally stable and safe to memoize.
-        if getattr(self, "_widget_name_cache_authoritative", False):
+        # per setup_param_maps() pass (and ~28x more via ensure_advanced_widgets()
+        # -> _ensure_row()), and this walk previously ran fresh EVERY time -
+        # at each level up from tab_params it did TWO full recursive
+        # findChild() scans (tabParams/listOperations presence checks),
+        # typically 3-5 levels before satisfying both. Real SIM measurement:
+        # connect_param_change_signals() alone cost ~6.7s of the ~18s total
+        # startup.
+        #
+        # tab_params/list_ops are bound by ensure_core_widgets(), which runs
+        # BEFORE ensure_advanced_widgets() - their ANCESTOR chain (what this
+        # walk climbs) does not change afterwards (later steps reparent only
+        # the preview widgets, never tab_params/listOperations themselves).
+        # So the scope root is already stable at that earlier point, well
+        # before _widget_name_cache_authoritative gets set - gate on the
+        # more precise, earlier-true condition instead.
+        if getattr(self, "tab_params", None) is not None and getattr(self, "list_ops", None) is not None:
             cached_scope = getattr(self, "_panel_scope_root_cache", None)
             if cached_scope is not None:
                 return cached_scope
@@ -875,7 +881,11 @@ def get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
                 result = getattr(self, "root_widget", None) or self._find_root_widget()
             except Exception:
                 result = None
-        if result is not None and getattr(self, "_widget_name_cache_authoritative", False):
+        if (
+            result is not None
+            and getattr(self, "tab_params", None) is not None
+            and getattr(self, "list_ops", None) is not None
+        ):
             self._panel_scope_root_cache = result
         return result
 

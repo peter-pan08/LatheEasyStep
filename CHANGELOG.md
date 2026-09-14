@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### LES-027 Memoisierungs-Bedingung verallgemeinert: ensure_advanced_widgets 2,7s -> 1,09s 2026-09-14
+
+- Die Scope-Root-Memoisierung aus dem vorherigen LES-027-Fix half
+  `ensure_advanced_widgets` noch nicht - dieser Aufruf (ueber `_ensure_row()`
+  in `ui_advanced.py`, ~28 `get_widget_by_name()`-Aufrufe) laeuft VOR
+  `_widget_name_cache_authoritative`, an das die Memoisierung bisher
+  gekoppelt war.
+- `tab_params`/`list_ops` sind aber schon durch das noch frueher laufende
+  `ensure_core_widgets()` stabil gebunden und werden danach nicht mehr
+  umgehaengt. Memoisierungs-Bedingung deshalb verallgemeinert: nutzt jetzt
+  direkt deren Praesenz statt auf das spaetere Flag zu warten.
+- Real in der SIM nachgemessen: `ensure_advanced_widgets` sank von
+  ~2,5-2,7s auf ~1,09s. Gesamtzeit bis "critical done": ~8,8s (vorher
+  ~10,8s, urspruenglich 69,1s fuer zwei Durchlaeufe). Panel funktional
+  gegengeprueft (Tab-Wechsel, dynamische Felder zeigen korrekte Werte).
+- Vier Tests (drei angepasst, einer neu), per `git stash` verifiziert.
+  713 Stub-/67 Qt-Tests bestanden, zwoelf Referenzen unveraendert.
+  Details: TODO.md (LES-027).
+
 ### Projektbereinigung, LES-036-SIM-Abnahme und Resolver-Fix 2026-09-14
 
 - `TODO.md` von 2.849 Zeilen historischem Sitzungsprotokoll auf eine kurze,
