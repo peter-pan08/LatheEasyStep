@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 713 Stub-Qt-Tests und 63 Tests mit echtem PyQt5, keine Skips.
+- 713 Stub-Qt-Tests und 66 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -78,11 +78,31 @@ einzeln geprueft.
 - [x] teure Widget-Suchen in `ensure_core_widgets` profilieren und reduzieren;
   Zielwert unter 10 s - erreicht (~0,11 s). Neuer Flaschenhals ist jetzt
   `connect_remaining_signals` (~6,6 s), noch nicht einzeln profiliert.
-- [ ] `connect_remaining_signals` (~6,6 s) und `ensure_advanced_widgets`
-  (~2,5 s) einzeln profilieren - neue groesste Zeitanteile nach dem
-  `listOperations`-Fix.
+- [x] `connect_remaining_signals` (~6,6 s) einzeln profiliert und behoben
+  (siehe Nachmessung 2 unten) - Root Cause: `get_widget_by_name()` berechnete
+  seinen internen "Panel-Scope-Root" (mehrstufiger `parentWidget()`-Walk,
+  pro Stufe zwei volle rekursive `findChild()`-Scans) bei JEDEM Aufruf neu.
+  `setup_param_maps()` ruft `get_widget_by_name()` ca. 100x auf - jetzt
+  gecacht, sobald der Widget-Baum vollstaendig ist. Real gemessen:
+  `connect_param_change_signals` (der eigentliche Kostenpunkt in
+  `connect_remaining_signals`) sank von 6,77 s auf 0,02 s.
+- [ ] `ensure_advanced_widgets` (~2,5-2,7 s) noch nicht einzeln profiliert -
+  naechster verbleibender Einzelposten.
 - [ ] ersten Reiterwechsel, Stepwechsel und Preview-Refresh messen.
 - [ ] nur nach gemessenem Befund optimieren.
+
+**Nachmessung 2 2026-09-14 (Scope-Root-Memoisierung), real in der SIM:**
+`connect_param_change_signals` sank von 6,77 s auf 0,02 s (Fix in
+`get_widget_by_name()`, `lathe_easystep/ui_widget_lookup.py`: der
+Panel-Scope-Root wird jetzt einmalig berechnet und ueber
+`handler._panel_scope_root_cache` wiederverwendet, sobald
+`_widget_name_cache_authoritative` gesetzt ist). Gesamtzeit bis "critical
+done": **rund 10,8 s** (vorher ~18 s nach dem ersten Fix, urspruenglich
+69,1 s fuer zwei Durchlaeufe). Panel real funktional gegengeprueft
+(Tab-Wechsel Planen -> Kontur, Parameterfelder reagieren korrekt). Drei
+neue Tests (`tests/test_panel_scope_root_memoization.py`), per `git stash`
+verifiziert. 713 Stub-/66 Qt-Tests bestanden, zwoelf Referenzen
+unveraendert (reine Performance-Aenderung, kein G-Code-Bezug).
 
 ## LES-034 Preview-Pipeline
 

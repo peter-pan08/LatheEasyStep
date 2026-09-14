@@ -27,6 +27,25 @@
 - Aktueller Stand: 713 Stub-/63 Real-Qt-Tests; zwoelf Referenzen bestehen
   statische Pruefung und nativen `rs274`.
 
+### LES-027 Scope-Root-Memoisierung: connect_param_change_signals von 6,77s auf 0,02s 2026-09-14
+
+- Nachdem der erste LES-027-Fix (ein Finalisierungsdurchlauf statt zwei)
+  real in der SIM bestaetigt war, war `connect_remaining_signals` (~6,6s)
+  der neue groesste Einzelposten. Profiliert: fast die gesamte Zeit steckte
+  in `connect_param_change_signals`.
+- Root Cause: `get_widget_by_name()` (`ui_widget_lookup.py`) berechnete
+  seinen internen "Panel-Scope-Root" (mehrstufiger `parentWidget()`-Walk,
+  pro Stufe zwei volle rekursive `findChild()`-Scans) bei JEDEM Aufruf neu
+  - `setup_param_maps()` ruft die Funktion ca. 100x pro Start auf. Behoben:
+  der Scope-Root wird jetzt einmalig berechnet und gecacht, sobald der
+  Widget-Baum vollstaendig ist (`_widget_name_cache_authoritative`).
+- Real in der SIM nachgemessen: `connect_param_change_signals` sank von
+  6,77s auf 0,02s. Gesamtzeit bis "critical done": ~10,8s (vorher ~18s,
+  urspruenglich 69,1s fuer zwei Durchlaeufe). Panel funktional
+  gegengeprueft (Tab-Wechsel, Parameterfelder reagieren korrekt).
+- Drei neue Tests, per `git stash` verifiziert. 713 Stub-/66 Qt-Tests
+  bestanden, zwoelf Referenzen unveraendert. Details: TODO.md (LES-027).
+
 ### LES-027 Fix real in der SIM bestaetigt: nur noch ein Finalisierungsdurchlauf 2026-09-14
 
 - Nutzerhinweis, dass die SIM zur Verifikation zur Verfuegung steht -
