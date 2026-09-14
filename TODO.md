@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 764 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
+- 772 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -74,7 +74,7 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   echte Regression verifiziert, danach zurueckgesetzt. Bewusst nicht
   weiterverfolgt: axiale Keilnut (mode != 0) wird in der Schnittansicht gar
   nicht gezeichnet - kein Fund, aber auch kein Vergleich noetig.
-- [ ] `preview_widget.py` entlang dieser Ebenen verkleinern. Erstes Paket:
+- [x] `preview_widget.py` entlang dieser Ebenen verkleinern. Erstes Paket:
   die komplette Schnittansicht-Diagrammberechnung (`_interp_x_hits_at_z`,
   `_interp_x_at_z`, `_path_hits_at_slice`, `_front_operation_side`,
   `_front_slice_profile`, `_front_active_diameters`,
@@ -110,10 +110,17 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   weitere Tests (vier fuer `build_front_view_draw_plan()`, drei fuer
   `front_view_scale()`) decken Kreisreihenfolge, ausgelassene Nullwerte und
   Skalierung an beiden Seiten ab, ebenfalls per zwei unabhaengig injizierten
-  Bugs verifiziert. Noch offen: die verbleibenden Berechnungen in den
-  eigentlichen `_paint_*`-Zeichenroutinen (Legende, Statusmeldungen -
-  bleiben an QPainter gebunden, sind aber ueberwiegend reines Zeichnen ohne
-  nennenswerte Fachlogik mehr).
+  Bugs verifiziert. Zehntes und letztes Paket: Legende (Box-/Klick-Rect,
+  Zeilenpositionen) und Statusmeldungsbox (Kuerzung auf vier Eintraege je
+  80 Zeichen, Box-/Zeilenpositionen) als `legend_layout()`/
+  `status_message_layout()` (`preview_geometry.py`) ausgelagert - Farben/
+  Stifte bleiben bewusst im Widget (Qt-Stildaten, keine Fachlogik).
+  `preview_widget.py`: 689 -> 671 Zeilen (1049 -> 671 insgesamt, -36%).
+  Acht weitere Tests (davon ein echter Widget-Painttest fuer Legende-Klick
+  und Statusbox), per zwei unabhaengig injizierten Bugs verifiziert. Damit
+  ist die Verkleinerung von `preview_widget.py` entlang der PreviewScene-
+  Ebenen abgeschlossen - verbleibende `_paint_*`-Routinen sind reines
+  QPainter-Zeichnen ohne eigene Fachlogik mehr.
 
 ## LES-024 Modulschnittstellen
 
@@ -140,8 +147,10 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   Widget. Auch das Modellrechteck der Futter-Sperrzonenfuellung entsteht in
   `preview_scene.py`. Die Vorderansicht (Rohteilkreise, Endkonturfuellung,
   Durchmesserringe) loest Reihenfolge und Stil ebenfalls Qt-frei ueber
-  `build_front_view_draw_plan()` auf. Weiter offen ist die Verkleinerung der
-  restlichen `_paint_*`-Zeichenroutinen (Legende, Statusmeldungen).
+  `build_front_view_draw_plan()` auf. Legende und Statusmeldungsbox sind als
+  `legend_layout()`/`status_message_layout()` ausgelagert - damit ist die
+  Verkleinerung von `preview_widget.py` entlang der PreviewScene-Ebenen
+  abgeschlossen (Details: LES-034).
 - [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
   keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
   (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
@@ -162,7 +171,10 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   besteht mit 757/75 und Embedded-Start bis `critical done` nach 8,505 s. Die
   Vorderansicht-Extraktion besteht mit 764/75; das eingebettete Panel
   erreichte `critical done` nach 8,493 s, die Schnittansicht liess sich im
-  UTILS-Panel fehlerfrei umschalten. Bei jedem weiteren Paket erneut so
+  UTILS-Panel fehlerfrei umschalten. Die Legende-/Statusbox-Extraktion
+  besteht mit 772/76; das eingebettete Panel erreichte `critical done` nach
+  9,679 s, der Legende-Header-Klick klappte die Legende im UTILS-Panel
+  sichtbar korrekt ein. Bei jedem weiteren Paket erneut so
   pruefen.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.

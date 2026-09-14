@@ -143,6 +143,62 @@ def front_view_scale(max_diameter: float, width: float, height: float) -> float:
     return min(float(width), float(height)) / max(float(max_diameter) * 1.15, 1e-6)
 
 
+def legend_layout(
+    item_count: int,
+    *,
+    collapsed: bool = False,
+    margin: float = 6.0,
+    header_height: float = 18.0,
+    row_height: float = 16.0,
+    box_width: float = 175.0,
+    line_length: float = 26.0,
+) -> Dict[str, object]:
+    """Pure geometry for the side-view legend box: outer rect, header click
+    target, header text rect and each row's line/label positions - no
+    QPainter dependency. The legend labels/colours themselves stay in the
+    widget since they are Qt style constants, not layout."""
+    x0 = margin
+    y0 = margin - 2.0
+    box_height = (
+        margin * 2.0 + header_height
+        if collapsed
+        else margin * 2.0 + header_height + row_height * item_count
+    )
+    rows: List[Dict[str, tuple]] = []
+    if not collapsed:
+        for index in range(item_count):
+            y = y0 + margin + header_height + index * row_height + 10.0
+            rows.append({
+                "line": ((x0 + margin, y), (x0 + margin + line_length, y)),
+                "label_pos": (x0 + margin + line_length + 6.0, y + 4.0),
+            })
+    return {
+        "box_rect": (x0, y0, box_width, box_height),
+        "click_rect": (x0, y0, box_width, header_height + margin),
+        "header_text_rect": (x0 + margin, y0 + 2.0, box_width - 2.0 * margin, header_height),
+        "rows": rows,
+    }
+
+
+def status_message_layout(messages, *, widget_width: float) -> Dict[str, object] | None:
+    """Pure geometry+truncation for the status/warning box in the top-right
+    corner - no QPainter dependency. Returns None when there is nothing to
+    show, matching the widget's "skip the whole block" behaviour."""
+    truncated = [str(message)[:80] for message in list(messages or [])[:4]]
+    if not truncated:
+        return None
+    box_h = 12.0 + (len(truncated) * 16.0)
+    box_w = min(float(widget_width) - 20.0, 540.0)
+    x0 = float(widget_width) - box_w - 8.0
+    y0 = 8.0
+    return {
+        "messages": truncated,
+        "box_rect": (x0, y0, box_w, box_h),
+        "header_pos": (x0 + 8.0, y0 + 14.0),
+        "line_positions": [(x0 + 8.0, y0 + 30.0 + index * 15.0) for index in range(len(truncated))],
+    }
+
+
 def side_view_to_screen(
     x_value: float,
     z_value: float,

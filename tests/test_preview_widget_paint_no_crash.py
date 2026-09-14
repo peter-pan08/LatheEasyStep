@@ -80,3 +80,19 @@ def test_front_view_paints_keyway_without_crash():
     w.front_operation = op
     w.set_slice_z(-5.0)
     _paint(w)
+
+
+def test_side_view_paints_expanded_legend_and_status_messages_without_crash():
+    """Uebt legend_layout()/status_message_layout() (LES-024/LES-034) ueber
+    den echten Widget-Zeichenpfad aus - inklusive Legende-Header-Klick zum
+    Ein-/Ausklappen, das den in der Layoutfunktion berechneten Click-Rect
+    verwendet."""
+    w = LathePreviewWidget()
+    w.set_paths([[(30.0, 0.0), (20.0, -10.0)]])
+    w.set_status_messages(["Warnung A", "Warnung B"])
+    _paint(w)
+    assert w._legend_click_rect is not None
+
+    w.toggle_legend()
+    _paint(w)
+    assert w._legend_click_rect is not None

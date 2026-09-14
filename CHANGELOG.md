@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### LES-024/LES-034 abgeschlossen: Legende und Statusmeldungsbox aus preview_widget.py extrahiert 2026-09-14
+
+- Letztes (zehntes) Verkleinerungspaket: die Legende (Box-/Klick-Rechteck,
+  Kopf- und Zeilenpositionen) und die Statusmeldungsbox (Kuerzung auf vier
+  Eintraege je 80 Zeichen, Box-/Zeilenpositionen) waren die letzten
+  verbliebenen Stellen in `paintEvent()` mit echter Layoutberechnung statt
+  reinem Zeichnen. Jetzt als `legend_layout()`/`status_message_layout()`
+  (`preview_geometry.py`) ausgelagert. Farben/Stifte der Legendeneintraege
+  bleiben bewusst im Widget (Qt-Stildaten, keine Fachlogik, die eine
+  Qt-freie Abstraktion braucht).
+- Acht neue Tests: sieben direkt gegen die beiden reinen Funktionen (Zeilen-
+  reihenfolge, eingeklappter vs. ausgeklappter Zustand, stabiler Klick-Rect
+  unabhaengig vom Klappzustand, Kuerzung auf vier Nachrichten/80 Zeichen,
+  Box-Breite an beiden Seiten begrenzt) sowie ein echter PyQt5-Painttest,
+  der Legende-Header-Klick (Ein-/Ausklappen) und sichtbare Statusmeldungen
+  ueber den tatsaechlichen Widget-Zeichenpfad ausuebt. Per zwei unabhaengig
+  injizierten Bugs (klappzustandsabhaengiger Klick-Rect, falsche
+  Nachrichten-Obergrenze) als echte Regression verifiziert, danach
+  zurueckgesetzt.
+- Real in der SIM verifiziert: Embedded-Start fehlerfrei (`critical done`
+  nach 9,679 s), Legende im UTILS-Panel per Klick auf den Kopf sichtbar
+  korrekt eingeklappt (nur noch die Kopfzeile, keine Eintraege). Kein
+  Fehler im Log.
+- `preview_widget.py`: 689 -> 671 Zeilen. Damit ist die Verkleinerung
+  entlang der `PreviewScene`-Ebenen abgeschlossen: 1049 -> 671 Zeilen
+  ueber zehn Pakete (-36%); die verbliebenen `_paint_*`-Routinen sind
+  reines QPainter-Zeichnen ohne eigene Fachlogik mehr. 772 Stub-/76
+  Real-Qt-Tests bestanden, keine Skips. Details: TODO.md (LES-024,
+  LES-034).
+
 ### LES-024/LES-034: Vorderansicht - Rohteilkreise, Endkonturfuellung und Durchmesserringe als Darstellungsplan 2026-09-14
 
 - Neuntes Verkleinerungspaket: `_paint_front_view()` entschied bisher inline,
