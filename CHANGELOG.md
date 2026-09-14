@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### LES-034 Vorschau-Pfad gegen tatsaechliche G-Code-Ausgabe verifiziert (kein Fund) 2026-09-14
+
+- Nutzerauftrag: dargestellten Werkzeugweg der zwoelf Referenzprogramme
+  gegen die tatsaechliche G-Code-Ausgabe vergleichen. **Ergebnis: keine
+  Abweichung gefunden** - alle neun vergleichbaren ABSPANEN-/FACE-Faelle
+  mit explizitem Schlichtpfad stimmen exakt (< 0.01mm) ueberein.
+- Zwei eigene Script-Fehler beim ersten Anlauf zunaechst faelschlich als
+  Bugs interpretiert (falsche Vergleichsrichtung bei tessellierten
+  Boegen; ein Text-Marker traf zuerst auf einen unrelatierten Kommentar)
+  - erst durch genaues Nachschauen im rohen G-Code widerlegt, bevor eine
+  unnoetige Codeaenderung gemacht wurde.
+- Neuer dauerhafter Regressionstest (`tests/test_preview_matches_gcode_output.py`,
+  9 Faelle), Erkennungsfaehigkeit per injizierter 1mm-Abweichung
+  nachgewiesen. 703 Stub-/59 Qt-Tests bestanden, zwoelf Referenzen
+  unveraendert (reine Verifikation). DRILL/GROOVE brauchen eine andere
+  Methodik (Vorschau zeigt dort die Werkzeugform, nicht den Weg) - nicht
+  Teil dieses Durchgangs. Details: TODO.md (LES-034).
+
 ### LES-024 Restliche zwei Punkte konkretisiert (Bestandsaufnahme, kein Umbau) 2026-09-14
 
 - Tooltips/Sprach-IDs fuer die drei neuen Panel-Module bereits

@@ -2588,12 +2588,58 @@ Punktausgabe - betrifft nur die Vorschau-Optik, nicht die G-Code-Korrektheit).
 - [ ] Vorschau und G-Code auf denselben geplanten Bewegungen aufbauen,
   einschliesslich Anfahrt, Rueckzug, Werkzeugwechsel und Parken; gemeinsame
   Grundlage mit LES-022 und LES-041 abstimmen
-- [ ] dargestellten Werkzeugweg fuer Referenzprogramme gegen die tatsaechliche
-  Ausgabe und den LinuxCNC-Backplot vergleichen (siehe LES-030)
+- [x] dargestellten Werkzeugweg fuer Referenzprogramme gegen die tatsaechliche
+  Ausgabe vergleichen, fuer ABSPANEN und FACE (siehe Teilstand 2026-09-14
+  unten) - LinuxCNC-Backplot-Vergleich (LES-030) bleibt separat offen
 - [ ] Werkstueck-Endkontur, Werkzeugweg und Hilfs-/Sicherheitsgeometrie trennen
 - [ ] keine impliziten Verbindungen oder Fantasie-Hilfslinien zeichnen
 - [ ] im Zweifel weniger statt geometrisch falsche Elemente anzeigen
 - [ ] komplexe Endgeometrien in Seiten- und Schnittansicht vergleichen
+
+Teilstand 2026-09-14 (Nutzerauftrag "dargestellten Werkzeugweg fuer
+Referenzprogramme gegen die tatsaechliche Ausgabe vergleichen"):
+systematischer Vergleich fuer alle zwoelf Referenzen - fuer jede
+ABSPANEN-/FACE-Operation mit einem EXPLIZITEN Schlichtpfad im G-Code
+(nicht reines Schruppen) wurde geprueft, ob jeder tatsaechlich vom
+G-Code angefahrene Punkt nahe (< 0.01mm) am Vorschau-Pfad liegt:
+
+- **Ergebnis: keine Abweichung gefunden.** Alle neun vergleichbaren
+  Faelle (Kontur_Radius_Fase, Innen_Stufe, Innen_Konus, Freistich_Mitte,
+  Innen_Radius je ABSPANEN; Planen, Planen_Radius, CSS_Wechsel [2x] je
+  FACE) stimmen exakt ueberein.
+- Methodik mehrfach nachgebessert, bevor das Ergebnis belastbar war -
+  zwei eigene Script-Fehler beim ersten Anlauf faelschlich als
+  Produktivcode-Bugs interpretiert und erst durch genaues Nachschauen im
+  rohen G-Code widerlegt: (1) Vergleichsrichtung falsch herum (der
+  Vorschau-Pfad tesselliert Boegen in viele Punkte, der G-Code nur den
+  Start-/Endpunkt eines G2/G3-Befehls - richtig ist "jeder G-Code-Punkt
+  liegt nahe am Vorschau-Pfad", nicht umgekehrt), (2) der Text-Marker zur
+  Erkennung des Schlichtpfads (`"(Schlicht"`) traf bei den Innen-*-
+  Referenzen zuerst auf den unrelatierten Kommentar `"(Schlichtaufmaß
+  X/Z: ...)"` weit vor dem eigentlichen `"(Schlichtschnitt Kontur)"`.
+  Beide Male haette ein voreiliger Schluss ("Vorschau zeigt falsche
+  Kontur") zu einer unnoetigen, falschen Produktivcode-Aenderung gefuehrt.
+- FACE-Operationen zeigten eine dritte, echte methodische Besonderheit
+  (kein Bug): der Schlichtpfad steckt dort nicht in einem eigenen
+  Textblock, sondern in der per `G70 Q100` wiederverwendeten Subroutine
+  `o100 sub ... o100 endsub` (dieselbe Geometrie wird fuer Schruppen
+  [`G72`] UND Schlichten [`G70`] genutzt) - dafuer eine zweite
+  Erkennungsroute ergaenzt.
+- **Bewusst nicht Teil dieses Durchgangs:** reines Schruppen (Abdrehen.ngc)
+  hat keinen separaten Schlichtpfad zum Vergleichen. DRILL/GROOVE
+  brauchen eine andere Vergleichsmethodik - deren Vorschau
+  (`build_drill_path()`) zeigt die BOHRERFORM/den Kegel am Lochgrund,
+  nicht den Werkzeugweg (der bei einem Bohrzyklus ohnehin nur eine
+  gerade Z-Achse ist): ein direkter Punktvergleich waere kategorisch
+  falsch angesetzt. THREAD ist bereits separat verifiziert (LES-033,
+  `test_thread_preview_geometry_matches_actual_g76_output`).
+- Neuer dauerhafter Regressionstest
+  (`tests/test_preview_matches_gcode_output.py`, neun parametrisierte
+  Faelle), Erkennungsfaehigkeit direkt nachgewiesen (synthetische
+  1mm-Abweichung in einem Vorschaupunkt injiziert, Test schlaegt
+  zuverlaessig an). 703 Stub-/59 Qt-Tests bestanden, zwoelf Referenzen
+  unveraendert (reine Verifikation, keine Codeaenderung an
+  Produktivlogik).
 
 ### LES-035 Embedded/Standalone-Paritaet
 
