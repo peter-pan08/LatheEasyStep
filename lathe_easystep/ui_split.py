@@ -96,6 +96,11 @@ def load_step_management_uis(handler) -> None:
     if root is None or not isinstance(root, QtWidgets.QWidget):
         return
     _load_ui_fragments_into(handler, root, STEP_MANAGEMENT_UI_FILES, "_step_management_ui_loaded")
+    # Bind the primary list immediately.  Empty QListWidgets evaluate to
+    # False in PyQt, so generic truthiness-based startup code used to discard
+    # this valid widget and trigger a complete second initialization pass.
+    if getattr(handler, "list_ops", None) is None:
+        handler.list_ops = root.findChild(QtWidgets.QListWidget, "listOperations")
 
 
 def load_preview_uis(handler) -> None:

@@ -523,10 +523,10 @@ def force_attach_core_widgets(self):
     def _grab(name: str, cls):
         for r in search_roots:
             obj = r.findChild(cls, name, QtCore.Qt.FindChildrenRecursively)
-            if obj:
+            if obj is not None:
                 return obj
             obj = r.findChild(QtWidgets.QWidget, name, QtCore.Qt.FindChildrenRecursively)
-            if obj:
+            if obj is not None:
                 return obj
         return None
 
@@ -540,7 +540,7 @@ def force_attach_core_widgets(self):
     self.btn_new_program = self.btn_new_program or _grab("btnNewProgram", QtWidgets.QPushButton)
     self.btn_generate = self.btn_generate or _grab("btnGenerate", QtWidgets.QPushButton)
     # Sichtbarkeit/Größe sicherstellen, falls das Widget eingebettet "verschwunden" ist
-    if self.list_ops:
+    if self.list_ops is not None:
         try:
             self.list_ops.setMinimumWidth(220)
             self.list_ops.show()
@@ -665,7 +665,7 @@ def find_any_widget(self, obj_name: str):
             except Exception:
                 pass
         obj = r.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
-        if obj:
+        if obj is not None:
             return obj
 
     # ENHANCED: If still not found, try direct attribute access as last resort
@@ -802,6 +802,23 @@ def widgets_by_name(self, name: str) -> List[QtWidgets.QWidget]:
     widgets = list((getattr(self, "_widget_name_cache", {}) or {}).get(name, []))
     if widgets:
         return widgets
+    # Dynamically created controls may be retained directly by the handler
+    # even when Qt has not attached them below the indexed panel root yet.
+    # This remains a constant-time lookup and preserves those controls without
+    # reopening the expensive tolerant tree scan.
+    direct = getattr(self, name, None)
+    if isinstance(direct, QtWidgets.QWidget):
+        try:
+            if direct.objectName() == name:
+                self._cache_named_widget(direct)
+                return [direct]
+        except Exception:
+            pass
+    # Once the complete, fully assembled panel has been indexed, an absent
+    # name is a real miss.  Falling back to the tolerant full-tree lookup for
+    # every absent translation/label name caused hundreds of redundant scans.
+    if getattr(self, "_widget_name_cache_authoritative", False):
+        return []
     widget = self._get_widget_by_name(name)
     return [widget] if widget is not None else []
 
@@ -1088,4 +1105,3 @@ def connect_button_signal(self, button: QtWidgets.QPushButton, name: str):
         self._log(f"[LatheEasyStep] UniqueConnection not supported for button '{name}', trying standard connect", level="debug")
     except Exception as e:
         self._log(f"[LatheEasyStep] failed to connect signal for button '{name}': {e}", level="error")
-

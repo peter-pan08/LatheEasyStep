@@ -2121,6 +2121,16 @@ class HandlerClass:
                 except Exception:
                     root = None
         if root is not None:
+            # All lazy UI fragments and dynamic advanced widgets exist by the
+            # time translations are applied.  Re-index exactly once here and
+            # make cache misses authoritative for this complete widget tree.
+            # Otherwise every absent text/label key triggers another tolerant
+            # recursive lookup across the embedded QtDragon window.
+            try:
+                self._rebuild_widget_name_cache()
+                self._widget_name_cache_authoritative = True
+            except Exception:
+                self._widget_name_cache_authoritative = False
             try:
                 self._startup_mark("_apply_language_texts: apply_ui_static_translations begin")
                 apply_ui_static_translations(root, TRANSLATIONS.tr, lang)

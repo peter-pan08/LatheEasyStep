@@ -195,6 +195,11 @@ def finalize_ui_ready(handler) -> None:
         handler._startup_mark("_finalize_ui_ready: ensure_advanced_widgets begin")
         ensure_advanced_widgets(handler)
         handler._startup_mark("_finalize_ui_ready: ensure_advanced_widgets end")
+        # The widget tree is complete now.  Signal setup and presentation use
+        # hundreds of name lookups; a fresh authoritative index prevents every
+        # absent optional name from scanning the full embedded QtDragon tree.
+        handler._rebuild_widget_name_cache()
+        handler._widget_name_cache_authoritative = True
         try:
             # ensure_advanced_widgets() legt Spindelmodus-/Schnittgeschwindigkeits-
             # Felder dynamisch an (Qt-Widgets sind nach dem Erzeugen standardmaessig
@@ -227,7 +232,8 @@ def finalize_ui_ready(handler) -> None:
         handler._startup_mark("_finalize_ui_ready: force_attach_core_widgets begin")
         handler._force_attach_core_widgets()
         handler._startup_mark("_finalize_ui_ready: force_attach_core_widgets end")
-        handler.list_ops = handler.list_ops or handler._find_any_widget("listOperations")
+        if handler.list_ops is None:
+            handler.list_ops = handler._find_any_widget("listOperations")
         handler.tab_params = handler.tab_params or handler._find_any_widget("tabParams")
         handler.btn_add = handler.btn_add or handler._find_any_widget("id:34721") or handler._find_any_widget("btnAdd")
         handler.btn_delete = handler.btn_delete or handler._find_any_widget("btnDelete")
@@ -326,7 +332,6 @@ def finalize_ui_ready(handler) -> None:
                 level="info",
             )
             handler._startup_mark("_finalize_ui_ready critical done")
-            handler._schedule_post_start_init()
         else:
             missing = [name for name, widget in [
                 ("list_ops", handler.list_ops), ("btn_add", handler.btn_add),

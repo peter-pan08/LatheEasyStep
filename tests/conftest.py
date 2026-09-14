@@ -12,6 +12,7 @@ REAL_QT_TESTS = {
     "test_ui_static_translation_split_tabs.py", "test_tool_preview_layout.py",
     "test_step_management_ui_loader.py", "test_preview_panel_ui_loader.py",
     "test_panel_root_detection_before_lazy_load.py",
+    "test_empty_qt_widget_lookup.py",
 }
 
 

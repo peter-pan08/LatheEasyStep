@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Projektbereinigung, LES-036-SIM-Abnahme und Resolver-Fix 2026-09-14
+
+- `TODO.md` von 2.849 Zeilen historischem Sitzungsprotokoll auf eine kurze,
+  ausschliesslich offene Aufgabenliste reduziert. Abgeschlossene Befunde
+  bleiben in diesem Changelog und den Berichten unter `doc/` erhalten.
+  Aktuelle Teststaende in README, DEV, ROADMAP und TODO synchronisiert.
+- `Planen_Radius.ngc` in der nativen QtDragon-SIM vollstaendig im AUTO-Modus
+  bis `M30` ausgefuehrt: 272,6 s, leerer NML-Fehlerkanal, T1 und definierte
+  Endposition. Zusaetzlicher Backplot mit rein temporaer nahem
+  Werkzeugwechselpunkt macht die Radiuskante lesbar. LES-036 abgeschlossen.
+- Beim kontrollierten Beenden der SIM einen bisher ungetesteten realen Fehler
+  gefunden: `WidgetResolver._log()` referenzierte ohne injizierten Logger den
+  nie definierten Namen `_LOGGER`. Modul-Logger ergaenzt und der konkrete
+  Fallbackpfad regressionstestet.
+- Der anschliessende echte Embedded-Start deckte einen zweiten Rueckfall auf:
+  Der ausgelagerte UI-Lifecycle rief noch den bereits entfernten, wirkungslosen
+  `_schedule_post_start_init()`-Callback auf. Verwaisten Aufruf entfernt und
+  einen AST-basierten Vertragstest fuer alle direkten privaten Handler-Aufrufe
+  des Lifecycle-Moduls ergaenzt. Der korrigierte Embedded-Start schloss ohne
+  Ausnahme nach 69,1 s ab. Ursache des teuren zweiten Durchlaufs ist das im
+  ersten Durchlauf nicht gebundene `listOperations`; als aktueller
+  LES-027-Befund dokumentiert.
+- Aktueller Stand: 713 Stub-/63 Real-Qt-Tests; zwoelf Referenzen bestehen
+  statische Pruefung und nativen `rs274`.
+
 ### LES-034 Nut-Vorschaugeometrie erstmals getestet (kein Fund) 2026-09-14
 
 - Nachuntersuchung der bewusst ausgeklammerten Operationstypen: `build_drill_path()`
