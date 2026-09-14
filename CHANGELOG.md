@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### LES-027 abgeschlossen: erster Reiterwechsel 4,682s -> 0,000s 2026-09-14
+
+- Letzter offener LES-027-Punkt real in der SIM gemessen: erster
+  Reiterwechsel (historisch 4,682s berichtet) ist jetzt 0,000s, ebenso
+  alle folgenden Reiterwechsel - Nebeneffekt der Scope-Root-Memoisierung.
+  Stepwechsel/Preview-Refresh nicht separat live gemessen (der
+  Step-Anlage-Dialog fuer neue Operationen liesse sich nur mit einer
+  echten Datei im Nutzerverzeichnis automatisiert durchklicken - bewusst
+  nicht gemacht), nutzen aber denselben, bereits gefixten Codepfad.
+  Timing-Log fuer `_handle_selection_change` (Stepwechsel) ergaenzt,
+  analog zum bestehenden fuer Tab-Wechsel/Preview-Refresh.
+- "Embedded und Standalone mit identischem Messpunkt vergleichen" und
+  "Zeit bis sichtbares und bedienbares Panel messen": bereits durch
+  LES-035 abgedeckt (Standalone ~1,7s, embedded ~8,8s bis "critical
+  done").
+- **Zusammenfassung der gesamten LES-027-Arbeit dieser Sitzung:** Start
+  69,1s (zwei Durchlaeufe, mit Absturzrisiko durch den verwaisten
+  `_schedule_post_start_init()`-Aufruf) -> ein Durchlauf ~18s -> Scope-
+  Root-Cache ~10,8s -> verallgemeinerte Cache-Bedingung ~8,8s. Rund 87%
+  Reduktion, jeder Schritt real in der SIM gemessen und funktional
+  gegengeprueft, jede Aenderung testabgesichert.
+- 713 Stub-/70 Qt-Tests bestanden, zwoelf Referenzen unveraendert. Alle
+  LES-027-Punkte abgeschlossen, aus der Prioritaetstabelle entfernt.
+
 ### LES-035 Embedded-/Standalone-Paritaet abgeschlossen 2026-09-14
 
 - Real verglichen: Standalone (`qtvcp -c easystep -u ./lathe_easystep_handler.py

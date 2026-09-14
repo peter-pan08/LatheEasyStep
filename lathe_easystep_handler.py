@@ -3194,7 +3194,9 @@ class HandlerClass:
         except Exception:
             prev_op = None
         self._log(f"[LatheEasyStep][debug] selection change: row={row} op_type={prev_op}", level="debug")
+        t0 = time.monotonic()
         handle_selection_change(self, row)
+        self._log(f"[LatheEasyStep][debug] selection change handled in {time.monotonic() - t0:.3f}s", level="debug")
 
 
     def _handle_global_change(self, *args, **kwargs):
