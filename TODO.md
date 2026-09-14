@@ -54,12 +54,33 @@ deckte zudem einen verwaisten Aufruf des bereits
 entfernten No-op-Callbacks `_schedule_post_start_init()` auf; dieser ist nun
 entfernt und die Handler/Lifecycle-Schnittstelle wird automatisch geprueft.
 
+**Nachmessung 2026-09-14 (nach dem Fix), real in der QtDragon-SIM (Embedded,
+UTILS-Tab angeklickt):** `_finalize_ui_ready` schliesst jetzt nach EINEM
+Durchlauf ab (`"DONE after pass 1 — all critical widgets found, skipping
+further passes"`, log-bestaetigt); die zwei spaeteren `QTimer`-Aufrufe
+(500 ms/2 s) kehren beide innerhalb von 6 ms sofort ueber die
+`_ui_finalized`-Guard-Klausel zurueck, ohne erneut zu arbeiten. `listOperations`
+ist im ersten Durchlauf bereits real gebunden (log: `list=<QListWidget ...>`,
+nicht mehr `None`). Kein Absturz durch den vormals verwaisten
+`_schedule_post_start_init()`-Aufruf. Gesamtzeit bis "critical done": **rund
+18 s** (vorher 69,1 s fuer zwei Durchlaeufe) - `ensure_core_widgets` selbst
+jetzt nur noch ~0,11 s (vorher 23,5 s allein dafuer). Neuer, jetzt groesster
+Einzelposten: `connect_remaining_signals` mit ~6,6 s (9,6 s -> 16,2 s),
+gefolgt von `ensure_advanced_widgets` mit ~2,5 s - beide bisher nicht
+einzeln geprueft.
+
 - [ ] Embedded und Standalone mit identischem Messpunkt vergleichen.
 - [ ] Zeit bis sichtbares und bedienbares Panel messen.
-- [ ] klaeren, warum `listOperations` nach `load_step_management_uis()` im
-  ersten Durchlauf nicht gebunden wird, und den zweiten Durchlauf vermeiden.
-- [ ] teure Widget-Suchen in `ensure_core_widgets` profilieren und reduzieren;
-  Zielwert unter 10 s.
+- [x] klaeren, warum `listOperations` nach `load_step_management_uis()` im
+  ersten Durchlauf nicht gebunden wird, und den zweiten Durchlauf vermeiden -
+  real in der SIM bestaetigt (siehe Nachmessung oben): nur noch ein
+  Durchlauf, `listOperations` korrekt gebunden.
+- [x] teure Widget-Suchen in `ensure_core_widgets` profilieren und reduzieren;
+  Zielwert unter 10 s - erreicht (~0,11 s). Neuer Flaschenhals ist jetzt
+  `connect_remaining_signals` (~6,6 s), noch nicht einzeln profiliert.
+- [ ] `connect_remaining_signals` (~6,6 s) und `ensure_advanced_widgets`
+  (~2,5 s) einzeln profilieren - neue groesste Zeitanteile nach dem
+  `listOperations`-Fix.
 - [ ] ersten Reiterwechsel, Stepwechsel und Preview-Refresh messen.
 - [ ] nur nach gemessenem Befund optimieren.
 

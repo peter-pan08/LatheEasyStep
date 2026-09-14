@@ -27,6 +27,22 @@
 - Aktueller Stand: 713 Stub-/63 Real-Qt-Tests; zwoelf Referenzen bestehen
   statische Pruefung und nativen `rs274`.
 
+### LES-027 Fix real in der SIM bestaetigt: nur noch ein Finalisierungsdurchlauf 2026-09-14
+
+- Nutzerhinweis, dass die SIM zur Verifikation zur Verfuegung steht -
+  vorherige Aussage, das koenne nicht selbst geprueft werden, war falsch.
+- SIM real gestartet (Embedded-Panel, UTILS-Tab angeklickt), Debug-Log
+  ausgewertet: `_finalize_ui_ready` schliesst jetzt nach EINEM Durchlauf ab
+  (log-bestaetigt: `"DONE after pass 1 — all critical widgets found,
+  skipping further passes"`), `listOperations` ist bereits im ersten
+  Durchlauf real gebunden, kein Absturz durch den vormals verwaisten
+  `_schedule_post_start_init()`-Aufruf.
+- Gesamtzeit bis "critical done": ~18 s (vorher 69,1 s fuer zwei
+  Durchlaeufe). `ensure_core_widgets` selbst jetzt nur noch ~0,11 s
+  (vorher 23,5 s). Neuer groesster Einzelposten: `connect_remaining_signals`
+  mit ~6,6 s - noch nicht einzeln profiliert, als neuer LES-027-Punkt
+  dokumentiert. Details: TODO.md (LES-027).
+
 ### LES-034 Nut-Vorschaugeometrie erstmals getestet (kein Fund) 2026-09-14
 
 - Nachuntersuchung der bewusst ausgeklammerten Operationstypen: `build_drill_path()`
