@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 732 Stub-Qt-Tests und 71 Tests mit echtem PyQt5, keine Skips.
+- 732 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -58,16 +58,22 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   dauerhaft mit `tests/test_preview_no_synthetic_links_between_operations.py`
   geprueft (per gezielt injizierter Verkettung als echte Regression
   verifiziert, danach zurueckgesetzt).
-- [ ] komplexe Endgeometrien in Seiten- und Schnittansicht vergleichen. Fuer
-  die radiale Keilnut (mode 0) geprueft und als eigene, testbare Funktion
-  `keyway_radial_slot_radii()` (`preview_geometry.py`) aus dem bisher
-  inline in `preview_widget.py` verborgenen Overlay-Code gezogen: die
-  Nuttiefe stimmt fuer beide `radial_side`-Werte exakt mit der in der
-  Seitenansicht (`build_keyway_path()`) berechneten Endkontur ueberein,
-  jetzt mit zwei Tests dauerhaft geprueft (per injizierter Abweichung als
-  echte Regression verifiziert). Noch offen: axiale Keilnut (mode != 0,
-  wird in der Schnittansicht bisher gar nicht gezeichnet - kein Fund, aber
-  auch kein Vergleich), sowie GROOVE/THREAD-Endgeometrien.
+- [x] komplexe Endgeometrien in Seiten- und Schnittansicht vergleichen. Zwei
+  strukturell verschiedene Faelle gefunden und beide abgesichert: (1) die
+  radiale Keilnut (mode 0) hatte zwei unabhaengig kodierte Formeln (Seite:
+  `build_keyway_path()`; Schnitt: bisher inline in `preview_widget.py`) -
+  als `keyway_radial_slot_radii()` nach `preview_geometry.py` extrahiert und
+  direkt gegen die Seitenansicht verglichen (stimmte exakt ueberein), jetzt
+  mit zwei Tests dauerhaft geprueft. (2) GROOVE/THREAD/ABSPANEN nutzen keine
+  eigene Formel: die Schnittansicht interpoliert den Durchmesser bei
+  `slice_z` direkt aus demselben `op.path`, das die Seitenansicht zeichnet
+  (`_interp_x_hits_at_z()`) - koennen also strukturell nicht auseinander-
+  laufen. Diese bisher ungetestete Interpolation (linearer Verlauf,
+  Nutflanke mit zwei Treffern, Bereich ausserhalb des Pfads) jetzt mit vier
+  Tests abgesichert. Alle sechs neuen Tests per injizierter Abweichung als
+  echte Regression verifiziert, danach zurueckgesetzt. Bewusst nicht
+  weiterverfolgt: axiale Keilnut (mode != 0) wird in der Schnittansicht gar
+  nicht gezeichnet - kein Fund, aber auch kein Vergleich noetig.
 - [ ] `preview_widget.py` entlang dieser Ebenen verkleinern.
 
 ## LES-024 Modulschnittstellen

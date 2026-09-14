@@ -15,6 +15,7 @@ REAL_QT_TESTS = {
     "test_empty_qt_widget_lookup.py", "test_panel_scope_root_memoization.py",
     "test_embedded_vs_standalone_root_resolution.py",
     "test_preview_no_synthetic_links_between_operations.py",
+    "test_preview_slice_interpolation.py",
 }
 
 
