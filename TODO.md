@@ -24,7 +24,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| LES-034 | P2 | Vorschau fachlich in Endkontur, Werkzeugweg und Hilfsgeometrie trennen | L | 0.9.0 |
 | LES-024 | P2 | direkte moduluebergreifende Widgetzugriffe durch Schnittstellen ersetzen | L | 0.9.0 |
 | LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
 | LES-028 | P2 | Werkzeugdatensatz und Preset-/Manuell-Normalisierung festlegen | M | 0.9.0 |
@@ -32,150 +31,29 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | LES-043 | P2 | Gegenspindel-UI entfernen oder Funktion als eigenes Projekt spezifizieren | S/XL | 0.9.0 |
 | LES-030 | extern | weitere physische Maschinenprofile verifizieren | extern | offen |
 
-## LES-034 Preview-Pipeline
-
-ABSPANEN/FACE-Pfade, THREAD-Geometrie sowie DRILL/GROOVE-Grundgeometrie sind
-bereits gegen Generator beziehungsweise Referenzdaten getestet.
-
-- [x] Werkstueckgeometrie, verifizierter Werkzeugweg und Hilfsgeometrie im
-  `PreviewScene`-Modell als getrennte Ebenen abbilden. Bohrer-Silhouette und
-  unbekannte Altdaten bleiben bewusst Hilfsgeometrie statt faelschlich als
-  verifizierter Werkzeugweg bezeichnet zu werden.
-- [x] die drei `PreviewScene`-Ebenen in der Seitenansicht mit eigener
-  Darstellungsart und passender Legende zeichnen; aktiver Pfad sowie vorhandene
-  Spezialrollen behalten Vorrang.
-- [x] Primitive grundsaetzlich als einzelne Striche zeichnen; unabhaengige
-  Linien, Boegen und Polylinien werden nicht mehr ueber synthetische
-  Diagonalen miteinander verbunden.
-- [x] Anfahrt, Rueckzug, Werkzeugwechsel und Parken nur darstellen, wenn sie
-  aus demselben Bewegungsplan wie der G-Code stammen: Bestandsaufnahme ergab
-  keinen Fund. Keine Preview-Quelle (`preview_geometry.py`, `preview_scene.py`,
-  `ui_preview.py`) baut Anfahrt-/Werkzeugwechsel-/Park-Segmente; die
-  "retract"-Rolle zeichnet nur die konfigurierten Rueckzugsebenen als
-  statische Referenzlinien, keine Bewegung. Strukturell abgesichert, weil
-  `paintEvent()` jeden Operationspfad ueber einen eigenen
-  `drawPolyline()`-Aufruf zeichnet statt mehrere Pfade zu verketten - jetzt
-  dauerhaft mit `tests/test_preview_no_synthetic_links_between_operations.py`
-  geprueft (per gezielt injizierter Verkettung als echte Regression
-  verifiziert, danach zurueckgesetzt).
-- [x] komplexe Endgeometrien in Seiten- und Schnittansicht vergleichen. Zwei
-  strukturell verschiedene Faelle gefunden und beide abgesichert: (1) die
-  radiale Keilnut (mode 0) hatte zwei unabhaengig kodierte Formeln (Seite:
-  `build_keyway_path()`; Schnitt: bisher inline in `preview_widget.py`) -
-  als `keyway_radial_slot_radii()` nach `preview_geometry.py` extrahiert und
-  direkt gegen die Seitenansicht verglichen (stimmte exakt ueberein), jetzt
-  mit zwei Tests dauerhaft geprueft. (2) GROOVE/THREAD/ABSPANEN nutzen keine
-  eigene Formel: die Schnittansicht interpoliert den Durchmesser bei
-  `slice_z` direkt aus demselben `op.path`, das die Seitenansicht zeichnet
-  (`_interp_x_hits_at_z()`) - koennen also strukturell nicht auseinander-
-  laufen. Diese bisher ungetestete Interpolation (linearer Verlauf,
-  Nutflanke mit zwei Treffern, Bereich ausserhalb des Pfads) jetzt mit vier
-  Tests abgesichert. Alle sechs neuen Tests per injizierter Abweichung als
-  echte Regression verifiziert, danach zurueckgesetzt. Bewusst nicht
-  weiterverfolgt: axiale Keilnut (mode != 0) wird in der Schnittansicht gar
-  nicht gezeichnet - kein Fund, aber auch kein Vergleich noetig.
-- [x] `preview_widget.py` entlang dieser Ebenen verkleinern. Erstes Paket:
-  die komplette Schnittansicht-Diagrammberechnung (`_interp_x_hits_at_z`,
-  `_interp_x_at_z`, `_path_hits_at_slice`, `_front_operation_side`,
-  `_front_slice_profile`, `_front_active_diameters`,
-  `_front_reference_diameter`) als reine, Qt-freie Funktionen nach
-  `preview_geometry.py` gezogen; die Widget-Methoden sind jetzt duenne
-  Delegierungen. Im zweiten Paket wurden `_sample_arc` und
-  `primitives_to_points` ebenfalls als Qt-freie Funktionen ausgelagert. Im
-  dritten Paket wurde die Berechnung der radialen Keilnut-Polygone aus
-  `_draw_front_keyway_overlay` als `build_keyway_front_polygons()` ausgelagert;
-  das vierte Paket verschiebt Seitenansicht-Grenzen, Skalierung und
-  Tickabstaende nach `compute_side_viewport()`/`nice_tick_step()`. Das fuenfte
-  Paket verlagert Modell-/Bildschirmtransformation, Achsen und Schnittlinie
-  in drei weitere Qt-freie Funktionen. Das sechste Paket berechnet auch
-  Tickwerte, Durchmesserbeschriftung und Bildschirmpositionen vorab in
-  `side_view_ticks()`. Das siebte Paket zieht Zeichenreihenfolge,
-  Sonderrollen- und Ebenenklassifikation in `build_preview_draw_plan()`.
-  Das achte Paket lagert das Begrenzungsrechteck der Futter-Sperrzonenfuellung
-  aus und verwendet bereits zerlegte Primitive wieder. Das neunte Paket
-  (Vorderansicht: Rohteilkreise, Endkonturfuellung, sichtbare Durchmesserringe)
-  loest Reihenfolge und semantischen Stil dieser Kreise Qt-frei in
-  `build_front_view_draw_plan()` (`preview_scene.py`) auf; die Skalierung
-  liegt in `front_view_scale()` (`preview_geometry.py`). `_paint_front_view()`
-  ruft nur noch `painter.drawEllipse()` mit den fertigen Werten auf; die
-  Reihenfolge Rohteil -> Endkonturfuellung -> Keilnut-Overlay -> Ringe bleibt
-  unveraendert (die Keilnut kommt weiterhin aus einer eigenen Operationsliste,
-  nicht aus diesem Plan). `preview_widget.py` liegt damit bei 689 statt
-  urspruenglich 1049 Zeilen.
-  Acht neue Tests laufen jetzt ohne echtes PyQt5 direkt gegen die reinen
-  Funktionen (vorher nur indirekt ueber das Widget erreichbar), per zwei
-  unabhaengig injizierten Bugs als echte Regression verifiziert. Drei weitere
-  Tests pruefen die Primitive-Konvertierung direkt; die Bogentests rufen nun
-  die Produktionsfunktion auf statt ihren Algorithmus zu kopieren. Sieben
-  weitere Tests (vier fuer `build_front_view_draw_plan()`, drei fuer
-  `front_view_scale()`) decken Kreisreihenfolge, ausgelassene Nullwerte und
-  Skalierung an beiden Seiten ab, ebenfalls per zwei unabhaengig injizierten
-  Bugs verifiziert. Zehntes und letztes Paket: Legende (Box-/Klick-Rect,
-  Zeilenpositionen) und Statusmeldungsbox (Kuerzung auf vier Eintraege je
-  80 Zeichen, Box-/Zeilenpositionen) als `legend_layout()`/
-  `status_message_layout()` (`preview_geometry.py`) ausgelagert - Farben/
-  Stifte bleiben bewusst im Widget (Qt-Stildaten, keine Fachlogik).
-  `preview_widget.py`: 689 -> 671 Zeilen (1049 -> 671 insgesamt, -36%).
-  Acht weitere Tests (davon ein echter Widget-Painttest fuer Legende-Klick
-  und Statusbox), per zwei unabhaengig injizierten Bugs verifiziert. Damit
-  ist die Verkleinerung von `preview_widget.py` entlang der PreviewScene-
-  Ebenen abgeschlossen - verbleibende `_paint_*`-Routinen sind reines
-  QPainter-Zeichnen ohne eigene Fachlogik mehr.
-
 ## LES-024 Modulschnittstellen
 
 - [x] fuer Step-Verwaltung und Vorschau schmale View-Schnittstellen definiert:
   `StepListView` kapselt die Step-Liste; `PreviewView` kapselt die Ausgabe an
   Seiten-, Schnitt- und Konturvorschau.
-- [ ] die zwoelf `list_ops`-Zugriffsstellen bestehen aus zwei Gruppen:
+- [x] die zwoelf `list_ops`-Zugriffsstellen bestehen aus zwei Gruppen:
   sechs Fachlogik-Dateien (ui_dirty/ui_flow/ui_persistence/ui_preview/
   ui_program/ui_selection) und sechs Bindungs-/Such-Dateien
   (ui_lifecycle/ui_split/ui_signals/ui_widget_lookup/ui_widgets/
   lathe_easystep_handler.py), die `handler.list_ops` ueberhaupt erst
   herstellen und bewusst nicht ueber `StepListView` laufen. Die sechs
-  Fachlogik-Dateien sind auf `StepListView` migriert. Die Widget-Ausgabe der
-  Vorschau ist auf `PreviewView` migriert und der Geometrieaufbau liefert
-  `PreviewScene`-Ebenen. Die Schnittansicht-Diagrammberechnung ist als reine
-  Funktionen nach `preview_geometry.py` gezogen (siehe LES-034). Auch
-  `_sample_arc`/`primitives_to_points` delegieren inzwischen an reine
-  Geometriefunktionen. Auch die radiale Keilnut-Polygonberechnung ist aus der
-  Zeichenroutine entfernt. Seitenansicht-Viewport und Tickabstaende werden
-  ebenfalls Qt-frei berechnet, ebenso Koordinatentransformation, Achsenlage
-  und Schnittlinie. Auch die Tickwerte und -positionen kommen fertig aus der
-  Geometrieschicht. Zeichenreihenfolge und semantische Stilwahl kommen aus
-  `preview_scene.py`; nur die konkrete Qt-Farbe und Strichart bleibt im
-  Widget. Auch das Modellrechteck der Futter-Sperrzonenfuellung entsteht in
-  `preview_scene.py`. Die Vorderansicht (Rohteilkreise, Endkonturfuellung,
-  Durchmesserringe) loest Reihenfolge und Stil ebenfalls Qt-frei ueber
-  `build_front_view_draw_plan()` auf. Legende und Statusmeldungsbox sind als
-  `legend_layout()`/`status_message_layout()` ausgelagert - damit ist die
-  Verkleinerung von `preview_widget.py` entlang der PreviewScene-Ebenen
-  abgeschlossen (Details: LES-034).
-- [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
-  keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
-  (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
-  den neuen Pfad). Das zweite Paket ist mit 725/70 sowie Embedded-Start bis
-  `critical done` nach 8,567 s ebenfalls verifiziert. Das Szenenmodell-Paket
-  besteht mit 730/70 und Embedded-Start nach 8,465 s. Die Schnittansicht-
-  Extraktion besteht mit 740/75 sowie Embedded-Start (9,2 s, fehlerfrei) und
-  Live-Toggle der Schnittansicht im UTILS-Panel ohne Absturz. Das zweite
-  Geometriepaket besteht mit 743/75 und Embedded-Start bis `critical done`
-  nach 8,409 s ebenfalls fehlerfrei. Die Keilnut-Polygonextraktion besteht
-  mit 745/75 und Embedded-Start bis `critical done` nach 8,075 s. Das
-  Viewport-/Tick-Paket besteht mit 749/75 und Embedded-Start bis
-  `critical done` nach 7,769 s. Das Transformations-/Achsenpaket besteht mit
-  752/75; das eingebettete Panel erreichte `critical done` nach 8,141 s. Bei
-  der Tickextraktion bestehen 753/75; das eingebettete Panel erreichte
-  `critical done` nach 8,364 s. Das Zeichenplan-Paket besteht mit 755/75 und
-  Embedded-Start bis `critical done` nach 8,294 s. Die Sperrzonenextraktion
-  besteht mit 757/75 und Embedded-Start bis `critical done` nach 8,505 s. Die
-  Vorderansicht-Extraktion besteht mit 764/75; das eingebettete Panel
-  erreichte `critical done` nach 8,493 s, die Schnittansicht liess sich im
-  UTILS-Panel fehlerfrei umschalten. Die Legende-/Statusbox-Extraktion
-  besteht mit 772/76; das eingebettete Panel erreichte `critical done` nach
-  9,679 s, der Legende-Header-Klick klappte die Legende im UTILS-Panel
-  sichtbar korrekt ein. Bei jedem weiteren Paket erneut so
-  pruefen.
+  Fachlogik-Dateien sind auf `StepListView` migriert, die Vorschau-Ausgabe
+  auf `PreviewView`/`PreviewScene`. `preview_widget.py` ist ueber zehn
+  Pakete von 1049 auf 671 Zeilen geschrumpft (Diagrammberechnung, Primitive-
+  Konvertierung, Keilnut-Polygone, Viewport/Ticks, Zeichenreihenfolge,
+  Vorderansicht-Darstellungsplan, Legende/Statusbox als Qt-freie Funktionen
+  in `preview_geometry.py`/`preview_scene.py`) - Details je Paket in
+  CHANGELOG.md.
+- [x] nach jedem der zehn Verkleinerungspakete Stub- und Real-Qt-Suite sowie
+  Embedded-Start in der QtDragon-SIM verifiziert (durchgehend fehlerfrei,
+  721/70 bis zuletzt 772/76 Tests); je nach Paket zusaetzlich Tab-Wechsel,
+  Schnittansicht-Toggle und Legende-Klick live im UTILS-Panel geprueft.
+  Einzelergebnisse je Paket in CHANGELOG.md.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
 
