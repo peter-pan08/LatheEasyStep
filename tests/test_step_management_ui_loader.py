@@ -54,6 +54,9 @@ def test_step_management_widgets_missing_before_load_present_after():
         widget = root.findChild(QtWidgets.QWidget, name)
         assert widget is not None, f"{name} sollte nach dem Laden vorhanden sein"
 
+    assert handler.list_ops is root.findChild(QtWidgets.QListWidget, "listOperations")
+    assert handler.list_ops.count() == 0
+
 
 def test_step_management_load_is_idempotent():
     """Zweiter Aufruf (z.B. durch mehrfach getriggertes _finalize_ui_ready)

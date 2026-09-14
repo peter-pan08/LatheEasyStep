@@ -18,7 +18,7 @@ def ensure_core_widgets(handler) -> None:
 
     def find(name: str, cls):
         current = getattr(handler, name, None)
-        if current:
+        if current is not None:
             return current
         obj_name = (
             "listOperations" if name == "list_ops" else
@@ -37,7 +37,9 @@ def ensure_core_widgets(handler) -> None:
             obj = root.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
         if obj is None:
             obj = root.findChild(QtWidgets.QWidget, obj_name, QtCore.Qt.FindChildrenRecursively)
-        if obj:
+        # Some Qt item views (notably an empty QListWidget) are falsy even
+        # though the QObject exists and is fully usable.
+        if obj is not None:
             setattr(handler, name, obj)
         return getattr(handler, name, None)
 
@@ -72,7 +74,7 @@ def ensure_core_widgets(handler) -> None:
 
     if handler.list_ops is None:
         explicit = root.findChild(QtWidgets.QListWidget, "list_ops", QtCore.Qt.FindChildrenRecursively)
-        if explicit:
+        if explicit is not None:
             handler.list_ops = explicit
     handler._ensure_list_ops_type()
     if handler.tab_params is None:

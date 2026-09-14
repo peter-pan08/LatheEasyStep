@@ -8,9 +8,14 @@ instanziiert, siehe `HandlerClass._setup_resolver()`.
 
 from __future__ import annotations
 
+import logging
+
 from qtpy import QtCore, QtWidgets
 
 from .ui_registry import PANEL_WIDGET_NAMES, _looks_like_panel_widget
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class WidgetResolveError(RuntimeError):
@@ -312,4 +317,3 @@ class WidgetResolver:
                     QtCore.QTimer.singleShot(interval_ms, _tick)
 
         _tick()
-

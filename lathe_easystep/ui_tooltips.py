@@ -185,11 +185,13 @@ def apply_registered_tooltips(self, lang: str):
     # `_set_tooltip_deep()` (findChildren()+Event-Filter PRO Widget) liegt.
     matched_names = 0
     matched_widgets = 0
+    missing_names: list[str] = []
     slow_entries: list[tuple[float, str, int]] = []
     for name, key in UI_TOOLTIP_KEYS.items():
         entry_started = time.monotonic()
         widgets = self._widgets_by_name(name)
         if not widgets:
+            missing_names.append(name)
             continue
         matched_names += 1
         matched_widgets += len(widgets)
@@ -210,11 +212,11 @@ def apply_registered_tooltips(self, lang: str):
             f"[LatheEasyStep][perf] apply_registered_tooltips: "
             f"{matched_names}/{len(UI_TOOLTIP_KEYS)} Namen aufgeloest, "
             f"{matched_widgets} Widgets insgesamt behandelt, "
+            f"fehlend: {missing_names}, "
             f"{len(slow_entries)} Eintraege > 20ms: "
             f"{[(f'{t:.3f}s', n, c) for t, n, c in slow_entries[:10]]}",
             level="info",
         )
     except Exception:
         pass
-
 
