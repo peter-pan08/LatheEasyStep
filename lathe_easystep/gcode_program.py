@@ -34,6 +34,7 @@ from .gcode_utils import (
     clean_path,
     emit_coolant,
     float_or_none,
+    gcode_comment,
     get_tool_number,
     is_internal_side,
     primitives_to_points,
@@ -294,13 +295,19 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             return result
 
     settings["sub_allocator"] = SubAllocator()
+    lang = settings.get("lang")
     program_name = sanitize_comment_text(settings.get("program_name", "Program"))
     unit = sanitize_comment_text(settings.get("unit", "mm"))
-    header_lines: List[str] = ["%", "(Programm automatisch erzeugt)", f"(Programmname: {program_name})", f"(Masseinheit: {unit})"]
+    header_lines: List[str] = [
+        "%",
+        f"({gcode_comment('gcode.comment.program_generated', lang)})",
+        f"({gcode_comment('gcode.comment.program_name', lang, program_name=program_name)})",
+        f"({gcode_comment('gcode.comment.unit', lang, unit=unit)})",
+    ]
     handler_header_lines = [str(x) for x in settings.get("header_lines", []) or []]
     footer_lines_from_settings = [str(x) for x in settings.get("footer_lines", []) or []]
     header_lines.extend(["G18 G7 G90 G91.1 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
-    header_lines.append("(=== SICHERHEITSPARAMETER ===)")
+    header_lines.append(f"({gcode_comment('gcode.comment.safety_params_begin', lang)})")
     xt = settings.get("xt")
     zt = settings.get("zt")
     toolchange_coords = str(settings.get("toolchange_coords", "") or "").strip().lower()
@@ -314,34 +321,43 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     if xt is not None and zt is not None:
         try:
             if toolchange_coords == "machine":
-                coord_note = " Maschinenkoordinaten G53"
+                coord_note = " " + gcode_comment("gcode.comment.coord_note_machine", lang)
             elif toolchange_coords == "mixed":
-                coord_note = " gemischt legacy"
+                coord_note = " " + gcode_comment("gcode.comment.coord_note_mixed", lang)
             else:
-                coord_note = " Werkstueckkoordinaten"
-            header_lines.append(f"(Werkzeugwechselpunkt: X{float(xt):.3f} Z{float(zt):.3f}{coord_note})")
+                coord_note = " " + gcode_comment("gcode.comment.coord_note_work", lang)
+            header_lines.append(
+                f"({gcode_comment('gcode.comment.toolchange_point', lang, xt=f'{float(xt):.3f}', zt=f'{float(zt):.3f}', coord_note=coord_note)})"
+            )
         except (TypeError, ValueError):
             pass
     xra = settings.get("xra")
     xri = settings.get("xri")
     zra = settings.get("zra")
     zri = settings.get("zri")
-    header_lines.append(f"(Rueckzugsebenen: XRA={float(xra):.3f} XRI={float(xri):.3f})" if xra is not None and xri is not None else "(Rueckzugsebenen: XRA=n.def. XRI=n.def.)")
-    header_lines.append(f"(               ZRA={float(zra):.3f} ZRI={float(zri):.3f})" if zra is not None and zri is not None else "(               ZRA=n.def. ZRI=n.def.)")
+    if xra is not None and xri is not None:
+        header_lines.append(f"({gcode_comment('gcode.comment.retract_planes_xr', lang, xra=f'{float(xra):.3f}', xri=f'{float(xri):.3f}')})")
+    else:
+        header_lines.append(f"({gcode_comment('gcode.comment.retract_planes_xr_undefined', lang)})")
+    zr_indent = " " * 15  # rein kosmetische Spaltenausrichtung unter XRA/XRI, sprachunabhaengig fix
+    if zra is not None and zri is not None:
+        header_lines.append(f"({zr_indent}{gcode_comment('gcode.comment.retract_planes_zr', lang, zra=f'{float(zra):.3f}', zri=f'{float(zri):.3f}')})")
+    else:
+        header_lines.append(f"({zr_indent}{gcode_comment('gcode.comment.retract_planes_zr_undefined', lang)})")
     xa = settings.get("xa")
     za = settings.get("za")
     zi = settings.get("zi")
     if xa is not None:
         try:
-            header_lines.append(f"(Rohteil Aussendurchmesser: {float(xa):.3f} mm)")
+            header_lines.append(f"({gcode_comment('gcode.comment.stock_outer_diameter', lang, xa=f'{float(xa):.3f}')})")
         except (TypeError, ValueError):
             pass
     if za is not None and zi is not None:
         try:
-            header_lines.append(f"(Rohteil Z-Bereich: {float(za):.3f} bis {float(zi):.3f} mm)")
+            header_lines.append(f"({gcode_comment('gcode.comment.stock_z_range', lang, za=f'{float(za):.3f}', zi=f'{float(zi):.3f}')})")
         except (TypeError, ValueError):
             pass
-    header_lines.extend(["(=== END SICHERHEITSPARAMETER ===)", ""])
+    header_lines.extend([f"({gcode_comment('gcode.comment.safety_params_end', lang)})", ""])
     for warning in get_machine_limit_warnings(settings):
         header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     for warning in validation_warnings:

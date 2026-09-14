@@ -5,7 +5,7 @@ from typing import Callable, Dict, List, Tuple
 from .contour_logic import thread_relief_spec
 from .model import Operation
 from .numeric import finite_float, whole_number, validate_finite_data
-from .gcode_utils import is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
+from .gcode_utils import gcode_comment, is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
 from .gcode_safety import _motion_state, activate_pending_css
 
 
@@ -26,6 +26,7 @@ def generate_thread_gcode(
     validate_finite_data(op.params, "THREAD")
     validate_finite_data(settings, "Programmkopf")
     require_tool(op.params, "THREAD")
+    lang = settings.get("lang")
     safe_z = float(op.params.get("safe_z", 2.0))
     major_diameter = float(op.params.get("major_diameter", 0.0))
     pitch = float(op.params.get("pitch", 1.5))
@@ -37,7 +38,9 @@ def generate_thread_gcode(
     start_z = float(op.params.get("thread_start_z", 0.0) or 0.0)
     hand_raw = op.params.get("hand", 0)
     hand_idx = 1 if is_left_hand(hand_raw) else 0
-    hand_label = THREAD_HAND_LABELS[hand_idx]
+    hand_label = gcode_comment(
+        "gcode.comment.thread.hand.left" if hand_idx == 1 else "gcode.comment.thread.hand.right", lang
+    )
     z_dir = -1.0 if hand_idx == 0 else 1.0
     end_z = start_z + (z_dir * abs(length))
 
@@ -104,7 +107,9 @@ def generate_thread_gcode(
     orientation_raw = op.params.get("orientation", 0)
     internal = is_internal_side(orientation_raw)
     orientation_idx = 1 if internal else 0
-    orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
+    orientation_label = gcode_comment(
+        "gcode.comment.thread.orientation.internal" if internal else "gcode.comment.thread.orientation.external", lang
+    )
     standard_data = op.params.get("standard")
     standard_label = ""
     if isinstance(standard_data, dict):
@@ -130,12 +135,14 @@ def generate_thread_gcode(
 
     comments: List[str] = []
     if standard_label and standard_label != "Benutzerdefiniert":
-        comments.append(f"(Normgewinde: {sanitize_comment_text(standard_label)})")
-    comments.append(f"(Gewindetyp: {orientation_label})")
-    comments.append(f"(Gewinderichtung: {hand_label})")
-    comments.append(f"(Gewindestart/-ende Z: {start_z:.3f} -> {end_z:.3f})")
+        comments.append(f"({gcode_comment('gcode.comment.thread.standard', lang, label=sanitize_comment_text(standard_label))})")
+    comments.append(f"({gcode_comment('gcode.comment.thread.type', lang, orientation=orientation_label)})")
+    comments.append(f"({gcode_comment('gcode.comment.thread.hand_label', lang, hand=hand_label)})")
+    comments.append(f"({gcode_comment('gcode.comment.thread.start_end', lang, start_z=f'{start_z:.3f}', end_z=f'{end_z:.3f}')})")
     if lead_in > 0.0 or lead_out > 0.0:
-        comments.append(f"(Gewinde-Taper: Vorlauf={lead_in:.3f} Auslauf={lead_out:.3f} mm; G76 E={e_val:.3f} L={l_val})")
+        comments.append(
+            f"({gcode_comment('gcode.comment.thread.taper', lang, lead_in=f'{lead_in:.3f}', lead_out=f'{lead_out:.3f}', e_val=f'{e_val:.3f}', l_val=l_val)})"
+        )
     relief_mode = str(op.params.get("relief_mode", "off") or "off").strip().lower()
     relief_norm = str(op.params.get("relief_norm", "DIN 76-A") or "DIN 76-A").strip()
     if relief_mode in ("suggest", "suggest_din_relief"):
@@ -146,12 +153,23 @@ def generate_thread_gcode(
             relief_size = str(relief_data["thread_size"])
             relief_width = float(relief_data["width"])
             relief_depth = float(relief_data["depth"])
-            comments.append(
-                f"(DIN-Freistich: {relief_norm} {relief_size} {orientation_label} B={relief_width:.3f} T={relief_depth:.3f}"
-                f"{' Kurzform' if relief_data.get('variant') == 'short' else ''})"
+            variant_suffix = (
+                " " + gcode_comment("gcode.comment.thread.din_relief_short", lang)
+                if relief_data.get("variant") == "short"
+                else ""
             )
             comments.append(
-                f"(Gewindeende Z={end_z:.3f}; Ueberdeckung f={float(relief_data['thread_overlap']):.3f})"
+                "("
+                + gcode_comment(
+                    "gcode.comment.thread.din_relief", lang,
+                    norm=relief_norm, size=relief_size, orientation=orientation_label,
+                    width=relief_width, depth=relief_depth, variant=variant_suffix,
+                )
+                + ")"
+            )
+            overlap_value = float(relief_data["thread_overlap"])
+            comments.append(
+                f"({gcode_comment('gcode.comment.thread.end_overlap', lang, end_z=f'{end_z:.3f}', overlap=f'{overlap_value:.3f}')})"
             )
 
     lines: List[str] = []
@@ -170,7 +188,7 @@ def generate_thread_gcode(
 
     if bool(op.params.get("optional_stop_before", False)):
         lines.append("M1")
-    lines.append("(Anfahren vor Gewinde)")
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_thread', lang)})")
     if internal:
         safe_x = resolve_internal_safe_x(settings)
         if safe_x is None:

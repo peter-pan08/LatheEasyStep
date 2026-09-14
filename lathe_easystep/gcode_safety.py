@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional, Tuple
 
-from .gcode_utils import float_or_none, get_tool_number, sanitize_comment_text
+from .gcode_utils import float_or_none, gcode_comment, get_tool_number, sanitize_comment_text
 from .model import OpType, Operation
 from .motion_state import MotionState, SpindleState
 from .numeric import finite_float, whole_number
@@ -417,7 +417,7 @@ def append_tool_and_spindle(
             if settings is None:
                 raise ValueError("Werkzeugwechsel erfordert Programmkopf mit XT/ZT.")
             toolchange_lines = move_to_toolchange_pos(settings)
-            lines.append(f"(Werkzeug T{tool_num:02d})")
+            lines.append(f"({gcode_comment('gcode.comment.tool_label', settings.get('lang'), tool=f'{tool_num:02d}')})")
             if settings is not None:
                 # M1 VOR der angenommenen sicheren Rueckzugsbewegung, nicht
                 # danach: bei unbekanntem Ausgangszustand (insbesondere vor
@@ -492,7 +492,9 @@ def append_tool_and_spindle(
                 raise ValueError("CSS/G96 Maximaldrehzahl muss mindestens 1 U/min sein.")
             start_rpm = min(rpm_limit, (vc / diameter) * (1000.0 / math.pi))
             rpm_value = min(rpm_limit, max(1, int(round(start_rpm))))
-            lines.append(f"G97 S{rpm_value} M3 (CSS-Anfahrdrehzahl bei X{diameter:.3f})")
+            lines.append(
+                f"G97 S{rpm_value} M3 ({gcode_comment('gcode.comment.css_start_rpm', (settings or {}).get('lang'), diameter=f'{diameter:.3f}')})"
+            )
             if settings is None:
                 raise ValueError("CSS/G96 erfordert Programmkopf-Einstellungen.")
             _spindle_state(settings).request(rpm_limit, vc, rpm_value)
@@ -500,10 +502,11 @@ def append_tool_and_spindle(
         rpm = float_or_none(spindle_value)
         rpm_value = int(round(rpm)) if rpm and rpm > 0 else 0
         if rpm_value > 0:
+            css_lang = (settings or {}).get("lang")
             if not (vc and vc > 0):
-                lines.append("(WARN: CSS angefordert, aber Schnittgeschwindigkeit fehlt - nutze G97)")
+                lines.append(f"(WARN: {gcode_comment('gcode.comment.css_missing_cutting_speed', css_lang)})")
             else:
-                lines.append("(WARN: CSS angefordert, aber spindle_max_rpm fehlt - nutze G97)")
+                lines.append(f"(WARN: {gcode_comment('gcode.comment.css_missing_max_rpm', css_lang)})")
             lines.append(f"G97 S{rpm_value} M3")
         elif require_spindle:
             raise ValueError(
@@ -590,7 +593,7 @@ def _coord_mode(settings: Dict[str, object] | None, primary_key: str, *, legacy_
 def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None) -> List[str]:
     xt = float_or_none(settings.get("xt"))
     zt = float_or_none(settings.get("zt"))
-    prefix = f"({label})" if label else "(Toolchange move)"
+    prefix = f"({label})" if label else f"({gcode_comment('gcode.comment.toolchange_move', settings.get('lang'))})"
     lines: List[str] = [prefix]
     if xt is None or zt is None:
         raise ValueError("Werkzeugwechselposition XT/ZT fehlt.")
@@ -636,8 +639,10 @@ def append_initial_tool_check(
     tool_num = get_tool_number({"tool": tool_value})
     if tool_num <= 0:
         return
-    toolchange_lines = move_to_toolchange_pos(settings, "Erster Werkzeugwechsel")
-    lines.append("(STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren)")
+    toolchange_lines = move_to_toolchange_pos(
+        settings, gcode_comment("gcode.comment.first_toolchange", settings.get("lang"))
+    )
+    lines.append(f"({gcode_comment('gcode.comment.start_condition', settings.get('lang'))})")
     lines.append(f"o<les_first_tool> if [#<_current_tool> NE {tool_num}]")
     if bool(settings.get("optional_stop_toolchange", False)):
         lines.append("M1")
@@ -722,14 +727,15 @@ def get_machine_limit_warnings(settings: Dict[str, object] | None) -> List[str]:
 def get_end_park_lines(settings: Dict[str, object] | None) -> List[str]:
     if settings is None:
         return []
+    lang = settings.get("lang")
     park_mode = str(settings.get("park_mode", "toolchange") or "toolchange").strip().lower()
     sequential = bool(settings.get("park_sequential", False))
     if park_mode in ("end_position", "park", "custom"):
         x_park = float_or_none(settings.get("park_x"))
         z_park = float_or_none(settings.get("park_z"))
-        label = "(Parkposition am Ende)"
+        label = f"({gcode_comment('gcode.comment.park_position_end', lang)})"
         if x_park is None or z_park is None:
-            return [label, "(WARN: Parkposition aktiv, aber park_x/park_z fehlen)"]
+            return [label, f"(WARN: {gcode_comment('gcode.comment.park_missing_coords', lang)})"]
         park_machine = _coord_mode(settings, "park_coords", default="work") == "machine"
         if sequential:
             return [label, f"{'G53 G0' if park_machine else 'G0'} X{x_park:.3f}", f"{'G53 G0' if park_machine else 'G0'} Z{z_park:.3f}"]
@@ -738,11 +744,12 @@ def get_end_park_lines(settings: Dict[str, object] | None) -> List[str]:
     zt_end = float_or_none(settings.get("zt"))
     if xt_end is None or zt_end is None:
         return []
+    toolchange_end_label = f"({gcode_comment('gcode.comment.toolchange_point_end', lang)})"
     mode = _coord_mode(settings, "toolchange_coords", legacy_x_key="xt_absolute", legacy_z_key="zt_absolute")
     if mode == "machine":
-        return ["(Werkzeugwechselpunkt am Ende)", f"G53 G0 X{xt_end:.3f} Z{zt_end:.3f}"]
+        return [toolchange_end_label, f"G53 G0 X{xt_end:.3f} Z{zt_end:.3f}"]
     if mode == "mixed":
-        lines = ["(Werkzeugwechselpunkt am Ende)"]
+        lines = [toolchange_end_label]
         if not bool(settings.get("xt_absolute", True)):
             lines.append(f"G53 G0 X{xt_end:.3f}")
         if not bool(settings.get("zt_absolute", True)):
@@ -755,7 +762,7 @@ def get_end_park_lines(settings: Dict[str, object] | None) -> List[str]:
         if work_parts:
             lines.append(f"G0 {' '.join(work_parts)}")
         return lines
-    return ["(Werkzeugwechselpunkt am Ende)", f"G0 X{xt_end:.3f} Z{zt_end:.3f}"]
+    return [toolchange_end_label, f"G0 X{xt_end:.3f} Z{zt_end:.3f}"]
 
 
 __all__ = [

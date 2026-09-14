@@ -1035,3 +1035,69 @@ tooltip.key_top_clearance=Safety clearance above the slot before plunging.
 tooltip.key_use_c_axis=Use the C axis for angular positioning of the slots.
 tooltip.key_use_c_axis_switch=Switch to C-axis mode via M-code between slots.
 tooltip.key_c_axis_switch_p=P parameter of the M-code used to switch to C-axis mode.
+
+# LES-044: G-Code-Werkstattkommentare (gcode_comment())
+gcode.comment.approach_before_cycle=Approach before cycle
+gcode.comment.approach_before_groove=Approach before groove
+gcode.comment.approach_before_thread=Approach before thread
+gcode.comment.drill_g17_note=G17 only for drill cycle - LinuxCNC quirk
+gcode.comment.program_generated=Program generated automatically
+gcode.comment.program_name=Program name: {program_name}
+gcode.comment.unit=Unit: {unit}
+gcode.comment.safety_params_begin==== SAFETY PARAMETERS ===
+gcode.comment.safety_params_end==== END SAFETY PARAMETERS ===
+gcode.comment.toolchange_point=Tool change point: X{xt} Z{zt}{coord_note}
+gcode.comment.coord_note_machine=machine coordinates G53
+gcode.comment.coord_note_mixed=mixed legacy
+gcode.comment.coord_note_work=workpiece coordinates
+gcode.comment.retract_planes_xr=Retract planes: XRA={xra} XRI={xri}
+gcode.comment.retract_planes_xr_undefined=Retract planes: XRA=undef. XRI=undef.
+gcode.comment.retract_planes_zr=ZRA={zra} ZRI={zri}
+gcode.comment.retract_planes_zr_undefined=ZRA=undef. ZRI=undef.
+gcode.comment.stock_outer_diameter=Stock outer diameter: {xa} mm
+gcode.comment.stock_z_range=Stock Z range: {za} to {zi} mm
+gcode.comment.tool_label=Tool T{tool}
+gcode.comment.css_missing_cutting_speed=CSS requested but cutting speed missing - using G97
+gcode.comment.css_missing_max_rpm=CSS requested but spindle_max_rpm missing - using G97
+gcode.comment.toolchange_move=Toolchange move
+gcode.comment.first_toolchange=First tool change
+gcode.comment.start_condition=START CONDITION: machine was jogged clear of the workpiece by the operator
+gcode.comment.park_position_end=Park position at the end
+gcode.comment.park_missing_coords=Park position active but park_x/park_z missing
+gcode.comment.toolchange_point_end=Tool change point at the end
+gcode.comment.thread.orientation.external=External
+gcode.comment.thread.orientation.internal=Internal
+gcode.comment.thread.hand.right=Right-hand thread
+gcode.comment.thread.hand.left=Left-hand thread
+gcode.comment.thread.standard=Standard thread: {label}
+gcode.comment.thread.type=Thread type: {orientation}
+gcode.comment.thread.hand_label=Thread hand: {hand}
+gcode.comment.thread.start_end=Thread start/end Z: {start_z} -> {end_z}
+gcode.comment.thread.taper=Thread taper: lead-in={lead_in} lead-out={lead_out} mm; G76 E={e_val} L={l_val}
+gcode.comment.thread.din_relief=DIN relief: {norm} {size} {orientation} W={width:.3f} D={depth:.3f}{variant}
+gcode.comment.thread.din_relief_short=short form
+gcode.comment.thread.end_overlap=Thread end Z={end_z}; overlap f={overlap}
+gcode.comment.relief_separate=Undercut separate
+gcode.comment.abspanen_rough_parallel_z=ABSPANEN rough - parallel Z
+gcode.comment.abspanen_rough_parallel_x=ABSPANEN rough - parallel X
+gcode.comment.abspanen=ABSPANEN
+gcode.comment.finish_allowance=Finish allowance X/Z: {x}/{z} mm
+gcode.comment.internal_relief_no_radius_comp=Tool radius compensation disabled for internal relief: LinuxCNC concave corner
+gcode.comment.strategy=Strategy: {strategy}
+gcode.comment.output_preference=Preferred output: {preference}
+gcode.comment.relief_mode=Undercut mode: {mode}
+gcode.comment.allowance=Allowance X/Z: {x}/{z}
+gcode.comment.abspanen_rough_parallel_x_movebased=ABSPANEN rough - parallel X - move-based
+gcode.comment.abspanen_rough_parallel_z_movebased=ABSPANEN rough - parallel Z - move-based
+gcode.comment.fallback_internal_unreliable=Fallback reason: internal machining - G71/G72 not reliable for this LinuxCNC version
+gcode.comment.fallback_contour_not_g72=Fallback reason: contour not suitable for G72 cycle
+gcode.comment.fallback_contour_not_g71=Fallback reason: contour not suitable for G71 cycle
+gcode.comment.fallback_relief_separate=Fallback reason: undercut separate
+gcode.comment.fallback_relief_not_monotonic=Fallback reason: relief in the full contour is not G71-monotonic
+gcode.comment.fallback_pauses_active=Fallback reason: chip-break/pauses active
+gcode.comment.fallback_z_allowance_larger=Fallback reason: Z allowance larger than X allowance - cycle only supports one allowance
+gcode.comment.fallback_explicit_code_preferred=Fallback reason: explicit code preferred
+gcode.comment.fallback_automatic_movebased=Fallback reason: automatic decision -> move-based
+gcode.comment.finish_contour_g70_reuse=Finish pass contour - G70 reuses the roughing cycle
+gcode.comment.finish_contour=Finish pass contour
+gcode.comment.css_start_rpm=CSS start RPM at X{diameter}
