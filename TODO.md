@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 721 Stub-Qt-Tests und 70 Tests mit echtem PyQt5, keine Skips.
+- 730 Stub-Qt-Tests und 70 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -37,9 +37,16 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ABSPANEN/FACE-Pfade, THREAD-Geometrie sowie DRILL/GROOVE-Grundgeometrie sind
 bereits gegen Generator beziehungsweise Referenzdaten getestet.
 
-- [ ] Werkstueck-Endkontur, Werkzeugweg und Sicherheits-/Hilfsgeometrie als
-  getrennte Datenebenen modellieren und getrennt zeichnen.
-- [ ] keine impliziten Verbindungen zwischen unabhaengigen Pfaden erzeugen.
+- [x] Werkstueckgeometrie, verifizierter Werkzeugweg und Hilfsgeometrie im
+  `PreviewScene`-Modell als getrennte Ebenen abbilden. Bohrer-Silhouette und
+  unbekannte Altdaten bleiben bewusst Hilfsgeometrie statt faelschlich als
+  verifizierter Werkzeugweg bezeichnet zu werden.
+- [x] die drei `PreviewScene`-Ebenen in der Seitenansicht mit eigener
+  Darstellungsart und passender Legende zeichnen; aktiver Pfad sowie vorhandene
+  Spezialrollen behalten Vorrang.
+- [x] Primitive grundsaetzlich als einzelne Striche zeichnen; unabhaengige
+  Linien, Boegen und Polylinien werden nicht mehr ueber synthetische
+  Diagonalen miteinander verbunden.
 - [ ] Anfahrt, Rueckzug, Werkzeugwechsel und Parken nur darstellen, wenn sie
   aus demselben Bewegungsplan wie der G-Code stammen.
 - [ ] komplexe Endgeometrien in Seiten- und Schnittansicht vergleichen.
@@ -47,23 +54,26 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
 
 ## LES-024 Modulschnittstellen
 
-- [x] fuer Step-Verwaltung schmale View-Schnittstelle definiert
-  (`ui_step_list_view.py`, `StepListView`), bevor die direkten
-  Widgetzugriffe ersetzt wurden. Vorschau (`ui_preview.py` als Modul,
-  nicht nur seine `list_ops`-Zeile) steht noch aus.
+- [x] fuer Step-Verwaltung und Vorschau schmale View-Schnittstellen definiert:
+  `StepListView` kapselt die Step-Liste; `PreviewView` kapselt die Ausgabe an
+  Seiten-, Schnitt- und Konturvorschau.
 - [ ] die zwoelf `list_ops`-Zugriffsstellen bestehen aus zwei Gruppen:
   sechs Fachlogik-Dateien (ui_dirty/ui_flow/ui_persistence/ui_preview/
   ui_program/ui_selection) und sechs Bindungs-/Such-Dateien
   (ui_lifecycle/ui_split/ui_signals/ui_widget_lookup/ui_widgets/
   lathe_easystep_handler.py), die `handler.list_ops` ueberhaupt erst
   herstellen und bewusst nicht ueber `StepListView` laufen. Die sechs
-  Fachlogik-Dateien sind auf `StepListView` migriert; als naechstes Paket
-  offen: Vorschau-Geometrieaufbau (`ui_preview.py`, ueber die migrierte
-  `list_ops`-Zeile hinaus) sowie die uebrigen LES-034-Ebenen.
+  Fachlogik-Dateien sind auf `StepListView` migriert. Die Widget-Ausgabe der
+  Vorschau ist auf `PreviewView` migriert und der Geometrieaufbau liefert
+  `PreviewScene`-Ebenen. Weiter offen ist die Verkleinerung des eigentlichen
+  Zeichenwidgets entlang dieser Ebenen.
 - [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
   keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
   (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
-  den neuen Pfad). Bei jedem weiteren Paket erneut so pruefen.
+  den neuen Pfad). Das zweite Paket ist mit 725/70 sowie Embedded-Start bis
+  `critical done` nach 8,567 s ebenfalls verifiziert. Das Szenenmodell-Paket
+  besteht mit 730/70 und Embedded-Start nach 8,465 s. Bei jedem weiteren Paket
+  erneut so pruefen.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
 
