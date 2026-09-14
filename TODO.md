@@ -2641,6 +2641,34 @@ G-Code angefahrene Punkt nahe (< 0.01mm) am Vorschau-Pfad liegt:
   unveraendert (reine Verifikation, keine Codeaenderung an
   Produktivlogik).
 
+Teilstand 2026-09-14 (Nachuntersuchung der bewusst ausgeklammerten
+Operationstypen DRILL/GROOVE/Seiten-vs-Schnittansicht):
+
+- `build_drill_path()` ist bereits umfassend getestet
+  (`tests/test_drill_modes.py`, sieben Faelle inkl. genau dem
+  Durchmesser/Tiefen-Paar aus Bohren.ngc) - kein weiterer Bedarf.
+- Seiten- vs. Schnittansicht (`_paint_slice_view()`/`_front_slice_profile()`
+  in `preview_widget.py`) nutzen beide dieselbe Interpolationsfunktion
+  (`_interp_x_at_z()`/`_interp_x_hits_at_z()`) - strukturell konsistent
+  by construction, kein Divergenzrisiko gefunden, kein Fund.
+- **`build_groove_preview_path()` hatte dagegen KEINE Testabdeckung**
+  (weder stub noch real), obwohl es die Vorschau fuer jede GROOVE-
+  Operation liefert. Ein echter G-Code-Vergleich bleibt bewusst
+  ausgeklammert (siehe LES-022-Entscheidung: der `o220`-Nutzyklus stuft
+  die Breite datenabhaengig in mehreren Passes - das nachzurechnen wuerde
+  die Zustelllogik des Makros duplizieren). Acht neue Unit-Tests
+  (`tests/test_groove_preview_geometry.py`) sichern stattdessen die
+  interne Korrektheit der Funktion selbst ab: Uebereinstimmung mit dem
+  handgepflegten `path=` aus `examples.py::Einstich.ngc` (unabhaengige
+  Bestaetigung), alle drei Bezugskanten (`ref` 0/1/2), radiale UND
+  axiale Nut (`mode` 0/1), sowie das sicherheitsrelevante Vorzeichen bei
+  Innen- vs. Aussenbearbeitung (Innen-Nut muss den Durchmesser am
+  Nutgrund VERGROESSERN, nicht verkleinern). Test-Wirksamkeit direkt
+  nachgewiesen: mit vertauschtem Vorzeichen im Code schlagen die
+  betroffenen Tests zuverlaessig fehl (Fix danach wiederhergestellt,
+  keine Codeaenderung - die bestehende Logik war bereits korrekt).
+- 711 Stub-/59 Qt-Tests bestanden, zwoelf Referenzen unveraendert.
+
 ### LES-035 Embedded/Standalone-Paritaet
 
 - [ ] Widget-Binding, Tooltips, Dialoge und Dateipfade vergleichen
