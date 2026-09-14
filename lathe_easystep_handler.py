@@ -126,6 +126,7 @@ from lathe_easystep.ui_persistence import (
     handle_save_changes,
     handle_save_program,
     handle_save_step,
+    update_save_step_button_state,
     write_gcode_file,
     write_program_file,
 )
@@ -2706,6 +2707,7 @@ class HandlerClass:
                 pass
 
         self._update_parting_contour_choices()
+        self._update_save_step_button_state()
 
     def _ensure_preview_widgets(self):
         ensure_preview_widgets(self, LathePreviewWidget, QtWidgets.QWidget)
@@ -2953,6 +2955,9 @@ class HandlerClass:
 
     def _handle_save_step(self):
         handle_save_step(self, step_file_filter=STEP_FILE_FILTER)
+
+    def _update_save_step_button_state(self):
+        update_save_step_button_state(self)
 
     def _operation_side_hint(self, op: Operation) -> str | None:
         self.OpType = OpType

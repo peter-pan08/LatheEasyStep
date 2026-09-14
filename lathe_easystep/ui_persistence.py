@@ -89,6 +89,22 @@ def write_gcode_file(handler, file_path: str) -> None:
     handler._current_gcode_path = gcode_path
 
 
+def update_save_step_button_state(handler) -> None:
+    """LES-024 Entscheidung (2026-09-14): 'Step speichern' per Buttonzustand
+    sperren statt die Ungueltigkeit erst beim Klick zu melden. Der Button
+    ist nur aktiv, wenn eine Operation in der Step-Liste ausgewaehlt ist -
+    exakt dieselbe Bedingung, die `handle_save_step()` unten weiterhin als
+    letzte Sicherung prueft (z. B. falls der Aufrufer den Button woanders
+    her direkt ausloest, ohne dass dieser Zustand aktuell ist)."""
+    button = getattr(handler, "btn_save_step", None)
+    if button is None:
+        return
+    try:
+        button.setEnabled(handler._selected_operation_index() >= 0)
+    except Exception:
+        pass
+
+
 def handle_save_step(handler, *, step_file_filter: str) -> None:
     if handler._saving_step:
         return

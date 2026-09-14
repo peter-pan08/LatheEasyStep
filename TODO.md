@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 795 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
+- 801 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -54,15 +54,23 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   721/70 bis zuletzt 772/76 Tests); je nach Paket zusaetzlich Tab-Wechsel,
   Schnittansicht-Toggle und Legende-Klick live im UTILS-Panel geprueft.
   Einzelergebnisse je Paket in CHANGELOG.md.
-- [ ] Entscheidung (2026-09-14): ungueltige Aktionen kuenftig per Buttonzustand
-  verhindern statt nur beim Klick zu melden. Umsetzung: pro Button, der heute
-  eine QMessageBox-Fehlermeldung ausloest (u. a. `ui_flow.py`/
-  `ui_persistence.py`, zehn+ Stellen), den zugrundeliegenden Gueltigkeits-
-  check als eigene, wiederverwendbare Funktion herausziehen und sowohl beim
-  Klick (bestehende Meldung bleibt als letzte Sicherung) als auch bei
-  Zustandsaenderungen (Signal-Handler) zum Enable/Disable des Buttons
-  aufrufen. Reihenfolge klaeren, welcher Button zuerst (kleinster, klarster
-  Fall zum Muster-Etablieren, dann die uebrigen paketweise).
+- [ ] Entscheidung (2026-09-14) in Umsetzung: ungueltige Aktionen kuenftig per
+  Buttonzustand verhindern statt nur beim Klick zu melden. Muster mit dem
+  klarsten Fall etabliert: `update_save_step_button_state()`
+  (`ui_persistence.py`) sperrt "Step speichern", solange keine Operation
+  ausgewaehlt ist (vorher: Klick jederzeit moeglich, dann eine Warnung).
+  Aufgerufen bei jeder Auswahlaenderung (`handle_selection_change()`,
+  inkl. des fruehen Rueckgabepfads fuer eine ungueltige Zeile - sonst
+  bliebe der Button nach dem Loeschen der letzten Operation faelschlich
+  aktiv) sowie zentral am Ende von `_refresh_operation_list()`
+  (`lathe_easystep_handler.py`) - das deckt Hinzufuegen/Loeschen/
+  Verschieben/Laden automatisch mit ab, ohne jede einzelne Aktion
+  separat verdrahten zu muessen. Die bestehende Klick-Meldung bleibt als
+  letzte Sicherung bestehen. Sechs neue Tests, per zwei unabhaengig
+  entfernten Aufrufen als echte Regression verifiziert; live in der SIM
+  bestaetigt (Button startet sichtbar gesperrt ohne Auswahl, kein Fehler
+  im Log). Noch offen: die uebrigen zehn+ QMessageBox-Klick-Validierungen
+  in `ui_flow.py`/`ui_persistence.py` nach demselben Muster umstellen.
 
 ## LES-044 Darstellung und Texte
 
