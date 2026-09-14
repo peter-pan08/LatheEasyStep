@@ -31,12 +31,14 @@ from .preview_geometry import (
     front_view_scale,
     interp_x_at_z,
     interp_x_hits_at_z,
+    legend_layout,
     path_hits_at_slice,
     preview_primitives_to_points,
     sample_preview_arc,
     side_view_axis_lines,
     side_view_slice_line,
     side_view_ticks,
+    status_message_layout,
     side_view_to_screen,
 )
 
@@ -608,12 +610,6 @@ class LathePreviewWidget(QtWidgets.QWidget):
             if legend_enabled:
                 # --- Legend: "Legende" header is always visible, click toggles details ---
                 try:
-                    margin = 6
-                    header_h = 18
-                    row_h = 16
-                    line_len = 26
-                    box_w = 175
-
                     legend_items = [
                         ("Werkzeugweg", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
                         ("Werkstück", QtGui.QPen(QtGui.QColor(70, 155, 255), 2, QtCore.Qt.SolidLine)),
@@ -627,59 +623,45 @@ class LathePreviewWidget(QtWidgets.QWidget):
                         ("Futter-Sperrzone", QtGui.QPen(QtGui.QColor(200, 60, 220), 1, QtCore.Qt.DashDotLine)),
                     ]
 
-                    x0 = margin
-                    y0 = margin - 2
-
-                    # Box height: always header, details only if not collapsed
-                    if collapsed:
-                        box_h = margin * 2 + header_h
-                    else:
-                        box_h = margin * 2 + header_h + row_h * len(legend_items)
+                    layout = legend_layout(len(legend_items), collapsed=collapsed)
 
                     bg = QtGui.QColor(0, 0, 0, 160)
                     painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
                     painter.setBrush(QtGui.QBrush(bg))
-                    painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
+                    painter.drawRoundedRect(QtCore.QRectF(*layout["box_rect"]), 6, 6)
 
                     # Click target = header area (always present)
-                    self._legend_click_rect = QtCore.QRectF(x0, y0, box_w, header_h + margin)
+                    self._legend_click_rect = QtCore.QRectF(*layout["click_rect"])
 
                     painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 1))
                     painter.setFont(QtGui.QFont("Sans", 8))
                     painter.drawText(
-                        QtCore.QRectF(x0 + margin, y0 + 2, box_w - 2 * margin, header_h),
+                        QtCore.QRectF(*layout["header_text_rect"]),
                         QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
                         "Legende"
                     )
 
-                    if not collapsed:
-                        for i, (label, pen) in enumerate(legend_items):
-                            y = y0 + margin + header_h + i * row_h + 10
-                            painter.setPen(pen)
-                            painter.drawLine(
-                                QtCore.QPointF(x0 + margin, y),
-                                QtCore.QPointF(x0 + margin + line_len, y)
-                            )
-                            painter.setPen(QtGui.QPen(QtGui.QColor(230, 230, 230), 1))
-                            painter.drawText(QtCore.QPointF(x0 + margin + line_len + 6, y + 4), label)
+                    for (label, pen), row in zip(legend_items, layout["rows"]):
+                        painter.setPen(pen)
+                        painter.drawLine(QtCore.QPointF(*row["line"][0]), QtCore.QPointF(*row["line"][1]))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(230, 230, 230), 1))
+                        painter.drawText(QtCore.QPointF(*row["label_pos"]), label)
 
                 except Exception:
                     self._legend_click_rect = None
 
-            if getattr(self, "status_messages", None):
+            status_layout = status_message_layout(
+                getattr(self, "status_messages", None), widget_width=self.width()
+            )
+            if status_layout is not None:
                 try:
-                    messages = list(self.status_messages)[:4]
-                    box_h = 12 + (len(messages) * 16)
-                    box_w = min(self.width() - 20, 540)
-                    x0 = self.width() - box_w - 8
-                    y0 = 8
                     painter.setPen(QtGui.QPen(QtGui.QColor(180, 80, 20), 1))
                     painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 240, 210, 220)))
-                    painter.drawRoundedRect(QtCore.QRectF(x0, y0, box_w, box_h), 6, 6)
+                    painter.drawRoundedRect(QtCore.QRectF(*status_layout["box_rect"]), 6, 6)
                     painter.setPen(QtGui.QPen(QtGui.QColor(90, 40, 0), 1))
-                    painter.drawText(QtCore.QPointF(x0 + 8, y0 + 14), "Warnungen")
-                    for idx, msg in enumerate(messages):
-                        painter.drawText(QtCore.QPointF(x0 + 8, y0 + 30 + idx * 15), f"- {msg[:80]}")
+                    painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), "Warnungen")
+                    for msg, pos in zip(status_layout["messages"], status_layout["line_positions"]):
+                        painter.drawText(QtCore.QPointF(*pos), f"- {msg}")
                 except Exception:
                     pass
 
