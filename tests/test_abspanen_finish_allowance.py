@@ -15,8 +15,12 @@ def test_abspanen_finish_allowance_comments():
     m.add_operation(op)
     m.program_settings = {"xt": 150.0, "zt": 300.0, "sc": 3.0, "xa": 40.0, "xra": 45.0, "zra": 5.0}
     gcode = "\n".join(m.generate_gcode())
-    # comment should mention the finish allowances we provided
-    assert "Schlichtaufmaß" in gcode or "finish allow" in gcode.lower()
+    # comment should mention the finish allowances we provided. LES-044:
+    # G-Code-Kommentare werden jetzt konsequent ASCII-sanitisiert
+    # (sanitize_gcode_text via gcode_comment()) - "Schlichtaufmaß" mit
+    # rohem sz-Ligatur-Zeichen kam vorher nur zufaellig unsanitisiert durch,
+    # da diese eine Stelle keinen sanitize_comment_text()-Aufruf hatte.
+    assert "Schlichtaufmass" in gcode or "finish allow" in gcode.lower()
 
     # LES-003 Fix 2026-09-10: der Zyklus-Startpunkt bleibt beim vollen
     # Rohteil (X40.000) - das Aufmass wird stattdessen ueber den echten

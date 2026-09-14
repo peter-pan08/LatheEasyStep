@@ -1101,3 +1101,4 @@ gcode.comment.fallback_automatic_movebased=Fallback reason: automatic decision -
 gcode.comment.finish_contour_g70_reuse=Finish pass contour - G70 reuses the roughing cycle
 gcode.comment.finish_contour=Finish pass contour
 gcode.comment.css_start_rpm=CSS start RPM at X{diameter}
+gcode.comment.strategy_manual=manual
