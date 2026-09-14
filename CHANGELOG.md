@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### LES-034 abgeschlossen: Schnittansicht-Interpolation fuer GROOVE/THREAD/ABSPANEN abgesichert 2026-09-14
+
+- Letzter offener LES-034-Punkt ("komplexe Endgeometrien in Seiten- und
+  Schnittansicht vergleichen"): GROOVE/THREAD/ABSPANEN haben - anders als
+  die radiale Keilnut - keine separat kodierte Schnittansicht-Formel. Die
+  Schnittansicht interpoliert den Durchmesser bei `slice_z` direkt aus
+  demselben `op.path`, das die Seitenansicht zeichnet
+  (`LathePreviewWidget._interp_x_hits_at_z()`); beide Ansichten koennen
+  fuer diese Operationstypen strukturell nicht auseinanderlaufen.
+- Diese gemeinsame Interpolation war bisher ohne eigenen Test. Vier neue
+  Tests (`tests/test_preview_slice_interpolation.py`, real PyQt5): linearer
+  Verlauf liefert den exakt interpolierten Wert, eine Nutflanke liefert
+  beide Durchmesser (nicht nur einen), der kleinste Treffer wird als
+  Durchmesser gewaehlt, ausserhalb des Pfad-Z-Bereichs kommt kein Treffer.
+  Per zwei unabhaengig injizierten Abweichungen (fehlender zweiter Treffer
+  an einer vertikalen Flanke; verfaelschter Interpolationswert) als echte
+  Regression verifiziert, danach zurueckgesetzt.
+- Damit ist LES-034 vollstaendig abgeschlossen: alle Checklistenpunkte der
+  Preview-Pipeline sind entweder umgesetzt oder als Bestandsaufnahme ohne
+  Fund dokumentiert. 732 Stub-/75 Real-Qt-Tests bestanden, keine Skips.
+  Details: TODO.md (LES-034).
+
 ### LES-034 Radiale Keilnut: Schnittansicht-Overlay gegen Seitenansicht abgesichert 2026-09-14
 
 - Bisher inline in `preview_widget.py._draw_front_keyway_overlay()`
