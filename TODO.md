@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 757 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
+- 764 Stub-Qt-Tests und 75 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -92,18 +92,28 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   `side_view_ticks()`. Das siebte Paket zieht Zeichenreihenfolge,
   Sonderrollen- und Ebenenklassifikation in `build_preview_draw_plan()`.
   Das achte Paket lagert das Begrenzungsrechteck der Futter-Sperrzonenfuellung
-  aus und verwendet bereits zerlegte Primitive wieder. `preview_widget.py`
-  liegt damit bei 679 statt urspruenglich 1049 Zeilen.
+  aus und verwendet bereits zerlegte Primitive wieder. Das neunte Paket
+  (Vorderansicht: Rohteilkreise, Endkonturfuellung, sichtbare Durchmesserringe)
+  loest Reihenfolge und semantischen Stil dieser Kreise Qt-frei in
+  `build_front_view_draw_plan()` (`preview_scene.py`) auf; die Skalierung
+  liegt in `front_view_scale()` (`preview_geometry.py`). `_paint_front_view()`
+  ruft nur noch `painter.drawEllipse()` mit den fertigen Werten auf; die
+  Reihenfolge Rohteil -> Endkonturfuellung -> Keilnut-Overlay -> Ringe bleibt
+  unveraendert (die Keilnut kommt weiterhin aus einer eigenen Operationsliste,
+  nicht aus diesem Plan). `preview_widget.py` liegt damit bei 689 statt
+  urspruenglich 1049 Zeilen.
   Acht neue Tests laufen jetzt ohne echtes PyQt5 direkt gegen die reinen
   Funktionen (vorher nur indirekt ueber das Widget erreichbar), per zwei
   unabhaengig injizierten Bugs als echte Regression verifiziert. Drei weitere
   Tests pruefen die Primitive-Konvertierung direkt; die Bogentests rufen nun
-  die Produktionsfunktion auf statt ihren Algorithmus zu kopieren. Noch
-  offen: die verbleibenden Berechnungen in den eigentlichen
-  `_paint_*`-Zeichenroutinen
-  (bleiben an QPainter gebunden, koennen aber schlanker werden, wenn sie
-  nur noch die bereits extrahierte Geometrie abrufen statt sie selbst
-  aufzubauen).
+  die Produktionsfunktion auf statt ihren Algorithmus zu kopieren. Sieben
+  weitere Tests (vier fuer `build_front_view_draw_plan()`, drei fuer
+  `front_view_scale()`) decken Kreisreihenfolge, ausgelassene Nullwerte und
+  Skalierung an beiden Seiten ab, ebenfalls per zwei unabhaengig injizierten
+  Bugs verifiziert. Noch offen: die verbleibenden Berechnungen in den
+  eigentlichen `_paint_*`-Zeichenroutinen (Legende, Statusmeldungen -
+  bleiben an QPainter gebunden, sind aber ueberwiegend reines Zeichnen ohne
+  nennenswerte Fachlogik mehr).
 
 ## LES-024 Modulschnittstellen
 
@@ -128,8 +138,10 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   Geometrieschicht. Zeichenreihenfolge und semantische Stilwahl kommen aus
   `preview_scene.py`; nur die konkrete Qt-Farbe und Strichart bleibt im
   Widget. Auch das Modellrechteck der Futter-Sperrzonenfuellung entsteht in
-  `preview_scene.py`. Weiter offen ist die Verkleinerung der restlichen
-  `_paint_*`-Zeichenroutinen.
+  `preview_scene.py`. Die Vorderansicht (Rohteilkreise, Endkonturfuellung,
+  Durchmesserringe) loest Reihenfolge und Stil ebenfalls Qt-frei ueber
+  `build_front_view_draw_plan()` auf. Weiter offen ist die Verkleinerung der
+  restlichen `_paint_*`-Zeichenroutinen (Legende, Statusmeldungen).
 - [x] nach dem ersten Paket Stub- und Real-Qt-Suite ausgefuehrt (721/70,
   keine Skips) sowie Tab-Wechsel embedded live in der SIM verifiziert
   (fehlerfrei, `handle_tab_changed`/`handle_selection_change` liefen ueber
@@ -147,8 +159,11 @@ bereits gegen Generator beziehungsweise Referenzdaten getestet.
   der Tickextraktion bestehen 753/75; das eingebettete Panel erreichte
   `critical done` nach 8,364 s. Das Zeichenplan-Paket besteht mit 755/75 und
   Embedded-Start bis `critical done` nach 8,294 s. Die Sperrzonenextraktion
-  besteht mit 757/75 und Embedded-Start bis `critical done` nach 8,505 s. Bei
-  jedem weiteren Paket erneut so pruefen.
+  besteht mit 757/75 und Embedded-Start bis `critical done` nach 8,505 s. Die
+  Vorderansicht-Extraktion besteht mit 764/75; das eingebettete Panel
+  erreichte `critical done` nach 8,493 s, die Schnittansicht liess sich im
+  UTILS-Panel fehlerfrei umschalten. Bei jedem weiteren Paket erneut so
+  pruefen.
 - [ ] entscheiden, ob ungueltige Aktionen bereits per Buttonzustand verhindert
   oder weiterhin erst beim Klick mit konkreter Fehlermeldung blockiert werden.
 

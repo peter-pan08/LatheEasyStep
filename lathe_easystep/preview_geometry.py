@@ -137,6 +137,12 @@ def nice_tick_step(span: float) -> float:
     return raw
 
 
+def front_view_scale(max_diameter: float, width: float, height: float) -> float:
+    """Pixels per mm for the front (cross-section) view, fitting the largest
+    diameter into the available rect with a small margin."""
+    return min(float(width), float(height)) / max(float(max_diameter) * 1.15, 1e-6)
+
+
 def side_view_to_screen(
     x_value: float,
     z_value: float,

@@ -3,6 +3,7 @@ from lathe_easystep.preview_geometry import (
     front_operation_side,
     front_reference_diameter,
     front_slice_profile,
+    front_view_scale,
 )
 
 # LES-024/LES-034: front_operation_side/front_slice_profile/front_reference_diameter
@@ -124,3 +125,18 @@ def test_front_reference_diameter_defaults_to_ten_without_any_candidate():
         to_points=_identity_to_points,
     )
     assert diameter == 10.0
+
+
+def test_front_view_scale_fits_the_largest_diameter_into_the_smaller_side():
+    # 100mm diameter with 15% margin should exactly fill the shorter side.
+    assert front_view_scale(100.0, width=400.0, height=200.0) == 200.0 / (100.0 * 1.15)
+
+
+def test_front_view_scale_uses_the_limiting_dimension():
+    wide = front_view_scale(50.0, width=1000.0, height=100.0)
+    tall = front_view_scale(50.0, width=100.0, height=1000.0)
+    assert wide == tall == 100.0 / (50.0 * 1.15)
+
+
+def test_front_view_scale_stays_finite_for_a_zero_diameter():
+    assert front_view_scale(0.0, width=100.0, height=100.0) > 0.0

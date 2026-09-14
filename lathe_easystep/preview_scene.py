@@ -48,6 +48,13 @@ class PreviewDrawItem:
     style_key: str
 
 
+@dataclass(frozen=True)
+class FrontViewCircle:
+    diameter: float
+    style_key: str
+    filled: bool = False
+
+
 _WORKPIECE_TYPES = {OpType.CONTOUR, OpType.GROOVE, OpType.KEYWAY}
 _TOOL_PATH_TYPES = {OpType.FACE, OpType.THREAD, OpType.ABSPANEN}
 _AUXILIARY_ROLES = {"stock", "retract", "worklimit", "chuck_nogo", "contour_rough"}
@@ -189,4 +196,41 @@ def build_preview_draw_plan(
         else:
             style_key = "tool_path"
         plan.append(PreviewDrawItem(index, role, layer, style_key))
+    return plan
+
+
+def build_front_view_draw_plan(
+    *,
+    stock_od: float,
+    stock_id: float,
+    outer_fill_diameter: float,
+    inner_fill_diameter: float,
+    outer_hits: list[float],
+    inner_hits: list[float],
+    active_diameters: list[float],
+) -> list[FrontViewCircle]:
+    """Resolve the front view's circles (Rohteilkreise, Endkonturfuellung,
+    sichtbare Durchmesserringe) and their semantic style without any Qt/
+    QPainter dependency. Order matches the original paint code: stock
+    outlines, then the filled end-contour donut, then diameter rings
+    (outer/inner/active) - the widget still draws the keyway overlay
+    between the fill and the rings, since it comes from a separate
+    operation list rather than this plan."""
+    plan: list[FrontViewCircle] = []
+    if stock_od > 1e-6:
+        plan.append(FrontViewCircle(stock_od, "stock_od"))
+    if stock_id > 1e-6 and stock_id < stock_od:
+        plan.append(FrontViewCircle(stock_id, "stock_id"))
+    if outer_fill_diameter > 1e-6:
+        plan.append(FrontViewCircle(outer_fill_diameter, "end_contour_fill", filled=True))
+        if inner_fill_diameter > 1e-6 and inner_fill_diameter < outer_fill_diameter - 1e-6:
+            plan.append(FrontViewCircle(inner_fill_diameter, "end_contour_hole", filled=True))
+    for diameter in outer_hits:
+        plan.append(FrontViewCircle(diameter, "outer_ring"))
+    for diameter in inner_hits:
+        plan.append(FrontViewCircle(diameter, "inner_ring"))
+    for diameter in active_diameters:
+        if any(abs(diameter - existing) <= 1e-6 for existing in outer_hits + inner_hits):
+            continue
+        plan.append(FrontViewCircle(diameter, "active_ring"))
     return plan

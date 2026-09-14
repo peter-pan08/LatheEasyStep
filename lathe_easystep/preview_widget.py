@@ -17,6 +17,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from .model import Operation, OpType
 from .preview_scene import (
+    build_front_view_draw_plan,
     build_preview_draw_plan,
     primitive_strokes,
     stroke_bounding_rectangle,
@@ -27,6 +28,7 @@ from .preview_geometry import (
     front_operation_side,
     front_reference_diameter,
     front_slice_profile,
+    front_view_scale,
     interp_x_at_z,
     interp_x_hits_at_z,
     path_hits_at_slice,
@@ -296,51 +298,59 @@ class LathePreviewWidget(QtWidgets.QWidget):
         max_diameter = max(self._front_reference_diameter(), 10.0)
         r = self.rect().adjusted(20, 20, -20, -36)
         center = QtCore.QPointF(float(r.center().x()), float(r.center().y()))
-        scale = min(r.width(), r.height()) / max(max_diameter * 1.15, 1e-6)
+        scale = front_view_scale(max_diameter, r.width(), r.height())
 
         painter.setPen(QtGui.QPen(QtGui.QColor(70, 70, 70), 1))
         painter.drawLine(QtCore.QPointF(r.left(), center.y()), QtCore.QPointF(r.right(), center.y()))
         painter.drawLine(QtCore.QPointF(center.x(), r.top()), QtCore.QPointF(center.x(), r.bottom()))
 
-        if stock_od > 1e-6:
-            painter.setPen(QtGui.QPen(QtGui.QColor(150, 150, 150), 1, QtCore.Qt.DashLine))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            rad = (stock_od * 0.5) * scale
-            painter.drawEllipse(center, rad, rad)
-        if stock_id > 1e-6 and stock_id < stock_od:
-            painter.setPen(QtGui.QPen(QtGui.QColor(110, 110, 110), 1, QtCore.Qt.DashLine))
-            rad = (stock_id * 0.5) * scale
-            painter.drawEllipse(center, rad, rad)
+        draw_plan = build_front_view_draw_plan(
+            stock_od=stock_od,
+            stock_id=stock_id,
+            outer_fill_diameter=outer_dia,
+            inner_fill_diameter=inner_dia,
+            outer_hits=outer_hits,
+            inner_hits=inner_hits,
+            active_diameters=active_diams,
+        )
+        ring_styles = {
+            "stock_od": (QtGui.QColor(150, 150, 150), 1, QtCore.Qt.DashLine),
+            "stock_id": (QtGui.QColor(110, 110, 110), 1, QtCore.Qt.DashLine),
+            "outer_ring": (QtGui.QColor(255, 80, 80), 2, QtCore.Qt.SolidLine),
+            "inner_ring": (QtGui.QColor(255, 170, 70), 2, QtCore.Qt.SolidLine),
+            "active_ring": (QtGui.QColor(255, 220, 120), 1, QtCore.Qt.SolidLine),
+        }
 
-        if outer_dia > 1e-6:
+        def draw_ring(circle) -> None:
+            color, width, style = ring_styles[circle.style_key]
+            painter.setPen(QtGui.QPen(color, width, style))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            radius = (circle.diameter * 0.5) * scale
+            painter.drawEllipse(center, radius, radius)
+
+        for circle in draw_plan:
+            if circle.style_key in ("stock_od", "stock_id"):
+                draw_ring(circle)
+
+        end_contour = [c for c in draw_plan if c.filled]
+        if end_contour:
             painter.save()
             painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 70)))
-            painter.drawEllipse(center, (outer_dia * 0.5) * scale, (outer_dia * 0.5) * scale)
-            if inner_dia > 1e-6 and inner_dia < outer_dia - 1e-6:
-                painter.setBrush(QtGui.QBrush(QtCore.Qt.black))
-                painter.drawEllipse(center, (inner_dia * 0.5) * scale, (inner_dia * 0.5) * scale)
+            for circle in end_contour:
+                painter.setBrush(
+                    QtGui.QBrush(QtCore.Qt.black)
+                    if circle.style_key == "end_contour_hole"
+                    else QtGui.QBrush(QtGui.QColor(255, 80, 80, 70))
+                )
+                radius = (circle.diameter * 0.5) * scale
+                painter.drawEllipse(center, radius, radius)
             painter.restore()
 
         self._draw_front_keyway_overlay(painter, center, scale)
 
-        for diameter in outer_hits:
-            painter.setPen(QtGui.QPen(QtGui.QColor(255, 80, 80), 2))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            rad = (diameter * 0.5) * scale
-            painter.drawEllipse(center, rad, rad)
-        for diameter in inner_hits:
-            painter.setPen(QtGui.QPen(QtGui.QColor(255, 170, 70), 2))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            rad = (diameter * 0.5) * scale
-            painter.drawEllipse(center, rad, rad)
-        for diameter in active_diams:
-            if any(abs(diameter - d) <= 1e-6 for d in outer_hits + inner_hits):
-                continue
-            painter.setPen(QtGui.QPen(QtGui.QColor(255, 220, 120), 1))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            rad = (diameter * 0.5) * scale
-            painter.drawEllipse(center, rad, rad)
+        for circle in draw_plan:
+            if circle.style_key in ("outer_ring", "inner_ring", "active_ring"):
+                draw_ring(circle)
 
         painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
         painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")
