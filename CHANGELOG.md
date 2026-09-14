@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### LES-044: G-Code-Werkstattkommentare sind jetzt sprachabhaengig 2026-09-14
+
+- Nutzerentscheidung umgesetzt: G-Code-Kommentare folgen jetzt der
+  UI-Sprache. Die Step-Beschreibung (`(STEP: ...)`) war bereits ueber
+  `_tr()` sprachabhaengig - der eigentliche Fund bei der Umsetzung war,
+  dass die sieben `gcode_*.py`-Generatormodule selbst rund 70 weitere,
+  hart-deutsche Kommentare direkt in den G-Code schreiben (Anfahrhinweise,
+  Programmkopf-Sicherheitsblock, Gewinde- und Schrupp-Parameter),
+  vollkommen unabhaengig von der UI-Uebersetzung.
+- Neue Funktion `gcode_comment()` (`gcode_utils.py`) mit eigenem, minimalem
+  `.lng`-Parser - bewusst NICHT an `translations.TranslationStore`
+  gekoppelt. Ein erster Versuch, direkt `TRANSLATIONS` zu importieren,
+  brach `regenerate_all_ngc.py` und jeden Generator-Aufruf ohne PyQt5, weil
+  `translations.py` ueber `ui_registry.py` an `qtpy` haengt - der Generator
+  ist bewusst von Qt getrennt (siehe TODO.md "Verifizierte Basis"). Per
+  echtem Subprozess-Regressionstest (ohne pytest-Qt-Stub) dauerhaft
+  abgesichert.
+- 64 neue Uebersetzungsschluessel in `de.lng`/`en.lng`/`es.lng`, alle sieben
+  betroffenen Dateien umgestellt (`gcode_drill.py`, `gcode_face.py`,
+  `gcode_groove.py`, `gcode_thread.py`, `gcode_program.py`,
+  `gcode_safety.py`, `gcode_roughing.py` - letztere mit den meisten
+  Kommentaren: Strategie-/Aufmass-/Fallback-Gruende beim Schruppen).
+  Bewusst NICHT angefasst: Validierungs-/Warnmeldungstexte aus
+  `checks.py`/`get_machine_limit_warnings()` (eigenes, deutlich groesseres
+  Thema - naeher an "Fehlertexte" als an "Werkstattkommentare", im TODO als
+  offen dokumentiert) sowie eine Handvoll bereits-englische Struktur-/
+  Diagnosemarker (Subroutine-Grenzen, "Pass N: X-band/Z-band"-Debugspur).
+- Echter kleiner Nebenfund: "Schlichtaufmaß" war die einzige Kommentar-
+  Stelle im ganzen Generator ohne `sanitize_comment_text()` - ein rohes
+  scharfes S kam dort unsanitisiert durch. `gcode_comment()` sanitisiert
+  jetzt konsequent wie jeder andere Kommentar; drei Referenzen zeigen
+  dadurch "Schlichtaufmass" statt "Schlichtaufmaß" (reine Transliteration,
+  keine Bedeutungsaenderung), ein bestehender Test entsprechend angepasst.
+- 14+8 neue Tests (reine `gcode_comment()`-Funktion inkl. Subprozess-Import-
+  Regressionstest, End-to-End durch `generate_program_gcode()` fuer DE/EN/
+  ES ueber alle sieben Dateien, Default-Sprache bleibt exakt der bisherige
+  Text). Mehrere gezielt injizierte Bugs (u. a. deaktivierte Pruefungen,
+  vertauschte Uebersetzungsaufrufe) als echte Regression verifiziert.
+- Alle zwoelf Referenzen neu generiert und mit `rs274` bestaetigt, 43
+  Matrixfaelle weiterhin fehlerfrei. 795 Stub-/76 Real-Qt-Tests bestanden,
+  keine Skips. Details: TODO.md (LES-044).
+
 ### LES-028: fehlende Werkzeugnummer in der Werkzeugtabelle blockiert jetzt die Programmerzeugung 2026-09-14
 
 - Nutzerentscheidung umgesetzt: jede in einer Operation verwendete

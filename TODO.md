@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 779 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
+- 795 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -68,14 +68,31 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - [ ] reine Vorschaugeometrie von Qt-Zeichenbefehlen weiter trennen; das Muster
   von `compute_tool_preview_layout()` verwenden.
-- [ ] Entscheidung (2026-09-14): G-Code-Kommentare (Werkstattkommentare im
-  erzeugten `.ngc`) werden sprachabhaengig wie die UI-Texte. Umsetzung:
-  `comments.py`/`update_auto_comment()` und die `_describe_operation()`-
-  Textbausteine auf `TRANSLATIONS`/Sprachdateien umstellen (analog zu
-  `runtime.*`-Schluesseln); Referenzprogramme betroffen, da Kommentare Teil
-  der `.ngc`-Ausgabe sind - nach der Umstellung alle Referenzen neu
-  generieren, Diff pruefen (nur Kommentartext, keine Bewegungsaenderung)
-  und mit `rs274` bestaetigen (Abschlussregeln Punkt 3/4).
+- [x] Entscheidung (2026-09-14) umgesetzt: G-Code-Kommentare (Werkstatt-
+  kommentare im erzeugten `.ngc`) sind jetzt sprachabhaengig wie die
+  UI-Texte. Die Step-Beschreibung selbst (`_describe_operation()`, landet
+  ueber `update_auto_comment()` im `(STEP: ...)`-Kommentar) war bereits
+  ueber `_tr()` sprachabhaengig - der eigentliche Fund war, dass die
+  gcode_*.py-Generatormodule selbst rund 70 weitere, hart-deutsche
+  Kommentare direkt in den G-Code schreiben (Anfahrhinweise, Sicherheits-
+  block, Gewinde-/Schrupp-Parameter), voellig unabhaengig von `_tr()`.
+  Neue, bewusst von `translations.py`/qtpy entkoppelte Funktion
+  `gcode_comment()` (`gcode_utils.py`) mit eigenem `.lng`-Parser - der
+  Generator darf keine Qt-Abhaengigkeit bekommen ("Der Generator ist von
+  Qt getrennt"), sonst waere `regenerate_all_ngc.py` ohne PyQt5 kaputt
+  gegangen (echter Fund waehrend der Umsetzung, per Regressionstest
+  abgesichert). 64 neue Uebersetzungsschluessel in de/en/es.lng, alle
+  sieben betroffenen gcode_*.py-Dateien umgestellt. Bewusst NICHT
+  angefasst: Validierungs-/Warnmeldungstexte aus `checks.py`/
+  `get_machine_limit_warnings()` (eigenes, groesseres Thema - naeher an
+  "Fehlertexte" als an "Werkstattkommentare") sowie eine Handvoll bereits-
+  englische Struktur-/Diagnosemarker (Subroutine-Grenzen, "Pass N:
+  X-band/Z-band"-Debugspur). Alle zwoelf Referenzen neu generiert und mit
+  `rs274` bestaetigt (drei Referenzen minimal geaendert: ein rohes "ß" in
+  einem bisher nicht sanitisierten Kommentar wurde beim Umbau konsistent
+  wie alle anderen Kommentare zu "ss" transliteriert - reiner
+  Zeichensatz-Fund, keine Bedeutungsaenderung), 43 Matrixfaelle weiterhin
+  fehlerfrei. 795 Stub-/76 Real-Qt-Tests bestanden.
 - [ ] breite `except Exception`-Fallbacks pro migriertem Modul pruefen: erwartete
   Qt-/Host-Ausnahmen gezielt behandeln, unerwartete Fehler mindestens loggen.
 
