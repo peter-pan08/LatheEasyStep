@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### LES-034 Anfahrt/Rueckzug/Werkzeugwechsel/Parken: Bestandsaufnahme, kein Fund 2026-09-14
+
+- Geprueft, ob die Vorschau Anfahrt-, Rueckzug-, Werkzeugwechsel- oder
+  Park-Bewegungen synthetisch erfindet, statt sie aus dem echten
+  Bewegungsplan (G-Code) zu uebernehmen: kein Fund. Keine Preview-Quelle
+  baut solche Segmente; die "retract"-Rolle in `preview_geometry.py`
+  zeichnet nur die konfigurierten Rueckzugsebenen (XRA/XRI/ZRA/ZRI) als
+  statische Referenzlinien, keine Werkzeugbewegung.
+- Diese Garantie ist strukturell bereits vorhanden: `paintEvent()`
+  (`preview_widget.py`) zeichnet jeden Operationspfad ueber einen eigenen
+  `drawPolyline()`-Aufruf statt mehrere unabhaengige Pfade zu einer
+  gemeinsamen Polylinie zu verketten - eine erfundene Verbindungslinie
+  zwischen zwei Operationen war also bereits vor diesem Durchgang
+  strukturell ausgeschlossen, nur bisher nicht dauerhaft geprueft.
+- Neuer Regressionstest (`tests/test_preview_no_synthetic_links_between_operations.py`,
+  real PyQt5): zwei weit auseinanderliegende Operationspfade duerfen nur als
+  zwei getrennte 2-Punkt-Polylinien gezeichnet werden, nie als eine
+  4-Punkt-Polylinie. Per gezielt injizierter Verkettung (`drawPolyline` ueber
+  beide Pfade hinweg) als echte Regression verifiziert, danach zurueckgesetzt.
+  730 Stub-/71 Real-Qt-Tests bestanden, keine Skips. Details: TODO.md
+  (LES-034).
+
 ### LES-034 Preview-Szenenmodell mit getrennten Fachebenen 2026-09-14
 
 - Neues Qt-freies `PreviewScene`-Modell mit expliziten Ebenen fuer
