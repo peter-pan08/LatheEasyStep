@@ -7,8 +7,10 @@ from .contour_features import normalize_relief_mode
 from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
+from .preview_scene import PreviewScene, scene_from_legacy_paths
 from .translations import TRANSLATIONS
 from .ui_step_list_view import StepListView
+from .ui_preview_view import PreviewView
 
 
 def setup_slice_view(handler) -> None:
@@ -325,54 +327,28 @@ def apply_preview_paths(
     program_context: Dict[str, object] | None = None,
     active_operation: Operation | None = None,
 ) -> None:
-    if handler.preview:
-        collision = _detect_preview_collision(paths)
-        try:
-            if hasattr(handler.preview, "set_collision"):
-                handler.preview.set_collision(collision)
-            if hasattr(handler.preview, "set_status_messages"):
-                handler.preview.set_status_messages((program_context or {}).get("__warnings", []) if (program_context or {}).get("preview_warnings") else [])
-            handler.preview.set_paths(paths, active_index)
-        except TypeError:
-            handler.preview.set_paths(paths)
-        try:
-            handler.preview.set_front_context(program_context, active_operation)
-        except Exception:
-            pass
-        try:
-            if getattr(handler.preview, "slice_enabled", False):
-                handler._ensure_slice_z_matches_operation(active_operation)
-        except Exception:
-            pass
+    PreviewView(handler).apply_paths(
+        paths,
+        active_index=active_index,
+        include_contour_preview=include_contour_preview,
+        program_context=program_context,
+        active_operation=active_operation,
+        collision=_detect_preview_collision(paths),
+    )
 
-    if handler.preview_slice and getattr(handler.preview_slice, "isVisible", lambda: False)():
-        try:
-            handler.preview_slice.set_view_mode("front")
-        except Exception:
-            pass
-        try:
-            if handler.preview:
-                handler.preview_slice.set_slice_z(getattr(handler.preview, "slice_z", 0.0))
-            else:
-                handler.preview_slice.set_slice_z(0.0)
-        except Exception:
-            pass
-        try:
-            if hasattr(handler.preview_slice, "set_status_messages"):
-                handler.preview_slice.set_status_messages((program_context or {}).get("__warnings", []) if (program_context or {}).get("preview_warnings") else [])
-            handler.preview_slice.set_paths(paths, active_index)
-        except TypeError:
-            handler.preview_slice.set_paths(paths)
-        try:
-            handler.preview_slice.set_front_context(program_context, active_operation)
-        except Exception:
-            pass
 
-    if include_contour_preview and handler.contour_preview:
-        try:
-            handler.contour_preview.set_paths(paths, active_index)
-        except TypeError:
-            handler.contour_preview.set_paths(paths)
+def collect_preview_scene(handler, **builders) -> tuple[PreviewScene, dict, Operation | None]:
+    """Build a semantically layered scene while retaining legacy builders."""
+    paths, active, program_context, active_operation = collect_preview_state(
+        handler, **builders
+    )
+    scene = scene_from_legacy_paths(
+        paths,
+        active,
+        getattr(handler.model, "operations", ()),
+        active_operation,
+    )
+    return scene, program_context, active_operation
 
 
 def on_toggle_slice_view(handler, checked: bool) -> None:
@@ -482,7 +458,7 @@ def refresh_preview(
         handler._ensure_preview_widgets()
     if handler.preview is None and handler.contour_preview is None:
         return
-    paths, active, prog, active_operation = collect_preview_state(
+    scene, prog, active_operation = collect_preview_scene(
         handler,
         build_contour_path=build_contour_path,
         build_face_path=build_face_path,
@@ -496,12 +472,12 @@ def refresh_preview(
         build_worklimit_primitives=build_worklimit_primitives,
         build_chuck_nogo_primitives=build_chuck_nogo_primitives,
     )
-    handler._set_preview_paths(
-        paths,
-        active,
+    PreviewView(handler).apply_scene(
+        scene,
         include_contour_preview=True,
         program_context=prog,
         active_operation=active_operation,
+        collision=_detect_preview_collision(scene.paths),
     )
 
 

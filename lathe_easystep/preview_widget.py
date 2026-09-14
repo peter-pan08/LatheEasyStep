@@ -19,6 +19,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from .contour_features import _tessellate_arc
 from .gcode_utils import is_internal_side
 from .model import Operation, OpType
+from .preview_scene import PreviewLayer, primitive_strokes
 from .preview_geometry import (
     build_keyway_slot_angles,
     front_view_polar_to_cartesian,
@@ -34,6 +35,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.paths: List[List[Tuple[float, float]]] = []
         self.primitives: List[List[dict]] = []
         self.active_index: int | None = None
+        self.preview_scene = None
         # Legend visibility & collision indication
         self.show_legend = True
         self._legend_collapsed = False
@@ -655,6 +657,19 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.paths = norm_paths
         self.update()
 
+    def set_preview_scene(self, scene) -> None:
+        """Retain semantic layers; path transfer remains separately compatible."""
+        self.preview_scene = scene
+
+    def _layer_for_path_index(self, index: int):
+        scene = self.preview_scene
+        try:
+            if scene is not None and 0 <= index < len(scene.entries):
+                return scene.entries[index].layer
+        except Exception:
+            pass
+        return None
+
     def set_primitives(self, primitives):
         """
         Kompatibilität: Einige Teile des Codes arbeiten mit 'primitives'
@@ -893,9 +908,23 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     width = 2
                     style = QtCore.Qt.DashDotLine
                 else:
-                    color = QtGui.QColor("lime") if idx != self.active_index else QtGui.QColor("red")
-                    width = 2 if idx != self.active_index else 3
-                    style = QtCore.Qt.SolidLine
+                    layer = self._layer_for_path_index(idx)
+                    if idx == self.active_index:
+                        color = QtGui.QColor("red")
+                        width = 3
+                        style = QtCore.Qt.SolidLine
+                    elif layer == PreviewLayer.WORKPIECE:
+                        color = QtGui.QColor(70, 155, 255)
+                        width = 2
+                        style = QtCore.Qt.SolidLine
+                    elif layer == PreviewLayer.AUXILIARY:
+                        color = QtGui.QColor(145, 145, 145)
+                        width = 1
+                        style = QtCore.Qt.DashDotLine
+                    else:
+                        color = QtGui.QColor("lime")
+                        width = 2
+                        style = QtCore.Qt.SolidLine
 
                 pen = QtGui.QPen(color, width)
                 pen.setStyle(style)
@@ -903,82 +932,33 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
                 # Primitive mode (dict primitives from build_*_outline helpers)
                 if isinstance(path[0], dict):
-                    # NOTE: do NOT connect independent primitives with a single polyline.
-                    # For retract planes this would create confusing diagonal "links" between separate helper lines.
-                    if role in ("retract", "stock", "worklimit", "chuck_nogo"):
-                        if role == "chuck_nogo":
-                            region_pts: List[Tuple[float, float]] = []
-                            for prim in path:
-                                if not isinstance(prim, dict) or prim.get("type") != "line":
-                                    continue
-                                p1 = prim.get("p1")
-                                p2 = prim.get("p2")
-                                if p1 and len(p1) >= 2:
-                                    try:
-                                        region_pts.append((float(p1[0]), float(p1[1])))
-                                    except Exception:
-                                        pass
-                                if p2 and len(p2) >= 2:
-                                    try:
-                                        region_pts.append((float(p2[0]), float(p2[1])))
-                                    except Exception:
-                                        pass
-                            if region_pts:
-                                rx_min = min(p[0] for p in region_pts)
-                                rx_max = max(p[0] for p in region_pts)
-                                rz_min = min(p[1] for p in region_pts)
-                                rz_max = max(p[1] for p in region_pts)
-                                fill_poly = QtGui.QPolygonF([
-                                    to_screen(rx_min, rz_min),
-                                    to_screen(rx_min, rz_max),
-                                    to_screen(rx_max, rz_max),
-                                    to_screen(rx_max, rz_min),
-                                ])
-                                painter.save()
-                                painter.setPen(QtCore.Qt.NoPen)
-                                painter.setBrush(QtGui.QBrush(QtGui.QColor(200, 60, 220, 55)))
-                                painter.drawPolygon(fill_poly)
-                                painter.restore()
-                        for prim in path:
-                            if not isinstance(prim, dict):
-                                continue
-                            ptype = prim.get("type")
-                            if ptype == "line":
-                                p1 = prim.get("p1")
-                                p2 = prim.get("p2")
-                                if not p1 or not p2:
-                                    continue
-                                s1 = to_screen(float(p1[0]), float(p1[1]))
-                                s2 = to_screen(float(p2[0]), float(p2[1]))
-                                painter.drawLine(QtCore.QLineF(s1, s2))
-                            elif ptype == "arc":
-                                p1 = prim.get("p1")
-                                p2 = prim.get("p2")
-                                c = prim.get("c")
-                                if not p1 or not p2 or not c:
-                                    continue
-                                ccw = bool(prim.get("ccw", True))
-                                try:
-                                    arc_pts = self._sample_arc((float(p1[0]), float(p1[1])), (float(p2[0]), float(p2[1])), (float(c[0]), float(c[1])), ccw)
-                                except Exception:
-                                    arc_pts = []
-                                if len(arc_pts) >= 2:
-                                    points = [to_screen(x, z) for x, z in arc_pts]
-                                    painter.drawPolyline(QtGui.QPolygonF(points))
-                        continue
-                    else:
-                        try:
-                            pts = self.primitives_to_points(path)
-                        except Exception:
-                            pts = []
-                        if len(pts) >= 2:
-                            points = [to_screen(x, z) for x, z in pts]
-                            painter.drawPolyline(QtGui.QPolygonF(points))
-                        elif len(pts) == 1:
-                            pt = to_screen(pts[0][0], pts[0][1])
+                    # Every primitive is a separate stroke. Joining the sampled
+                    # points of disconnected primitives would invent diagonal
+                    # machine moves that neither model nor G-code contains.
+                    if role == "chuck_nogo":
+                        region_pts = [point for stroke in primitive_strokes(path, self._sample_arc) for point in stroke]
+                        if region_pts:
+                            rx_min = min(p[0] for p in region_pts)
+                            rx_max = max(p[0] for p in region_pts)
+                            rz_min = min(p[1] for p in region_pts)
+                            rz_max = max(p[1] for p in region_pts)
+                            fill_poly = QtGui.QPolygonF([
+                                to_screen(rx_min, rz_min), to_screen(rx_min, rz_max),
+                                to_screen(rx_max, rz_max), to_screen(rx_max, rz_min),
+                            ])
+                            painter.save()
+                            painter.setPen(QtCore.Qt.NoPen)
+                            painter.setBrush(QtGui.QBrush(QtGui.QColor(200, 60, 220, 55)))
+                            painter.drawPolygon(fill_poly)
+                            painter.restore()
+                    for stroke in primitive_strokes(path, self._sample_arc):
+                        if len(stroke) >= 2:
+                            painter.drawPolyline(QtGui.QPolygonF([to_screen(x, z) for x, z in stroke]))
+                        elif len(stroke) == 1:
+                            pt = to_screen(stroke[0][0], stroke[0][1])
                             painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
                             painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
-                        continue
+                    continue
                 points = [to_screen(x, z) for x, z in path]
                 painter.drawPolyline(QtGui.QPolygonF(points))
 
@@ -992,10 +972,12 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     header_h = 18
                     row_h = 16
                     line_len = 26
-                    box_w = 155
+                    box_w = 175
 
                     legend_items = [
-                        ("Kontur", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Werkzeugweg", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
+                        ("Werkstück", QtGui.QPen(QtGui.QColor(70, 155, 255), 2, QtCore.Qt.SolidLine)),
+                        ("Hilfsgeometrie", QtGui.QPen(QtGui.QColor(145, 145, 145), 1, QtCore.Qt.DashDotLine)),
                         ("Aktiv", QtGui.QPen(QtGui.QColor(255, 0, 0), 2, QtCore.Qt.SolidLine)),
                         ("Rohteil", QtGui.QPen(QtGui.QColor(180, 180, 180), 1, QtCore.Qt.SolidLine)),
                         ("Rückzug", QtGui.QPen(QtGui.QColor(0, 255, 255), 1, QtCore.Qt.DashLine)),

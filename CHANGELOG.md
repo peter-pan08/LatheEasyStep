@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### LES-034 Preview-Szenenmodell mit getrennten Fachebenen 2026-09-14
+
+- Neues Qt-freies `PreviewScene`-Modell mit expliziten Ebenen fuer
+  Werkstueckgeometrie, verifizierte Werkzeugwege und Hilfsgeometrie.
+  `PreviewPath` behaelt dabei optional den Bezug zur erzeugenden Operation.
+- Bestehende flache Pfadreihenfolge und aktiver Index bleiben als
+  Kompatibilitaetsansicht exakt erhalten. Kontur/Nut/Keilnut und Features
+  werden als Werkstueck, Planen/Gewinde/Abspanen als Werkzeugweg sowie
+  Rohteil/Rueckzug/Grenzen/Futter/Schrupphilfe als Hilfsgeometrie klassifiziert.
+  Die nur nominale Bohrer-Silhouette bleibt bewusst Hilfsgeometrie.
+- `refresh_preview()` erzeugt und uebergibt jetzt eine `PreviewScene`;
+  `LathePreviewWidget` bewahrt die Ebeneninformation fuer die folgende
+  getrennte Darstellung auf. Die Seitenansicht zeichnet Werkstueck blau,
+  Werkzeugwege gruen beziehungsweise aktiv rot und allgemeine Hilfsgeometrie
+  grau strichpunktiert; Spezialrollen und Legende wurden entsprechend
+  beibehalten beziehungsweise erweitert.
+- `primitive_strokes()` zerlegt alle Line-/Arc-/Polyline-Primitive in
+  unabhaengige Zeichenstriche. Damit entstehen auch bei Feature- oder
+  sonstigen Rollen keine erfundenen diagonalen Verbindungen mehr; zuvor war
+  dies nur fuer einige fest verdrahtete Hilfsrollen verhindert.
+- Fuenf neue Szenen-/Integrationsregressionen. 730 Stub-/70 Real-Qt-Tests
+  bestanden. Embedded-Start in QtDragon fehlerfrei, ein Durchlauf und
+  `critical done` nach 8,465 s. Nach der getrennten Strichdarstellung erneut
+  real gestartet: fehlerfrei, ein Durchlauf, `critical done` nach 10,496 s
+  (normale Laufzeitschwankung derselben SIM).
+
+### LES-024 Zweites Migrationspaket: Vorschauausgabe gekapselt 2026-09-14
+
+- `PreviewView` als schmale, zustandslose Ausgabeschnittstelle fuer Haupt-,
+  Schnitt- und Konturvorschau eingefuehrt. `ui_preview.apply_preview_paths()`
+  kennt damit keine konkreten Zeichenwidgets und deren Legacy-Signaturen mehr.
+- Kollisionsstatus, Warntexte, aktive Bahn, Frontkontext, sichtbare
+  Schnittansicht und optionales Konturpreview behalten ihr bisheriges
+  Verhalten; Geometrieaufbau und Kollisionsberechnung wurden bewusst nicht
+  veraendert.
+- Vier neue Schnittstellentests; kompletter Stand 725 Stub-/70 Real-Qt-Tests,
+  keine Skips.
+- Embedded-Smoke-Test in der echten QtDragon-SIM bestanden: ein
+  Finalisierungsdurchlauf, `critical done` nach 8,567 s, Preview-Initialisierung
+  und kontrolliertes Beenden ohne neue Python-Ausnahme.
+
 ### LES-024 Erstes Migrationspaket: Step-Liste hinter schmaler View-Schnittstelle 2026-09-14
 
 - Schmale View-Klasse `StepListView` (`ui_step_list_view.py`) eingefuehrt:
