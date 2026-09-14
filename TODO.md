@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 772 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
+- 779 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -81,14 +81,21 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## LES-028 Eingaben normalisieren
 
-- [ ] Entscheidung (2026-09-14): jede verwendete Werkzeugnummer muss zwingend
-  einen Eintrag in der geladenen Werkzeugtabelle haben. Umsetzung: den
-  bisherigen Hinweis ("ISO/Radius fehlt bei: ...", optional) fuer fehlende
-  Eintraege durch eine harte Fehlermeldung ersetzen, die den Werkzeugwechsel/
-  die Programmerzeugung blockiert statt nur zu warnen - Fundstelle:
-  `_auto_load_tool_table()`/Tool-Validierung in `lathe_easystep_handler.py`
-  bzw. `tools.py`. Bestehende Referenzprogramme/Matrixfaelle muessen weiter
-  fehlerfrei durchlaufen (alle nutzen bereits vollstaendige Tooltables).
+- [x] Entscheidung (2026-09-14) umgesetzt: `validate_tool_table_completeness()`
+  (`checks.py`) blockiert die Programmerzeugung jetzt hart, wenn eine
+  verwendete Werkzeugnummer in der geladenen Werkzeugtabelle fehlt -
+  aufgerufen aus `generate_program_gcode()` direkt nach den bestehenden
+  Pflichtfeld-Checks. Bewusst nur aktiv, wenn ueberhaupt eine (nicht-leere)
+  Tabelle vorliegt: reine Generatortests/die Referenzregeneration ohne
+  echtes `tool.tbl` bleiben unveraendert ungeprueft, sonst waeren alle
+  35+ bestehenden Generator-Testdateien betroffen gewesen. Die urspruengliche
+  "ISO/Radius fehlt"-Meldung in `tools.py` (separates Thema: fehlende
+  Metadaten bei vorhandenem Eintrag) bleibt unveraendert eine Warnung.
+  Sieben neue Tests (`tests/test_tool_table_completeness_check.py`,
+  isoliert und End-to-End durch `generate_program_gcode()`), per
+  deaktiviertem Check als echte Regression verifiziert. Alle zwoelf
+  Referenzen neu generiert (keine Abweichung), `rs274` sowie 43
+  Matrixfaelle weiterhin fehlerfrei. 779 Stub-/76 Real-Qt-Tests bestanden.
 - [ ] Werkzeugwechsel nur aus einem normalisierten Werkzeugdatensatz erzeugen.
 - [ ] Preset- und manuelle Werte nachvollziehbar vergleichen und Konflikte
   sichtbar machen.

@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### LES-028: fehlende Werkzeugnummer in der Werkzeugtabelle blockiert jetzt die Programmerzeugung 2026-09-14
+
+- Nutzerentscheidung umgesetzt: jede in einer Operation verwendete
+  Werkzeugnummer muss einen Eintrag in der geladenen Werkzeugtabelle haben,
+  sobald ueberhaupt eine geladen wurde. Vorher wurde eine fehlende Nummer
+  weder als Fehler noch als Warnung gemeldet - der Werkzeugwechsel wurde
+  stillschweigend mit einer unbekannten Werkzeugnummer erzeugt.
+- Neue Funktion `validate_tool_table_completeness()` (`checks.py`), direkt
+  aus `generate_program_gcode()` nach den bestehenden Pflichtfeld-Checks
+  aufgerufen. Bewusst nur aktiv, wenn `settings["tools"]` nicht leer ist:
+  reine Generatortests und die Referenzregeneration rufen
+  `generate_program_gcode()` ueberwiegend ohne echtes `tool.tbl` auf - ohne
+  diese Absicherung waeren 35+ bestehende Testdateien betroffen gewesen.
+  Die bereits bestehende "ISO/Radius fehlt bei: ..."-Meldung in `tools.py`
+  ist ein separates Thema (fehlende Metadaten bei vorhandenem Eintrag) und
+  bleibt unveraendert eine Warnung.
+- Sieben neue Tests (`tests/test_tool_table_completeness_check.py`): die
+  Prueffunktion isoliert (fehlende/vorhandene Nummer, leere Tabelle,
+  PROGRAM_HEADER/Tool-0 werden ignoriert, mehrere fehlende Nummern in einer
+  Meldung) sowie zwei End-to-End-Tests durch den echten Generatorpfad. Per
+  deaktiviertem Check als echte Regression verifiziert, danach
+  zurueckgesetzt.
+- Alle zwoelf Referenzprogramme neu generiert: keine Abweichung (reine
+  Validierungsaenderung, keine Bewegungs-/Kommentaraenderung). Statische
+  NGC-Pruefung, nativer `rs274`-Lauf und alle 43 Matrixfaelle weiterhin
+  fehlerfrei. 779 Stub-/76 Real-Qt-Tests bestanden, keine Skips. Details:
+  TODO.md (LES-028).
+
 ### LES-024/LES-034 abgeschlossen: Legende und Statusmeldungsbox aus preview_widget.py extrahiert 2026-09-14
 
 - Letztes (zehntes) Verkleinerungspaket: die Legende (Box-/Klick-Rechteck,

@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 
 from .contour_features import normalize_relief_mode, resolve_din_relief
 from .gcode_utils import is_internal_side, is_left_hand
+from .model import OpType
 
 
 ValidationError = Tuple[int, str]  # (Elementindex, Beschreibung)
@@ -107,6 +108,39 @@ def _check_duplicate_operations(operations: List[object], warnings: List[str]) -
             )
         else:
             seen[key] = idx
+
+
+def validate_tool_table_completeness(operations: List[object], tools: Dict[int, object]) -> None:
+    """LES-028: jede verwendete Werkzeugnummer muss einen Eintrag in der
+    geladenen Werkzeugtabelle haben, sobald ueberhaupt eine geladen wurde.
+
+    Ohne geladene Tabelle (leeres/fehlendes `tools`-Dict - z. B. reine
+    Generatortests oder die Referenzregeneration ohne echtes `tool.tbl`)
+    bleibt das unveraendert ungeprueft, damit dieser Aufruf nicht jeden
+    bestehenden Test/jede Referenz ohne Tooltable-Kontext bricht. Sobald
+    eine reale Tabelle vorliegt (der ueblich Fall in der laufenden UI,
+    `_auto_load_tool_table()` laedt sie automatisch), ist eine fehlende
+    Werkzeugnummer ein harter Fehler statt nur einer Warnung.
+    """
+    if not tools:
+        return
+    missing: set[int] = set()
+    for op in operations:
+        if getattr(op, "op_type", None) == OpType.PROGRAM_HEADER:
+            continue
+        params = getattr(op, "params", {}) or {}
+        try:
+            tool_num = int(float(params.get("tool", 0) or 0))
+        except Exception:
+            tool_num = 0
+        if tool_num > 0 and tool_num not in tools:
+            missing.add(tool_num)
+    if missing:
+        formatted = ", ".join(f"T{num:02d}" for num in sorted(missing))
+        raise ValueError(
+            f"Werkzeug(e) {formatted} werden verwendet, haben aber keinen "
+            "Eintrag in der geladenen Werkzeugtabelle."
+        )
 
 
 def validate_program_setup(operations: List[object], settings: Dict[str, object]) -> List[str]:
