@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### LES-035 Embedded-/Standalone-Paritaet abgeschlossen 2026-09-14
+
+- Real verglichen: Standalone (`qtvcp -c easystep -u ./lathe_easystep_handler.py
+  ./lathe_easystep.ui`) gegen den eingebetteten SIM-Lauf (QtDragon,
+  UTILS-Tab). Beide schliessen `_finalize_ui_ready` nach EINEM Durchlauf
+  ab, loesen dieselben 167/169 Tooltip-Namen auf (dieselben zwei
+  fehlenden: `program_spindle_mode`, `program_preview_warnings` - bekannt,
+  kein neuer Fund), laden dieselbe Werkzeugtabelle vom selben Pfad.
+- Standalone ist deutlich schneller (~1,7s vs. ~8,8s) - der Unterschied
+  liegt an `_auto_load_tool_table()`/`QSettings()` (embedded teilt sich
+  QtDragons groessere Settings-Datei), kein Bug, bewusst nicht weiter
+  verfolgt (das waere LES-027s Zustaendigkeit, nicht diese
+  Paritaets-Frage).
+- "Keine globalen Host-Widgets binden": bereits durch den fruehreren
+  LES-024-Fund/-Fix (`_looks_like_panel_widget()`) abgesichert. Drei neue,
+  gezielte Tests ergaenzt (`tests/test_embedded_vs_standalone_root_resolution.py`):
+  Standalone-Root ist das Panel selbst; eingebettet unter einem generisch
+  benannten Host-Fenster mit einem NAMENSKOLLIDIERENDEN Geschwister-Widget
+  (eigenes `listOperations`, gehoert nicht zu uns) liefert
+  `_pick_best_root()` weiterhin exakt unser Panel, nie das Host-Fenster
+  oder den Geschwister-Zweig. Erkennungsfaehigkeit direkt nachgewiesen:
+  mit einer simulierten Regression (Root-Erkennung faellt auf das
+  Host-`QMainWindow` zurueck statt beim benannten Panel zu stoppen)
+  schlaegt der Test zuverlaessig fehl.
+- 713 Stub-/70 Qt-Tests bestanden, zwoelf Referenzen unveraendert (reine
+  UI-Verifikation, kein G-Code-Bezug). Alle fuenf LES-035-Punkte
+  abgeschlossen.
+
 ### LES-027 Memoisierungs-Bedingung verallgemeinert: ensure_advanced_widgets 2,7s -> 1,09s 2026-09-14
 
 - Die Scope-Root-Memoisierung aus dem vorherigen LES-027-Fix half
