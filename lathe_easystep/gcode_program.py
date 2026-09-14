@@ -6,7 +6,7 @@ from copy import deepcopy
 from .numeric import validate_finite_data
 from typing import Dict, List, Optional, Tuple
 
-from .checks import validate_program_setup
+from .checks import validate_program_setup, validate_tool_table_completeness
 from .comments import unnumbered_comment
 from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_drill import generate_drill_gcode
@@ -226,6 +226,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
                     require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
         except ValueError as exc:
             raise ValueError(f"Operation {i+1} ({op.op_type}): {exc}") from exc
+    validate_tool_table_completeness(operations, settings.get("tools", {}))
     validation_warnings = validate_program_setup(operations, settings)
 
     # A DIN-76 relief belongs to the thread endpoint, not to the final point
