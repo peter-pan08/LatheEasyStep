@@ -1035,3 +1035,69 @@ tooltip.key_top_clearance=Distancia de seguridad sobre la ranura antes de penetr
 tooltip.key_use_c_axis=Usar el eje C para el posicionamiento angular de las ranuras.
 tooltip.key_use_c_axis_switch=Cambiar a modo eje C mediante codigo M entre ranuras.
 tooltip.key_c_axis_switch_p=Parametro P del codigo M usado para cambiar a modo eje C.
+
+# LES-044: G-Code-Werkstattkommentare (gcode_comment())
+gcode.comment.approach_before_cycle=Aproximacion antes del ciclo
+gcode.comment.approach_before_groove=Aproximacion antes del ranurado
+gcode.comment.approach_before_thread=Aproximacion antes de la rosca
+gcode.comment.drill_g17_note=G17 solo para el ciclo de taladrado - particularidad de LinuxCNC
+gcode.comment.program_generated=Programa generado automaticamente
+gcode.comment.program_name=Nombre del programa: {program_name}
+gcode.comment.unit=Unidad: {unit}
+gcode.comment.safety_params_begin==== PARAMETROS DE SEGURIDAD ===
+gcode.comment.safety_params_end==== FIN PARAMETROS DE SEGURIDAD ===
+gcode.comment.toolchange_point=Punto de cambio de herramienta: X{xt} Z{zt}{coord_note}
+gcode.comment.coord_note_machine=coordenadas de maquina G53
+gcode.comment.coord_note_mixed=mixto heredado
+gcode.comment.coord_note_work=coordenadas de pieza
+gcode.comment.retract_planes_xr=Planos de retirada: XRA={xra} XRI={xri}
+gcode.comment.retract_planes_xr_undefined=Planos de retirada: XRA=indef. XRI=indef.
+gcode.comment.retract_planes_zr=ZRA={zra} ZRI={zri}
+gcode.comment.retract_planes_zr_undefined=ZRA=indef. ZRI=indef.
+gcode.comment.stock_outer_diameter=Diametro exterior de la pieza en bruto: {xa} mm
+gcode.comment.stock_z_range=Rango Z de la pieza en bruto: {za} a {zi} mm
+gcode.comment.tool_label=Herramienta T{tool}
+gcode.comment.css_missing_cutting_speed=CSS solicitado pero falta la velocidad de corte - usando G97
+gcode.comment.css_missing_max_rpm=CSS solicitado pero falta spindle_max_rpm - usando G97
+gcode.comment.toolchange_move=Movimiento de cambio de herramienta
+gcode.comment.first_toolchange=Primer cambio de herramienta
+gcode.comment.start_condition=CONDICION DE INICIO: la maquina fue retirada de la pieza por el operador
+gcode.comment.park_position_end=Posicion de estacionamiento al final
+gcode.comment.park_missing_coords=Posicion de estacionamiento activa pero faltan park_x/park_z
+gcode.comment.toolchange_point_end=Punto de cambio de herramienta al final
+gcode.comment.thread.orientation.external=Exterior
+gcode.comment.thread.orientation.internal=Interior
+gcode.comment.thread.hand.right=Rosca a derechas
+gcode.comment.thread.hand.left=Rosca a izquierdas
+gcode.comment.thread.standard=Rosca normalizada: {label}
+gcode.comment.thread.type=Tipo de rosca: {orientation}
+gcode.comment.thread.hand_label=Sentido de la rosca: {hand}
+gcode.comment.thread.start_end=Inicio/fin de rosca Z: {start_z} -> {end_z}
+gcode.comment.thread.taper=Conicidad de rosca: entrada={lead_in} salida={lead_out} mm; G76 E={e_val} L={l_val}
+gcode.comment.thread.din_relief=Entalla DIN: {norm} {size} {orientation} A={width:.3f} P={depth:.3f}{variant}
+gcode.comment.thread.din_relief_short=forma corta
+gcode.comment.thread.end_overlap=Fin de rosca Z={end_z}; solape f={overlap}
+gcode.comment.relief_separate=Socavado por separado
+gcode.comment.abspanen_rough_parallel_z=ABSPANEN desbaste - paralelo Z
+gcode.comment.abspanen_rough_parallel_x=ABSPANEN desbaste - paralelo X
+gcode.comment.abspanen=ABSPANEN
+gcode.comment.finish_allowance=Creces de acabado X/Z: {x}/{z} mm
+gcode.comment.internal_relief_no_radius_comp=Compensacion de radio de herramienta desactivada para la entalla interior: esquina concava de LinuxCNC
+gcode.comment.strategy=Estrategia: {strategy}
+gcode.comment.output_preference=Salida preferida: {preference}
+gcode.comment.relief_mode=Modo de socavado: {mode}
+gcode.comment.allowance=Creces X/Z: {x}/{z}
+gcode.comment.abspanen_rough_parallel_x_movebased=ABSPANEN desbaste - paralelo X - basado en movimientos
+gcode.comment.abspanen_rough_parallel_z_movebased=ABSPANEN desbaste - paralelo Z - basado en movimientos
+gcode.comment.fallback_internal_unreliable=Motivo de reserva: mecanizado interior - G71/G72 no fiable en esta version de LinuxCNC
+gcode.comment.fallback_contour_not_g72=Motivo de reserva: contorno no apto para el ciclo G72
+gcode.comment.fallback_contour_not_g71=Motivo de reserva: contorno no apto para el ciclo G71
+gcode.comment.fallback_relief_separate=Motivo de reserva: socavado por separado
+gcode.comment.fallback_relief_not_monotonic=Motivo de reserva: la entalla en el contorno completo no es monotona G71
+gcode.comment.fallback_pauses_active=Motivo de reserva: rotura de viruta/pausas activas
+gcode.comment.fallback_z_allowance_larger=Motivo de reserva: creces en Z mayor que en X - el ciclo solo admite una creces
+gcode.comment.fallback_explicit_code_preferred=Motivo de reserva: se prefiere codigo explicito
+gcode.comment.fallback_automatic_movebased=Motivo de reserva: decision automatica -> basado en movimientos
+gcode.comment.finish_contour_g70_reuse=Pasada de acabado del contorno - G70 reutiliza el ciclo de desbaste
+gcode.comment.finish_contour=Pasada de acabado del contorno
+gcode.comment.css_start_rpm=RPM de arranque CSS en X{diameter}

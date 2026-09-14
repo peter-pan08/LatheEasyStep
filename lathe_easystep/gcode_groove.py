@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Callable, Dict, List
 
 from .model import Operation
-from .gcode_utils import get_param_float, get_param_int, validate_internal_x_limit
+from .gcode_utils import gcode_comment, get_param_float, get_param_int, validate_internal_x_limit
 from .gcode_safety import _motion_state, activate_pending_css, get_safe_position
 from .numeric import finite_float, validate_finite_data
 
@@ -355,7 +355,7 @@ def generate_groove_gcode(
         css_start_diameter=abs(start_x),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
-    lines.append("(Anfahren vor Groove)")
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_groove', settings.get('lang'))})")
     safe_pos = get_safe_position(settings)
     if safe_pos:
         x_safe, z_safe = safe_pos

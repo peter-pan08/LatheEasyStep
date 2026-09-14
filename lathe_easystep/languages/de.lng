@@ -1035,3 +1035,69 @@ tooltip.key_top_clearance=Sicherheitsabstand oberhalb der Nut vor dem Eintauchen
 tooltip.key_use_c_axis=C-Achse fuer die Winkelpositionierung der Nuten verwenden.
 tooltip.key_use_c_axis_switch=Zwischen den Nuten per M-Code in den C-Achsen-Modus umschalten.
 tooltip.key_c_axis_switch_p=P-Parameter des M-Codes zum Umschalten in den C-Achsen-Modus.
+
+# LES-044: G-Code-Werkstattkommentare (gcode_comment())
+gcode.comment.approach_before_cycle=Anfahren vor Zyklus
+gcode.comment.approach_before_groove=Anfahren vor Groove
+gcode.comment.approach_before_thread=Anfahren vor Gewinde
+gcode.comment.drill_g17_note=G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit
+gcode.comment.program_generated=Programm automatisch erzeugt
+gcode.comment.program_name=Programmname: {program_name}
+gcode.comment.unit=Masseinheit: {unit}
+gcode.comment.safety_params_begin==== SICHERHEITSPARAMETER ===
+gcode.comment.safety_params_end==== END SICHERHEITSPARAMETER ===
+gcode.comment.toolchange_point=Werkzeugwechselpunkt: X{xt} Z{zt}{coord_note}
+gcode.comment.coord_note_machine=Maschinenkoordinaten G53
+gcode.comment.coord_note_mixed=gemischt legacy
+gcode.comment.coord_note_work=Werkstueckkoordinaten
+gcode.comment.retract_planes_xr=Rueckzugsebenen: XRA={xra} XRI={xri}
+gcode.comment.retract_planes_xr_undefined=Rueckzugsebenen: XRA=n.def. XRI=n.def.
+gcode.comment.retract_planes_zr=ZRA={zra} ZRI={zri}
+gcode.comment.retract_planes_zr_undefined=ZRA=n.def. ZRI=n.def.
+gcode.comment.stock_outer_diameter=Rohteil Aussendurchmesser: {xa} mm
+gcode.comment.stock_z_range=Rohteil Z-Bereich: {za} bis {zi} mm
+gcode.comment.tool_label=Werkzeug T{tool}
+gcode.comment.css_missing_cutting_speed=CSS angefordert, aber Schnittgeschwindigkeit fehlt - nutze G97
+gcode.comment.css_missing_max_rpm=CSS angefordert, aber spindle_max_rpm fehlt - nutze G97
+gcode.comment.toolchange_move=Toolchange move
+gcode.comment.first_toolchange=Erster Werkzeugwechsel
+gcode.comment.start_condition=STARTBEDINGUNG: Maschine wurde vom Bediener frei vom Werkstueck gefahren
+gcode.comment.park_position_end=Parkposition am Ende
+gcode.comment.park_missing_coords=Parkposition aktiv, aber park_x/park_z fehlen
+gcode.comment.toolchange_point_end=Werkzeugwechselpunkt am Ende
+gcode.comment.thread.orientation.external=Aussen
+gcode.comment.thread.orientation.internal=Innen
+gcode.comment.thread.hand.right=Rechtsgewinde
+gcode.comment.thread.hand.left=Linksgewinde
+gcode.comment.thread.standard=Normgewinde: {label}
+gcode.comment.thread.type=Gewindetyp: {orientation}
+gcode.comment.thread.hand_label=Gewinderichtung: {hand}
+gcode.comment.thread.start_end=Gewindestart/-ende Z: {start_z} -> {end_z}
+gcode.comment.thread.taper=Gewinde-Taper: Vorlauf={lead_in} Auslauf={lead_out} mm; G76 E={e_val} L={l_val}
+gcode.comment.thread.din_relief=DIN-Freistich: {norm} {size} {orientation} B={width:.3f} T={depth:.3f}{variant}
+gcode.comment.thread.din_relief_short=Kurzform
+gcode.comment.thread.end_overlap=Gewindeende Z={end_z}; Ueberdeckung f={overlap}
+gcode.comment.relief_separate=Hinterschnitt separat
+gcode.comment.abspanen_rough_parallel_z=ABSPANEN Rough - parallel Z
+gcode.comment.abspanen_rough_parallel_x=ABSPANEN Rough - parallel X
+gcode.comment.abspanen=ABSPANEN
+gcode.comment.finish_allowance=Schlichtaufmass X/Z: {x}/{z} mm
+gcode.comment.internal_relief_no_radius_comp=Werkzeugradiuskorrektur Innenfreistich deaktiviert: LinuxCNC-Konkavecke
+gcode.comment.strategy=Strategie: {strategy}
+gcode.comment.output_preference=Ausgabe bevorzugen: {preference}
+gcode.comment.relief_mode=Hinterschnitt-Modus: {mode}
+gcode.comment.allowance=Aufmass X/Z: {x}/{z}
+gcode.comment.abspanen_rough_parallel_x_movebased=ABSPANEN Rough - parallel X - Move-based
+gcode.comment.abspanen_rough_parallel_z_movebased=ABSPANEN Rough - parallel Z - Move-based
+gcode.comment.fallback_internal_unreliable=Fallback-Grund: Innenbearbeitung - G71/G72 fuer diese LinuxCNC-Version nicht zuverlaessig
+gcode.comment.fallback_contour_not_g72=Fallback-Grund: Kontur nicht G72-zyklustauglich
+gcode.comment.fallback_contour_not_g71=Fallback-Grund: Kontur nicht G71-zyklustauglich
+gcode.comment.fallback_relief_separate=Fallback-Grund: Hinterschnitt separat
+gcode.comment.fallback_relief_not_monotonic=Fallback-Grund: Freistich in voller Kontur ist nicht G71-monoton
+gcode.comment.fallback_pauses_active=Fallback-Grund: Spanbruch/Pausen aktiv
+gcode.comment.fallback_z_allowance_larger=Fallback-Grund: Z-Aufmass groesser als X-Aufmass - Zyklus kennt nur ein Aufmass
+gcode.comment.fallback_explicit_code_preferred=Fallback-Grund: expliziten Code bevorzugt
+gcode.comment.fallback_automatic_movebased=Fallback-Grund: automatische Entscheidung -> Move-based
+gcode.comment.finish_contour_g70_reuse=Schlichtschnitt Kontur - G70 Wiederverwendung des Schruppzyklus
+gcode.comment.finish_contour=Schlichtschnitt Kontur
+gcode.comment.css_start_rpm=CSS-Anfahrdrehzahl bei X{diameter}

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import functools
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 from .model import OpType
 from .numeric import finite_float, whole_number
 
 Point = Tuple[float, float]
+_GCODE_DEFAULT_LANGUAGE = "de"
+_GCODE_LANGUAGES_DIR = Path(__file__).resolve().parent / "languages"
 
 
 def require(params: Dict[str, object], keys: List[str], op_label: str) -> None:
@@ -308,6 +312,48 @@ def sanitize_comment_text(text: object) -> str:
     return sanitize_gcode_text(raw)
 
 
+@functools.lru_cache(maxsize=None)
+def _gcode_translation_catalog(lang: str) -> Dict[str, str]:
+    """Minimalistischer, Qt-freier `.lng`-Parser fuer Werkstattkommentare.
+
+    Bewusst UNABHAENGIG von `translations.TranslationStore`: die haengt ueber
+    `ui_registry.py` an `qtpy`, und der Generator darf keine Qt-Abhaengigkeit
+    bekommen ("Der Generator ist von Qt getrennt", siehe TODO.md - ein
+    `import gcode_utils` wuerde sonst `regenerate_all_ngc.py` und smtl.
+    Generator-Tests ohne PyQt5 zum Absturz bringen). Liest dieselben
+    `languages/*.lng`-Dateien wie die UI, mit einem eigenen trivialen Parser.
+    """
+    path = _GCODE_LANGUAGES_DIR / f"{lang}.lng"
+    catalog: Dict[str, str] = {}
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except OSError:
+        return catalog
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith(";") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key:
+            catalog[key] = value.strip()
+    return catalog
+
+
+def gcode_comment(key: str, lang: str | None, **kwargs: object) -> str:
+    """LES-044: sprachabhaengiger Werkstatt-Kommentartext fuer den erzeugten
+    G-Code, aus denselben `.lng`-Dateien wie die UI-Texte. Das Ergebnis wird
+    wie bestehende Kommentare auf LinuxCNC-sichere ASCII-Zeichen
+    normalisiert (`sanitize_gcode_text`). Fehlt `lang` (z. B. Generatortests/
+    Referenzregeneration ohne UI-Kontext), wird die bisherige feste Sprache
+    "de" verwendet, damit bestehende Aufrufer unveraendert bleiben."""
+    catalog = _gcode_translation_catalog(lang or _GCODE_DEFAULT_LANGUAGE)
+    text = catalog.get(key, key)
+    if kwargs:
+        text = text.format(**kwargs)
+    return sanitize_gcode_text(text)
+
+
 def emit_coolant(lines: List[str], mode: object) -> None:
     if isinstance(mode, str):
         m = mode.strip().lower()
@@ -359,6 +405,7 @@ __all__ = [
     "float_or_none",
     "get_param_float",
     "get_param_int",
+    "gcode_comment",
     "get_tool_number",
     "is_monotonic_x",
     "is_monotonic_x_decreasing",

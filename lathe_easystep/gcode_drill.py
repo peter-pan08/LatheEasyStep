@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable, Dict, List
 
 from .gcode_safety import _motion_state
+from .gcode_utils import gcode_comment
 from .model import Operation
 from .numeric import finite_float, whole_number, validate_finite_data
 
@@ -36,6 +37,7 @@ def generate_drill_gcode(
     validate_finite_data(p, "DRILL")
     validate_finite_data(path, "DRILL path")
     require_tool(p, "DRILL")
+    lang = settings.get("lang")
 
     mode_raw_value = p.get("mode", "G81")
     if isinstance(mode_raw_value, str) and mode_raw_value.strip().upper() in DRILL_MODE_MAP.values():
@@ -82,7 +84,7 @@ def generate_drill_gcode(
         lines.append(f"(WARN: retract ({retract:.3f}) < safe_z ({safe_z:.3f}); verwende safe_z)")
         retract = safe_z
 
-    lines.append("(Anfahren vor Zyklus)")
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_cycle', lang)})")
     # Nutzte zuvor eine eigene, dupliziert-und-abweichende Anfahrlogik (generische
     # sichere Position ueber Z/X, danach nochmal separat auf x_start/safe_z -
     # teils redundante Bewegungen). Verwendet jetzt denselben Sicherheits-Helfer
@@ -90,7 +92,7 @@ def generate_drill_gcode(
     # bereits als korrekt bestaetigte Rueckzugssequenz (emit_safe_retract_for_op)
     # strukturell zueinander passen.
     emit_approach(lines, x_start, safe_z, settings)
-    lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
+    lines.append(f"({gcode_comment('gcode.comment.drill_g17_note', lang)})")
     lines.append("G17")
     lines.append(f"F{feed:.3f}")
     if mode == "G81":

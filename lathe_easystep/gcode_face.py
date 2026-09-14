@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
-from .gcode_utils import resolve_enum_index
+from .gcode_utils import gcode_comment, resolve_enum_index
 from .model import Operation
 from .face_geometry import face_primitives
 from .gcode_roughing import contour_sub_from_primitives
@@ -119,7 +119,7 @@ def generate_face_gcode(
         sub_num = 100
     lines.extend(contour_sub_from_primitives(profile, sub_num))
 
-    lines.append("(Anfahren vor Zyklus)")
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_cycle', settings.get('lang'))})")
     emit_approach(lines, start_x, start_z, settings)
     activate_pending_css(lines, settings)
     if mode in (0, 2):
