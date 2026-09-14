@@ -831,6 +831,21 @@ def get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
     """
 
     def _panel_scope_root() -> QtWidgets.QWidget | None:
+        # Perf (LES-027, 2026-09-14): get_widget_by_name() is called ~100x
+        # per setup_param_maps() pass, and this walk previously ran fresh
+        # EVERY time - at each level up from tab_params it did TWO full
+        # recursive findChild() scans (tabParams/listOperations presence
+        # checks), typically 3-5 levels before satisfying both. Real SIM
+        # measurement: connect_param_change_signals() alone cost ~6.7s of
+        # the ~18s total startup. Once the widget tree is complete
+        # (_widget_name_cache_authoritative, set once in finalize_ui_ready
+        # after all lazy UI fragments and dynamic widgets exist), the scope
+        # root is structurally stable and safe to memoize.
+        if getattr(self, "_widget_name_cache_authoritative", False):
+            cached_scope = getattr(self, "_panel_scope_root_cache", None)
+            if cached_scope is not None:
+                return cached_scope
+
         tab = getattr(self, "tab_params", None)
         if tab is None:
             try:
@@ -839,6 +854,7 @@ def get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
                     tab = tab.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively)
             except Exception:
                 tab = None
+        result = None
         if tab is not None:
             probe = tab
             while probe is not None:
@@ -846,17 +862,22 @@ def get_widget_by_name(self, name: str) -> QtWidgets.QWidget | None:
                     has_tabs = probe.findChild(QtWidgets.QWidget, "tabParams", QtCore.Qt.FindChildrenRecursively) is not None
                     has_ops = probe.findChild(QtWidgets.QWidget, "listOperations", QtCore.Qt.FindChildrenRecursively) is not None
                     if has_tabs and has_ops:
-                        return probe
+                        result = probe
+                        break
                 except Exception:
                     pass
                 try:
                     probe = probe.parentWidget()
                 except Exception:
                     probe = None
-        try:
-            return getattr(self, "root_widget", None) or self._find_root_widget()
-        except Exception:
-            return None
+        if result is None:
+            try:
+                result = getattr(self, "root_widget", None) or self._find_root_widget()
+            except Exception:
+                result = None
+        if result is not None and getattr(self, "_widget_name_cache_authoritative", False):
+            self._panel_scope_root_cache = result
+        return result
 
     scope_root = _panel_scope_root()
 
