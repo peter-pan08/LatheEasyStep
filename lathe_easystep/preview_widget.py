@@ -23,6 +23,7 @@ from .preview_scene import PreviewLayer, primitive_strokes
 from .preview_geometry import (
     build_keyway_slot_angles,
     front_view_polar_to_cartesian,
+    keyway_radial_slot_radii,
     keyway_slice_bounds,
 )
 
@@ -401,9 +402,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             try:
                 start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
-                nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
                 slot_width = abs(float(params.get("slot_width", params.get("cutting_width", 0.0)) or 0.0))
-                radial_side = int(float(params.get("radial_side", 0) or 0))
             except Exception:
                 continue
 
@@ -414,13 +413,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             if self.slice_z < z_min - 1e-6 or self.slice_z > z_max + 1e-6 or start_dia <= 0.0:
                 continue
 
-            base_radius = start_dia * 0.5
-            if radial_side == 0:
-                slot_outer_radius = base_radius
-                slot_inner_radius = max(0.0, base_radius - nut_depth)
-            else:
-                slot_inner_radius = base_radius
-                slot_outer_radius = base_radius + nut_depth
+            slot_inner_radius, slot_outer_radius = keyway_radial_slot_radii(params)
 
             if slot_outer_radius <= 1e-9:
                 continue

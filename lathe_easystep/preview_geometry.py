@@ -206,6 +206,32 @@ def build_keyway_path(params: Dict[str, float]) -> List[Point]:
     return [(top_x, start_z), (inner_x, start_z), (inner_x, back_z), (top_x, back_z)]
 
 
+def keyway_radial_slot_radii(params: Dict[str, object]) -> tuple[float, float]:
+    """Return (inner_radius, outer_radius) of the radial keyway slot (mode 0)
+    for the Schnittansicht-Overlay. Must stay consistent with the final
+    diameter `build_keyway_path()` computes for the Seitenansicht, since both
+    describe the same cut depth from the same params - just as radius vs.
+    diameter and at a specific Z vs. along the whole slot length.
+    """
+    try:
+        start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
+    except Exception:
+        start_dia = 0.0
+    try:
+        nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
+    except Exception:
+        nut_depth = 0.0
+    try:
+        radial_side = int(float(params.get("radial_side", 0) or 0))
+    except Exception:
+        radial_side = 0
+
+    base_radius = start_dia * 0.5
+    if radial_side == 0:
+        return max(0.0, base_radius - nut_depth), base_radius
+    return base_radius, base_radius + nut_depth
+
+
 def build_keyway_slot_angles(params: Dict[str, object]) -> List[float]:
     try:
         slot_count = max(1, int(float(params.get("slot_count", 1) or 1)))
