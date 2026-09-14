@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### LES-024/LES-034: Vorderansicht - Rohteilkreise, Endkonturfuellung und Durchmesserringe als Darstellungsplan 2026-09-14
+
+- Neuntes Verkleinerungspaket: `_paint_front_view()` entschied bisher inline,
+  welche Kreise (Rohteil-Aussen-/Innendurchmesser, gefuellte Endkontur,
+  Aussen-/Innen-/aktive Durchmesserringe) in welcher Reihenfolge und Farbe
+  gezeichnet werden. `build_front_view_draw_plan()` (`preview_scene.py`)
+  loest das jetzt Qt-frei als Liste von `FrontViewCircle`-Eintraegen
+  (Durchmesser + semantischer Stilschluessel) auf; `front_view_scale()`
+  (`preview_geometry.py`) berechnet den Skalierungsfaktor. Die Zeichenroutine
+  ruft nur noch `painter.drawEllipse()` mit den fertigen Werten auf.
+- Reihenfolge bewusst unveraendert: Rohteil -> gefuellte Endkontur ->
+  Keilnut-Overlay -> Durchmesserringe. Die Keilnut bleibt ein separater
+  Aufruf (`_draw_front_keyway_overlay`), da sie aus der Operationsliste statt
+  aus diesem Plan stammt - der Plan ruft sie nicht auf, das Widget haelt die
+  Reihenfolge weiterhin per zwei getrennten Durchlaeufen ein.
+- Sieben neue Tests: vier fuer `build_front_view_draw_plan()`
+  (Reihenfolge, ausgelassene Rohteil-Innenkontur bei gleichem Durchmesser,
+  ausgelassenes Endkontur-Loch ohne kleinere Bohrung, komplett leerer Plan
+  ohne Geometrie) und drei fuer `front_view_scale()` (Skalierung an beiden
+  Seiten, entarteter Nulldurchmesser). Per zwei unabhaengig injizierten Bugs
+  (vertauschte Ring-Rolle, vertauschtes min/max bei der Skalierung) als echte
+  Regression verifiziert, danach zurueckgesetzt.
+- Real in der SIM verifiziert: Embedded-Start fehlerfrei (`critical done`
+  nach 8,493 s), Schnittansicht im UTILS-Panel live umgeschaltet, kein Fehler
+  im Log. `preview_widget.py`: 679 -> 689 Zeilen (die duennen Qt-Adapter
+  wachsen leicht, die Fachlogik ist aber vollstaendig entfernt).
+- 764 Stub-/75 Real-Qt-Tests bestanden, keine Skips. Details: TODO.md
+  (LES-024, LES-034).
+
 ### LES-024/LES-034: Sperrzonen-Fuellgeometrie aus Paint-Code entfernt 2026-09-14
 
 - `stroke_bounding_rectangle()` berechnet jetzt Qt-frei das Modellrechteck

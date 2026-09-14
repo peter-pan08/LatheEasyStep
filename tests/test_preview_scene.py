@@ -3,6 +3,7 @@ from lathe_easystep.preview_scene import (
     PreviewLayer,
     PreviewPath,
     PreviewScene,
+    build_front_view_draw_plan,
     build_preview_draw_plan,
     primitive_strokes,
     scene_from_legacy_paths,
@@ -97,3 +98,52 @@ def test_stroke_bounding_rectangle_encloses_disconnected_primitives():
 def test_stroke_bounding_rectangle_is_empty_without_drawable_points():
     assert stroke_bounding_rectangle([]) == []
     assert stroke_bounding_rectangle([[]]) == []
+
+
+def test_front_view_draw_plan_orders_stock_then_fill_then_rings():
+    plan = build_front_view_draw_plan(
+        stock_od=40.0,
+        stock_id=20.0,
+        outer_fill_diameter=35.0,
+        inner_fill_diameter=18.0,
+        outer_hits=[35.0],
+        inner_hits=[18.0],
+        active_diameters=[35.0, 30.0],
+    )
+
+    assert [(c.diameter, c.style_key, c.filled) for c in plan] == [
+        (40.0, "stock_od", False),
+        (20.0, "stock_id", False),
+        (35.0, "end_contour_fill", True),
+        (18.0, "end_contour_hole", True),
+        (35.0, "outer_ring", False),
+        (18.0, "inner_ring", False),
+        (30.0, "active_ring", False),
+    ]
+
+
+def test_front_view_draw_plan_skips_stock_id_when_not_smaller_than_stock_od():
+    plan = build_front_view_draw_plan(
+        stock_od=20.0, stock_id=20.0,
+        outer_fill_diameter=0.0, inner_fill_diameter=0.0,
+        outer_hits=[], inner_hits=[], active_diameters=[],
+    )
+    assert [c.style_key for c in plan] == ["stock_od"]
+
+
+def test_front_view_draw_plan_skips_end_contour_hole_without_a_smaller_bore():
+    plan = build_front_view_draw_plan(
+        stock_od=0.0, stock_id=0.0,
+        outer_fill_diameter=30.0, inner_fill_diameter=30.0,
+        outer_hits=[], inner_hits=[], active_diameters=[],
+    )
+    assert [c.style_key for c in plan] == ["end_contour_fill"]
+
+
+def test_front_view_draw_plan_omits_zero_and_negligible_diameters():
+    plan = build_front_view_draw_plan(
+        stock_od=0.0, stock_id=0.0,
+        outer_fill_diameter=0.0, inner_fill_diameter=0.0,
+        outer_hits=[], inner_hits=[], active_diameters=[],
+    )
+    assert plan == []
