@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 843 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 852 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -162,12 +162,38 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## LES-032 Werkzeuggeometrie
 
-- [ ] verifizierte Zuordnung der real genutzten Tooltable-Spalten fuer
-  Schneidenlaenge, Haltergeometrie und Werkzeugbreite festlegen.
+- [ ] Entscheidung (2026-09-15) fuer die Werkzeugbreite umgesetzt, Rest
+  offen: das real genutzte `tool.tbl` (`Drehbank/tool.tbl`) belegt D bereits
+  fuer Radius (Dreh-/Gewinde-/Stechwerkzeuge, Werte <= 5 mm) bzw. Durchmesser
+  (Bohrer, Werte > 5 mm) und Q fuer die Orientierung; I/J sind durchgehend 0
+  und ungenutzt - der LinuxCNC-Standard-Tooltable-Aufbau hat keine eigene
+  Spalte fuer die Stechwerkzeug-Schneidenbreite. Die tatsaechlich vorhandene
+  Quelle ist der ISO-Einstich-Einsatzcode im Kommentar (z. B. "MGMN200" ->
+  2,00 mm). Diese Regel war bisher nur redundant in
+  `tool_logic.py::infer_insert_profile()` fuer die Werkzeugvorschau
+  implementiert; jetzt gemeinsame, Qt-freie Quelle `Tool.insert_width_mm`
+  (`tools.py`, neue `extract_insert_width_from_comment()`) fuer Vorschau UND
+  eine neue Pruefung. `_check_tool_width_matches_operation()` (`checks.py`)
+  warnt, wenn die manuell eingetragene Werkzeugbreite einer Stech-Operation
+  (nur wenn `use_tool_width` aktiv ist) vom kommentarbasierten Wert abweicht
+  - analog zum Gewinde-Preset-Vergleich. Sieben neue Tests
+  (`tests/test_tool_width_mismatch_check.py`), per entferntem
+  Verdrahtungsaufruf als echte Regression verifiziert; die tool_logic.py-
+  Umstellung zusaetzlich end-to-end gegen die echte
+  `Drehbank/tool.tbl`-Datei bestaetigt (T4 "Einstechen MGMN200" ->
+  `groove_width_mm: 2.0` durch `infer_insert_profile()`, unveraendert zum
+  vorherigen Verhalten). Alle zwoelf Referenzen neu generiert (keine
+  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 852
+  Stub-/102 Real-Qt-Tests bestanden. Schneidenlaenge und Haltergeometrie
+  bleiben offen - im echten `tool.tbl` gibt es dafuer aktuell keine
+  erkennbare Datenquelle (weder Spalte noch Kommentarkonvention).
 - [ ] Innen-/Aussenwerkzeuge anhand dieser Daten plausibilisieren.
 - [ ] Tooltable-Daten fuer Erreichbarkeits- und Werkzeughuellenpruefungen nutzen.
-- [ ] Werkzeugvorschau und Generator auf denselben normalisierten Datensatz
-  stuetzen.
+- [x] Werkzeugvorschau und Generator fuer die Werkzeugbreite auf denselben
+  normalisierten Datensatz gestuetzt (siehe oben, `Tool.insert_width_mm`).
+  Fuer Radius/ISO-Code (`radius_mm`/`iso_code`) galt das schon vorher. Fuer
+  Schneidenlaenge/Haltergeometrie noch nicht anwendbar, da keine Datenquelle
+  vorhanden ist (siehe oben).
 
 ## LES-043 Gegenspindel
 

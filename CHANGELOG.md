@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### LES-032: Werkzeugbreite aus ISO-Einsatzcode fuer Vorschau UND Pruefung 2026-09-15
+
+- Das real genutzte `tool.tbl` (`Drehbank/tool.tbl`) belegt D bereits fuer
+  Radius (Dreh-/Gewinde-/Stechwerkzeuge, Werte <= 5 mm) bzw. Durchmesser
+  (Bohrer, Werte > 5 mm) und Q fuer die Orientierung; I/J sind durchgehend
+  0 und ungenutzt - der LinuxCNC-Standard-Tooltable-Aufbau hat keine eigene
+  Spalte fuer die Stechwerkzeug-Schneidenbreite. Die tatsaechlich
+  vorhandene Quelle ist der ISO-Einstich-Einsatzcode im Kommentar (z. B.
+  "MGMN200" -> 2,00 mm), bisher nur redundant in
+  `tool_logic.py::infer_insert_profile()` fuer die Werkzeugvorschau
+  implementiert.
+- Neue gemeinsame, Qt-freie Quelle: `Tool.insert_width_mm`-Property
+  (`tools.py`, basiert auf neuer `extract_insert_width_from_comment()`).
+  `infer_insert_profile()` liest jetzt von dort statt selbst zu parsen.
+- Neue `_check_tool_width_matches_operation()` (`checks.py`): warnt, wenn
+  die manuell eingetragene Werkzeugbreite einer Stech-Operation (nur wenn
+  `use_tool_width` aktiv ist) vom kommentarbasierten Wert abweicht - analog
+  zum kuerzlich ergaenzten Gewinde-Preset-Vergleich.
+- Sieben neue Tests (`tests/test_tool_width_mismatch_check.py`), per
+  entferntem Verdrahtungsaufruf als echte Regression verifiziert. Die
+  `tool_logic.py`-Umstellung zusaetzlich end-to-end gegen die echte
+  `Drehbank/tool.tbl`-Datei bestaetigt (T4 "Einstechen MGMN200" ->
+  unveraendert `groove_width_mm: 2.0`). Alle zwoelf Referenzen neu
+  generiert (keine Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin
+  fehlerfrei. 852 Stub-/102 Real-Qt-Tests bestanden.
+- Schneidenlaenge und Haltergeometrie (die anderen beiden in LES-032
+  genannten Datenpunkte) bleiben offen - im echten `tool.tbl` gibt es
+  dafuer aktuell keine erkennbare Datenquelle (weder Spalte noch
+  Kommentarkonvention). Details: TODO.md (LES-032).
+
 ### LES-044: Seitenansicht-Raster als Qt-freier Darstellungsplan 2026-09-15
 
 - Neue Funktion `side_view_grid_layout()` buendelt Achsen, X-/Z-Ticks samt
