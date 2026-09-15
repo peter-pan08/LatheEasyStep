@@ -319,3 +319,70 @@ def test_preview_params_splitter_persists_sizes_when_dragged(monkeypatch):
 
     expected = ",".join(str(size) for size in splitter.sizes())
     assert settings.value(ui_lifecycle._PREVIEW_PARAMS_SPLITTER_SETTINGS_KEY, "", type=str) == expected
+
+
+def test_workspace_splitter_sets_minimum_width_on_the_window_not_on_root():
+    """LES-050 Regressionsfund (eingebettetes QtDragon-Panel, 2026-09-15):
+    `root.setMinimumWidth(...)` zwang root dazu, breiter zu sein als sein
+    eigener Elterncontainer innerhalb der QtDragon-Tab-Flaeche (live
+    beobachtet: root auf 750px erzwungen, Elterncontainer aber nur 592px
+    breit) - und genau an dieser root-zu-Elter-Grenze wurde ohne jede
+    Scrollmoeglichkeit abgeschnitten (die zweite Button-Spalte war
+    unsichtbar und nicht klickbar), obwohl die QScrollArea innerhalb von
+    root selbst korrekt auf "kein Ueberlauf" kam. Root-Ursache per
+    Live-Debug-Dump im Standalone- und im eingebetteten SIM-Panel
+    bestaetigt. `root.window()` ist im Standalone-Fall root selbst
+    (unveraendertes Verhalten - WM erzwingt weiterhin ein sinnvolles
+    Minimum), im eingebetteten Fall dagegen QtDragons eigenes, ohnehin
+    schon breiteres Hauptfenster (dort wirkungslos)."""
+    root, handler = _load_full_root()
+    host = QtWidgets.QWidget()
+    host.setObjectName("FakeEmbeddingHost")
+    root.setParent(host)
+    assert root.window() is host
+
+    _install_workspace_splitter(handler)
+
+    step_panel = root.findChild(QtWidgets.QWidget, "stepListPanel")
+    right_panel = root.findChild(QtWidgets.QWidget, "rightWorkspacePanel")
+    expected_minimum = step_panel.minimumWidth() + right_panel.minimumWidth() + 40
+
+    assert host.minimumWidth() == expected_minimum
+    assert root.minimumWidth() != expected_minimum
+
+
+def test_workspace_splitter_still_sets_minimum_width_on_root_when_standalone():
+    """Gegenprobe zu obigem Test: im Standalone-Panel (root ist sein eigenes
+    Fenster, wie beim echten `qtvcp -c easystep -u ...`-Start) muss das
+    bisherige Verhalten unveraendert bleiben - der Fenstermanager soll
+    weiterhin ein sinnvolles Mindestmass erzwingen koennen."""
+    root, handler = _load_full_root()
+    assert root.window() is root
+
+    _install_workspace_splitter(handler)
+
+    step_panel = root.findChild(QtWidgets.QWidget, "stepListPanel")
+    right_panel = root.findChild(QtWidgets.QWidget, "rightWorkspacePanel")
+    expected_minimum = step_panel.minimumWidth() + right_panel.minimumWidth() + 40
+
+    assert root.minimumWidth() == expected_minimum
+
+
+def test_workspace_scroll_area_wraps_the_splitter_and_scrolls_horizontally_only():
+    """LES-050: die QScrollArea um `workspaceSplitter` macht dessen Inhalt
+    unabhaengig von der tatsaechlichen Host-Breite erreichbar - live im
+    eingebetteten QtDragon-Panel bestaetigt (Scrollleiste erscheint, und
+    Scrollen ans Ende macht die zuvor unsichtbare zweite Button-Spalte
+    wieder vollstaendig lesbar). Dieser Test sichert die Konfiguration
+    strukturell ab, ohne den (ausserhalb dieses Projekts liegenden)
+    QtDragon-Einbettungsmechanismus offscreen nachzubilden."""
+    root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
+
+    scroll = root.findChild(QtWidgets.QScrollArea, "workspaceScrollArea")
+    splitter = root.findChild(QtWidgets.QSplitter, "workspaceSplitter")
+    assert scroll is not None
+    assert scroll.widget() is splitter
+    assert scroll.widgetResizable() is True
+    assert scroll.horizontalScrollBarPolicy() == QtCore.Qt.ScrollBarAsNeeded
+    assert scroll.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarAlwaysOff
