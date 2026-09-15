@@ -184,6 +184,54 @@ def _check_tool_kind_matches_operation(operations: List[object], tools: Dict[int
         )
 
 
+_GROOVE_WIDTH_PARAM_KEYS = ("wtool", "W_tool", "tool_width", "cutting_width", "groove_cutting_width")
+
+
+def _check_tool_width_matches_operation(operations: List[object], tools: Dict[int, object], warnings: List[str]) -> None:
+    """LES-032: `Tool.insert_width_mm` (aus dem ISO-Einstich-Einsatzcode im
+    Kommentar abgeleitet, z. B. "MGMN200" -> 2,00 mm - siehe `tools.py`)
+    wurde bisher nirgends gegen die manuell eingetragene Werkzeugbreite
+    einer Stech-Operation geprueft; beide Werte konnten unbemerkt
+    auseinanderlaufen. Nur geprueft, wenn die Operation die Werkzeugbreite
+    tatsaechlich verwendet (`use_tool_width`) und sowohl ein manueller Wert
+    als auch ein aus dem Kommentar ableitbarer Wert vorliegen - ansonsten
+    kein Vergleichswert vorhanden, keine Meldung."""
+    for idx, op in enumerate(operations):
+        if getattr(op, "op_type", "") != "groove":
+            continue
+        params = getattr(op, "params", {}) or {}
+        if not bool(params.get("use_tool_width", False)):
+            continue
+        manual_width = None
+        for key in _GROOVE_WIDTH_PARAM_KEYS:
+            if key in params and params.get(key) not in (None, ""):
+                try:
+                    manual_width = float(params[key])
+                except Exception:
+                    manual_width = None
+                break
+        if manual_width is None:
+            continue
+        try:
+            tool_num = int(float(params.get("tool", 0) or 0))
+        except Exception:
+            tool_num = 0
+        if tool_num <= 0:
+            continue
+        tool = tools.get(tool_num)
+        if tool is None:
+            continue
+        insert_width = getattr(tool, "insert_width_mm", None)
+        if insert_width is None:
+            continue
+        if abs(manual_width - insert_width) > 0.05:
+            warnings.append(
+                f"T{tool_num:02d}: Kommentar deutet auf {insert_width:.2f} mm Schneidenbreite hin, "
+                f"in Schritt {idx + 1} werden aber {manual_width:.2f} mm eingetragen. "
+                "Bitte Werkzeugbreite pruefen."
+            )
+
+
 def validate_tool_table_completeness(operations: List[object], tools: Dict[int, object]) -> None:
     """LES-028: jede verwendete Werkzeugnummer muss einen Eintrag in der
     geladenen Werkzeugtabelle haben, sobald ueberhaupt eine geladen wurde.
@@ -224,6 +272,7 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
     _check_drill_before_internal_machining(operations, warnings)
     _check_duplicate_operations(operations, warnings)
     _check_tool_kind_matches_operation(operations, tools, warnings)
+    _check_tool_width_matches_operation(operations, tools, warnings)
     for op in operations:
         op_type = getattr(op, "op_type", "")
         params = getattr(op, "params", {}) or {}

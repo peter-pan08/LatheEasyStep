@@ -156,12 +156,10 @@ def infer_insert_profile(handler, tool):
             handed = "internal"
         elif "AUSSEN" in text or "AUßEN" in text:
             handed = "external"
-        match = re.search(r"\b(?:MGMN|MRMN)(\d{3})\b", text)
-        if match:
-            try:
-                groove_width_mm = int(match.group(1)) / 100.0
-            except Exception:
-                groove_width_mm = 0.0
+        # LES-032: dieselbe, jetzt gemeinsame Quelle wie die Pruefung in
+        # checks.py (Tool.insert_width_mm, tools.py) statt einer zweiten,
+        # unabhaengigen Regex-Kopie hier.
+        groove_width_mm = tool.insert_width_mm or 0.0
         if not shape_key:
             shape_key = "S"
     elif "ER" in text and ("AUFNAHME" in text or "COLLET" in text or "SPAN" in text):
