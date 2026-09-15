@@ -110,6 +110,79 @@ def _check_duplicate_operations(operations: List[object], warnings: List[str]) -
             seen[key] = idx
 
 
+_OP_TYPE_EXPECTED_TOOL_KINDS: Dict[str, set] = {
+    "face": {"turning"},
+    "turn": {"turning"},
+    "bore": {"turning", "drilling"},
+    "abspanen": {"turning"},
+    "thread": {"threading"},
+    "groove": {"grooving", "parting"},
+    "drill": {"drilling"},
+}
+
+_TOOL_KIND_LABELS_DE = {
+    "turning": "Drehwerkzeug",
+    "drilling": "Bohrwerkzeug",
+    "grooving": "Stechwerkzeug",
+    "threading": "Gewindewerkzeug",
+    "parting": "Abstechwerkzeug",
+}
+
+_OP_TYPE_LABELS_DE = {
+    "face": "Plan-Operation",
+    "turn": "Dreh-Operation",
+    "bore": "Bohrungsdreh-Operation",
+    "abspanen": "Abspanen-Operation",
+    "thread": "Gewinde-Operation",
+    "groove": "Stech-Operation",
+    "drill": "Bohr-Operation",
+}
+
+
+def _check_tool_kind_matches_operation(operations: List[object], tools: Dict[int, object], warnings: List[str]) -> None:
+    """LES-028/LES-032: `Tool.kind` (aus der Q-Orientierung der Werkzeug-
+    tabelle geparst - siehe `tools.py`) wurde bisher nirgends gegen den
+    tatsaechlich verwendeten Operationstyp geprueft. Ein Werkzeug, dessen
+    Q-Wert laut Tabelle z. B. auf ein Bohrwerkzeug hindeutet, konnte bisher
+    unbemerkt einer Stech- oder Gewinde-Operation zugewiesen werden.
+
+    Nur bei tatsaechlich gesetzter Q-Orientierung geprueft: `tool.orientation
+    is None` liefert per `tool_kind_from_orientation()` den Fallback
+    "turning" (keine echte Klassifikation, nur ein Default) und wuerde bei
+    jedem Werkzeug ohne Q-Angabe in der Tabelle zu Falschmeldungen fuehren.
+    Ebenso wird `kind == "parting"` (der Fallback fuer JEDEN nicht in der
+    Zuordnungstabelle enthaltenen Q-Wert, keine gezielte Klassifikation)
+    nicht als Widerspruch gewertet."""
+    for idx, op in enumerate(operations):
+        op_type = getattr(op, "op_type", "")
+        expected_kinds = _OP_TYPE_EXPECTED_TOOL_KINDS.get(op_type)
+        if not expected_kinds:
+            continue
+        params = getattr(op, "params", {}) or {}
+        try:
+            tool_num = int(float(params.get("tool", 0) or 0))
+        except Exception:
+            tool_num = 0
+        if tool_num <= 0:
+            continue
+        tool = tools.get(tool_num)
+        if tool is None:
+            continue
+        orientation = getattr(tool, "orientation", None)
+        if orientation is None:
+            continue
+        kind = getattr(tool, "kind", None)
+        if not kind or kind == "parting" or kind in expected_kinds:
+            continue
+        kind_label = _TOOL_KIND_LABELS_DE.get(kind, kind)
+        op_label = _OP_TYPE_LABELS_DE.get(op_type, op_type)
+        warnings.append(
+            f"T{tool_num:02d}: Q{orientation}-Wert deutet auf '{kind_label}' hin, "
+            f"aber in Schritt {idx + 1} fuer eine {op_label} verwendet. "
+            "Bitte Werkzeugzuordnung pruefen."
+        )
+
+
 def validate_tool_table_completeness(operations: List[object], tools: Dict[int, object]) -> None:
     """LES-028: jede verwendete Werkzeugnummer muss einen Eintrag in der
     geladenen Werkzeugtabelle haben, sobald ueberhaupt eine geladen wurde.
@@ -149,6 +222,7 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
     tools = settings.get("tools", {}) if isinstance(settings.get("tools", {}), dict) else {}
     _check_drill_before_internal_machining(operations, warnings)
     _check_duplicate_operations(operations, warnings)
+    _check_tool_kind_matches_operation(operations, tools, warnings)
     for op in operations:
         op_type = getattr(op, "op_type", "")
         params = getattr(op, "params", {}) or {}
