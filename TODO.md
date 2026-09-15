@@ -8,261 +8,203 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## Verifizierte Basis
 
-- Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
+- Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
+  0.7.0-Basis.
 - 860 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
-- Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
+- Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
-- `Planen_Radius.ngc` wurde am 2026-09-14 erneut vollstaendig in der SIM
-  ausgefuehrt: 272,6 s, leerer Fehlerkanal, Endposition am definierten
-  Werkzeugwechselpunkt. Ein Backplot mit nahem Test-Wechselpunkt bestaetigt
-  die gerundete Planenkante. LES-036 ist damit abgeschlossen.
 - Der Generator ist von Qt getrennt. Reiter, Step-Verwaltung und Vorschau
-  liegen in eigenen UI-Fragmenten.
+  liegen in eigenen UI-/Fachmodulen.
 
 ## Priorisierter Arbeitsindex
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
-| LES-032 | P2 | reale Werkzeuggeometrie fuer Plausibilitaet/Kollision auswerten | L | 0.9.0 |
-| LES-043 | P2 | Gegenspindelfunktion als eigenes Projekt spezifizieren (UI bleibt gesperrt sichtbar) | XL | separat |
-| LES-030 | extern | weitere physische Maschinenprofile verifizieren | extern | offen |
+| LES-022 | P2 | Bewegungs- und Modalzustand vollstaendig fuehren | L | 0.9.0 |
+| LES-051 | P1 | Panel-Grundgeruest und Darstellungsadapter weiter entkoppeln | XL | 0.9.0 |
+| LES-052 | P1 | Panel-Architektur, Zustandsmodell und Wiederherstellung planen/umsetzen | XL | 0.9.0 |
+| LES-044 | P2 | verbleibende Vorschau-Geometrie und Ausnahmegrenzen entkoppeln | L-XL | 0.9.0 |
+| LES-032 | P2 | Werkzeuggeometrie fuer Plausibilitaet und Kollision erweitern | L | 0.9.0 |
+| LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
+| LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
 
-## LES-044 Darstellung und Texte
+## LES-022 Bewegungs- und Modalzustand
 
-- [ ] reine Vorschaugeometrie von Qt-Zeichenbefehlen weiter trennen; das Muster
-  von `compute_tool_preview_layout()` verwenden. Weiteres Paket abgeschlossen:
-  Pan-/Zoom-Mathematik (`navigated_center_scale()`,
-  `apply_side_navigation()`, `zoom_navigation_state()`) aus
-  `preview_widget.py` nach `preview_geometry.py` verschoben. Mausanker,
-  Zoomgrenzen und transformierter Seiten-Viewport sind damit Qt-frei und durch
-  zwei neue Stub-Tests abgesichert; Gesamtstand 840/102. Weitere Paint-
-  Geometrie bleibt offen.
-  Zweites aktuelles Paket: `circular_view_layout()` berechnet Mittelpunkt,
-  Massstab, Radius und Achsen fuer Schnitt-/Vorderansicht; die Keilnut-
-  Bildschirmabbildung liegt in `offset_polygons_to_screen()`. Damit bleiben
-  im Widget fuer diese Teile nur Stil und QPainter-Ausgabe. Zwei weitere
-  Stub-Tests, Gesamtstand 842/102; Standalone-Start nach 2,060 s.
-  Drittes aktuelles Paket: `side_view_grid_layout()` liefert Achsen, komplette
-  Tick-Markierungen/Textpositionen, Achsbeschriftungen und die optionale
-  Schnittlinie als Qt-freien Darstellungsplan. Ein weiterer Stub-Test,
-  Gesamtstand 843/102; Standalone-Start nach 2,143 s.
-  Viertes aktuelles Paket: Punkt-/Stroke-Abbildung und Einzelpunkt-Kreuz nach
-  `preview_geometry.py` ausgelagert; normale Pfade, getrennte Primitive und
-  Futter-Sperrzonenfuellung verwenden dieselbe Qt-freie Transformation. Zwei
-  neue Stub-Tests. Die vollstaendig neu gezaehlte Suite bleibt wegen einer
-  korrigierten frueheren LES-032-Dokumentationsabweichung bei realen 859/102;
-  Standalone-Start nach 2,329 s.
-  Fuenftes aktuelles Paket: `build_front_view_screen_plan()` liefert
-  Mittelpunkt/Pixelradius und die drei Zeichenphasen der Vorderansicht bereits
-  Qt-frei; das Widget filtert und skaliert die Kreise nicht mehr selbst. Ein
-  neuer Stub-Test, Gesamtstand 860/102; Standalone-Start nach 2,187 s.
-- [x] Entscheidung (2026-09-14) umgesetzt: G-Code-Kommentare (Werkstatt-
-  kommentare im erzeugten `.ngc`) sind jetzt sprachabhaengig wie die
-  UI-Texte. Die Step-Beschreibung selbst (`_describe_operation()`, landet
-  ueber `update_auto_comment()` im `(STEP: ...)`-Kommentar) war bereits
-  ueber `_tr()` sprachabhaengig - der eigentliche Fund war, dass die
-  gcode_*.py-Generatormodule selbst rund 70 weitere, hart-deutsche
-  Kommentare direkt in den G-Code schreiben (Anfahrhinweise, Sicherheits-
-  block, Gewinde-/Schrupp-Parameter), voellig unabhaengig von `_tr()`.
-  Neue, bewusst von `translations.py`/qtpy entkoppelte Funktion
-  `gcode_comment()` (`gcode_utils.py`) mit eigenem `.lng`-Parser - der
-  Generator darf keine Qt-Abhaengigkeit bekommen ("Der Generator ist von
-  Qt getrennt"), sonst waere `regenerate_all_ngc.py` ohne PyQt5 kaputt
-  gegangen (echter Fund waehrend der Umsetzung, per Regressionstest
-  abgesichert). 64 neue Uebersetzungsschluessel in de/en/es.lng, alle
-  sieben betroffenen gcode_*.py-Dateien umgestellt. Bewusst NICHT
-  angefasst: Validierungs-/Warnmeldungstexte aus `checks.py`/
-  `get_machine_limit_warnings()` (eigenes, groesseres Thema - naeher an
-  "Fehlertexte" als an "Werkstattkommentare") sowie eine Handvoll bereits-
-  englische Struktur-/Diagnosemarker (Subroutine-Grenzen, "Pass N:
-  X-band/Z-band"-Debugspur). Alle zwoelf Referenzen neu generiert und mit
-  `rs274` bestaetigt (drei Referenzen minimal geaendert: ein rohes "ß" in
-  einem bisher nicht sanitisierten Kommentar wurde beim Umbau konsistent
-  wie alle anderen Kommentare zu "ss" transliteriert - reiner
-  Zeichensatz-Fund, keine Bedeutungsaenderung), 43 Matrixfaelle weiterhin
-  fehlerfrei. 795 Stub-/76 Real-Qt-Tests bestanden.
-- [x] Entscheidung (2026-09-15) umgesetzt: breite `except Exception`-
-  Fallbacks in den vier Vorschau-Modulen (`preview_geometry.py`,
-  `preview_widget.py`, `preview_scene.py`, `ui_preview.py`) durchgesehen -
-  72 von 82 Fundstellen fingen Ausnahmen bisher vollstaendig still ab
-  (kein Log, kein Hinweis), obwohl ein echter Bug dahinter unbemerkt
-  bliebe. Entscheidung mit dem Nutzer geklaert: kleinster Schritt zuerst -
-  nur Logging ergaenzen, Ausnahmetypen NICHT einschraenken und Verhalten
-  NICHT aendern (die vollstaendige Einzelbewertung je Fundstelle auf
-  "welcher Fehlertyp ist hier eigentlich erwartet" bleibt ein separates,
-  groesseres Thema). Jede zuvor stille Stelle bekommt jetzt
-  `_LOGGER.debug("[LatheEasyStep] <Funktion>: unexpected exception
-  suppressed: %s", exc)` als ersten Befehl im except-Block; wo noch kein
-  `as exc` vorhanden war, wurde das ergaenzt. `preview_geometry.py`/
-  `preview_scene.py` bleiben bewusst Qt-frei - `logging` ist Standard-
-  bibliothek, keine neue Qt-Abhaengigkeit. Per Skript erzeugt und manuell
-  gegengeprueft (Syntax, Importplatzierung, ein direkter Spotcheck mit
-  `logging.basicConfig` bestaetigt: die Meldung erscheint mit korrekter
-  Funktion und Fehlertext, Verhalten unveraendert). Volle Stub- und
-  Real-Qt-Suite unveraendert gruen (825/102) - reine Zusatzausgabe, keine
-  neuen Tests noetig (die bestehende Suite deckt bereits ab, dass sich am
-  Verhalten nichts geaendert hat). Die vollstaendige Einzelbewertung
-  (Ausnahmetypen gezielt einschraenken) bleibt bewusst offen fuer eine
-  spaetere, groessere Iteration.
+`MotionState` und `SpindleState` sind bereits eingefuehrt. Offen bleiben:
 
-## LES-028 Eingaben normalisieren
+- [ ] weitere relevante modale G-/M-Codes in einem zentralen, typisierten
+  Zustand fuehren, statt sie ueber verstreute Settings-Schluessel abzuleiten.
+- [ ] Bewegungen auch waehrend der Schnittpfade granular nachfuehren; die
+  aktuelle Invalidierung nach Roughing bleibt nur eine Zwischenloesung.
+- [ ] fuer die neuen Zustandsuebergaenge gezielte Regressionen ergaenzen und
+  sicherstellen, dass daraus keine unnoetigen Eilgaenge oder Modalwechsel
+  entstehen.
 
-- [x] Entscheidung (2026-09-14) umgesetzt: `validate_tool_table_completeness()`
-  (`checks.py`) blockiert die Programmerzeugung jetzt hart, wenn eine
-  verwendete Werkzeugnummer in der geladenen Werkzeugtabelle fehlt -
-  aufgerufen aus `generate_program_gcode()` direkt nach den bestehenden
-  Pflichtfeld-Checks. Bewusst nur aktiv, wenn ueberhaupt eine (nicht-leere)
-  Tabelle vorliegt: reine Generatortests/die Referenzregeneration ohne
-  echtes `tool.tbl` bleiben unveraendert ungeprueft, sonst waeren alle
-  35+ bestehenden Generator-Testdateien betroffen gewesen. Die urspruengliche
-  "ISO/Radius fehlt"-Meldung in `tools.py` (separates Thema: fehlende
-  Metadaten bei vorhandenem Eintrag) bleibt unveraendert eine Warnung.
-  Sieben neue Tests (`tests/test_tool_table_completeness_check.py`,
-  isoliert und End-to-End durch `generate_program_gcode()`), per
-  deaktiviertem Check als echte Regression verifiziert. Alle zwoelf
-  Referenzen neu generiert (keine Abweichung), `rs274` sowie 43
-  Matrixfaelle weiterhin fehlerfrei. 779 Stub-/76 Real-Qt-Tests bestanden.
-- [x] Entscheidung (2026-09-15) umgesetzt: `T{tool_num:02d} M6` wird bereits
-  heute nur mit einer per `validate_tool_table_completeness()` vorab gegen
-  die Tabelle geprueften Nummer erzeugt - ein woertlicher Umbau auf
-  "Nummer aus dem `Tool`-Objekt statt aus den rohen Operationsparametern
-  lesen" waere in diesem Datenmodell folgenlos gewesen (der Dict-Schluessel
-  in `tools` IST bereits `Tool.t`, keine zweite unabhaengige Ableitung).
-  Stattdessen einen echten, bisher komplett ungenutzten Datenpunkt aus dem
-  normalisierten Datensatz aktiviert: `Tool.kind` (aus der Q-Orientierung
-  der Werkzeugtabelle geparst, `tools.py::tool_kind_from_orientation()`)
-  wurde nirgends gegen den tatsaechlich verwendeten Operationstyp geprueft
-  - ein Werkzeug, dessen Q-Wert laut Tabelle z. B. auf ein Bohrwerkzeug
-  hindeutet, konnte unbemerkt einer Stech- oder Gewinde-Operation
-  zugewiesen werden. Neue `_check_tool_kind_matches_operation()`
-  (`checks.py`), in `validate_program_setup()` verdrahtet (bereits aktive
-  Warnungs-Pipeline, landet in `prog["__warnings"]` im Preview UND als
-  `(WARN: ...)`-Kommentar im erzeugten G-Code-Kopf). Bewusst konservativ:
-  nur bei tatsaechlich gesetzter Q-Orientierung geprueft (`tool.orientation
-  is None` liefert nur den Fallback "turning", keine echte Klassifikation)
-  und `kind == "parting"` (Fallback fuer JEDEN nicht zugeordneten Q-Wert)
-  wird nie als Widerspruch gewertet - beides haette sonst zu
-  Falschmeldungen bei unklassifizierten Werkzeugen gefuehrt. Bei der
-  Recherche zusaetzlich bestaetigt (und durch einen bereits vorhandenen
-  Testkommentar in `tests/test_tool_warning_wiring.py` gedeckt): die
-  parallele, aehnliche Pruefung `tool_logic.py::collect_tool_orientation_warnings()`
-  ist bewusst tote, redundante Zweitimplementierung eines in `checks.py`
-  bereits aktiven Innen-/Aussen-Checks - kein neuer Fund, nur zur
-  Einordnung bestaetigt. Neun neue Tests
-  (`tests/test_tool_kind_mismatch_check.py`), per entferntem Verdrahtungs-
-  Aufruf als echte Regression verifiziert. Alle zwoelf Referenzen neu
-  generiert (keine Abweichung - die Referenzbeispiele verwenden durchweg
-  passende Werkzeuge), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei.
-  834 Stub-/102 Real-Qt-Tests bestanden.
-- [x] Preset- und manuelle Werte nachvollziehbar verglichen: Der einzige
-  dauerhaft doppelte Datensatz ist das Gewinde-Preset (`standard`) neben den
-  editierbaren G76-Werten. `thread_preset_values()` ist nun die gemeinsame,
-  Qt-freie Sollwertberechnung fuer UI und Pruefung. Presetwechsel setzen
-  Durchmesser/Steigung und fuellen die uebrigen leeren Felder weich; der
-  explizite Preset-Button ueberschreibt weiterhin bewusst alle Presetwerte.
-  Manuelle Abweichungen bei Durchmesser, Steigung sowie allen sieben
-  abgeleiteten Bearbeitungswerten bleiben erlaubt, erscheinen aber gesammelt
-  als Warnung in Vorschau und G-Code-Kopf. Dabei einen echten Fehler behoben:
-  der Rekursionsschutz verhinderte zuvor den gesamten Soft-Fill nach einem
-  Presetwechsel. Maschinen-/Futterprofile werden dagegen sofort in konkrete
-  Programmkopfwerte aufgeloest und speichern keinen konkurrierenden
-  Presetdatensatz. Vier neue Tests, Gesamtstand 838/102. LES-028 abgeschlossen.
+## LES-051 Panel-Grundgeruest, Ressourcen und Darstellungsadapter
+
+Die bestehende Shell-/Fragment-Struktur ist die richtige Basis, aber noch
+keine vollstaendige Trennung von Zustand, Fachlogik und optischer Darstellung.
+Das Panel soll ueber ein stabiles Grundgeruest geladen werden, waehrend
+Darstellungen und Ressourcen austauschbare Adapter bleiben.
+
+- [ ] die Besitzgrenzen festlegen und dokumentieren: fachlicher Programm- und
+  UI-Zustand, Controller/Signale, View-Modelle bzw. Zeichenplaene, Qt-Views
+  sowie externe Ressourcen duerfen nicht ungeordnet aufeinander zugreifen.
+- [ ] den verbleibenden Handler-Kleber weiter reduzieren. Neue Fachlogik darf
+  nicht in `lathe_easystep_handler.py` entstehen; UI-Fragmente sollen nur
+  definieren, welche Views geladen werden, nicht deren Zustand selbst besitzen.
+- [ ] Werkzeug- und Schneidplatten-Darstellungen aus der Funktion herausloesen:
+  Geometrie-/Ressourcen-Provider fuer SVG, PNG oder spaetere Dateiformate
+  vorsehen, mit neutralem Fallback bei fehlender oder ungueltiger Datei.
+- [ ] das Austauschen einer Schneidplatten-Grafik oder eines kompletten
+  Darstellungs-Sets darf weder Operationen, Werkzeugdaten, G-Code, Preview-
+  Geometrie noch Dirty-/Save-State veraendern. Dies mit Regressionstests fuer
+  gleiche Eingaben und unterschiedliche Ressourcen nachweisen.
+- [ ] Ressourcenpfade nicht in Fachobjekten oder gespeicherten Programmen
+  verankern. Aufloesung, Validierung, Cache und Lebensdauer gehoeren in eine
+  eigene Ressourcen-/Theme-Schicht; fehlende Dateien muessen sichtbar, aber
+  nicht funktionsveraendernd behandelt werden.
+- [ ] weitere austauschbare Panelbereiche identifizieren, insbesondere
+  Preview-Canvas, Legende, Status-/Warnungsdarstellung und optionale
+  Bedienelemente. Jede Darstellung soll ueber einen stabilen Datenvertrag
+  auswechselbar sein.
+- [ ] Shell- und Fragment-Laden fuer Standalone und Embedded mit einem
+  definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
+  Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom
+  konkreten Skin oder Ressourcenpaket abhaengen.
+- [ ] mindestens einen Test fuer einen alternativen Ressourcensatz und einen
+  Test fuer eine fehlende Ressource ergaenzen; anschliessend Stub-Qt,
+  Real-Qt sowie Embedded-/Standalone-Start pruefen.
+
+## LES-052 Panel-Architektur, Zustandsmodell und Wiederherstellung
+
+Diese Aufgabe beschreibt den groesseren Ausbauplan auf Basis von LES-051. Vor
+der Umsetzung muessen die Grenzen zwischen fachlichem Zustand, Controller,
+Views, Ressourcen und Persistenz festgelegt werden. Kein einzelner Umbau darf
+die G-Code-Erzeugung oder bestehende Maschinenlogik nur wegen einer optischen
+Aenderung veraendern.
+
+### 1. Architektur und Ladevertrag
+
+- [ ] `ProgramState`, `OperationState`, `ToolTableState`, `ViewState`,
+  `DirtyState` und `RuntimeState` als fachlich getrennte Verantwortungen
+  beschreiben und ihre Besitzverhaeltnisse dokumentieren.
+- [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
+  Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
+  `lathe_easystep/`.
+- [ ] einen einheitlichen Ladevertrag fuer Grundgeruest, UI-Fragmente,
+  Widget-Registrierung und Signalbindung fuer Standalone und Embedded
+  definieren. Laden muss idempotent und in einer nachvollziehbaren Reihenfolge
+  erfolgen.
+- [ ] Views duerfen keinen eigenen fachlichen Programmzustand als zweite
+  Wahrheit fuehren. Benutzeraktionen werden als definierte Events oder
+  Controller-Aufrufe an das Modell gemeldet.
+
+### 2. Darstellungs- und Ressourcenadapter
+
+- [ ] einen neutralen `ToolVisualProvider` fuer Werkzeug- und
+  Schneidplatten-Darstellungen einfuehren. Er liefert ein Render-/Bildmodell,
+  nicht Operationen oder G-Code.
+- [ ] SVG, PNG und spaetere Darstellungsformate ueber eine eigene
+  Ressourcen-/Theme-Schicht aufloesen; Pfade, Cache und Fallbacks duerfen nicht
+  in gespeicherten Programmdaten oder `Tool`-Fachobjekten landen.
+- [ ] Preview-Canvas, Werkzeugbild, Legende, Status-/Warnungsbox und optionale
+  UI-Bereiche ueber stabile Datenvertraege austauschbar machen.
+- [ ] nachweisen, dass alternative oder fehlende Grafiken weder
+  Operationsdaten, Werkzeugdaten, Preview-Geometrie, G-Code noch Dirty-/
+  Save-State veraendern.
+
+### 3. Atomare Zustandsaenderungen und Fehlergrenzen
+
+- [ ] Aenderungen nach dem Ablauf Eingabe -> Normalisierung -> Validierung ->
+  Modelluebernahme -> Dirty-State -> Preview/Warnungen ordnen.
+- [ ] bei Validierungs- oder Darstellungsfehlern den letzten gueltigen
+  Modellzustand behalten; keine teilweise aktualisierten Widget-Zustaende als
+  neue fachliche Wahrheit uebernehmen.
+- [ ] breite `except Exception`-Fallbacks in den betroffenen UI-/Preview-
+  Modulen durch definierte Fehlerklassen oder engere Fehlergrenzen ersetzen,
+  ohne erwartete optionale Ressourcenfehler zu verschlucken.
+- [ ] Fehlerdiagnosen zentral sammeln und fuer Log, UI-Warnung und Tests
+  strukturiert nutzbar machen.
+
+### 4. Bedienbarkeit und Wiederherstellung
+
+- [ ] Undo/Redo auf Modell- oder Command-Ebene entwerfen; Widget-Zustaende
+  duerfen nicht die Undo-Historie bilden.
+- [ ] Undo/Redo fuer Parameter-, Segment-, Step-, Werkzeug- und Preset-
+  Aenderungen mit klarer Dirty-State-Behandlung testen.
+- [ ] Autosave und Absturzwiederherstellung als getrennte, atomare
+  Wiederherstellungsdatei vorsehen. Originaldateien duerfen niemals ungefragt
+  ueberschrieben werden.
+- [ ] Wiederherstellung, Versionskennung, unvollstaendige Autosaves und die
+  Entscheidung des Anwenders im UI nachvollziehbar behandeln.
+
+### 5. Werkzeugdaten und technische Pruefung
+
+- [ ] die Werkzeugtabelle als eigene Domaene kapseln: Parser, normalisierte
+  Werkzeuge, Parse-Warnungen, unbekannte Felder und optionales Zurueckschreiben.
+- [ ] Werkzeugdaten, Werkzeuggeometrie und Werkzeugdarstellung getrennt
+  halten; dies bildet die Grundlage fuer die offenen LES-032-Pruefungen.
+- [ ] einen technischen Pruefbericht pro Programm vorsehen: Werkzeuge,
+  Grenzen, Futter-Sperrzone, XRI/XRA, Vorschub/Drehzahl, Warnungen und
+  verwendete G-Code-Strategien.
+
+### Abnahme fuer LES-052
+
+- [ ] gleicher Programmzustand und identischer G-Code bei mindestens zwei
+  Darstellungs-/Ressourcensaetzen.
+- [ ] fehlende optionale Ressource fuehrt zu sichtbarer Diagnose, aber nicht
+  zu geaendertem G-Code oder verlorenen Daten.
+- [ ] Save/Load-, Undo/Redo- und Autosave-Roundtrips erhalten alle fachlichen
+  Daten und den korrekten Dirty-State.
+- [ ] Stub-Qt- und Real-Qt-Suite sowie Embedded-/Standalone-Start bestehen.
+- [ ] bei Generator- oder Fahrwegaenderungen zusaetzlich Referenzen, statische
+  NGC-Pruefung, `rs274` und erforderliche SIM-/Backplot-Nachweise aus den
+  Abschlussregeln ausfuehren.
+
+## LES-044 Vorschau und Darstellung
+
+Die Qt-freie Geometrieplanung ist fuer Navigation, Raster, Pfade, Sperrzonen
+und Vorderansicht weitgehend umgesetzt. Offen bleiben:
+
+- [ ] verbleibende fachliche Darstellungsberechnungen aus
+  `preview_widget.py`/`ui_preview.py` in Qt-freie Planfunktionen verschieben;
+  Qt-Code soll nur Stil, Widget-Zustand und QPainter-Ausgabe enthalten.
+- [ ] die verbleibenden breiten `except Exception`-Fallbacks einzeln bewerten
+  und, wo fachlich moeglich, auf erwartete Ausnahmetypen begrenzen. Das
+  inzwischen vorhandene Debug-Logging bleibt bis dahin die bewusste
+  Zwischenloesung.
+- [ ] jeden weiteren Extraktionsschritt mit einem kleinen Stub-Test und einem
+  Real-Qt-Start pruefen; bestehende Vorschau-Pakete nicht erneut als offene
+  Aufgaben dokumentieren.
 
 ## LES-032 Werkzeuggeometrie
 
-- [ ] Entscheidung (2026-09-15) fuer die Werkzeugbreite umgesetzt, Rest
-  offen: das real genutzte `tool.tbl` (`Drehbank/tool.tbl`) belegt D bereits
-  fuer Radius (Dreh-/Gewinde-/Stechwerkzeuge, Werte <= 5 mm) bzw. Durchmesser
-  (Bohrer, Werte > 5 mm) und Q fuer die Orientierung; I/J sind durchgehend 0
-  und ungenutzt - der LinuxCNC-Standard-Tooltable-Aufbau hat keine eigene
-  Spalte fuer die Stechwerkzeug-Schneidenbreite. Die tatsaechlich vorhandene
-  Quelle ist der ISO-Einstich-Einsatzcode im Kommentar (z. B. "MGMN200" ->
-  2,00 mm). Diese Regel war bisher nur redundant in
-  `tool_logic.py::infer_insert_profile()` fuer die Werkzeugvorschau
-  implementiert; jetzt gemeinsame, Qt-freie Quelle `Tool.insert_width_mm`
-  (`tools.py`, neue `extract_insert_width_from_comment()`) fuer Vorschau UND
-  eine neue Pruefung. `_check_tool_width_matches_operation()` (`checks.py`)
-  warnt, wenn die manuell eingetragene Werkzeugbreite einer Stech-Operation
-  (nur wenn `use_tool_width` aktiv ist) vom kommentarbasierten Wert abweicht
-  - analog zum Gewinde-Preset-Vergleich. Sieben neue Tests
-  (`tests/test_tool_width_mismatch_check.py`), per entferntem
-  Verdrahtungsaufruf als echte Regression verifiziert; die tool_logic.py-
-  Umstellung zusaetzlich end-to-end gegen die echte
-  `Drehbank/tool.tbl`-Datei bestaetigt (T4 "Einstechen MGMN200" ->
-  `groove_width_mm: 2.0` durch `infer_insert_profile()`, unveraendert zum
-  vorherigen Verhalten). Alle zwoelf Referenzen neu generiert (keine
-  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 850
-  Stub-/102 Real-Qt-Tests bestanden. Schneidenlaenge und Haltergeometrie
-  bleiben offen - im echten `tool.tbl` gibt es dafuer aktuell keine
-  erkennbare Datenquelle (weder Spalte noch Kommentarkonvention).
-- [x] Entscheidung (2026-09-15) mit dem Nutzer geklaert: Q kodiert die
-  Schneidenausrichtung fuer die Radiuskompensation, NICHT Innen/Aussen -
-  per echtem Gegenbeispiel im realen `tool.tbl` bestaetigt (Q6 steht dort
-  gleichzeitig fuer T3/T4 "Außendrehen"/"Einstechen" AUSSEN und T7/T9/T11
-  "Innen*" - reine Fehlklassifikation waere die Folge). Zusaetzlich (User-
-  Erklaerung): dasselbe physische Werkzeug kann durch Drehrichtungswechsel
-  der Spindel sowohl aussen als auch innen schneiden - Q kann also
-  grundsaetzlich keine alleinige, zuverlaessige Innen/Aussen-Quelle sein.
-  Eine umfassendere, sprachunabhaengige Kommentaranalyse waere unverhaeltnismaessig
-  aufwendig; ein gewisses Mass an Verantwortung beim Anwender (korrekte
-  Kommentare/Parameter) ist akzeptiert - vollstaendig "idiotensicher" ist
-  nicht das Ziel. Die bestehende, bereits aktive Kommentartext-Pruefung in
-  `checks.py::validate_program_setup()` (Schluesselwoerter innen/aussen
-  usw.) bleibt unveraendert und ist fuer diese Tabelle die verlaesslichere
-  Quelle. Kein Codeeingriff - reine Entscheidung/Dokumentation.
-- [x] Entscheidung (2026-09-15) umgesetzt: erster konkreter Baustein fuer
-  Erreichbarkeits-/Werkzeughuellenpruefung mit Tooltable-Daten. Bisher wurde
-  die Futter-Sperrzone (`chuck_no_go_x_min/x_max/z_limit`) nur fuer die
-  SEPARATEN Rueckzugswege vor/nach einer Operation geprueft
-  (`gcode_safety.py::emit_safe_retract_for_op()`) - die eigentliche
-  Stechbewegung selbst (Z-Position, in `gcode_groove.py` erzeugt) hatte NIE
-  eine Pruefung, und selbst die Rueckzugspruefung behandelt das Werkzeug
-  als punktfoermig. Ein Stechwerkzeug hat aber eine reale Schneidenbreite
-  (`Tool.insert_width_mm`, siehe voriger Punkt) - die dem Futter zugewandte
-  Kante kann in die Sperrzone reichen, auch wenn die programmierte
-  Z-Mitte selbst noch ausserhalb liegt. Neue
-  `_check_groove_reaches_chuck_no_go_zone()` (`checks.py`) prueft die
-  tiefste Stechposition (Nutgrund) an beiden Kanten der bekannten
-  Werkzeugbreite gegen dieselbe, bereits produktiv genutzte Sperrzonen-
-  Logik wie die Rueckzugswege (`gcode_safety.py::validate_chuck_segment()`,
-  direkt wiederverwendet statt dupliziert). Bewusst nur aktiv, wenn
-  ueberhaupt eine Sperrzone konfiguriert ist (wie die bestehende Funktion
-  selbst). Sieben neue Tests
-  (`tests/test_groove_chuck_reachability_check.py`), per entferntem
-  Verdrahtungsaufruf als echte Regression verifiziert; zusaetzlich
-  end-to-end gegen die echte `Drehbank/tool.tbl` bestaetigt (T4 "Einstechen
-  MGMN200", 2,0 mm Einsatzbreite: eine fuer sich allein 0,6 mm von der
-  Sperrzonengrenze entfernte Z-Position wird durch die Werkzeugbreite
-  korrekt als Verletzung erkannt - ein rein punktbasierter Check haette das
-  uebersehen). Alle zwoelf Referenzen neu generiert (keine Abweichung),
-  `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 857 Stub-/102
-  Real-Qt-Tests bestanden. Weitergehende Werkzeughuellenpruefung (z. B.
-  fuer Dreh-/Bohrwerkzeuge, Haltergeometrie) bleibt offen - dafuer fehlt
-  bislang die Datengrundlage (siehe voriger Punkt: keine Quelle fuer
-  Schneidenlaenge/Haltergeometrie im echten `tool.tbl`).
-- [x] Werkzeugvorschau und Generator fuer die Werkzeugbreite auf denselben
-  normalisierten Datensatz gestuetzt (siehe oben, `Tool.insert_width_mm`).
-  Fuer Radius/ISO-Code (`radius_mm`/`iso_code`) galt das schon vorher. Fuer
-  Schneidenlaenge/Haltergeometrie noch nicht anwendbar, da keine Datenquelle
-  vorhanden ist (siehe oben).
+Werkzeugnummer, Radius, ISO-Code, Orientierung und Stechbreite werden bereits
+aus dem normalisierten `Tool`-Datensatz verwendet. Die Q-basierte Innen-/
+Aussenableitung ist bewusst verworfen; Details stehen im Changelog.
+
+- [ ] eine belastbare Datenquelle fuer Schneidenlaenge und Haltergeometrie
+  festlegen. Im aktuell verwendeten `Drehbank/tool.tbl` gibt es dafuer keine
+  erkennbare Spalte oder Kommentarkonvention.
+- [ ] erst danach die Werkzeughuellenpruefung fuer Dreh- und Bohrwerkzeuge
+  erweitern; keine Geometrie aus geratenen Defaults ableiten.
+- [ ] fuer jede neue Reichweiten-/Kollisionsregel einen positiven und einen
+  negativen Test mit realistischen Tooltable-Daten ergaenzen.
 
 ## LES-043 Gegenspindel
 
-Die nicht implementierten Bedienelemente sind derzeit sichtbar, aber gesperrt.
+Die nicht implementierten Bedienelemente bleiben sichtbar, aber gesperrt.
 
-- [x] Entscheidung (2026-09-14): keine UI-Entfernung - Gegenspindelfunktion
-  wird als eigenes, separates Projekt geplant statt jetzt in LatheEasyStep
-  umgesetzt. Bedienelemente bleiben bis dahin sichtbar, aber gesperrt.
-- [ ] Spezifikation fuer das separate Projekt erstellen, bevor irgendeine
-  Generatorimplementierung beginnt: Operationen, Spindelsynchronisation,
-  S3-Grenzen und Kollisionsmodell. Kein LatheEasyStep-Codepaket ohne
-  LinuxCNC-SIM-/Maschinenkonzept fuer diese Spezifikation.
+- [ ] separate Spezifikation erstellen: Operationen, Spindelsynchronisation,
+  S3-Grenzen, Koordinatensysteme und Kollisionsmodell.
+- [ ] LinuxCNC-SIM- und Maschinenkonzept fuer diese Spezifikation festlegen,
+  bevor irgendeine Generatorimplementierung in LatheEasyStep beginnt.
 
 ## LES-030 Externe Maschinenverifikation
 
-- [ ] unterschiedliche reale Drehmaschinen mit ihren Achsgrenzen,
+- [ ] unterschiedliche reale Drehmaschinen mit Achsgrenzen,
   Werkzeugwechselpositionen und Futterbauformen verifizieren.
 
 Dieser Punkt ist mit der vorhandenen einzelnen QtDragon-SIM nicht abschliessbar

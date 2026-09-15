@@ -1,5 +1,20 @@
 # Changelog
 
+## Dokumentation 2026-09-15
+
+- `TODO.md` auf die tatsaechlich offenen Arbeiten konsolidiert. Historische
+  Abschlussberichte und bereits erledigte IDs bleiben im Changelog; LES-022
+  wurde als bisher fehlende offene Restarbeit wieder aufgenommen.
+- Neue offene Architekturaufgabe LES-051 aufgenommen: Das Panel-Grundgeruest
+  soll Zustand, Fachlogik, Views und externe Darstellungsressourcen strikt
+  trennen. Austauschbare Schneidplatten-Grafiken oder komplette Darstellungs-
+  Sets duerfen dadurch weder Programm-/Werkzeugdaten noch G-Code oder Dirty-
+  State beeinflussen.
+- Der Umsetzungsplan fuer diese Architektur ist als LES-052 in `TODO.md`
+  festgehalten: Ladevertrag, Zustandsmodell, Darstellungsadapter, atomare
+  Fehlergrenzen, Undo/Redo, Autosave, Werkzeugdaten-Domaene und technischer
+  Pruefbericht.
+
 ## [Unreleased]
 
 ### LES-044: Vorderansichts-Kreise als fertiger Bildschirmplan 2026-09-15
