@@ -358,13 +358,20 @@ linearisieren, sowie vollstaendige Arc-Intersections.
 Die vollstaendige und priorisierte Liste steht in `TODO.md`. Technisch
 besonders relevant sind derzeit:
 
-- unsichere direkte Diagonalanfahrt bei gesetztem `_is_at_safe`
 - weitere Verifikation von Innen-Schruppen und Innen-Schlichten
 - lokale DIN-Freistiche innerhalb laengerer Konturen
 - Primitive-/Arc-Erhalt in verbleibenden move-based Pfaden
-- Werkzeuggeometrie und tiefere Tooltable-Plausibilitaet
 - noch symbolische Gewindevorschau
-- fachliche Trennung der Preview-Pipeline
+- Werkzeuggeometrie und tiefere Tooltable-Plausibilitaet -> LES-032
+- fachliche Trennung der Preview-Pipeline -> LES-044
+
+(2026-09-15: "unsichere direkte Diagonalanfahrt bei gesetztem
+`_is_at_safe`" aus dieser Liste entfernt - `_is_at_safe` existiert nicht
+mehr, ersetzt durch `MotionState` (LES-022, `motion_state.py`), das die
+zuletzt bekannte Position bei Unsicherheit explizit invalidiert statt
+veraltet gueltig zu bleiben. `emit_approach()`/`emit_safe_retract_for_op()`
+erzeugen ausschliesslich sequentielle Einzelachs-Eilgaenge (nie kombiniertes
+`G0 X.. Z..`), verifiziert per Code-Durchsicht.)
 
 ---
 
