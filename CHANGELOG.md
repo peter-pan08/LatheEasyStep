@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### LES-050: Splitterpositionen sitzungsuebergreifend gemerkt (abgeschlossen) 2026-09-15
+
+- Letzter offener LES-050-Punkt umgesetzt: `workspaceSplitter` (Step-Spalte/
+  rechte Spalte) und `previewParamsSplitter` (Vorschau/Parameter) merken
+  sich ihre Groesse jetzt ueber `QSettings`
+  (`LatheEasyStep/WorkspaceSplitterSizes`,
+  `LatheEasyStep/PreviewParamsSplitterSizes`) und stellen sie beim naechsten
+  Start wieder her, statt stets bei der festen Standardaufteilung
+  (340/700 bzw. 180/520) zu bleiben. Neue Hilfsfunktionen
+  `_restore_splitter_sizes()`/`_persist_splitter_sizes()` in
+  `ui_lifecycle.py`, an beiden Splittern verdrahtet.
+- Entscheidung (2026-09-15) mit dem Nutzer geklaert: nur Persistenz mit
+  sicherem Fallback, keine zusaetzliche sichtbare Ruecksetzen-Aktion (anders
+  als beim vorherigen "Ansicht zuruecksetzen"-Button, siehe Eintrag unten).
+- "Robuste Standardaufteilung" ergibt sich daraus, dass ein gemerkter Wert
+  nur uebernommen wird, wenn er nach dem Parsen (korrekte Anzahl,
+  ausschliesslich positive Werte) mindestens so gross ist wie die jeweils
+  bekannten Mindestgroessen (330/380 fuer den Arbeitsflaechen-Splitter,
+  siehe REGRESSIONSFUND weiter unten) - eine zu schmale, fremde oder
+  beschaedigte Einstellung faellt automatisch auf die bisherige feste
+  Standardaufteilung zurueck, statt Buttons erneut zu quetschen.
+  `QSettings()`-Fehlschlaege (z. B. kein Schreibzugriff auf das
+  Konfigverzeichnis) werden abgefangen und wirken sich nicht auf die
+  Splitter-Funktion aus.
+- 15 neue Tests: neun isolierte Tests fuer die Parse-/Restore-/Persist-
+  Hilfsfunktionen inkl. kaputtem Settings-Backend
+  (`tests/test_splitter_size_persistence.py`), vier Real-Qt-
+  Integrationstests je Splitter fuer Wiederherstellung, Mindestgroessen-
+  Fallback und Speichern beim Ziehen (`tests/test_preview_panel_ui_loader.py`).
+  `moveSplitter()` statt `setSizes()` verwendet, um das Speichern-beim-Ziehen
+  zu testen - `setSizes()` loest das `splitterMoved`-Signal nicht aus, an das
+  die Persistenz gebunden ist (empirisch per Testskript geprueft, bevor die
+  Tests geschrieben wurden). Alle Fixes per entfernter Verdrahtung als echte
+  Regression bestaetigt. 823 Stub-/99 Real-Qt-Tests bestanden. LES-050 ist
+  damit vollstaendig abgeschlossen (offen bleibt nur noch ein praktischer
+  Check im eingebetteten QtDragon-Panel bei verschiedenen Panelgroessen,
+  siehe TODO.md).
+
 ### LES-050: Sichtbare Aktion "Ansicht zuruecksetzen" 2026-09-15
 
 - Letzter offener Punkt aus LES-050 umgesetzt: Doppelklick setzte die
