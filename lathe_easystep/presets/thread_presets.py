@@ -90,6 +90,29 @@ def validate_thread_preset_data(data: Dict[str, object] | None) -> List[str]:
     return errors
 
 
+def thread_preset_values(data: Dict[str, object] | None) -> Dict[str, float] | None:
+    """Return every numeric UI/G76 value derived from a valid preset."""
+    if validate_thread_preset_data(data):
+        return None
+    assert isinstance(data, dict)
+    major = float(data["major"])
+    pitch = float(data["pitch"])
+    profile = str(data["profile"]).strip().lower()
+    depth = pitch * (0.50 if profile == "tr" else 0.6134)
+    return {
+        "major_diameter": major,
+        "pitch": pitch,
+        "thread_depth": depth,
+        "first_depth": max(depth * 0.10, pitch * 0.05),
+        "peak_offset": -max(depth * 0.50, pitch * 0.25),
+        "retract_r": 1.5,
+        "infeed_q": 15.0 if profile == "tr" else 29.5,
+        "spring_passes": 1.0,
+        "e": 0.0,
+        "l": 0.0,
+    }
+
+
 THREAD_PRESET_INDEX: Dict[str, Dict[str, object]] = {}
 THREAD_PRESET_INDEX.update(_preset_dict(METRIC_THREAD_PRESETS, "metric"))
 THREAD_PRESET_INDEX.update(_preset_dict(TRAPEZOIDAL_THREAD_PRESETS, "tr"))

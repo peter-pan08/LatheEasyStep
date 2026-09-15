@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 834 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 838 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -25,7 +25,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
 | LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
-| LES-028 | P2 | Werkzeugdatensatz und Preset-/Manuell-Normalisierung festlegen | M | 0.9.0 |
 | LES-032 | P2 | reale Werkzeuggeometrie fuer Plausibilitaet/Kollision auswerten | L | 0.9.0 |
 | LES-043 | P2 | Gegenspindelfunktion als eigenes Projekt spezifizieren (UI bleibt gesperrt sichtbar) | XL | separat |
 | LES-030 | extern | weitere physische Maschinenprofile verifizieren | extern | offen |
@@ -132,8 +131,19 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   generiert (keine Abweichung - die Referenzbeispiele verwenden durchweg
   passende Werkzeuge), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei.
   834 Stub-/102 Real-Qt-Tests bestanden.
-- [ ] Preset- und manuelle Werte nachvollziehbar vergleichen und Konflikte
-  sichtbar machen.
+- [x] Preset- und manuelle Werte nachvollziehbar verglichen: Der einzige
+  dauerhaft doppelte Datensatz ist das Gewinde-Preset (`standard`) neben den
+  editierbaren G76-Werten. `thread_preset_values()` ist nun die gemeinsame,
+  Qt-freie Sollwertberechnung fuer UI und Pruefung. Presetwechsel setzen
+  Durchmesser/Steigung und fuellen die uebrigen leeren Felder weich; der
+  explizite Preset-Button ueberschreibt weiterhin bewusst alle Presetwerte.
+  Manuelle Abweichungen bei Durchmesser, Steigung sowie allen sieben
+  abgeleiteten Bearbeitungswerten bleiben erlaubt, erscheinen aber gesammelt
+  als Warnung in Vorschau und G-Code-Kopf. Dabei einen echten Fehler behoben:
+  der Rekursionsschutz verhinderte zuvor den gesamten Soft-Fill nach einem
+  Presetwechsel. Maschinen-/Futterprofile werden dagegen sofort in konkrete
+  Programmkopfwerte aufgeloest und speichern keinen konkurrierenden
+  Presetdatensatz. Vier neue Tests, Gesamtstand 838/102. LES-028 abgeschlossen.
 
 ## LES-032 Werkzeuggeometrie
 

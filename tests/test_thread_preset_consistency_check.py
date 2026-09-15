@@ -75,3 +75,25 @@ def test_thread_without_standard_preset_is_silent():
         ),
     ]
     assert _preset_warnings(validate_program_setup(ops, {"za": 0.0, "zi": -50.0})) == []
+
+
+def test_diverging_derived_preset_values_are_reported_together():
+    ops = [
+        Operation(OpType.PROGRAM_HEADER, {}),
+        Operation(
+            OpType.THREAD,
+            {
+                "pitch": 1.5, "length": 20.0, "major_diameter": 10.0,
+                "thread_start_z": -10.0, "thread_depth": 9.0,
+                "first_depth": 0.2, "infeed_q": 15.0,
+                "standard": {"label": "M10", "major": 10.0, "pitch": 1.5, "profile": "metric"},
+            },
+        ),
+    ]
+
+    warnings = _preset_warnings(validate_program_setup(ops, {"za": 0.0, "zi": -50.0}))
+
+    assert len(warnings) == 1
+    assert "Gewindetiefe" in warnings[0]
+    assert "Zustellwinkel" in warnings[0]
+    assert "erste Zustellung" in warnings[0]

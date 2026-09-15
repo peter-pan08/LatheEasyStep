@@ -1804,22 +1804,10 @@ class HandlerClass:
             return
         if validate_thread_preset_data(data):
             return
-        major = data.get("major")
-        pitch = data.get("pitch")
-        self._thread_applying_standard = True
         try:
-            # Major & Pitch: immer setzen (sichtbar für den Benutzer)
-            if isinstance(major, (int, float)) and self.thread_major_diameter:
-                self.thread_major_diameter.setValue(float(major))
-            if isinstance(pitch, (int, float)) and self.thread_pitch:
-                self.thread_pitch.setValue(float(pitch))
-            # Soft-Fill für die restlichen Preset-Werte (nur wenn Felder 0 sind)
-            try:
-                self._apply_thread_preset(force=False)
-            except Exception:
-                pass
-        finally:
-            self._thread_applying_standard = False
+            self._apply_thread_preset(force=False)
+        except Exception:
+            pass
 
     def _set_if_zero(self, spin, value) -> bool:
         """Setzt `spin` nur wenn der aktuellen Wert numerisch ~ 0 ist.
