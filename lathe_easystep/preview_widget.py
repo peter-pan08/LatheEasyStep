@@ -27,14 +27,14 @@ from .preview_geometry import (
     build_keyway_front_polygons,
     apply_side_navigation,
     compute_side_viewport,
+    circular_view_layout,
     front_operation_side,
     front_reference_diameter,
     front_slice_profile,
-    front_view_scale,
     interp_x_at_z,
     interp_x_hits_at_z,
     legend_layout,
-    navigated_center_scale,
+    offset_polygons_to_screen,
     path_hits_at_slice,
     preview_primitives_to_points,
     sample_preview_arc,
@@ -93,14 +93,6 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self._view_zoom = 1.0
         self._view_pan = QtCore.QPointF(0.0, 0.0)
         self.update()
-
-    def _navigated_center_scale(self, center: QtCore.QPointF, scale: float):
-        pan = getattr(self, "_view_pan", QtCore.QPointF())
-        zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
-        result_center, result_scale = navigated_center_scale(
-            (center.x(), center.y()), scale, zoom, (pan.x(), pan.y())
-        )
-        return QtCore.QPointF(*result_center), result_scale
 
     def _apply_side_navigation(self, viewport: Dict[str, float], rect: QtCore.QRect) -> Dict[str, float]:
         zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
@@ -252,13 +244,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
             diam = 10.0
 
         r = self.rect().adjusted(20, 20, -20, -40)
-        center, scale = self._navigated_center_scale(
-            QtCore.QPointF(float(r.center().x()), float(r.center().y())),
-            min(r.width(), r.height()) / max(abs(float(diam)) * 1.1, 1e-3),
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        layout = circular_view_layout(
+            float(diam), (r.left(), r.top(), r.right(), r.bottom()),
+            zoom=float(getattr(self, "_view_zoom", 1.0) or 1.0),
+            pan=(pan.x(), pan.y()), fit_factor=1.1,
         )
-        cx, cy = center.x(), center.y()
-        radius = abs(float(diam)) / 2.0
-        pix_rad = radius * scale
+        cx, cy = layout["center"]
+        pix_rad = layout["radius"]
 
         painter.setPen(QtGui.QPen(QtCore.Qt.white, 2))
         painter.drawEllipse(QtCore.QPointF(cx, cy), pix_rad, pix_rad)
@@ -310,16 +303,16 @@ class LathePreviewWidget(QtWidgets.QWidget):
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 120, 120), 2))
         painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 80)))
+        polygons = []
         for op in self._front_program_operations():
             if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
                 continue
             params = getattr(op, "params", {}) or {}
-            for points in build_keyway_front_polygons(params, self.slice_z):
-                poly = QtGui.QPolygonF([
-                    QtCore.QPointF(center.x() + x_off * scale, center.y() + y_off * scale)
-                    for x_off, y_off in points
-                ])
-                painter.drawPolygon(poly)
+            polygons.extend(build_keyway_front_polygons(params, self.slice_z))
+        for points in offset_polygons_to_screen(
+            polygons, (center.x(), center.y()), scale
+        ):
+            painter.drawPolygon(QtGui.QPolygonF([QtCore.QPointF(*point) for point in points]))
         painter.restore()
 
     def _paint_front_view(self, painter: QtGui.QPainter):
@@ -347,14 +340,18 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
         max_diameter = max(self._front_reference_diameter(), 10.0)
         r = self.rect().adjusted(20, 20, -20, -36)
-        center, scale = self._navigated_center_scale(
-            QtCore.QPointF(float(r.center().x()), float(r.center().y())),
-            front_view_scale(max_diameter, r.width(), r.height()),
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        layout = circular_view_layout(
+            max_diameter, (r.left(), r.top(), r.right(), r.bottom()),
+            zoom=float(getattr(self, "_view_zoom", 1.0) or 1.0),
+            pan=(pan.x(), pan.y()),
         )
+        center = QtCore.QPointF(*layout["center"])
+        scale = float(layout["scale"])
 
         painter.setPen(QtGui.QPen(QtGui.QColor(70, 70, 70), 1))
-        painter.drawLine(QtCore.QPointF(r.left(), center.y()), QtCore.QPointF(r.right(), center.y()))
-        painter.drawLine(QtCore.QPointF(center.x(), r.top()), QtCore.QPointF(center.x(), r.bottom()))
+        painter.drawLine(*(QtCore.QPointF(*point) for point in layout["horizontal_axis"]))
+        painter.drawLine(*(QtCore.QPointF(*point) for point in layout["vertical_axis"]))
 
         draw_plan = build_front_view_draw_plan(
             stock_od=stock_od,
