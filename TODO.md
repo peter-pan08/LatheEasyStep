@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 864 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 869 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -48,9 +48,12 @@ keine vollstaendige Trennung von Zustand, Fachlogik und optischer Darstellung.
 Das Panel soll ueber ein stabiles Grundgeruest geladen werden, waehrend
 Darstellungen und Ressourcen austauschbare Adapter bleiben.
 
-- [ ] die Besitzgrenzen festlegen und dokumentieren: fachlicher Programm- und
-  UI-Zustand, Controller/Signale, View-Modelle bzw. Zeichenplaene, Qt-Views
-  sowie externe Ressourcen duerfen nicht ungeordnet aufeinander zugreifen.
+Erster Baustein umgesetzt: Besitzgrenzen sind in
+`doc/PANEL_ARCHITECTURE.md` dokumentiert. Der Qt-freie `ToolVisualProvider`
+loest logische Werkzeugdarstellungen aus einem Theme-Manifest auf und liefert
+bei fehlenden oder ungueltigen PNG-/SVG-Dateien einen diagnostizierten
+prozeduralen Fallback. Die Anbindung an die Qt-Werkzeugvorschau bleibt offen.
+
 - [ ] den verbleibenden Handler-Kleber weiter reduzieren. Neue Fachlogik darf
   nicht in `lathe_easystep_handler.py` entstehen; UI-Fragmente sollen nur
   definieren, welche Views geladen werden, nicht deren Zustand selbst besitzen.

@@ -17,6 +17,23 @@
 
 ## [Unreleased]
 
+### LES-051: neutraler Providervertrag fuer Werkzeugdarstellungen 2026-09-15
+
+- Neues Qt-freies Modul `tool_visuals.py`: `ToolVisualRequest` beschreibt eine
+  Darstellung ohne Abhaengigkeit von `Tool`, Operation oder Widget;
+  `ToolVisualProvider` loest logische Manifest-Schluessel innerhalb eines
+  getrennten Theme-Verzeichnisses auf.
+- ISO-spezifische, Form-/Seiten-, Familien- und Default-Eintraege besitzen eine
+  definierte Prioritaet. PNG und SVG sind zugelassen; absolute Pfade,
+  Verzeichnisausbrueche, unbekannte Formate und fehlende Dateien fuehren zum
+  prozeduralen Fallback mit Diagnose.
+- Besitz- und Abhaengigkeitsgrenzen sind in `doc/PANEL_ARCHITECTURE.md`
+  festgehalten. Fuenf Tests sichern alternative Ressourcensaetze, fehlende und
+  ungueltige Ressourcen sowie unveraenderte Werkzeugdaten.
+- Gesamtstand: 869 Stub-Qt- und 102 Real-Qt-Tests, keine Skips. Noch keine
+  Qt-Anbindung und damit keine Aenderung am sichtbaren Panel, G-Code oder
+  Maschinenverhalten; ein Standalone-/LinuxCNC-Start war nicht erforderlich.
+
 ### LES-044/LES-052: numerische Vorschau-Fehlergrenzen verengt 2026-09-15
 
 - Fuenf reine Zahlenkonvertierungen in `preview_widget.py` fangen nur noch
