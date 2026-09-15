@@ -35,13 +35,15 @@ from .preview_geometry import (
     interp_x_hits_at_z,
     legend_layout,
     offset_polygons_to_screen,
+    point_cross_lines,
     path_hits_at_slice,
     preview_primitives_to_points,
     sample_preview_arc,
     side_view_grid_layout,
+    side_points_to_screen,
+    side_strokes_to_screen,
     status_message_layout,
     zoom_navigation_state,
-    side_view_to_screen,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -585,13 +587,6 @@ class LathePreviewWidget(QtWidgets.QWidget):
             self._view_max_z = max_z
             self._view_scale = scale
 
-            def to_screen(x_val: float, z_val: float) -> QtCore.QPointF:
-                point = side_view_to_screen(
-                    x_val, z_val, viewport, left=rect.left(), bottom=rect.bottom(),
-                    x_is_diameter=self.x_is_diameter,
-                )
-                return QtCore.QPointF(*point)
-
             grid = side_view_grid_layout(
                 viewport,
                 left=rect.left(), top=rect.top(), right=rect.right(), bottom=rect.bottom(),
@@ -685,22 +680,33 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     if role == "chuck_nogo":
                         region = stroke_bounding_rectangle(strokes)
                         if region:
-                            fill_poly = QtGui.QPolygonF([to_screen(*point) for point in region])
+                            fill_poly = QtGui.QPolygonF([
+                                QtCore.QPointF(*point) for point in side_points_to_screen(
+                                    region, viewport, left=rect.left(), bottom=rect.bottom(),
+                                    x_is_diameter=self.x_is_diameter,
+                                )
+                            ])
                             painter.save()
                             painter.setPen(QtCore.Qt.NoPen)
                             painter.setBrush(QtGui.QBrush(QtGui.QColor(200, 60, 220, 55)))
                             painter.drawPolygon(fill_poly)
                             painter.restore()
-                    for stroke in strokes:
+                    screen_strokes = side_strokes_to_screen(
+                        strokes, viewport, left=rect.left(), bottom=rect.bottom(),
+                        x_is_diameter=self.x_is_diameter,
+                    )
+                    for stroke in screen_strokes:
                         if len(stroke) >= 2:
-                            painter.drawPolyline(QtGui.QPolygonF([to_screen(x, z) for x, z in stroke]))
+                            painter.drawPolyline(QtGui.QPolygonF([QtCore.QPointF(*point) for point in stroke]))
                         elif len(stroke) == 1:
-                            pt = to_screen(stroke[0][0], stroke[0][1])
-                            painter.drawLine(QtCore.QLineF(pt.x() - 4, pt.y(), pt.x() + 4, pt.y()))
-                            painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 4))
+                            for p1, p2 in point_cross_lines(stroke[0]):
+                                painter.drawLine(QtCore.QLineF(QtCore.QPointF(*p1), QtCore.QPointF(*p2)))
                     continue
-                points = [to_screen(x, z) for x, z in path]
-                painter.drawPolyline(QtGui.QPolygonF(points))
+                points = side_points_to_screen(
+                    path, viewport, left=rect.left(), bottom=rect.bottom(),
+                    x_is_diameter=self.x_is_diameter,
+                )
+                painter.drawPolyline(QtGui.QPolygonF([QtCore.QPointF(*point) for point in points]))
 
             legend_enabled = getattr(self, "show_legend", True)
             collapsed = getattr(self, "_legend_collapsed", False)

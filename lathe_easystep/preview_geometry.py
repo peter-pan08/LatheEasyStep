@@ -325,6 +325,49 @@ def side_view_to_screen(
     return (screen_x, screen_y)
 
 
+def side_points_to_screen(
+    points: List[Point],
+    viewport: Dict[str, float],
+    *,
+    left: float,
+    bottom: float,
+    x_is_diameter: bool = True,
+) -> List[Point]:
+    """Map one model-space polyline to screen points without Qt objects."""
+    return [
+        side_view_to_screen(
+            x, z, viewport, left=left, bottom=bottom,
+            x_is_diameter=x_is_diameter,
+        )
+        for x, z in points
+    ]
+
+
+def side_strokes_to_screen(
+    strokes: List[List[Point]],
+    viewport: Dict[str, float],
+    *,
+    left: float,
+    bottom: float,
+    x_is_diameter: bool = True,
+) -> List[List[Point]]:
+    """Map disconnected model strokes while preserving their boundaries."""
+    return [
+        side_points_to_screen(
+            stroke, viewport, left=left, bottom=bottom,
+            x_is_diameter=x_is_diameter,
+        )
+        for stroke in strokes
+    ]
+
+
+def point_cross_lines(point: Point, half_size: float = 4.0) -> List[Tuple[Point, Point]]:
+    """Return two screen-space lines forming a marker for a single point."""
+    x, y = float(point[0]), float(point[1])
+    size = max(float(half_size), 0.0)
+    return [((x - size, y), (x + size, y)), ((x, y - size), (x, y + size))]
+
+
 def side_view_axis_lines(
     viewport: Dict[str, float], *, left: float, bottom: float
 ) -> Dict[str, object]:

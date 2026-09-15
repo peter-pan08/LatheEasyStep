@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### LES-044: Pfad-/Primitive-Abbildung aus Paint-Code geloest 2026-09-15
+
+- `side_points_to_screen()` und `side_strokes_to_screen()` bilden normale
+  Polylinien sowie getrennte Primitive Qt-frei auf Bildschirmkoordinaten ab;
+  die Trennung einzelner Strokes bleibt dabei explizit erhalten, sodass keine
+  erfundenen Verbindungslinien entstehen.
+- `point_cross_lines()` liefert die beiden Linien fuer die Markierung eines
+  einzelnen Punkts. Auch die gefuellte Futter-Sperrzone verwendet nun dieselbe
+  gemeinsame Punktabbildung. `paintEvent()` erzeugt fuer diese Faelle nur noch
+  Qt-Punkte und zeichnet sie.
+- Zwei neue Stub-Tests sichern Durchmesserabbildung, getrennte Strokes,
+  unveraenderte Eingaben und Punktkreuz. Vollstaendige Suite real gezaehlt:
+  859 Stub-Qt- und 102 Real-Qt-Tests, keine Skips. Dabei eine rein
+  dokumentarische Alt-Abweichung gefunden: Die beiden vorigen LES-032-Eintraege
+  hatten jeweils zwei Tests zu viel fortgeschrieben (korrekt waren 850 statt
+  852 und danach 857 statt 859); die zwei neuen Tests ergeben nun tatsaechlich
+  859. Standalone-Panel bis `critical done` nach 2,329 s gestartet und sauber
+  beendet; kein LinuxCNC-Start erforderlich.
+
 ### LES-032: Werkzeugbreite gegen die Futter-Sperrzone geprueft 2026-09-15
 
 - Erster konkreter Baustein fuer Erreichbarkeits-/Werkzeughuellenpruefung
@@ -27,7 +46,7 @@
   von der Sperrzonengrenze entfernte Z-Position wird durch die
   Werkzeugbreite korrekt als Verletzung erkannt - ein rein punktbasierter
   Check haette das uebersehen). Alle zwoelf Referenzen neu generiert (keine
-  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 859
+  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 857
   Stub-/102 Real-Qt-Tests bestanden.
 - Weitergehende Werkzeughuellenpruefung (z. B. fuer Dreh-/Bohrwerkzeuge,
   Haltergeometrie) bleibt offen - dafuer fehlt bislang die Datengrundlage
@@ -75,7 +94,7 @@
   `Drehbank/tool.tbl`-Datei bestaetigt (T4 "Einstechen MGMN200" ->
   unveraendert `groove_width_mm: 2.0`). Alle zwoelf Referenzen neu
   generiert (keine Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin
-  fehlerfrei. 852 Stub-/102 Real-Qt-Tests bestanden.
+  fehlerfrei. 850 Stub-/102 Real-Qt-Tests bestanden.
 - Schneidenlaenge und Haltergeometrie (die anderen beiden in LES-032
   genannten Datenpunkte) bleiben offen - im echten `tool.tbl` gibt es
   dafuer aktuell keine erkennbare Datenquelle (weder Spalte noch

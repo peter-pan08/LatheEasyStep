@@ -7,8 +7,11 @@ from lathe_easystep.preview_geometry import (
     compute_side_viewport,
     navigated_center_scale,
     nice_tick_step,
+    point_cross_lines,
     side_view_axis_lines,
     side_view_grid_layout,
+    side_points_to_screen,
+    side_strokes_to_screen,
     side_view_slice_line,
     side_view_ticks,
     side_view_to_screen,
@@ -62,6 +65,38 @@ def test_side_grid_layout_contains_ready_to_draw_ticks_axes_and_slice():
     )
     assert first_z["mark_line"] == ((px, py - 4.0), (px, py + 2.0))
     assert layout["x_label_pos"][1] == 32.0
+
+
+def test_side_stroke_mapping_preserves_disconnected_paths_and_diameter_mode():
+    viewport = {
+        "min_x": 0.0, "max_x": 10.0,
+        "min_z": -10.0, "max_z": 10.0,
+        "scale": 10.0,
+    }
+    strokes = [[(20.0, -10.0), (10.0, 0.0)], [(4.0, 5.0)]]
+    mapped = side_strokes_to_screen(
+        strokes, viewport, left=30.0, bottom=120.0, x_is_diameter=True
+    )
+    assert mapped == [[(30.0, 20.0), (130.0, 70.0)], [(180.0, 100.0)]]
+    assert len(mapped) == len(strokes)
+    assert strokes == [[(20.0, -10.0), (10.0, 0.0)], [(4.0, 5.0)]]
+
+
+def test_side_points_and_single_point_cross_are_ready_to_draw():
+    viewport = {
+        "min_x": 0.0, "max_x": 10.0,
+        "min_z": 0.0, "max_z": 10.0,
+        "scale": 2.0,
+    }
+    points = side_points_to_screen(
+        [(3.0, 4.0)], viewport, left=10.0, bottom=30.0,
+        x_is_diameter=False,
+    )
+    assert points == [(18.0, 24.0)]
+    assert point_cross_lines(points[0]) == [
+        ((14.0, 24.0), (22.0, 24.0)),
+        ((18.0, 20.0), (18.0, 28.0)),
+    ]
 
 
 def test_empty_side_viewport_keeps_origin_and_minimum_span():
