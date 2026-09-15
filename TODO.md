@@ -187,7 +187,21 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Stub-/102 Real-Qt-Tests bestanden. Schneidenlaenge und Haltergeometrie
   bleiben offen - im echten `tool.tbl` gibt es dafuer aktuell keine
   erkennbare Datenquelle (weder Spalte noch Kommentarkonvention).
-- [ ] Innen-/Aussenwerkzeuge anhand dieser Daten plausibilisieren.
+- [x] Entscheidung (2026-09-15) mit dem Nutzer geklaert: Q kodiert die
+  Schneidenausrichtung fuer die Radiuskompensation, NICHT Innen/Aussen -
+  per echtem Gegenbeispiel im realen `tool.tbl` bestaetigt (Q6 steht dort
+  gleichzeitig fuer T3/T4 "Außendrehen"/"Einstechen" AUSSEN und T7/T9/T11
+  "Innen*" - reine Fehlklassifikation waere die Folge). Zusaetzlich (User-
+  Erklaerung): dasselbe physische Werkzeug kann durch Drehrichtungswechsel
+  der Spindel sowohl aussen als auch innen schneiden - Q kann also
+  grundsaetzlich keine alleinige, zuverlaessige Innen/Aussen-Quelle sein.
+  Eine umfassendere, sprachunabhaengige Kommentaranalyse waere unverhaeltnismaessig
+  aufwendig; ein gewisses Mass an Verantwortung beim Anwender (korrekte
+  Kommentare/Parameter) ist akzeptiert - vollstaendig "idiotensicher" ist
+  nicht das Ziel. Die bestehende, bereits aktive Kommentartext-Pruefung in
+  `checks.py::validate_program_setup()` (Schluesselwoerter innen/aussen
+  usw.) bleibt unveraendert und ist fuer diese Tabelle die verlaesslichere
+  Quelle. Kein Codeeingriff - reine Entscheidung/Dokumentation.
 - [ ] Tooltable-Daten fuer Erreichbarkeits- und Werkzeughuellenpruefungen nutzen.
 - [x] Werkzeugvorschau und Generator fuer die Werkzeugbreite auf denselben
   normalisierten Datensatz gestuetzt (siehe oben, `Tool.insert_width_mm`).

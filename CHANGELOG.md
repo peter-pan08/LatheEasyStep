@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### LES-032: Entscheidung gegen eine Q-basierte Innen/Aussen-Pruefung 2026-09-15
+
+- Ueberpruefung ergab per echtem Gegenbeispiel im realen `Drehbank/tool.tbl`:
+  Q6 steht dort gleichzeitig fuer T3/T4 ("Außendrehen"/"Einstechen",
+  AUSSEN) und T7/T9/T11 ("Innen*", INNEN) - eine Plausibilisierung anhand
+  des Q-Werts allein wuerde also Falschmeldungen erzeugen. Q kodiert die
+  Schneidenausrichtung fuer die Radiuskompensation, nicht die Werkstueck-
+  seite.
+- Nutzerbestaetigung: dasselbe physische Werkzeug kann durch Drehrichtungs-
+  wechsel der Spindel sowohl aussen als auch innen schneiden - Q kann
+  grundsaetzlich keine alleinige, zuverlaessige Innen/Aussen-Quelle sein.
+  Eine umfassendere, sprachunabhaengige Kommentaranalyse waere
+  unverhaeltnismaessig aufwendig; ein gewisses Mass an Verantwortung beim
+  Anwender (korrekte Kommentare/Parameter) wird bewusst akzeptiert.
+- Kein Codeeingriff - die bestehende, bereits aktive Kommentartext-Pruefung
+  in `checks.py::validate_program_setup()` bleibt unveraendert und ist die
+  verlaesslichere Quelle. Details: TODO.md (LES-032).
+
 ### LES-032: Werkzeugbreite aus ISO-Einsatzcode fuer Vorschau UND Pruefung 2026-09-15
 
 - Das real genutzte `tool.tbl` (`Drehbank/tool.tbl`) belegt D bereits fuer
