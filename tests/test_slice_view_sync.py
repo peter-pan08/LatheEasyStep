@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lathe_easystep.preview_widget import LathePreviewWidget
-from lathe_easystep.ui_preview import setup_slice_view, sync_slice_widget
+from lathe_easystep.ui_preview import reset_preview_view, setup_slice_view, sync_slice_widget
 from lathe_easystep_handler import HandlerClass
 
 
@@ -80,6 +80,19 @@ class _SetupButton:
         pass
 
 
+class _SetupResetButton:
+    def __init__(self):
+        self.clicked = _Signal()
+
+
+class _ResettablePreview:
+    def __init__(self):
+        self.reset_calls = 0
+
+    def reset_view(self):
+        self.reset_calls += 1
+
+
 def test_slice_setup_retries_after_preview_ui_is_loaded():
     handler = type("Handler", (), {})()
     handler.preview = None
@@ -90,6 +103,7 @@ def test_slice_setup_retries_after_preview_ui_is_loaded():
     handler._log = lambda *_args, **_kwargs: None
     handler._on_toggle_slice_view = lambda _checked: None
     handler._on_slice_changed = lambda _value: None
+    handler._reset_preview_view = lambda *_a: None
 
     setup_slice_view(handler)
     assert handler._slice_view_setup_done is False
@@ -97,6 +111,7 @@ def test_slice_setup_retries_after_preview_ui_is_loaded():
     handler.preview = _SetupPreview()
     handler.preview_slice = _SetupPreview()
     handler.btn_slice_view = _SetupButton()
+    handler.btn_reset_view = _SetupResetButton()
     setup_slice_view(handler)
 
     assert handler._slice_view_setup_done is True
@@ -105,6 +120,48 @@ def test_slice_setup_retries_after_preview_ui_is_loaded():
     assert handler.preview_slice.visible is False
     assert len(handler.btn_slice_view.toggled.callbacks) == 1
     assert len(handler.preview.sliceChanged.callbacks) == 1
+    # LES-050: die sichtbare "Ansicht zuruecksetzen"-Aktion muss an
+    # handler._reset_preview_view gebunden sein.
+    assert handler.btn_reset_view.clicked.callbacks == [handler._reset_preview_view]
+
+
+def test_slice_setup_tolerates_a_handler_without_reset_view_button():
+    """btn_reset_view ist eine optionale Zusatzaktion (LES-050) - ihr Fehlen
+    (z. B. aeltere .ui-Variante) darf das Anschliessen von Vorschau/
+    Schnittansicht/Toggle nicht blockieren."""
+    handler = type("Handler", (), {})()
+    handler.preview = _SetupPreview()
+    handler.preview_slice = _SetupPreview()
+    handler.btn_slice_view = _SetupButton()
+    handler._slice_view_setup_done = False
+    handler._get_widget_by_name = lambda _name: None
+    handler._log = lambda *_args, **_kwargs: None
+    handler._on_toggle_slice_view = lambda _checked: None
+    handler._on_slice_changed = lambda _value: None
+
+    setup_slice_view(handler)
+
+    assert handler._slice_view_setup_done is True
+    assert handler.btn_reset_view is None
+
+
+def test_reset_preview_view_resets_both_preview_widgets():
+    handler = type("Handler", (), {})()
+    handler.preview = _ResettablePreview()
+    handler.preview_slice = _ResettablePreview()
+
+    reset_preview_view(handler)
+
+    assert handler.preview.reset_calls == 1
+    assert handler.preview_slice.reset_calls == 1
+
+
+def test_reset_preview_view_tolerates_missing_or_broken_widgets():
+    handler = type("Handler", (), {})()
+    handler.preview = None
+    handler.preview_slice = object()  # kein reset_view() vorhanden
+
+    reset_preview_view(handler)  # darf nicht werfen
 
 
 def test_sync_slice_widget_updates_front_preview_even_if_widget_is_not_visible():

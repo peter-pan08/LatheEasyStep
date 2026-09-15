@@ -123,6 +123,38 @@ def test_docking_removes_empty_shell_and_adds_resizable_preview_splitter():
     assert preview.height() > initial_height
 
 
+def test_docking_moves_reset_view_button_too_so_the_shell_stays_removable():
+    """LES-050 Regressionsfund: `_dock_preview_above_scroll()` reparentete
+    urspruenglich nur `btn_slice_view` in den neuen Controls-Bereich. Der
+    neue `btn_reset_view` (Ansicht zuruecksetzen) blieb dadurch als letztes
+    Kind im alten `previewPanel`-Geruest zurueck, wodurch dessen
+    `findChildren()` nicht mehr leer war und die 'leere Huelle entfernen'-
+    Pruefung (`not old_parent.findChildren(QtWidgets.QWidget)`) fehlschlug -
+    die leere Huelle blieb sichtbar im Baum und beanspruchte wieder Platz."""
+    root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
+    load_preview_uis(handler)
+    _dock_preview_above_scroll(handler)
+
+    root.resize(1000, 700)
+    root.show()
+    _app.processEvents()
+
+    reset_button = root.findChild(QtWidgets.QAbstractButton, "btn_reset_view")
+    assert reset_button is not None
+    container = root.findChild(QtWidgets.QWidget, "previewDockContainer")
+    assert reset_button.parentWidget() is not None
+    # Muss im Baum unterhalb des Dock-Containers haengen, nicht mehr im alten
+    # (inzwischen entfernten) previewPanel-Geruest.
+    parent = reset_button.parentWidget()
+    while parent is not None and parent is not container:
+        parent = parent.parentWidget()
+    assert parent is container
+
+    empty_shell = root.findChild(QtWidgets.QWidget, "previewPanel")
+    assert empty_shell is None
+
+
 def test_workspace_splitter_resizes_step_column_against_editor():
     root, handler = _load_full_root()
     _install_workspace_splitter(handler)

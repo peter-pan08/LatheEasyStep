@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 809 Stub-Qt-Tests und 93 Tests mit echtem PyQt5, keine Skips.
+- 812 Stub-Qt-Tests und 94 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -129,10 +129,37 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   machen: Ziehen mit der Maus verschiebt die Darstellung (Pan), das Mausrad
   zoomt um die aktuelle Mausposition. Die Bedienung darf bestehende Klick- und
   Umschaltfunktionen der Vorschau nicht ausloesen oder blockieren.
-- [ ] Doppelklick passt die Ansicht bereits wieder ein. Zusaetzlich eine
-  sichtbare, gut erreichbare Aktion "Ansicht einpassen/zuruecksetzen" vorsehen,
-  damit Rohteil, Kontur und Sicherheitsbereiche nach Pan oder Zoom sofort
-  wieder vollstaendig sichtbar werden.
+- [x] Doppelklick passt die Ansicht bereits wieder ein. Zusaetzlich eine
+  sichtbare, gut erreichbare Aktion "Ansicht einpassen/zuruecksetzen" vorgesehen:
+  neuer `btn_reset_view` (QToolButton, "Ansicht zuruecksetzen") links neben
+  "Schnittansicht" in `previewPanel.ui`, verdrahtet in `setup_slice_view()`
+  (`ui_preview.py`) auf `handler._reset_preview_view()` ->
+  `reset_preview_view()`, die `reset_view()` auf `preview` und
+  `preview_slice` aufruft (setzt Zoom/Pan zurueck, tolerant gegenueber
+  fehlenden/kaputten Widgets). Uebersetzung ueber die generische
+  `.ui`-Scan-Schiene (`ui_static.py`, Schluessel `ui.btn_reset_view.text` /
+  `ui.btn_reset_view.toolTip`) statt der Widget-Registry - beim ersten
+  Versuch faelschlich `UI_TEXT_KEYS`/`UI_TOOLTIP_KEYS` verwendet, per
+  Testfehler korrigiert. Echter Regressionsfund beim Docking:
+  `_dock_preview_above_scroll()` reparentete urspruenglich nur
+  `btn_slice_view` in den neuen Controls-Bereich, `btn_reset_view` blieb im
+  alten `previewPanel`-Geruest zurueck und verhinderte dessen Entfernung als
+  "leere Huelle" - behoben, beide Buttons werden jetzt gemeinsam umgehaengt.
+  Sechs neue/erweiterte Tests (`tests/test_slice_view_sync.py`:
+  Signalverdrahtung, Toleranz ohne Button, `reset_preview_view()` isoliert
+  fuer beide Widgets sowie mit fehlenden/kaputten Widgets;
+  `tests/test_preview_panel_ui_loader.py`: Docking nimmt Reset-Button mit,
+  leere Huelle bleibt entfernbar), per zurueckgesetzter Verdrahtung/
+  zurueckgesetztem Docking-Fix als echte Regression verifiziert. Live im
+  Standalone-Panel (`qtvcp -c easystep -u ./lathe_easystep_handler.py
+  ./lathe_easystep.ui`) bestaetigt: Button rendert lesbar links von
+  "Schnittansicht", Log zeigt fehlerfreie Verbindung
+  ("reset view button connected"), Zoom-per-Mausrad und Klick auf den
+  Button loesen ohne Fehler/Traceback aus. Visueller Vorher-Nachher-
+  Vergleich per Screenshot war bei leerem Vorschau-Canvas (kein Programm
+  geladen) nicht aussagekraeftig - die eigentliche Wirkung ist durch die
+  automatisierten Tests direkt abgesichert. 812 Stub-/94 Real-Qt-Tests
+  bestanden.
 - [x] Zoomgrenzen (Faktor 0,2 bis 20) und stabile Transformationen umgesetzt;
   Pan und
   Zoom duerfen weder Werkstueckgeometrie noch Pruefergebnisse veraendern,

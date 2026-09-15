@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### LES-050: Sichtbare Aktion "Ansicht zuruecksetzen" 2026-09-15
+
+- Letzter offener Punkt aus LES-050 umgesetzt: Doppelklick setzte die
+  Vorschau bereits zurueck, aber ohne sichtbare, gut erreichbare
+  Alternative dazu. Neuer `btn_reset_view` (QToolButton, "Ansicht
+  zuruecksetzen") links neben "Schnittansicht" in `previewPanel.ui`,
+  verdrahtet in `setup_slice_view()` (`ui_preview.py`) auf
+  `handler._reset_preview_view()` -> neue Funktion `reset_preview_view()`,
+  die `reset_view()` auf beiden Vorschau-Widgets (`preview`,
+  `preview_slice`) aufruft und dabei tolerant gegenueber fehlenden oder
+  kaputten Widgets bleibt.
+- Uebersetzung laeuft ueber die generische `.ui`-Scan-Schiene
+  (`ui_static.py`, Schluessel `ui.btn_reset_view.text` /
+  `ui.btn_reset_view.toolTip`), nicht ueber die Widget-Registry
+  (`UI_TEXT_KEYS`/`UI_TOOLTIP_KEYS`) - beim ersten Versuch faelschlich die
+  Registry verwendet, per fehlgeschlagenem Test korrigiert.
+- Echter Regressionsfund beim Docking: `_dock_preview_above_scroll()`
+  reparentete urspruenglich nur `btn_slice_view` in den neuen
+  Controls-Bereich. `btn_reset_view` blieb dadurch als letztes Kind im
+  alten `previewPanel`-Geruest zuruck, wodurch dessen `findChildren()`
+  nicht mehr leer war und die "leere Huelle entfernen"-Pruefung
+  fehlschlug - die leere Huelle blieb sichtbar im Baum und beanspruchte
+  wieder Platz. Behoben, indem beide Buttons gemeinsam in den neuen
+  Controls-Bereich umgehaengt werden.
+- Sechs neue/erweiterte Tests: Signalverdrahtung und Toleranz ohne Button
+  (`tests/test_slice_view_sync.py`), `reset_preview_view()` isoliert fuer
+  beide Widgets sowie mit fehlenden/kaputten Widgets
+  (`tests/test_slice_view_sync.py`), Docking nimmt Reset-Button mit und
+  die leere Huelle bleibt entfernbar (`tests/test_preview_panel_ui_loader.py`).
+  Jeder Fix per zurueckgesetzter Verdrahtung/zurueckgesetztem Docking-Fix
+  als echte Regression verifiziert.
+- Live im Standalone-Panel (`qtvcp -c easystep -u
+  ./lathe_easystep_handler.py ./lathe_easystep.ui`) bestaetigt: Button
+  rendert lesbar links von "Schnittansicht", Log zeigt fehlerfreie
+  Verbindung ("reset view button connected"), Mausrad-Zoom und Klick auf
+  den Button loesen ohne Fehler/Traceback aus. Ein visueller
+  Vorher-Nachher-Screenshotvergleich war bei leerem Vorschau-Canvas (kein
+  Programm geladen) nicht aussagekraeftig - die eigentliche Wirkung ist
+  durch die automatisierten Tests direkt abgesichert, nicht nur durch den
+  fehlerfreien Start. 812 Stub-/94 Real-Qt-Tests bestanden. Details:
+  TODO.md (LES-050).
+
 ### LES-050: Regressionsfund "Buttontext gequetscht" behoben, Standalone-Panel als schnellerer UI-Testweg 2026-09-15
 
 - Beim praktischen Test des neuen `workspaceSplitter` (siehe vorheriger

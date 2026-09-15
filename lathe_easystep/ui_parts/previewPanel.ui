@@ -31,6 +31,16 @@
       </spacer>
      </item>
      <item>
+      <widget class="QToolButton" name="btn_reset_view">
+       <property name="text">
+        <string>Ansicht zurücksetzen</string>
+       </property>
+       <property name="toolTip">
+        <string>Setzt Zoom und Verschiebung der Seiten-/Schnittansicht zurück, sodass Rohteil und Kontur wieder vollständig sichtbar sind. Entspricht einem Doppelklick in die Vorschau.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QToolButton" name="btn_slice_view">
        <property name="text">
         <string>Schnittansicht</string>

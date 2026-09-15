@@ -368,6 +368,7 @@ def _dock_preview_above_scroll(handler) -> None:
     preview = root.findChild(QtWidgets.QWidget, "previewWidget", QtCore.Qt.FindChildrenRecursively)
     preview_slice = root.findChild(QtWidgets.QWidget, "previewSliceWidget", QtCore.Qt.FindChildrenRecursively)
     button = root.findChild(QtWidgets.QAbstractButton, "btn_slice_view", QtCore.Qt.FindChildrenRecursively)
+    reset_button = root.findChild(QtWidgets.QAbstractButton, "btn_reset_view", QtCore.Qt.FindChildrenRecursively)
     if scroll is None or preview is None or preview_slice is None:
         return
     right_layout = scroll.parentWidget().layout() if scroll.parentWidget() is not None else None
@@ -391,10 +392,13 @@ def _dock_preview_above_scroll(handler) -> None:
         dock_layout = QtWidgets.QVBoxLayout(container)
         dock_layout.setContentsMargins(0, 0, 0, 0)
         dock_layout.setSpacing(6)
-        if button is not None:
+        if button is not None or reset_button is not None:
             controls = QtWidgets.QHBoxLayout()
             controls.addStretch(1)
-            controls.addWidget(button)
+            if reset_button is not None:
+                controls.addWidget(reset_button)
+            if button is not None:
+                controls.addWidget(button)
             dock_layout.addLayout(controls)
         preview_row = QtWidgets.QHBoxLayout()
         preview_row.setContentsMargins(0, 0, 0, 0)

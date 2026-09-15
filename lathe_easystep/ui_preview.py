@@ -32,6 +32,11 @@ def setup_slice_view(handler) -> None:
             handler.btn_slice_view = handler._get_widget_by_name("btn_slice_view")
         except Exception:
             pass
+    if getattr(handler, "btn_reset_view", None) is None:
+        try:
+            handler.btn_reset_view = handler._get_widget_by_name("btn_reset_view")
+        except Exception:
+            handler.btn_reset_view = None
 
     handler._log(
         f"[LatheEasyStep] _setup_slice_view: preview={handler.preview!r} "
@@ -71,6 +76,12 @@ def setup_slice_view(handler) -> None:
             handler._log("[LatheEasyStep] slice toggle connected", level="info")
         except Exception:
             handler._log("[LatheEasyStep] slice toggle connect failed", level="warning")
+    if handler.btn_reset_view is not None:
+        try:
+            handler.btn_reset_view.clicked.connect(handler._reset_preview_view)
+            handler._log("[LatheEasyStep] reset view button connected", level="info")
+        except Exception:
+            handler._log("[LatheEasyStep] reset view button connect failed", level="warning")
     if handler.preview is not None:
         try:
             handler.preview.sliceChanged.connect(handler._on_slice_changed)
@@ -82,6 +93,22 @@ def setup_slice_view(handler) -> None:
             handler._log("[LatheEasyStep] slice callback fallback installed", level="info")
         except Exception as exc:
             handler._log(f"[LatheEasyStep] slice callback fallback install failed: {exc}", level="warning")
+
+
+def reset_preview_view(handler) -> None:
+    """LES-050: sichtbare Aktion zum Zuruecksetzen von Zoom/Pan der Vorschau,
+    gleichwertig zum bestehenden Doppelklick (LathePreviewWidget.reset_view()).
+    Betrifft nur die Bildschirmtransformation, nie Modell- oder
+    Bearbeitungsdaten. Setzt beide Vorschau-Widgets zurueck (auch die
+    Schnittansicht), falls dort in Zukunft ebenfalls navigiert werden kann."""
+    for widget_name in ("preview", "preview_slice"):
+        widget = getattr(handler, widget_name, None)
+        reset = getattr(widget, "reset_view", None)
+        if callable(reset):
+            try:
+                reset()
+            except Exception:
+                pass
 
 
 def update_slice_view_button(handler, checked: bool) -> None:
