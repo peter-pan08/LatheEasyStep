@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 823 Stub-Qt-Tests und 99 Tests mit echtem PyQt5, keine Skips.
+- 823 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -24,7 +24,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| LES-050 | P2 | Panelgroessen und Vorschau-Navigation interaktiv machen | M-L | 0.9.0 |
 | LES-024 | P2 | direkte moduluebergreifende Widgetzugriffe durch Schnittstellen ersetzen | L | 0.9.0 |
 | LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
 | LES-028 | P2 | Werkzeugdatensatz und Preset-/Manuell-Normalisierung festlegen | M | 0.9.0 |
@@ -81,124 +80,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Parameter; Schnittansicht wird nach dem verzögerten Laden des Preview-Panels
   erneut eingerichtet statt durch einen zu fruehen Done-Marker dauerhaft
   uebersprungen. Gesamtstand danach 809/76 Tests.
-
-## LES-050 Anpassbare Arbeitsflaeche und Vorschau-Navigation
-
-- [x] REGRESSIONSFUND (2026-09-14) behoben: `stepListPanel.ui`
-  (`operationButtonsLayout`, 4 Buttons) und `stepActionsPanel.ui`
-  (`buttonLayout`, 7 Buttons) waren je eine einzelne QHBoxLayout-Reihe ohne
-  Mindestbreiten-Absicherung - bei schmaler Splitterstellung wurden die
-  Buttons unter ihre Textbreite gequetscht. Beide auf zweispaltiges
-  QGridLayout umgestellt (2x2 bzw. 2x4, letzter Button ueber beide Spalten).
-  Die Splitter-Mindestbreiten (`_install_workspace_splitter`,
-  `ui_lifecycle.py`) waren mit 190/360 zu knapp fuer die Grids bemessen -
-  per echtem `sizeHint()`-Messlauf auf 330/380 korrigiert; das Gesamtfenster
-  bekommt jetzt zusaetzlich `root.setMinimumWidth(330+380+40)`, damit der
-  Splitter selbst innerhalb seines eigenen Minimums nicht wieder quetschen
-  muss. Neun neue Tests (`tests/test_step_action_buttons_stay_readable.py`):
-  kein Button faellt unter seine `sizeHint()`-Breite bei minimaler/normaler/
-  breiter Fenstergroesse (700/1000/1600px) sowie an beiden Splittergrenzen;
-  per zurueckgesetztem Layout als echte Regression verifiziert (Original:
-  "Schritt hinzufuegen" 77px statt benoetigter 155px, selbst bei 1600px
-  Fensterbreite). Echter Zweitfund beim Standalone-Test
-  (`qtvcp -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui`):
-  `_ensure_status_widgets()` (`ui_advanced.py`) rief `layout.insertWidget()`
-  auf, um das "Keine offenen Aenderungen"-Label neben `btnSaveChanges`
-  einzufuegen - eine QBoxLayout-Methode, die QGridLayout nicht hat; brach
-  beim echten Start mit `AttributeError`, kein bestehender Test deckte das
-  ab (Stub-Suite nutzt keine echten Qt-Layouts, der einzige Real-Qt-Test
-  setzte `label_dirty_status` direkt als Fake). Auf `getItemPosition()`/
-  `addWidget(row+1, ...)` umgestellt, drei neue Tests
-  (`tests/test_dirty_status_label_grid_layout.py`). Live im Standalone-Panel
-  bestaetigt: alle elf Buttons bei 900px (Standardgroesse), 650px sowie an
-  der erzwungenen Fenstermindestbreite (750px, vom Fenstermanager korrekt
-  durchgesetzt) vollstaendig lesbar; das Dirty-Status-Label sitzt sichtbar
-  korrekt unter "Aenderungen speichern".
-- [x] Verschiebbare Splitter fuer die wesentlichen Arbeitsbereiche umgesetzt:
-  die Hoehe der oberen Vorschau gegenueber dem Parameterbereich sowie die
-  Breite des seitlichen Blocks mit Step-Liste und Programmaktionen muessen mit
-  der Maus vergroessert und verkleinert werden koennen.
-- [x] Sinnvolle Mindestgroessen sind fuer den `workspaceSplitter` jetzt an
-  echten `sizeHint()`-Messwerten der Button-Grids ausgerichtet (330/380,
-  siehe REGRESSIONSFUND oben) statt an geschaetzten Werten, damit weder
-  Bedienelemente noch sicherheitsrelevante Informationen zusammengeschoben
-  werden koennen.
-- [x] Seiten- und Schnittansicht direkt in ihrem Vorschaufenster navigierbar
-  machen: Ziehen mit der Maus verschiebt die Darstellung (Pan), das Mausrad
-  zoomt um die aktuelle Mausposition. Die Bedienung darf bestehende Klick- und
-  Umschaltfunktionen der Vorschau nicht ausloesen oder blockieren.
-- [x] Doppelklick passt die Ansicht bereits wieder ein. Zusaetzlich eine
-  sichtbare, gut erreichbare Aktion "Ansicht einpassen/zuruecksetzen" vorgesehen:
-  neuer `btn_reset_view` (QToolButton, "Ansicht zuruecksetzen") links neben
-  "Schnittansicht" in `previewPanel.ui`, verdrahtet in `setup_slice_view()`
-  (`ui_preview.py`) auf `handler._reset_preview_view()` ->
-  `reset_preview_view()`, die `reset_view()` auf `preview` und
-  `preview_slice` aufruft (setzt Zoom/Pan zurueck, tolerant gegenueber
-  fehlenden/kaputten Widgets). Uebersetzung ueber die generische
-  `.ui`-Scan-Schiene (`ui_static.py`, Schluessel `ui.btn_reset_view.text` /
-  `ui.btn_reset_view.toolTip`) statt der Widget-Registry - beim ersten
-  Versuch faelschlich `UI_TEXT_KEYS`/`UI_TOOLTIP_KEYS` verwendet, per
-  Testfehler korrigiert. Echter Regressionsfund beim Docking:
-  `_dock_preview_above_scroll()` reparentete urspruenglich nur
-  `btn_slice_view` in den neuen Controls-Bereich, `btn_reset_view` blieb im
-  alten `previewPanel`-Geruest zurueck und verhinderte dessen Entfernung als
-  "leere Huelle" - behoben, beide Buttons werden jetzt gemeinsam umgehaengt.
-  Sechs neue/erweiterte Tests (`tests/test_slice_view_sync.py`:
-  Signalverdrahtung, Toleranz ohne Button, `reset_preview_view()` isoliert
-  fuer beide Widgets sowie mit fehlenden/kaputten Widgets;
-  `tests/test_preview_panel_ui_loader.py`: Docking nimmt Reset-Button mit,
-  leere Huelle bleibt entfernbar), per zurueckgesetzter Verdrahtung/
-  zurueckgesetztem Docking-Fix als echte Regression verifiziert. Live im
-  Standalone-Panel (`qtvcp -c easystep -u ./lathe_easystep_handler.py
-  ./lathe_easystep.ui`) bestaetigt: Button rendert lesbar links von
-  "Schnittansicht", Log zeigt fehlerfreie Verbindung
-  ("reset view button connected"), Zoom-per-Mausrad und Klick auf den
-  Button loesen ohne Fehler/Traceback aus. Visueller Vorher-Nachher-
-  Vergleich per Screenshot war bei leerem Vorschau-Canvas (kein Programm
-  geladen) nicht aussagekraeftig - die eigentliche Wirkung ist durch die
-  automatisierten Tests direkt abgesichert. 812 Stub-/94 Real-Qt-Tests
-  bestanden.
-- [x] Letzter offener LES-050-Punkt umgesetzt: `workspaceSplitter` (Step-
-  Spalte/rechte Spalte) und `previewParamsSplitter` (Vorschau/Parameter)
-  merken sich ihre Groesse jetzt sitzungsuebergreifend ueber `QSettings`
-  (`LatheEasyStep/WorkspaceSplitterSizes`, `.../PreviewParamsSplitterSizes`,
-  neue Hilfsfunktionen `_restore_splitter_sizes()`/`_persist_splitter_sizes()`
-  in `ui_lifecycle.py`). Entscheidung (2026-09-15) mit dem Nutzer geklaert:
-  nur Persistenz mit sicherem Fallback, keine zusaetzliche sichtbare
-  Ruecksetzen-Aktion. Die "robuste Standardaufteilung" ergibt sich daraus,
-  dass ein gemerkter Wert nur uebernommen wird, wenn er nach dem Parsen
-  (korrekte Anzahl, ausschliesslich positive Werte) mindestens so gross ist
-  wie die jeweils bekannten Mindestgroessen (330/380 fuer den
-  Arbeitsflaechen-Splitter, siehe REGRESSIONSFUND oben) - eine zu schmale,
-  fremde oder beschaedigte Einstellung faellt automatisch auf die bisherige
-  feste Standardaufteilung zurueck, statt Buttons erneut zu quetschen.
-  `QSettings()`-Fehlschlaege (z. B. kein Schreibzugriff auf das
-  Konfigverzeichnis) werden abgefangen und wirken sich nicht auf die
-  Splitter-Funktion aus. Gespeichert wird bei jeder echten Ziehbewegung
-  (`splitterMoved`-Signal). 15 neue Tests: neun isolierte Tests fuer die
-  Parse-/Restore-/Persist-Hilfsfunktionen inkl. kaputtem Settings-Backend
-  (`tests/test_splitter_size_persistence.py`), vier Real-Qt-
-  Integrationstests je Splitter fuer Wiederherstellung, Mindestgroessen-
-  Fallback und Speichern beim Ziehen (`tests/test_preview_panel_ui_loader.py`,
-  `moveSplitter()` statt `setSizes()` verwendet, da nur das echte
-  `splitterMoved`-Signal auslöst - empirisch verifiziert). Alle Fixes per
-  entfernter Verdrahtung als echte Regression bestaetigt. 823 Stub-/99
-  Real-Qt-Tests bestanden. LES-050 ist damit vollstaendig abgeschlossen.
-- [x] Zoomgrenzen (Faktor 0,2 bis 20) und stabile Transformationen umgesetzt;
-  Pan und
-  Zoom duerfen weder Werkstueckgeometrie noch Pruefergebnisse veraendern,
-  sondern ausschliesslich die Darstellung.
-- [x] Real-Qt-Tests sichern Splitter in beide Richtungen, Mindestgroessen,
-  Zoomzentrum unter dem Mauszeiger, Pan, Reset und den Vorrang der vorhandenen
-  Schnittlinien-Geste. Zusaetzlich (siehe REGRESSIONSFUND oben): Buttontext
-  bei minimaler/normaler/breiter Fenstergroesse sowie an beiden
-  Splittergrenzen, live im Standalone-Panel bei 900/650/750px (erzwungene
-  Mindestbreite) praktisch bestaetigt (`qtvcp -c easystep -u
-  ./lathe_easystep_handler.py ./lathe_easystep.ui` - fuer reine UI-Checks
-  einfacher/schneller als die volle QtDragon-SIM, die nur fuer G-Code-
-  Pruefung noetig ist). Noch offen: im eingebetteten QtDragon-Panel selbst
-  (dessen Tab-Bereich fest/klein ist, ausserhalb der LatheEasyStep-Kontrolle)
-  bei verschiedenen Panelgroessen praktisch pruefen.
 
 ## LES-044 Darstellung und Texte
 

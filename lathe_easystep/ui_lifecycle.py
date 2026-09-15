@@ -560,7 +560,25 @@ def _install_workspace_splitter(handler) -> None:
     splitter.addWidget(right_panel)
     splitter.setStretchFactor(0, 0)
     splitter.setStretchFactor(1, 1)
-    outer.addWidget(splitter)
+    # LES-050 Regressionsfund (eingebettetes QtDragon-Panel): dessen
+    # gemerkte Fenstergroesse kann der Tab-Flaeche weniger Breite geben, als
+    # unsere Mindestbreite braucht (live beobachtet: 638px verfuegbar vs.
+    # 710px benoetigt) - ohne Scroll-Wrapper wurde die zweite Button-Spalte
+    # dabei nicht nur gequetscht, sondern komplett unsichtbar und nicht
+    # klickbar abgeschnitten (die QtDragon-Tab-Seite selbst bietet keine
+    # Scrollleiste). Eine QScrollArea macht den Splitter unabhaengig von der
+    # tatsaechlichen Host-Breite erreichbar: passt der Host, wird nichts
+    # sichtbar veraendert (widgetResizable liefert dieselbe Breite wie
+    # zuvor); ist der Host schmaler als das Mindestmass, erscheint eine
+    # horizontale Scrollleiste statt Inhalte zu verlieren.
+    workspace_scroll = QtWidgets.QScrollArea(root)
+    workspace_scroll.setObjectName("workspaceScrollArea")
+    workspace_scroll.setWidgetResizable(True)
+    workspace_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+    workspace_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+    workspace_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+    workspace_scroll.setWidget(splitter)
+    outer.addWidget(workspace_scroll)
     splitter.setSizes([340, 700])
     # LES-050: gemerkte Aufteilung aus einer frueheren Sitzung
     # wiederherstellen, falls plausibel (mindestens so breit wie die
@@ -577,4 +595,20 @@ def _install_workspace_splitter(handler) -> None:
     # Splitterseiten zusammen an Mindestbreite brauchen - sonst wuerde der
     # Splitter selbst innerhalb seines eigenen Minimums wieder Buttontext
     # abschneiden muessen. +40px Reserve fuer Splitter-Griff/Aussenraender.
-    root.setMinimumWidth(step_panel.minimumWidth() + right_panel.minimumWidth() + 40)
+    #
+    # REGRESSIONSFUND (eingebettetes QtDragon-Panel, 2026-09-15): hier auf
+    # `root` selbst gesetzt, zwang das root dazu, breiter zu sein als sein
+    # eigener Elterncontainer innerhalb der QtDragon-Tab-Flaeche (live
+    # beobachtet: root auf 750px erzwungen, Elterncontainer aber nur 592px
+    # breit) - und genau an dieser Grenze (root zu seinem Elter, NICHT
+    # innerhalb unseres eigenen Splitters/der obigen QScrollArea) wurde ohne
+    # jede Scrollmoeglichkeit abgeschnitten: die zweite Button-Spalte war
+    # unsichtbar und nicht klickbar, obwohl die QScrollArea intern korrekt
+    # auf "kein Ueberlauf" kam. `root.window()` ist im Standalone-Fall root
+    # selbst (identisches Verhalten wie zuvor, WM erzwingt weiterhin ein
+    # sinnvolles Minimum), im eingebetteten Fall dagegen QtDragons eigenes,
+    # ohnehin schon deutlich breiteres Hauptfenster - dort wirkungslos (kein
+    # erzwungenes Aufblasen von root mehr), sodass root auf die tatsaechlich
+    # verfuegbare Host-Breite schrumpfen darf und die QScrollArea oben genau
+    # dafuer greift.
+    root.window().setMinimumWidth(step_panel.minimumWidth() + right_panel.minimumWidth() + 40)

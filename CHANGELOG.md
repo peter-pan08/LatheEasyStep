@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### LES-050: REGRESSIONSFUND im eingebetteten QtDragon-Panel behoben (LES-050 vollstaendig abgeschlossen) 2026-09-15
+
+- Praktischer Check im eingebetteten QtDragon-Panel (letzter offener
+  LES-050-Punkt) foerderte einen echten Fund zutage: bei dessen gemerkter
+  Standardfenstergroesse (1364x768, aus `qtdragon.pref`) ist die Tab-Flaeche
+  fuer LatheEasyStep nur rund 590-640px breit - schmaler als unsere
+  Mindestbreite von 750px. Die zweite Button-Spalte (Schritt loeschen/
+  Nach unten/Programm erzeugen) wurde dadurch ohne Scrollbar abgeschnitten -
+  nicht nur gequetscht wie beim fruehreren REGRESSIONSFUND, sondern
+  vollstaendig unsichtbar und nicht klickbar, da die QtDragon-Tab-Seite
+  selbst keine Scrollmoeglichkeit bietet.
+- Ursache per Live-Debug-Dump (temporaere Logausgaben im laufenden
+  Standalone- und eingebetteten SIM-Panel) gefunden: `root.setMinimumWidth(...)`
+  (`_install_workspace_splitter`) zwang `root` dazu, breiter zu sein als
+  sein eigener Elterncontainer innerhalb der QtDragon-Tab-Flaeche (live
+  beobachtet: root auf 750px erzwungen, Elterncontainer aber nur 592px
+  breit) - und genau an dieser root-zu-Elter-Grenze (nicht innerhalb
+  unseres eigenen Splitters) wurde abgeschnitten.
+- Zwei Teile behoben: (1) `root` selbst in eine neue `QScrollArea`
+  (`workspaceScrollArea`, horizontal bei Bedarf, vertikal nie,
+  `widgetResizable`) gepackt, damit Inhalt unabhaengig von der
+  tatsaechlichen Host-Breite ueber eine Scrollleiste erreichbar bleibt,
+  statt bei zu wenig Platz verloren zu gehen; (2) die Mindestbreite wird
+  jetzt auf `root.window()` statt auf `root` selbst gesetzt - im
+  Standalone-Fall weiterhin `root` selbst (unveraendertes Verhalten, WM
+  erzwingt weiterhin ein sinnvolles Minimum), im eingebetteten Fall dagegen
+  QtDragons eigenes, ohnehin schon breiteres Hauptfenster (dort wirkungslos,
+  root darf auf die tatsaechlich verfuegbare Host-Breite schrumpfen).
+- Vier neue Tests (`tests/test_preview_panel_ui_loader.py`): Mindestbreite
+  landet auf dem Fenster statt auf root im eingebetteten Fall, bleibt im
+  Standalone-Fall unveraendert auf root, QScrollArea-Konfiguration
+  strukturell abgesichert. Eine vollstaendige automatisierte Nachbildung
+  des QtDragon-eigenen Einbettungsmechanismus war nicht praktikabel - `root`
+  hat bewusst kein eigenes Qt-Layout (`root.layout() is None`), die
+  Groessenkaskade zu seinem Inhalt laeuft ueber einen QtVCP-eigenen,
+  projektexternen Mechanismus außerhalb dieses Repos. Live-Verifikation im
+  eingebetteten SIM-Panel als massgebliche Bestaetigung: Scrollleiste
+  erscheint bei der gemerkten Standardgroesse, und Scrollen ans Ende (per
+  direktem Setzen des Scrollbar-Werts, da synthetische X11-Mausereignisse
+  den genauen Scrollbar-Griff nicht zuverlaessig trafen) macht
+  "Schnittansicht", "Schritt loeschen", "Nach unten", "Programm erzeugen"
+  sowie die weiteren Reiter (Kontur/Abspanen/Gewinde/...) wieder
+  vollstaendig lesbar.
+- 823 Stub-/102 Real-Qt-Tests bestanden. LES-050 ist damit vollstaendig
+  abgeschlossen (alle Punkte umgesetzt, inklusive des eingebetteten
+  Panels) und aus TODO.md entfernt - Details siehe oben und in den
+  vorherigen LES-050-Eintraegen dieser Datei.
+
 ### LES-050: Splitterpositionen sitzungsuebergreifend gemerkt (abgeschlossen) 2026-09-15
 
 - Letzter offener LES-050-Punkt umgesetzt: `workspaceSplitter` (Step-Spalte/
