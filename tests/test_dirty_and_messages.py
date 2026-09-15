@@ -6,11 +6,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.ui_dirty import (
+    clear_dirty_state,
     clear_program_dirty,
     dirty_status_text,
     init_dirty_state,
     mark_dirty,
     mark_program_structure_dirty,
+    update_dirty_status,
     warn_if_dirty,
 )
 from lathe_easystep.ui_flow import handle_move_down, handle_move_up, jump_to_error_location
@@ -34,9 +36,13 @@ class _Label:
 class _Button:
     def __init__(self):
         self.text = ""
+        self.enabled = True
 
     def setText(self, value):
         self.text = value
+
+    def setEnabled(self, value):
+        self.enabled = bool(value)
 
 
 class _Visible:
@@ -88,6 +94,36 @@ def test_dirty_status_text_tracks_program_and_steps():
     mark_dirty(handler, operation_index=1)
     assert "Programm" in dirty_status_text(handler)
     assert "1 Step" in dirty_status_text(handler)
+
+
+def test_save_changes_button_disabled_without_unsaved_changes():
+    """LES-024: "Aenderungen speichern" ohne offene Aenderungen zeigte
+    bisher erst NACH dem Klick eine "nichts zu speichern"-Meldung. Wie bei
+    "Step speichern" und den Listenaktionen wird die ungueltige Aktion
+    jetzt per Buttonzustand von vornherein verhindert."""
+    handler = _handler()
+    init_dirty_state(handler)
+    update_dirty_status(handler)
+    assert handler.btn_save_changes.enabled is False
+
+    mark_dirty(handler, operation_index=1)
+    update_dirty_status(handler)
+    assert handler.btn_save_changes.enabled is True
+
+    clear_dirty_state(handler)
+    update_dirty_status(handler)
+    assert handler.btn_save_changes.enabled is False
+
+
+def test_save_changes_button_text_still_gets_dirty_marker():
+    handler = _handler()
+    init_dirty_state(handler)
+    update_dirty_status(handler)
+    assert not handler.btn_save_changes.text.endswith("*")
+
+    mark_dirty(handler, program=True)
+    update_dirty_status(handler)
+    assert handler.btn_save_changes.text.endswith("*")
 
 
 def test_warn_if_dirty_uses_localized_unsaved_message(monkeypatch):

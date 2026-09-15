@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 823 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 825 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -74,12 +74,28 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Programmkopf ist auch in den Handlern gegen Verschieben abgesichert; der
   erste Bearbeitungsschritt kann nicht ueber ihn geschoben werden. Sieben
   neue Tests, 808/76 bestanden; Embedded-Start bis `critical done` nach
-  9,025 s. Noch offen: "Aenderungen speichern" am Dirty-State ausrichten und
-  die verbleibenden QMessageBox-Klick-Validierungen einzeln bewerten.
-  Aktueller Regressionfix: Vorschau wieder an erster Stelle oberhalb der
-  Parameter; Schnittansicht wird nach dem verzögerten Laden des Preview-Panels
-  erneut eingerichtet statt durch einen zu fruehen Done-Marker dauerhaft
-  uebersprungen. Gesamtstand danach 809/76 Tests.
+  9,025 s. Aktueller Regressionfix: Vorschau wieder an erster Stelle
+  oberhalb der Parameter; Schnittansicht wird nach dem verzögerten Laden
+  des Preview-Panels erneut eingerichtet statt durch einen zu fruehen
+  Done-Marker dauerhaft uebersprungen. Gesamtstand danach 809/76 Tests.
+  Drittes Paket (2026-09-15): "Aenderungen speichern" (`btn_save_changes`)
+  am Dirty-State ausgerichtet - `update_dirty_status()` (`ui_dirty.py`)
+  sperrt den Button jetzt zusaetzlich zum bisherigen Text-Sternchen (" *"),
+  solange `has_unsaved_changes()` falsch ist (vorher: Klick jederzeit
+  moeglich, `handle_save_changes()` zeigte dann erst eine "nichts zu
+  speichern"-Meldung). Zentral in `update_dirty_status()` verdrahtet, das
+  bereits von jeder dirty-zustandsaendernden Funktion aufgerufen wird
+  (mark_dirty/mark_program_structure_dirty/clear_dirty_state/
+  clear_program_dirty/clear_dirty_operation/die drei Reindex-Funktionen/
+  mark_all_operations_dirty) - keine einzelne Aktion musste separat
+  verdrahtet werden. Die bestehende Klick-Meldung bleibt als letzte
+  Sicherung bestehen (z. B. falls alle dirty Steps ohne verknuepfte Datei
+  sind). Zwei neue Tests (`tests/test_dirty_and_messages.py`), per
+  entferntem `setEnabled()`-Aufruf als echte Regression verifiziert; live
+  im Standalone-Panel bestaetigt (Button startet sichtbar gesperrt ohne
+  offene Aenderungen, kein Fehler im Log). 825 Stub-/102 Real-Qt-Tests
+  bestanden. Noch offen: die verbleibenden QMessageBox-Klick-Validierungen
+  einzeln bewerten.
 
 ## LES-044 Darstellung und Texte
 

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### LES-024: "Aenderungen speichern" per Buttonzustand gesperrt (drittes Paket) 2026-09-15
+
+- "Aenderungen speichern" (`btn_save_changes`) ohne offene Aenderungen war
+  bisher jederzeit klickbar und zeigte erst danach eine "nichts zu
+  speichern"-Meldung (`handle_save_changes()`). Wie bei "Step speichern"
+  und den Listenaktionen (Loeschen/Hoch/Runter) wird die ungueltige Aktion
+  jetzt per Buttonzustand von vornherein verhindert: `update_dirty_status()`
+  (`ui_dirty.py`) sperrt den Button zusaetzlich zum bisherigen Text-
+  Sternchen (" *"), solange `has_unsaved_changes()` falsch ist.
+- Zentral in `update_dirty_status()` verdrahtet, das bereits von jeder
+  dirty-zustandsaendernden Funktion aufgerufen wird (mark_dirty,
+  mark_program_structure_dirty, clear_dirty_state, clear_program_dirty,
+  clear_dirty_operation, die drei Reindex-Funktionen,
+  mark_all_operations_dirty) - keine einzelne Aktion musste separat
+  verdrahtet werden. Die bestehende Klick-Meldung bleibt als letzte
+  Sicherung bestehen (z. B. falls alle dirty Steps ohne verknuepfte Datei
+  sind).
+- Zwei neue Tests (`tests/test_dirty_and_messages.py`): Button gesperrt
+  ohne offene Aenderungen, entsperrt nach `mark_dirty()`, wieder gesperrt
+  nach `clear_dirty_state()`; sowie eine Bestaetigung, dass das Text-
+  Sternchen weiterhin funktioniert. Per entferntem `setEnabled()`-Aufruf
+  als echte Regression verifiziert. Live im Standalone-Panel bestaetigt:
+  Button startet sichtbar gesperrt ohne offene Aenderungen, kein Fehler im
+  Log. 825 Stub-/102 Real-Qt-Tests bestanden. Details: TODO.md (LES-024).
+
 ### LES-050: REGRESSIONSFUND im eingebetteten QtDragon-Panel behoben (LES-050 vollstaendig abgeschlossen) 2026-09-15
 
 - Praktischer Check im eingebetteten QtDragon-Panel (letzter offener
