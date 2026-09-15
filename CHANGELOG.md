@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### LES-032: Werkzeugbreite gegen die Futter-Sperrzone geprueft 2026-09-15
+
+- Erster konkreter Baustein fuer Erreichbarkeits-/Werkzeughuellenpruefung
+  mit Tooltable-Daten. Bisher wurde die Futter-Sperrzone
+  (`chuck_no_go_x_min/x_max/z_limit`) nur fuer die SEPARATEN Rueckzugswege
+  vor/nach einer Operation geprueft (`emit_safe_retract_for_op()`) - die
+  eigentliche Stechbewegung selbst hatte NIE eine Pruefung, und selbst die
+  Rueckzugspruefung behandelt das Werkzeug als punktfoermig. Ein
+  Stechwerkzeug hat aber eine reale Schneidenbreite (`Tool.insert_width_mm`,
+  siehe voriger Eintrag) - die dem Futter zugewandte Kante kann in die
+  Sperrzone reichen, auch wenn die programmierte Z-Mitte selbst noch
+  ausserhalb liegt.
+- Neue `_check_groove_reaches_chuck_no_go_zone()` (`checks.py`) prueft die
+  tiefste Stechposition (Nutgrund) an beiden Kanten der bekannten
+  Werkzeugbreite gegen dieselbe, bereits produktiv genutzte Sperrzonen-
+  Logik wie die Rueckzugswege (`gcode_safety.py::validate_chuck_segment()`,
+  direkt wiederverwendet statt dupliziert). Nur aktiv, wenn ueberhaupt eine
+  Sperrzone konfiguriert ist.
+- Sieben neue Tests (`tests/test_groove_chuck_reachability_check.py`), per
+  entferntem Verdrahtungsaufruf als echte Regression verifiziert;
+  zusaetzlich end-to-end gegen die echte `Drehbank/tool.tbl` bestaetigt (T4
+  "Einstechen MGMN200", 2,0 mm Einsatzbreite: eine fuer sich allein 0,6 mm
+  von der Sperrzonengrenze entfernte Z-Position wird durch die
+  Werkzeugbreite korrekt als Verletzung erkannt - ein rein punktbasierter
+  Check haette das uebersehen). Alle zwoelf Referenzen neu generiert (keine
+  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 859
+  Stub-/102 Real-Qt-Tests bestanden.
+- Weitergehende Werkzeughuellenpruefung (z. B. fuer Dreh-/Bohrwerkzeuge,
+  Haltergeometrie) bleibt offen - dafuer fehlt bislang die Datengrundlage
+  im echten `tool.tbl`. Details: TODO.md (LES-032).
+
 ### LES-032: Entscheidung gegen eine Q-basierte Innen/Aussen-Pruefung 2026-09-15
 
 - Ueberpruefung ergab per echtem Gegenbeispiel im realen `Drehbank/tool.tbl`:
