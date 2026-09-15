@@ -17,6 +17,21 @@
 
 ## [Unreleased]
 
+### LES-051: Status-/Warnungsbox als austauschbarer Datenvertrag 2026-09-15
+
+- Zweiter Baustein derselben Aufraeumung (nach der Legende unmittelbar
+  zuvor): Rand-, Fuell- und Textfarbe sowie die Kopfzeile "Warnungen" der
+  Status-/Warnungsbox waren direkt als `QColor`-Konstruktion in
+  `paintEvent()` hartkodiert. Neuer, reiner Datenvertrag
+  `STATUS_BOX_STYLE` (`preview_geometry.py`); `paintEvent()` konstruiert
+  daraus nur noch die Qt-Objekte. Keine sichtbare Aenderung.
+- Ein weiterer Stub-Test (`tests/test_preview_legend_and_status_layout.py`):
+  der Datenvertrag ist Qt-frei mit genau den erwarteten Schluesseln. Per
+  eingefuegtem unerwartetem Schluessel als echte Regression verifiziert.
+- 872 Stub-/106 Real-Qt-Tests bestanden. Kein separater Standalone-Check -
+  identisches, bereits live bestaetigtes Extraktionsmuster wie die Legende,
+  keine neue Risikoflaeche. Details: TODO.md (LES-051).
+
 ### LES-051: Vorschau-Legende als austauschbarer Datenvertrag 2026-09-15
 
 - Erster Baustein fuer "weitere austauschbare Panelbereiche identifizieren"

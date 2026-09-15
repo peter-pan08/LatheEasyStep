@@ -1,4 +1,9 @@
-from lathe_easystep.preview_geometry import LEGEND_ENTRIES, legend_layout, status_message_layout
+from lathe_easystep.preview_geometry import (
+    LEGEND_ENTRIES,
+    STATUS_BOX_STYLE,
+    legend_layout,
+    status_message_layout,
+)
 
 # LES-024/LES-034: legend_layout()/status_message_layout() wurden aus der
 # Legende und der Statusmeldungsbox in preview_widget.paintEvent() extrahiert
@@ -92,3 +97,17 @@ def test_legend_layout_row_count_matches_legend_entries_by_default():
     der uebliche Aufruf in paintEvent() uebergibt len(LEGEND_ENTRIES)."""
     layout = legend_layout(len(LEGEND_ENTRIES))
     assert len(layout["rows"]) == len(LEGEND_ENTRIES)
+
+
+def test_status_box_style_is_a_pure_qt_free_data_contract():
+    """LES-051: analog zu LEGEND_ENTRIES - kein QColor/QPen/QBrush in
+    STATUS_BOX_STYLE selbst, reine Zahlen/Strings."""
+    assert set(STATUS_BOX_STYLE.keys()) == {
+        "header", "border_color", "fill_color", "text_color",
+    }
+    assert isinstance(STATUS_BOX_STYLE["header"], str) and STATUS_BOX_STYLE["header"]
+    for key in ("border_color", "fill_color", "text_color"):
+        channels = STATUS_BOX_STYLE[key]
+        assert len(channels) in (3, 4)  # RGB oder RGBA
+        for channel in channels:
+            assert isinstance(channel, int) and 0 <= channel <= 255

@@ -307,6 +307,18 @@ def legend_layout(
     }
 
 
+STATUS_BOX_STYLE: Dict[str, object] = {
+    "header": "Warnungen",
+    "border_color": (180, 80, 20),
+    "fill_color": (255, 240, 210, 220),
+    "text_color": (90, 40, 0),
+}
+"""LES-051: reiner Datenvertrag fuer die Status-/Warnungsbox (Randfarbe,
+Fuellfarbe inkl. Alpha, Textfarbe, Kopfzeile) - analog zu LEGEND_ENTRIES.
+`paintEvent()` konstruiert daraus nur noch `QPen`/`QColor`/`QBrush`. Bewusst
+NICHT gleichzeitig uebersetzt (eigenes Thema, siehe LES-044)."""
+
+
 def status_message_layout(messages, *, widget_width: float) -> Dict[str, object] | None:
     """Pure geometry+truncation for the status/warning box in the top-right
     corner - no QPainter dependency. Returns None when there is nothing to

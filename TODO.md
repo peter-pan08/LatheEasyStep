@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 871 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
+- 872 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -109,8 +109,16 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
   Qt-frei/eindeutig, `legend_layout()`-Zeilenzahl passt zur Eintragsanzahl;
   per absichtlich dupliziertem Label als echte Regression verifiziert.
   Live im Standalone-Panel bestaetigt: Legende sieht unveraendert aus,
-  kein Fehler im Log. 871 Stub-/106 Real-Qt-Tests bestanden. Preview-
-  Canvas, Status-/Warnungsbox und optionale Bedienelemente bleiben offen.
+  kein Fehler im Log. 871 Stub-/106 Real-Qt-Tests bestanden. Zweiter
+  Baustein: dieselbe Behandlung fuer die Status-/Warnungsbox -
+  `STATUS_BOX_STYLE` (`preview_geometry.py`: Randfarbe, Fuellfarbe inkl.
+  Alpha, Textfarbe, Kopfzeile "Warnungen") ersetzt die bisher direkt in
+  `paintEvent()` hartkodierten `QColor`-Werte. Ein weiterer Stub-Test, per
+  eingefuegtem unerwartetem Schluessel als echte Regression verifiziert.
+  872 Stub-/106 Real-Qt-Tests bestanden (kein separater Standalone-Check -
+  identisches, bereits live bestaetigtes Extraktionsmuster wie die Legende
+  unmittelbar zuvor, keine neue Risikoflaeche). Preview-Canvas und
+  optionale Bedienelemente bleiben offen.
 - [ ] Shell- und Fragment-Laden fuer Standalone und Embedded mit einem
   definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
   Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom

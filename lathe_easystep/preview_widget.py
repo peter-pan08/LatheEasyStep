@@ -44,6 +44,7 @@ from .preview_geometry import (
     side_view_grid_layout,
     side_points_to_screen,
     side_strokes_to_screen,
+    STATUS_BOX_STYLE,
     status_message_layout,
     zoom_navigation_state,
 )
@@ -775,11 +776,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
             )
             if status_layout is not None:
                 try:
-                    painter.setPen(QtGui.QPen(QtGui.QColor(180, 80, 20), 1))
-                    painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 240, 210, 220)))
+                    # LES-051: Farben/Kopfzeile kommen aus dem reinen
+                    # Datenvertrag STATUS_BOX_STYLE (preview_geometry.py).
+                    painter.setPen(QtGui.QPen(QtGui.QColor(*STATUS_BOX_STYLE["border_color"]), 1))
+                    painter.setBrush(QtGui.QBrush(QtGui.QColor(*STATUS_BOX_STYLE["fill_color"])))
                     painter.drawRoundedRect(QtCore.QRectF(*status_layout["box_rect"]), 6, 6)
-                    painter.setPen(QtGui.QPen(QtGui.QColor(90, 40, 0), 1))
-                    painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), "Warnungen")
+                    painter.setPen(QtGui.QPen(QtGui.QColor(*STATUS_BOX_STYLE["text_color"]), 1))
+                    painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), STATUS_BOX_STYLE["header"])
                     for msg, pos in zip(status_layout["messages"], status_layout["line_positions"]):
                         painter.drawText(QtCore.QPointF(*pos), f"- {msg}")
                 except Exception as exc:
