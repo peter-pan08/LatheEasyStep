@@ -12,7 +12,7 @@ Verifikation in
 
 - `main`: Version 0.7.0 als lauffaehige Basis
 - `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
-- aktueller Teststand: `859 passed (Stub-Qt), 102 passed (Real-Qt), 0 skipped`
+- aktueller Teststand: `860 passed (Stub-Qt), 102 passed (Real-Qt), 0 skipped`
 - UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,
   nichtleere Sprachschluessel

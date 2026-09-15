@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### LES-044: Vorderansichts-Kreise als fertiger Bildschirmplan 2026-09-15
+
+- Neue Qt-freie Funktion `build_front_view_screen_plan()` wandelt die
+  semantischen Durchmesserkreise in Mittelpunkt und Pixelradius um und teilt
+  sie zugleich in die drei bestehenden Zeichenphasen Rohteil, Fuellung und
+  Ringe. Die Keilnut bleibt unveraendert zwischen Fuellung und Ringen.
+- `preview_widget.py` berechnet keine Kreisradien und filtert keine
+  Vorderansichtsphasen mehr; es weist nur noch Qt-Stifte/-Pinsel zu und zeichnet
+  den Plan. Ein neuer Stub-Test sichert Pixelradien, Mittelpunkt und Reihenfolge.
+- Gesamtstand: 860 Stub-Qt- und 102 Real-Qt-Tests, keine Skips. Standalone-Panel
+  bis `critical done` nach 2,187 s gestartet und sauber beendet; kein
+  LinuxCNC-Start erforderlich.
+
 ### LES-044: Pfad-/Primitive-Abbildung aus Paint-Code geloest 2026-09-15
 
 - `side_points_to_screen()` und `side_strokes_to_screen()` bilden normale

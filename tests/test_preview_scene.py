@@ -4,6 +4,7 @@ from lathe_easystep.preview_scene import (
     PreviewPath,
     PreviewScene,
     build_front_view_draw_plan,
+    build_front_view_screen_plan,
     build_preview_draw_plan,
     primitive_strokes,
     scene_from_legacy_paths,
@@ -147,3 +148,25 @@ def test_front_view_draw_plan_omits_zero_and_negligible_diameters():
         outer_hits=[], inner_hits=[], active_diameters=[],
     )
     assert plan == []
+
+
+def test_front_view_screen_plan_resolves_radii_and_paint_phases():
+    circles = build_front_view_draw_plan(
+        stock_od=40.0, stock_id=20.0,
+        outer_fill_diameter=35.0, inner_fill_diameter=18.0,
+        outer_hits=[35.0], inner_hits=[18.0], active_diameters=[30.0],
+    )
+    plan = build_front_view_screen_plan(
+        circles, center=(120.0, 80.0), scale=4.0
+    )
+
+    assert [circle.style_key for circle in plan["stock"]] == ["stock_od", "stock_id"]
+    assert [circle.style_key for circle in plan["filled"]] == [
+        "end_contour_fill", "end_contour_hole",
+    ]
+    assert [circle.style_key for circle in plan["rings"]] == [
+        "outer_ring", "inner_ring", "active_ring",
+    ]
+    assert plan["stock"][0].center == (120.0, 80.0)
+    assert plan["stock"][0].radius == 80.0
+    assert plan["filled"][0].filled is True

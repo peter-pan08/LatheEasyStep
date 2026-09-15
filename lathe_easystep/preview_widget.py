@@ -19,6 +19,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from .model import Operation, OpType
 from .preview_scene import (
     build_front_view_draw_plan,
+    build_front_view_screen_plan,
     build_preview_draw_plan,
     primitive_strokes,
     stroke_bounding_rectangle,
@@ -370,18 +371,20 @@ class LathePreviewWidget(QtWidgets.QWidget):
             "active_ring": (QtGui.QColor(255, 220, 120), 1, QtCore.Qt.SolidLine),
         }
 
+        screen_plan = build_front_view_screen_plan(
+            draw_plan, center=(center.x(), center.y()), scale=scale
+        )
+
         def draw_ring(circle) -> None:
             color, width, style = ring_styles[circle.style_key]
             painter.setPen(QtGui.QPen(color, width, style))
             painter.setBrush(QtCore.Qt.NoBrush)
-            radius = (circle.diameter * 0.5) * scale
-            painter.drawEllipse(center, radius, radius)
+            painter.drawEllipse(QtCore.QPointF(*circle.center), circle.radius, circle.radius)
 
-        for circle in draw_plan:
-            if circle.style_key in ("stock_od", "stock_id"):
-                draw_ring(circle)
+        for circle in screen_plan["stock"]:
+            draw_ring(circle)
 
-        end_contour = [c for c in draw_plan if c.filled]
+        end_contour = screen_plan["filled"]
         if end_contour:
             painter.save()
             painter.setPen(QtCore.Qt.NoPen)
@@ -391,15 +394,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     if circle.style_key == "end_contour_hole"
                     else QtGui.QBrush(QtGui.QColor(255, 80, 80, 70))
                 )
-                radius = (circle.diameter * 0.5) * scale
-                painter.drawEllipse(center, radius, radius)
+                painter.drawEllipse(QtCore.QPointF(*circle.center), circle.radius, circle.radius)
             painter.restore()
 
         self._draw_front_keyway_overlay(painter, center, scale)
 
-        for circle in draw_plan:
-            if circle.style_key in ("outer_ring", "inner_ring", "active_ring"):
-                draw_ring(circle)
+        for circle in screen_plan["rings"]:
+            draw_ring(circle)
 
         painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
         painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")

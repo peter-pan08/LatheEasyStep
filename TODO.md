@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 859 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 860 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -54,6 +54,10 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   neue Stub-Tests. Die vollstaendig neu gezaehlte Suite bleibt wegen einer
   korrigierten frueheren LES-032-Dokumentationsabweichung bei realen 859/102;
   Standalone-Start nach 2,329 s.
+  Fuenftes aktuelles Paket: `build_front_view_screen_plan()` liefert
+  Mittelpunkt/Pixelradius und die drei Zeichenphasen der Vorderansicht bereits
+  Qt-frei; das Widget filtert und skaliert die Kreise nicht mehr selbst. Ein
+  neuer Stub-Test, Gesamtstand 860/102; Standalone-Start nach 2,187 s.
 - [x] Entscheidung (2026-09-14) umgesetzt: G-Code-Kommentare (Werkstatt-
   kommentare im erzeugten `.ngc`) sind jetzt sprachabhaengig wie die
   UI-Texte. Die Step-Beschreibung selbst (`_describe_operation()`, landet

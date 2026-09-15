@@ -58,6 +58,14 @@ class FrontViewCircle:
     filled: bool = False
 
 
+@dataclass(frozen=True)
+class FrontViewScreenCircle:
+    center: tuple[float, float]
+    radius: float
+    style_key: str
+    filled: bool = False
+
+
 _WORKPIECE_TYPES = {OpType.CONTOUR, OpType.GROOVE, OpType.KEYWAY}
 _TOOL_PATH_TYPES = {OpType.FACE, OpType.THREAD, OpType.ABSPANEN}
 _AUXILIARY_ROLES = {"stock", "retract", "worklimit", "chuck_nogo", "contour_rough"}
@@ -239,3 +247,31 @@ def build_front_view_draw_plan(
             continue
         plan.append(FrontViewCircle(diameter, "active_ring"))
     return plan
+
+
+def build_front_view_screen_plan(
+    circles: Iterable[FrontViewCircle],
+    *,
+    center: tuple[float, float],
+    scale: float,
+) -> dict[str, list[FrontViewScreenCircle]]:
+    """Resolve circles to pixels while preserving the three paint phases."""
+    cx, cy = float(center[0]), float(center[1])
+    factor = float(scale)
+    phases: dict[str, list[FrontViewScreenCircle]] = {
+        "stock": [], "filled": [], "rings": [],
+    }
+    for circle in circles:
+        screen_circle = FrontViewScreenCircle(
+            center=(cx, cy),
+            radius=float(circle.diameter) * 0.5 * factor,
+            style_key=circle.style_key,
+            filled=circle.filled,
+        )
+        if circle.filled:
+            phases["filled"].append(screen_circle)
+        elif circle.style_key in {"stock_od", "stock_id"}:
+            phases["stock"].append(screen_circle)
+        else:
+            phases["rings"].append(screen_circle)
+    return phases
