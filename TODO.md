@@ -24,78 +24,11 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| LES-024 | P2 | direkte moduluebergreifende Widgetzugriffe durch Schnittstellen ersetzen | L | 0.9.0 |
 | LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
 | LES-028 | P2 | Werkzeugdatensatz und Preset-/Manuell-Normalisierung festlegen | M | 0.9.0 |
 | LES-032 | P2 | reale Werkzeuggeometrie fuer Plausibilitaet/Kollision auswerten | L | 0.9.0 |
 | LES-043 | P2 | Gegenspindelfunktion als eigenes Projekt spezifizieren (UI bleibt gesperrt sichtbar) | XL | separat |
 | LES-030 | extern | weitere physische Maschinenprofile verifizieren | extern | offen |
-
-## LES-024 Modulschnittstellen
-
-- [x] fuer Step-Verwaltung und Vorschau schmale View-Schnittstellen definiert:
-  `StepListView` kapselt die Step-Liste; `PreviewView` kapselt die Ausgabe an
-  Seiten-, Schnitt- und Konturvorschau.
-- [x] die zwoelf `list_ops`-Zugriffsstellen bestehen aus zwei Gruppen:
-  sechs Fachlogik-Dateien (ui_dirty/ui_flow/ui_persistence/ui_preview/
-  ui_program/ui_selection) und sechs Bindungs-/Such-Dateien
-  (ui_lifecycle/ui_split/ui_signals/ui_widget_lookup/ui_widgets/
-  lathe_easystep_handler.py), die `handler.list_ops` ueberhaupt erst
-  herstellen und bewusst nicht ueber `StepListView` laufen. Die sechs
-  Fachlogik-Dateien sind auf `StepListView` migriert, die Vorschau-Ausgabe
-  auf `PreviewView`/`PreviewScene`. `preview_widget.py` ist ueber zehn
-  Pakete von 1049 auf 671 Zeilen geschrumpft (Diagrammberechnung, Primitive-
-  Konvertierung, Keilnut-Polygone, Viewport/Ticks, Zeichenreihenfolge,
-  Vorderansicht-Darstellungsplan, Legende/Statusbox als Qt-freie Funktionen
-  in `preview_geometry.py`/`preview_scene.py`) - Details je Paket in
-  CHANGELOG.md.
-- [x] nach jedem der zehn Verkleinerungspakete Stub- und Real-Qt-Suite sowie
-  Embedded-Start in der QtDragon-SIM verifiziert (durchgehend fehlerfrei,
-  721/70 bis zuletzt 772/76 Tests); je nach Paket zusaetzlich Tab-Wechsel,
-  Schnittansicht-Toggle und Legende-Klick live im UTILS-Panel geprueft.
-  Einzelergebnisse je Paket in CHANGELOG.md.
-- [ ] Entscheidung (2026-09-14) in Umsetzung: ungueltige Aktionen kuenftig per
-  Buttonzustand verhindern statt nur beim Klick zu melden. Muster mit dem
-  klarsten Fall etabliert: `update_save_step_button_state()`
-  (`ui_persistence.py`) sperrt "Step speichern", solange keine Operation
-  ausgewaehlt ist (vorher: Klick jederzeit moeglich, dann eine Warnung).
-  Aufgerufen bei jeder Auswahlaenderung (`handle_selection_change()`,
-  inkl. des fruehen Rueckgabepfads fuer eine ungueltige Zeile - sonst
-  bliebe der Button nach dem Loeschen der letzten Operation faelschlich
-  aktiv) sowie zentral am Ende von `_refresh_operation_list()`
-  (`lathe_easystep_handler.py`) - das deckt Hinzufuegen/Loeschen/
-  Verschieben/Laden automatisch mit ab, ohne jede einzelne Aktion
-  separat verdrahten zu muessen. Die bestehende Klick-Meldung bleibt als
-  letzte Sicherung bestehen. Sechs neue Tests, per zwei unabhaengig
-  entfernten Aufrufen als echte Regression verifiziert; live in der SIM
-  bestaetigt (Button startet sichtbar gesperrt ohne Auswahl, kein Fehler
-  im Log). Zweites Paket: `update_operation_action_button_states()` steuert
-  Loeschen/Hoch/Runter aus Auswahl, Programmkopf und Listengrenzen. Der
-  Programmkopf ist auch in den Handlern gegen Verschieben abgesichert; der
-  erste Bearbeitungsschritt kann nicht ueber ihn geschoben werden. Sieben
-  neue Tests, 808/76 bestanden; Embedded-Start bis `critical done` nach
-  9,025 s. Aktueller Regressionfix: Vorschau wieder an erster Stelle
-  oberhalb der Parameter; Schnittansicht wird nach dem verzögerten Laden
-  des Preview-Panels erneut eingerichtet statt durch einen zu fruehen
-  Done-Marker dauerhaft uebersprungen. Gesamtstand danach 809/76 Tests.
-  Drittes Paket (2026-09-15): "Aenderungen speichern" (`btn_save_changes`)
-  am Dirty-State ausgerichtet - `update_dirty_status()` (`ui_dirty.py`)
-  sperrt den Button jetzt zusaetzlich zum bisherigen Text-Sternchen (" *"),
-  solange `has_unsaved_changes()` falsch ist (vorher: Klick jederzeit
-  moeglich, `handle_save_changes()` zeigte dann erst eine "nichts zu
-  speichern"-Meldung). Zentral in `update_dirty_status()` verdrahtet, das
-  bereits von jeder dirty-zustandsaendernden Funktion aufgerufen wird
-  (mark_dirty/mark_program_structure_dirty/clear_dirty_state/
-  clear_program_dirty/clear_dirty_operation/die drei Reindex-Funktionen/
-  mark_all_operations_dirty) - keine einzelne Aktion musste separat
-  verdrahtet werden. Die bestehende Klick-Meldung bleibt als letzte
-  Sicherung bestehen (z. B. falls alle dirty Steps ohne verknuepfte Datei
-  sind). Zwei neue Tests (`tests/test_dirty_and_messages.py`), per
-  entferntem `setEnabled()`-Aufruf als echte Regression verifiziert; live
-  im Standalone-Panel bestaetigt (Button startet sichtbar gesperrt ohne
-  offene Aenderungen, kein Fehler im Log). 825 Stub-/102 Real-Qt-Tests
-  bestanden. Noch offen: die verbleibenden QMessageBox-Klick-Validierungen
-  einzeln bewerten.
 
 ## LES-044 Darstellung und Texte
 

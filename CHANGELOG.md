@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### LES-024: verbleibende QMessageBox-Klick-Validierungen bewertet (LES-024 vollstaendig abgeschlossen) 2026-09-15
+
+- Letzter offener LES-024-Punkt: alle 21 verbliebenen `QMessageBox`-
+  Fundstellen (`ui_flow.py`, `ui_dirty.py`, `ui_persistence.py`,
+  `ui_tools.py`, `lathe_easystep_handler.py`) einzeln durchgesehen und
+  bewertet, ob sie sich - wie "Step speichern", die Listenaktionen und
+  "Aenderungen speichern" zuvor - durch einen Buttonzustand ersetzen
+  liessen.
+- Ergebnis: drei sind bereits die bewusst beibehaltene "letzte Sicherung"
+  neben einem vorhandenen Buttonzustand (Step speichern ohne Auswahl,
+  Loeschen des Programmkopfs, Aenderungen speichern ohne offene
+  Aenderungen). Alle uebrigen sind Ergebnis-/Fehlermeldungen NACH einem
+  Versuch (Datei nicht ladbar/speicherbar, G-Code-Erzeugung fehlgeschlagen,
+  Werkzeugtabellen-Probleme) - deren Ursache (z. B. Dateisystemfehler,
+  kaputte Datei) laesst sich nicht vorab per Buttonzustand ausschliessen,
+  ohne die bereits in `checks.py` vorhandene Validierung zu duplizieren.
+- Kein Codeeingriff noetig - reine Bewertung/Dokumentation. LES-024 ist
+  damit vollstaendig abgeschlossen (alle vier Pakete: View-Schnittstellen,
+  Step speichern, Listenaktionen, Aenderungen speichern) und aus TODO.md
+  entfernt.
+
 ### LES-024: "Aenderungen speichern" per Buttonzustand gesperrt (drittes Paket) 2026-09-15
 
 - "Aenderungen speichern" (`btn_save_changes`) ohne offene Aenderungen war
