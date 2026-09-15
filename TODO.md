@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 838 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 840 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -32,7 +32,13 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## LES-044 Darstellung und Texte
 
 - [ ] reine Vorschaugeometrie von Qt-Zeichenbefehlen weiter trennen; das Muster
-  von `compute_tool_preview_layout()` verwenden.
+  von `compute_tool_preview_layout()` verwenden. Weiteres Paket abgeschlossen:
+  Pan-/Zoom-Mathematik (`navigated_center_scale()`,
+  `apply_side_navigation()`, `zoom_navigation_state()`) aus
+  `preview_widget.py` nach `preview_geometry.py` verschoben. Mausanker,
+  Zoomgrenzen und transformierter Seiten-Viewport sind damit Qt-frei und durch
+  zwei neue Stub-Tests abgesichert; Gesamtstand 840/102. Weitere Paint-
+  Geometrie bleibt offen.
 - [x] Entscheidung (2026-09-14) umgesetzt: G-Code-Kommentare (Werkstatt-
   kommentare im erzeugten `.ngc`) sind jetzt sprachabhaengig wie die
   UI-Texte. Die Step-Beschreibung selbst (`_describe_operation()`, landet

@@ -25,6 +25,7 @@ from .preview_scene import (
 )
 from .preview_geometry import (
     build_keyway_front_polygons,
+    apply_side_navigation,
     compute_side_viewport,
     front_operation_side,
     front_reference_diameter,
@@ -33,6 +34,7 @@ from .preview_geometry import (
     interp_x_at_z,
     interp_x_hits_at_z,
     legend_layout,
+    navigated_center_scale,
     path_hits_at_slice,
     preview_primitives_to_points,
     sample_preview_arc,
@@ -40,6 +42,7 @@ from .preview_geometry import (
     side_view_slice_line,
     side_view_ticks,
     status_message_layout,
+    zoom_navigation_state,
     side_view_to_screen,
 )
 
@@ -94,27 +97,23 @@ class LathePreviewWidget(QtWidgets.QWidget):
     def _navigated_center_scale(self, center: QtCore.QPointF, scale: float):
         pan = getattr(self, "_view_pan", QtCore.QPointF())
         zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
-        return center + pan, float(scale) * zoom
+        result_center, result_scale = navigated_center_scale(
+            (center.x(), center.y()), scale, zoom, (pan.x(), pan.y())
+        )
+        return QtCore.QPointF(*result_center), result_scale
 
     def _apply_side_navigation(self, viewport: Dict[str, float], rect: QtCore.QRect) -> Dict[str, float]:
         zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
         pan = getattr(self, "_view_pan", QtCore.QPointF())
-        base_scale = float(viewport["scale"])
-        scale = max(base_scale * zoom, 1e-9)
         center = rect.center()
-        min_z = float(viewport["min_z"]) + (center.x() - rect.left()) * (1.0 - 1.0 / zoom) / base_scale
-        min_x = float(viewport["min_x"]) + (rect.bottom() - center.y()) * (1.0 - 1.0 / zoom) / base_scale
-        min_z -= pan.x() / scale
-        min_x += pan.y() / scale
-        z_span = (float(viewport["max_z"]) - float(viewport["min_z"])) / zoom
-        x_span = (float(viewport["max_x"]) - float(viewport["min_x"])) / zoom
-        return {
-            "min_x": min_x,
-            "max_x": min_x + x_span,
-            "min_z": min_z,
-            "max_z": min_z + z_span,
-            "scale": scale,
-        }
+        return apply_side_navigation(
+            viewport,
+            left=rect.left(),
+            bottom=rect.bottom(),
+            center=(center.x(), center.y()),
+            zoom=zoom,
+            pan=(pan.x(), pan.y()),
+        )
 
     def _debug_slice(self, message: str) -> None:
         value = str(os.environ.get("LATHEEASYSTEP_DEBUG", "")).strip().lower()
@@ -471,14 +470,17 @@ class LathePreviewWidget(QtWidgets.QWidget):
             super().wheelEvent(event)
             return
         old_zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
-        factor = 1.2 ** (float(delta) / 120.0)
-        new_zoom = max(0.2, min(20.0, old_zoom * factor))
-        ratio = new_zoom / old_zoom
         pos = event.pos()
         center = self.rect().center()
         pan = getattr(self, "_view_pan", QtCore.QPointF())
-        anchor = QtCore.QPointF(float(pos.x() - center.x()), float(pos.y() - center.y()))
-        self._view_pan = anchor - (anchor - pan) * ratio
+        new_zoom, new_pan = zoom_navigation_state(
+            old_zoom,
+            (pan.x(), pan.y()),
+            (pos.x(), pos.y()),
+            (center.x(), center.y()),
+            float(delta) / 120.0,
+        )
+        self._view_pan = QtCore.QPointF(*new_pan)
         self._view_zoom = new_zoom
         self.update()
         event.accept()
