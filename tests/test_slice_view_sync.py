@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lathe_easystep.preview_widget import LathePreviewWidget
-from lathe_easystep.ui_preview import sync_slice_widget
+from lathe_easystep.ui_preview import setup_slice_view, sync_slice_widget
 from lathe_easystep_handler import HandlerClass
 
 
@@ -43,6 +43,68 @@ class _FakePreviewSlice:
 
     def update(self):
         self.update_calls += 1
+
+
+class _Signal:
+    def __init__(self):
+        self.callbacks = []
+
+    def connect(self, callback):
+        self.callbacks.append(callback)
+
+
+class _SetupPreview:
+    def __init__(self):
+        self.sliceChanged = _Signal()
+        self.modes = []
+        self.visible = None
+
+    def set_view_mode(self, mode):
+        self.modes.append(mode)
+
+    def setVisible(self, visible):
+        self.visible = bool(visible)
+
+
+class _SetupButton:
+    def __init__(self):
+        self.toggled = _Signal()
+
+    def setChecked(self, _checked):
+        pass
+
+    def setText(self, _text):
+        pass
+
+    def setToolTip(self, _text):
+        pass
+
+
+def test_slice_setup_retries_after_preview_ui_is_loaded():
+    handler = type("Handler", (), {})()
+    handler.preview = None
+    handler.preview_slice = None
+    handler.btn_slice_view = None
+    handler._slice_view_setup_done = False
+    handler._get_widget_by_name = lambda _name: None
+    handler._log = lambda *_args, **_kwargs: None
+    handler._on_toggle_slice_view = lambda _checked: None
+    handler._on_slice_changed = lambda _value: None
+
+    setup_slice_view(handler)
+    assert handler._slice_view_setup_done is False
+
+    handler.preview = _SetupPreview()
+    handler.preview_slice = _SetupPreview()
+    handler.btn_slice_view = _SetupButton()
+    setup_slice_view(handler)
+
+    assert handler._slice_view_setup_done is True
+    assert handler.preview.modes == ["side"]
+    assert handler.preview_slice.modes == ["front"]
+    assert handler.preview_slice.visible is False
+    assert len(handler.btn_slice_view.toggled.callbacks) == 1
+    assert len(handler.preview.sliceChanged.callbacks) == 1
 
 
 def test_sync_slice_widget_updates_front_preview_even_if_widget_is_not_visible():

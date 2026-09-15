@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-09-14
+Stand: 2026-09-15
 
 Diese Datei enthaelt ausschliesslich offene Aufgaben. Abgeschlossene Arbeiten,
 Befunde und historische Teststaende stehen im [CHANGELOG.md](CHANGELOG.md) und
@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 801 Stub-Qt-Tests und 76 Tests mit echtem PyQt5, keine Skips.
+- 809 Stub-Qt-Tests und 81 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -24,6 +24,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
+| LES-050 | P2 | Panelgroessen und Vorschau-Navigation interaktiv machen | M-L | 0.9.0 |
 | LES-024 | P2 | direkte moduluebergreifende Widgetzugriffe durch Schnittstellen ersetzen | L | 0.9.0 |
 | LES-044 | P2 | Darstellungs- und Textschichten weiter entkoppeln | L-XL | 0.9.0 |
 | LES-028 | P2 | Werkzeugdatensatz und Preset-/Manuell-Normalisierung festlegen | M | 0.9.0 |
@@ -69,8 +70,59 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   letzte Sicherung bestehen. Sechs neue Tests, per zwei unabhaengig
   entfernten Aufrufen als echte Regression verifiziert; live in der SIM
   bestaetigt (Button startet sichtbar gesperrt ohne Auswahl, kein Fehler
-  im Log). Noch offen: die uebrigen zehn+ QMessageBox-Klick-Validierungen
-  in `ui_flow.py`/`ui_persistence.py` nach demselben Muster umstellen.
+  im Log). Zweites Paket: `update_operation_action_button_states()` steuert
+  Loeschen/Hoch/Runter aus Auswahl, Programmkopf und Listengrenzen. Der
+  Programmkopf ist auch in den Handlern gegen Verschieben abgesichert; der
+  erste Bearbeitungsschritt kann nicht ueber ihn geschoben werden. Sieben
+  neue Tests, 808/76 bestanden; Embedded-Start bis `critical done` nach
+  9,025 s. Noch offen: "Aenderungen speichern" am Dirty-State ausrichten und
+  die verbleibenden QMessageBox-Klick-Validierungen einzeln bewerten.
+  Aktueller Regressionfix: Vorschau wieder an erster Stelle oberhalb der
+  Parameter; Schnittansicht wird nach dem verzögerten Laden des Preview-Panels
+  erneut eingerichtet statt durch einen zu fruehen Done-Marker dauerhaft
+  uebersprungen. Gesamtstand danach 809/76 Tests.
+
+## LES-050 Anpassbare Arbeitsflaeche und Vorschau-Navigation
+
+- [ ] REGRESSIONSFUND beim praktischen Test: Die Buttons der Step-Liste werden
+  bei kleinen Fensterbreiten beziehungsweise unguenstiger Splitterstellung in
+  einen zu schmalen Bereich am unteren Fensterrand gepresst; vom Buttontext
+  bleiben nur Bruchstuecke lesbar. Fuer die Step-Aktionen einen eigenen,
+  layoutstabilen Bereich vorsehen. Alle Buttons muessen bei jeder unterstuetzten
+  Fenstergroesse und bei jeder erlaubten Splitterstellung vollstaendig lesbar
+  und bedienbar bleiben. Die Buttons muessen nicht nebeneinander stehen: Bei
+  schmaler Step-Spalte bevorzugt untereinander oder kontrolliert in mehreren
+  Zeilen anordnen, um Breite zu sparen. Keine automatische Schrumpfung unter
+  die Text-/`sizeHint()`-Breite und keine unnoetig grosse Mindestbreite nur fuer
+  eine horizontale Buttonreihe erzwingen. Mindestbreiten von Step-Spalte und
+  Gesamtfenster daran ausrichten und mit Real-Qt-Tests fuer minimale, normale
+  und breite Fenster sowie beide Splittergrenzen absichern.
+- [x] Verschiebbare Splitter fuer die wesentlichen Arbeitsbereiche umgesetzt:
+  die Hoehe der oberen Vorschau gegenueber dem Parameterbereich sowie die
+  Breite des seitlichen Blocks mit Step-Liste und Programmaktionen muessen mit
+  der Maus vergroessert und verkleinert werden koennen.
+- [ ] Sinnvolle Mindestgroessen sind fuer beide Splitter festgelegt, damit
+  weder Bedienelemente noch
+  sicherheitsrelevante Informationen vollstaendig zusammengeschoben werden
+  koennen. Noch offen: Splitterpositionen sitzungsuebergreifend speichern und
+  eine robuste Standardaufteilung beziehungsweise Ruecksetzung anbieten.
+- [x] Seiten- und Schnittansicht direkt in ihrem Vorschaufenster navigierbar
+  machen: Ziehen mit der Maus verschiebt die Darstellung (Pan), das Mausrad
+  zoomt um die aktuelle Mausposition. Die Bedienung darf bestehende Klick- und
+  Umschaltfunktionen der Vorschau nicht ausloesen oder blockieren.
+- [ ] Doppelklick passt die Ansicht bereits wieder ein. Zusaetzlich eine
+  sichtbare, gut erreichbare Aktion "Ansicht einpassen/zuruecksetzen" vorsehen,
+  damit Rohteil, Kontur und Sicherheitsbereiche nach Pan oder Zoom sofort
+  wieder vollstaendig sichtbar werden.
+- [x] Zoomgrenzen (Faktor 0,2 bis 20) und stabile Transformationen umgesetzt;
+  Pan und
+  Zoom duerfen weder Werkstueckgeometrie noch Pruefergebnisse veraendern,
+  sondern ausschliesslich die Darstellung.
+- [ ] Real-Qt-Tests sichern Splitter in beide Richtungen, Mindestgroessen,
+  Zoomzentrum unter dem Mauszeiger, Pan, Reset und den Vorrang der vorhandenen
+  Schnittlinien-Geste. Noch offen: gespeicherte Aufteilung testen und im
+  eingebetteten QtDragon-Panel bei verschiedenen Fenster- und Panelgroessen
+  praktisch pruefen.
 
 ## LES-044 Darstellung und Texte
 

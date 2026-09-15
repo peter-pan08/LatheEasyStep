@@ -16,7 +16,6 @@ from .ui_preview_view import PreviewView
 def setup_slice_view(handler) -> None:
     if getattr(handler, "_slice_view_setup_done", False):
         return
-    handler._slice_view_setup_done = True
 
     if handler.preview is None:
         try:
@@ -39,6 +38,15 @@ def setup_slice_view(handler) -> None:
         f"preview_slice={handler.preview_slice!r} btn_slice_view={handler.btn_slice_view!r}",
         level="info",
     )
+
+    # Die Preview-UI wird erst waehrend _finalize_ui_ready() aus ihrem
+    # Teil-UI geladen. Ein frueher initialized__()-Aufruf darf den Aufbau
+    # deshalb nicht dauerhaft als erledigt markieren, solange die drei
+    # benoetigten Widgets noch fehlen.
+    if handler.preview is None or handler.preview_slice is None or handler.btn_slice_view is None:
+        handler._log("[LatheEasyStep] slice view setup deferred until preview UI is loaded", level="info")
+        return
+    handler._slice_view_setup_done = True
 
     if handler.preview is not None:
         try:
@@ -63,9 +71,6 @@ def setup_slice_view(handler) -> None:
             handler._log("[LatheEasyStep] slice toggle connected", level="info")
         except Exception:
             handler._log("[LatheEasyStep] slice toggle connect failed", level="warning")
-    else:
-        handler._log("[LatheEasyStep] btn_slice_view not found during setup", level="warning")
-
     if handler.preview is not None:
         try:
             handler.preview.sliceChanged.connect(handler._on_slice_changed)

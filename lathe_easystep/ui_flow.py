@@ -126,6 +126,13 @@ def handle_move_up(handler):
         idx = step_list.selected_row()
         if idx <= 0:
             return
+        operations = getattr(handler.model, "operations", None)
+        if operations is not None:
+            if idx >= len(operations) or (
+                getattr(operations[idx], "op_type", None) == OpType.PROGRAM_HEADER
+                or getattr(operations[idx - 1], "op_type", None) == OpType.PROGRAM_HEADER
+            ):
+                return
         handler.model.move_up(idx)
         try:
             handler._swap_dirty_operation_indices(idx - 1, idx)
@@ -153,6 +160,10 @@ def handle_move_down(handler):
         idx = step_list.selected_row()
         if idx < 0 or idx >= step_list.count() - 1:
             return
+        operations = getattr(handler.model, "operations", None)
+        if operations is not None:
+            if idx >= len(operations) or getattr(operations[idx], "op_type", None) == OpType.PROGRAM_HEADER:
+                return
         handler.model.move_down(idx)
         try:
             handler._swap_dirty_operation_indices(idx, idx + 1)
