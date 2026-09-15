@@ -1102,3 +1102,5 @@ gcode.comment.finish_contour_g70_reuse=Finish pass contour - G70 reuses the roug
 gcode.comment.finish_contour=Finish pass contour
 gcode.comment.css_start_rpm=CSS start RPM at X{diameter}
 gcode.comment.strategy_manual=manual
+ui.btn_reset_view.text=Reset view
+ui.btn_reset_view.toolTip=Resets zoom and pan of the side/slice view so the stock and contour are fully visible again. Same as double-clicking the preview.

@@ -50,6 +50,7 @@ from lathe_easystep.ui_preview import (
     ensure_preview_widgets,
     on_toggle_slice_view,
     refresh_preview,
+    reset_preview_view,
     setup_slice_view,
     sync_slice_widget,
     update_slice_view_button,
@@ -969,6 +970,7 @@ class HandlerClass:
         self.preview = getattr(self.w, "previewWidget", None)
         self.preview_slice = getattr(self.w, "previewSliceWidget", None)
         self.btn_slice_view = getattr(self.w, "btn_slice_view", None)
+        self.btn_reset_view = getattr(self.w, "btn_reset_view", None)
         self.contour_preview = getattr(self.w, "contourPreview", None)
         # Queue für nachträgliche Widget-Suchen, bis das Panel vollständig geladen ist
         self._deferred_lookup_queue: List[Tuple[str, str, object, bool]] = []
@@ -1321,6 +1323,9 @@ class HandlerClass:
 
     def _on_toggle_slice_view(self, checked: bool):
         on_toggle_slice_view(self, checked)
+
+    def _reset_preview_view(self, *_args):
+        reset_preview_view(self)
 
     def _on_slice_changed(self, z_val: float):
         self._current_slice_z = float(z_val)

@@ -1102,3 +1102,5 @@ gcode.comment.finish_contour_g70_reuse=Pasada de acabado del contorno - G70 reut
 gcode.comment.finish_contour=Pasada de acabado del contorno
 gcode.comment.css_start_rpm=RPM de arranque CSS en X{diameter}
 gcode.comment.strategy_manual=manual
+ui.btn_reset_view.text=Restablecer vista
+ui.btn_reset_view.toolTip=Restablece el zoom y el desplazamiento de la vista lateral/de corte para que la pieza en bruto y el contorno vuelvan a ser completamente visibles. Equivale a hacer doble clic en la vista previa.

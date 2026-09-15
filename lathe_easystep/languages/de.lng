@@ -1102,3 +1102,5 @@ gcode.comment.finish_contour_g70_reuse=Schlichtschnitt Kontur - G70 Wiederverwen
 gcode.comment.finish_contour=Schlichtschnitt Kontur
 gcode.comment.css_start_rpm=CSS-Anfahrdrehzahl bei X{diameter}
 gcode.comment.strategy_manual=manuell
+ui.btn_reset_view.text=Ansicht zurücksetzen
+ui.btn_reset_view.toolTip=Setzt Zoom und Verschiebung der Seiten-/Schnittansicht zurück, sodass Rohteil und Kontur wieder vollständig sichtbar sind. Entspricht einem Doppelklick in die Vorschau.
