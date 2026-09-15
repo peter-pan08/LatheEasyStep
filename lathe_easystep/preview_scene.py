@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Iterable
 
 from .model import OpType, Operation
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class PreviewLayer(str, Enum):
@@ -120,7 +123,8 @@ def primitive_strokes(
                 continue
             try:
                 points = sample_arc(tuple(p1), tuple(p2), tuple(center), bool(primitive.get("ccw", True)))
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "primitive_strokes", exc)
                 continue
         elif primitive_type == "polyline":
             points = primitive.get("points", [])
@@ -128,7 +132,8 @@ def primitive_strokes(
             continue
         try:
             stroke = [(float(point[0]), float(point[1])) for point in points if point is not None and len(point) >= 2]
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "primitive_strokes", exc)
             continue
         if stroke:
             strokes.append(stroke)

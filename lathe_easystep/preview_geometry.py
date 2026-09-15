@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, Dict, List, Tuple
 
@@ -8,6 +9,8 @@ from .contour_logic import build_contour_path as build_contour_primitives
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType, Operation
 from .face_geometry import face_primitives
+
+_LOGGER = logging.getLogger(__name__)
 
 Point = Tuple[float, float]
 
@@ -32,7 +35,8 @@ def preview_primitives_to_points(primitives) -> List[Point]:
         if isinstance(primitive, (list, tuple)) and len(primitive) >= 2:
             try:
                 point = (float(primitive[0]), float(primitive[1]))
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "preview_primitives_to_points", exc)
                 continue
             points.append(point)
             last = point
@@ -80,7 +84,8 @@ def compute_side_viewport(
             continue
         try:
             points = preview_primitives_to_points(path) if isinstance(path[0], dict) else path
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "compute_side_viewport", exc)
             points = []
         for x_value, z_value in points:
             x_display = float(x_value) * (0.5 if x_is_diameter else 1.0)
@@ -450,11 +455,13 @@ def build_groove_path(params: Dict[str, float]) -> List[Point]:
 def build_drill_path(params: Dict[str, float]) -> List[Point]:
     try:
         diameter = float(params.get("diameter", 0.0) or 0.0)
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_drill_path", exc)
         diameter = 0.0
     try:
         depth = float(params.get("depth", 0.0) or 0.0)
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_drill_path", exc)
         depth = 0.0
     diameter = max(0.0, diameter)
     if depth > 0:
@@ -500,15 +507,18 @@ def keyway_radial_slot_radii(params: Dict[str, object]) -> tuple[float, float]:
     """
     try:
         start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "keyway_radial_slot_radii", exc)
         start_dia = 0.0
     try:
         nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "keyway_radial_slot_radii", exc)
         nut_depth = 0.0
     try:
         radial_side = int(float(params.get("radial_side", 0) or 0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "keyway_radial_slot_radii", exc)
         radial_side = 0
 
     base_radius = start_dia * 0.5
@@ -520,15 +530,18 @@ def keyway_radial_slot_radii(params: Dict[str, object]) -> tuple[float, float]:
 def build_keyway_slot_angles(params: Dict[str, object]) -> List[float]:
     try:
         slot_count = max(1, int(float(params.get("slot_count", 1) or 1)))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_keyway_slot_angles", exc)
         slot_count = 1
     try:
         start_angle_deg = float(params.get("slot_start_angle", 0.0) or 0.0)
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_keyway_slot_angles", exc)
         start_angle_deg = 0.0
     try:
         step_deg = float(params.get("slot_angle_step", 0.0) or 0.0)
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_keyway_slot_angles", exc)
         step_deg = 0.0
     if abs(step_deg) <= 1e-9:
         step_deg = 360.0 / float(slot_count)
@@ -542,14 +555,16 @@ def front_view_polar_to_cartesian(angle_rad: float, radius: float) -> tuple[floa
 def keyway_slice_bounds(params: Dict[str, object]) -> tuple[float, float] | None:
     try:
         mode = int(float(params.get("mode", 0) or 0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "keyway_slice_bounds", exc)
         mode = 0
     if mode != 0:
         return None
     try:
         z_start = float(params.get("start_z", 0.0) or 0.0)
         nut_length = abs(float(params.get("nut_length", 0.0) or 0.0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "keyway_slice_bounds", exc)
         return None
     z_min = min(z_start, z_start - nut_length)
     z_max = max(z_start, z_start - nut_length)
@@ -567,7 +582,8 @@ def build_keyway_front_polygons(
             float(params.get("slot_width", params.get("cutting_width", 0.0)) or 0.0)
         )
         slice_value = float(slice_z)
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_keyway_front_polygons", exc)
         return []
     if mode != 0 or start_dia <= 0.0:
         return []
@@ -622,14 +638,16 @@ def default_slice_z_for_operation(op: Operation | None) -> float | None:
             return (bounds[0] + bounds[1]) * 0.5
         try:
             return float((getattr(op, "params", {}) or {}).get("start_z", 0.0) or 0.0)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "default_slice_z_for_operation", exc)
             return 0.0
     path = getattr(op, "path", None) or []
     if path and isinstance(path[0], tuple):
         try:
             z_vals = [float(z) for _, z in path]
             return (min(z_vals) + max(z_vals)) * 0.5
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "default_slice_z_for_operation", exc)
             return None
     return None
 
@@ -689,7 +707,8 @@ def build_abspanen_path(params: Dict[str, object]) -> List[Point]:
                 continue
             points.append((float(point[0]), float(point[1])))
         return points
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_abspanen_path", exc)
         return []
 
 
@@ -713,7 +732,8 @@ def build_stock_outline(program: Dict[str, Any]) -> List[Dict[str, Any]]:
                 vv = v.strip().replace(",", ".")
                 return float(vv) if vv else float(default)
             return float(v)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_sf", exc)
             return float(default)
 
     xa = _sf(program.get("xa", 0.0), 0.0)  # outer diameter
@@ -772,7 +792,8 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
                 vv = v.strip().replace(",", ".")
                 return float(vv) if vv else float(default)
             return float(v)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_sf", exc)
             return float(default)
 
     xa = _sf(program.get("xa", 0.0), 0.0)
@@ -800,7 +821,8 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
     def _is_true(key: str) -> bool:
         try:
             return bool(program.get(key, False))
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_is_true", exc)
             return False
 
     # XRA (outer)
@@ -811,7 +833,8 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
             if abs(xra_f) > 1e-12:
                 x = xra_f if _is_true("xra_absolute") else (xa + xra_f)
                 vline(x)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_retract_primitives", exc)
             pass
 
     # XRI (inner)
@@ -822,7 +845,8 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
             if abs(xri_f) > 1e-12:
                 x = xri_f if _is_true("xri_absolute") else (xi + xri_f)
                 vline(x)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_retract_primitives", exc)
             pass
 
     # ZRA (front)
@@ -833,7 +857,8 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
             if abs(zra_f) > 1e-12:
                 z = zra_f if _is_true("zra_absolute") else (za + zra_f)
                 hline(z)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_retract_primitives", exc)
             pass
 
     # ZRI (back)
@@ -845,7 +870,8 @@ def build_retract_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]:
                 # If absolute flag is set, interpret value as absolute Z; otherwise incremental from ZI.
                 z = zri_f if _is_true("zri_absolute") else (zi - zri_f)
                 hline(z)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_retract_primitives", exc)
             pass
 
     return prim
@@ -861,7 +887,8 @@ def build_worklimit_primitives(program: Dict[str, Any], stock_prims: List[Dict[s
     """
     try:
         z = float(program.get("zb", 0.0) or 0.0)
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_worklimit_primitives", exc)
         z = 0.0
 
     if abs(z) < 1e-9:
@@ -876,14 +903,16 @@ def build_worklimit_primitives(program: Dict[str, Any], stock_prims: List[Dict[s
                 if isinstance(pt, (tuple, list)) and len(pt) >= 2:
                     try:
                         x_vals.append(float(pt[0]))
-                    except Exception:
+                    except Exception as exc:
+                        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_worklimit_primitives", exc)
                         pass
         elif isinstance(prim, dict) and prim.get("type") == "line":
             for pt in (prim.get("p1"), prim.get("p2")):
                 if isinstance(pt, (tuple, list)) and len(pt) >= 2:
                     try:
                         x_vals.append(float(pt[0]))
-                    except Exception:
+                    except Exception as exc:
+                        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "build_worklimit_primitives", exc)
                         pass
 
     if x_vals:
@@ -917,7 +946,8 @@ def build_chuck_nogo_primitives(program: Dict[str, Any]) -> List[Dict[str, Any]]
                 vv = v.strip().replace(",", ".")
                 return float(vv) if vv else default
             return float(v)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_sf", exc)
             return default
 
     x_min = _sf(program.get("chuck_no_go_x_min"), None)
@@ -1013,7 +1043,8 @@ def path_hits_at_slice(path, z: float, to_points) -> List[float]:
     if isinstance(path[0], dict):
         try:
             path = to_points(path)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "path_hits_at_slice", exc)
             return []
     return interp_x_hits_at_z(path, z)
 
@@ -1025,7 +1056,8 @@ def front_operation_side(op: Operation) -> str | None:
     if op.op_type == OpType.GROOVE:
         try:
             return "inside" if int(float(params.get("lage", 0) or 0)) == 1 else "outside"
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_operation_side", exc)
             return "outside"
     if op.op_type == OpType.THREAD:
         return "inside" if is_internal_side(params.get("orientation", 0)) else "outside"
@@ -1047,11 +1079,13 @@ def front_slice_profile(
 ) -> Dict[str, List[float] | float | None]:
     try:
         stock_od = abs(float(front_program.get("xa", 0.0) or 0.0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_slice_profile", exc)
         stock_od = 0.0
     try:
         stock_id = abs(float(front_program.get("xi", 0.0) or 0.0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_slice_profile", exc)
         stock_id = 0.0
 
     outer_hits: List[float] = []
@@ -1123,7 +1157,8 @@ def front_reference_diameter(
     for key in ("xa", "xi"):
         try:
             val = abs(float(front_program.get(key, 0.0) or 0.0))
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_reference_diameter", exc)
             val = 0.0
         if val > 1e-6:
             candidates.append(val)
@@ -1137,14 +1172,16 @@ def front_reference_diameter(
         if isinstance(path[0], dict):
             try:
                 pts = to_points(path)
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_reference_diameter", exc)
                 pts = []
         else:
             pts = path
         for pt in pts:
             try:
                 dia = abs(float(pt[0]))
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_reference_diameter", exc)
                 continue
             if dia > 1e-6:
                 candidates.append(dia)
@@ -1155,7 +1192,8 @@ def front_reference_diameter(
                 start_dia = abs(float(params.get("start_x_dia", 0.0) or 0.0))
                 nut_depth = abs(float(params.get("nut_depth", 0.0) or 0.0))
                 radial_side = int(float(params.get("radial_side", 0) or 0))
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "front_reference_diameter", exc)
                 continue
             if start_dia > 1e-6:
                 candidates.append(start_dia)
