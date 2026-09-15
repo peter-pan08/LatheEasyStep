@@ -33,6 +33,7 @@ untersagt.
 
 Ohne passenden Eintrag bleibt die vorhandene prozedurale Darstellung aktiv.
 Ist ein konfigurierter Eintrag ungueltig oder fehlt die Datei, liefert der
-Provider denselben Fallback plus strukturierte Diagnose. Die spaetere Qt-
-Anbindung kann diese Diagnose sichtbar machen, ohne Operation, Werkzeug, G-Code
-oder Dirty-State zu veraendern.
+Provider denselben Fallback plus strukturierte Diagnose. Der Qt-Adapter zeigt
+diese Diagnose als Warnmarkierung und im Log, ohne Operation, Werkzeug, G-Code
+oder Dirty-State zu veraendern. Die Wahl und Lebensdauer eines konkreten Themes
+bleibt ausserhalb des Fachmodells und wird in einem weiteren Paket ergaenzt.

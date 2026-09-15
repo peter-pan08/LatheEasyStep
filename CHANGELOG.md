@@ -17,6 +17,22 @@
 
 ## [Unreleased]
 
+### LES-051: Werkzeugressourcen an Qt-Vorschau angebunden 2026-09-15
+
+- `render_tool_preview()` fragt nun vor der bisherigen prozeduralen Zeichnung
+  den neutralen `ToolVisualProvider` ab. Gueltige PNG-/SVG-Ressourcen werden
+  seitenverhaeltnistreu in die unveraenderte 140-x-140-Ausgabe eingepasst.
+- Fehlende oder nicht dekodierbare konfigurierte Dateien fallen auf die
+  prozedurale Darstellung zurueck, werden geloggt und erhalten als sichtbare
+  Diagnose ein orangefarbenes Ausrufezeichen. Ohne konfiguriertes Theme bleibt
+  die bisherige Darstellung unveraendert.
+- Drei neue Real-Qt-Tests sichern externe PNG-Ausgabe, fehlende Ressource,
+  Dekodierfehler und unveraenderte Werkzeugdaten. Nebenbei einen bereits
+  vorhandenen unausgeglichenen `QPainter.save()`-Zustand korrigiert.
+- Gesamtstand: 869 Stub-Qt- und 105 Real-Qt-Tests, keine Skips. Standalone-Panel
+  bis `critical done` nach 2,337 s gestartet und sauber beendet; G-Code und
+  Fahrwege sind unveraendert, daher kein LinuxCNC-Lauf erforderlich.
+
 ### LES-051: neutraler Providervertrag fuer Werkzeugdarstellungen 2026-09-15
 
 - Neues Qt-freies Modul `tool_visuals.py`: `ToolVisualRequest` beschreibt eine

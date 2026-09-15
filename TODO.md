@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 869 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 869 Stub-Qt-Tests und 105 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -52,7 +52,9 @@ Erster Baustein umgesetzt: Besitzgrenzen sind in
 `doc/PANEL_ARCHITECTURE.md` dokumentiert. Der Qt-freie `ToolVisualProvider`
 loest logische Werkzeugdarstellungen aus einem Theme-Manifest auf und liefert
 bei fehlenden oder ungueltigen PNG-/SVG-Dateien einen diagnostizierten
-prozeduralen Fallback. Die Anbindung an die Qt-Werkzeugvorschau bleibt offen.
+prozeduralen Fallback. Die Qt-Anbindung passt externe Bilder ein; Ressourcen-
+fehler werden geloggt und im Fallback sichtbar markiert. Offen bleiben
+konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
 
 - [ ] den verbleibenden Handler-Kleber weiter reduzieren. Neue Fachlogik darf
   nicht in `lathe_easystep_handler.py` entstehen; UI-Fragmente sollen nur

@@ -7,6 +7,7 @@ import re
 from qtpy import QtCore, QtGui
 
 from .gcode_utils import is_internal_side
+from .tool_visuals import ToolVisualProvider, ToolVisualRequest
 
 
 def tool_combo_label(_handler, tool, max_comment: int = 32) -> str:
@@ -308,9 +309,53 @@ def compute_tool_preview_layout(handler, tool):
     }
 
 
+def resolve_tool_visual(handler, tool):
+    """Resolve an optional external visual without storing it on ``Tool``."""
+    profile = handler._infer_insert_profile(tool)
+    request = ToolVisualRequest(
+        family=profile.get("family", "turning"),
+        handed=profile.get("handed", "neutral"),
+        shape_key=profile.get("shape_key", ""),
+        iso_code=tool.iso_code or "",
+    )
+    provider = getattr(handler, "_tool_visual_provider", None)
+    if not isinstance(provider, ToolVisualProvider):
+        provider = ToolVisualProvider()
+    return provider.resolve(request)
+
+
+def _render_resource_pixmap(path, size: int):
+    source = QtGui.QPixmap(str(path))
+    if source.isNull():
+        return None
+    target = QtGui.QPixmap(size, size)
+    target.fill(QtGui.QColor("#f4f7fb"))
+    scaled = source.scaled(
+        size, size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+    )
+    painter = QtGui.QPainter(target)
+    painter.drawPixmap((size - scaled.width()) // 2, (size - scaled.height()) // 2, scaled)
+    painter.end()
+    return target
+
+
 def render_tool_preview(handler, tool):
     layout = handler._compute_tool_preview_layout(tool)
     size = layout["size"]
+    visual = resolve_tool_visual(handler, tool)
+    diagnostic = visual.diagnostic
+    if visual.uses_resource:
+        pixmap = _render_resource_pixmap(visual.resource_path, size)
+        if pixmap is not None:
+            return pixmap
+        diagnostic = (
+            f"Tool visual '{visual.matched_key}': resource cannot be decoded; "
+            "using procedural fallback."
+        )
+    if diagnostic:
+        logger = getattr(handler, "_log", None)
+        if callable(logger):
+            logger(f"[LatheEasyStep] {diagnostic}", level="warning")
     center_x = layout["center_x"]
     center_y = layout["center_y"]
     margin = layout["margin"]
@@ -353,9 +398,15 @@ def render_tool_preview(handler, tool):
         painter.setBrush(QtGui.QColor(244, 162, 97, 90))
         painter.drawEllipse(layout["nose_pt"], layout["nose_radius"], layout["nose_radius"])
     painter.restore()
+    painter.restore()
     painter.setPen(QtGui.QColor("#1c1e26"))
     painter.drawText(margin, size - margin + 6, layout["info_text"])
     if layout["orientation_text"] is not None:
         painter.drawText(size - margin - 32, size - margin + 6, layout["orientation_text"])
+    if diagnostic:
+        painter.setPen(QtGui.QPen(QtGui.QColor("#7c2d12"), 1))
+        painter.setBrush(QtGui.QColor("#fb923c"))
+        painter.drawEllipse(QtCore.QPointF(float(size - 13), 13.0), 9.0, 9.0)
+        painter.drawText(QtCore.QRectF(float(size - 18), 5.0, 10.0, 16.0), QtCore.Qt.AlignCenter, "!")
     painter.end()
     return pixmap

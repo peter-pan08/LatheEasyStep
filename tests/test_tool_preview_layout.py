@@ -1,5 +1,6 @@
 import os
 import sys
+from dataclasses import asdict
 
 import pytest
 
@@ -19,7 +20,7 @@ pytest.importorskip("PyQt5")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5 import QtWidgets  # noqa: E402
+from PyQt5 import QtCore, QtGui, QtWidgets  # noqa: E402
 
 _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
@@ -29,10 +30,12 @@ from lathe_easystep.tool_logic import (  # noqa: E402
     infer_insert_profile,
     infer_insert_shape_key,
     render_tool_preview,
+    resolve_tool_visual,
     tool_holder_angle,
     tool_orientation_angle,
 )
 from lathe_easystep.tools import Tool  # noqa: E402
+from lathe_easystep.tool_visuals import ToolVisualProvider  # noqa: E402
 
 _INSERT_SHAPE_KEYS = {"C", "D", "V", "S", "T", "W", "R"}
 
@@ -44,6 +47,13 @@ class _FakeHandler:
     keine eigene Logikkopie."""
 
     _INSERT_SHAPE_KEYS = _INSERT_SHAPE_KEYS
+
+    def __init__(self):
+        self._tool_visual_provider = ToolVisualProvider()
+        self.logs = []
+
+    def _log(self, message, level=None):
+        self.logs.append((level, message))
 
     def _infer_insert_shape_key(self, tool):
         return infer_insert_shape_key(self, tool)
@@ -65,6 +75,9 @@ class _FakeHandler:
 
     def _render_tool_preview(self, tool):
         return render_tool_preview(self, tool)
+
+    def _resolve_tool_visual(self, tool):
+        return resolve_tool_visual(self, tool)
 
 
 def _tool(**overrides):
@@ -149,3 +162,52 @@ def test_render_tool_preview_still_produces_a_pixmap_for_every_family():
         assert pixmap is not None
         assert pixmap.width() == 140
         assert pixmap.height() == 140
+
+
+def test_external_png_is_rendered_without_changing_tool_data(tmp_path):
+    source = QtGui.QPixmap(20, 10)
+    source.fill(QtGui.QColor("#123456"))
+    image = tmp_path / "turning.png"
+    assert source.save(str(image), "PNG")
+    h = _FakeHandler()
+    h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": image.name})
+    tool = _tool(comment="CNMG 120408", iso_code="CNMG120408")
+    before = asdict(tool)
+
+    visual = h._resolve_tool_visual(tool)
+    pixmap = h._render_tool_preview(tool)
+
+    assert visual.uses_resource is True
+    assert pixmap.size() == QtCore.QSize(140, 140)
+    assert pixmap.toImage().pixelColor(70, 70) == QtGui.QColor("#123456")
+    assert asdict(tool) == before
+    assert h.logs == []
+
+
+def test_missing_external_visual_uses_marked_procedural_fallback(tmp_path):
+    h = _FakeHandler()
+    h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": "missing.svg"})
+
+    pixmap = h._render_tool_preview(_tool())
+
+    assert pixmap.size() == QtCore.QSize(140, 140)
+    assert any(level == "warning" and "missing" in message for level, message in h.logs)
+    image = pixmap.toImage()
+    orange = QtGui.QColor("#fb923c")
+    assert any(
+        image.pixelColor(x, y) == orange
+        for x in range(118, 136)
+        for y in range(4, 22)
+    )
+
+
+def test_unreadable_external_visual_falls_back_in_qt_adapter(tmp_path):
+    image = tmp_path / "broken.png"
+    image.write_bytes(b"not a png")
+    h = _FakeHandler()
+    h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": image.name})
+
+    pixmap = h._render_tool_preview(_tool())
+
+    assert pixmap.size() == QtCore.QSize(140, 140)
+    assert any("cannot be decoded" in message for _level, message in h.logs)
