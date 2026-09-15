@@ -48,6 +48,12 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Tick-Markierungen/Textpositionen, Achsbeschriftungen und die optionale
   Schnittlinie als Qt-freien Darstellungsplan. Ein weiterer Stub-Test,
   Gesamtstand 843/102; Standalone-Start nach 2,143 s.
+  Viertes aktuelles Paket: Punkt-/Stroke-Abbildung und Einzelpunkt-Kreuz nach
+  `preview_geometry.py` ausgelagert; normale Pfade, getrennte Primitive und
+  Futter-Sperrzonenfuellung verwenden dieselbe Qt-freie Transformation. Zwei
+  neue Stub-Tests. Die vollstaendig neu gezaehlte Suite bleibt wegen einer
+  korrigierten frueheren LES-032-Dokumentationsabweichung bei realen 859/102;
+  Standalone-Start nach 2,329 s.
 - [x] Entscheidung (2026-09-14) umgesetzt: G-Code-Kommentare (Werkstatt-
   kommentare im erzeugten `.ngc`) sind jetzt sprachabhaengig wie die
   UI-Texte. Die Step-Beschreibung selbst (`_describe_operation()`, landet
@@ -183,7 +189,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   `Drehbank/tool.tbl`-Datei bestaetigt (T4 "Einstechen MGMN200" ->
   `groove_width_mm: 2.0` durch `infer_insert_profile()`, unveraendert zum
   vorherigen Verhalten). Alle zwoelf Referenzen neu generiert (keine
-  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 852
+  Abweichung), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 850
   Stub-/102 Real-Qt-Tests bestanden. Schneidenlaenge und Haltergeometrie
   bleiben offen - im echten `tool.tbl` gibt es dafuer aktuell keine
   erkennbare Datenquelle (weder Spalte noch Kommentarkonvention).
@@ -227,7 +233,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Sperrzonengrenze entfernte Z-Position wird durch die Werkzeugbreite
   korrekt als Verletzung erkannt - ein rein punktbasierter Check haette das
   uebersehen). Alle zwoelf Referenzen neu generiert (keine Abweichung),
-  `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 859 Stub-/102
+  `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei. 857 Stub-/102
   Real-Qt-Tests bestanden. Weitergehende Werkzeughuellenpruefung (z. B.
   fuer Dreh-/Bohrwerkzeuge, Haltergeometrie) bleibt offen - dafuer fehlt
   bislang die Datengrundlage (siehe voriger Punkt: keine Quelle fuer
