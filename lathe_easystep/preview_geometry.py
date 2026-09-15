@@ -249,6 +249,27 @@ def offset_polygons_to_screen(
     ]
 
 
+LEGEND_ENTRIES: Tuple[Dict[str, object], ...] = (
+    {"label": "Werkzeugweg", "color": (0, 255, 0), "width": 2, "style": "solid"},
+    {"label": "Werkstück", "color": (70, 155, 255), "width": 2, "style": "solid"},
+    {"label": "Hilfsgeometrie", "color": (145, 145, 145), "width": 1, "style": "dashdot"},
+    {"label": "Aktiv", "color": (255, 0, 0), "width": 2, "style": "solid"},
+    {"label": "Rohteil", "color": (180, 180, 180), "width": 1, "style": "solid"},
+    {"label": "Rückzug", "color": (0, 255, 255), "width": 1, "style": "dash"},
+    {"label": "Schruppkontur", "color": (240, 180, 0), "width": 2, "style": "dash"},
+    {"label": "Freistich", "color": (0, 190, 255), "width": 2, "style": "solid"},
+    {"label": "Bearbeitungslinie", "color": (255, 0, 0), "width": 1, "style": "dash"},
+    {"label": "Futter-Sperrzone", "color": (200, 60, 220), "width": 1, "style": "dashdot"},
+)
+"""LES-051: reiner Datenvertrag fuer die Vorschau-Legende - Label, RGB-Farbe,
+Linienbreite und ein Qt-freier Stilname (`solid`/`dash`/`dashdot`). Vorher
+wurden diese Werte direkt als `QPen`/`QColor`-Objekte in `preview_widget.py`s
+`paintEvent()` konstruiert; jetzt liest der Qt-Adapter nur noch aus dieser
+Liste. Bewusst NICHT gleichzeitig uebersetzt (eigenes, separates Thema -
+die Legende war schon vorher rein Deutsch und ungebunden an `_tr()`, siehe
+TODO.md LES-044)."""
+
+
 def legend_layout(
     item_count: int,
     *,

@@ -17,6 +17,31 @@
 
 ## [Unreleased]
 
+### LES-051: Vorschau-Legende als austauschbarer Datenvertrag 2026-09-15
+
+- Erster Baustein fuer "weitere austauschbare Panelbereiche identifizieren"
+  (Preview-Canvas, Legende, Status-/Warnungsbox, optionale Bedienelemente):
+  die 10 Legenden-Eintraege (Label, RGB-Farbe, Linienbreite, Stilname) waren
+  bisher direkt als `QPen`/`QColor`-Konstruktion in `paintEvent()`
+  hartkodiert. Neuer, reiner Datenvertrag `LEGEND_ENTRIES`
+  (`preview_geometry.py`); `paintEvent()` (`preview_widget.py`) baut daraus
+  nur noch die Qt-Objekte (derselbe Qt-Adapter-Zuschnitt wie beim
+  `ToolVisualProvider`). Keine sichtbare Aenderung - exakt dieselben Werte,
+  nur umgezogen. Bewusst nicht gleichzeitig uebersetzt (die Legende war
+  schon vorher ungebunden an `_tr()`, siehe LES-044 - eigenes Thema).
+- Echter Regressionsfund waehrend der Umsetzung: ein Modulebenen-Dict fuer
+  das Stil-Mapping (`QtCore.Qt.SolidLine` usw.) haette den Import von
+  `preview_widget.py` in der Stub-Qt-Suite gebrochen (`QtCore.Qt` ist dort
+  ein leeres Fake-Namespace-Objekt ohne diese Attribute) - 28
+  Testdateien haetten beim Sammeln fehlgeschlagen. Sofort behoben, indem
+  das Mapping lokal in `paintEvent()` bleibt (genau wie vorher).
+- Zwei neue Stub-Tests (`tests/test_preview_legend_and_status_layout.py`):
+  der Datenvertrag ist Qt-frei und hat eindeutige Label,
+  `legend_layout()`-Zeilenzahl passt zur Eintragsanzahl. Per absichtlich
+  dupliziertem Label als echte Regression verifiziert. Live im Standalone-
+  Panel bestaetigt: Legende sieht unveraendert aus, kein Fehler im Log.
+  871 Stub-/106 Real-Qt-Tests bestanden. Details: TODO.md (LES-051).
+
 ### LES-051: G-Code-Unabhaengigkeit des Ressourcenwechsels end-to-end belegt 2026-09-15
 
 - Letzter Satz des LES-051-Abnahmekriteriums ("Austauschen einer

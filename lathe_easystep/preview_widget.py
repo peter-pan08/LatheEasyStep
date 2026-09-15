@@ -35,6 +35,7 @@ from .preview_geometry import (
     interp_x_at_z,
     interp_x_hits_at_z,
     legend_layout,
+    LEGEND_ENTRIES,
     offset_polygons_to_screen,
     point_cross_lines,
     path_hits_at_slice,
@@ -715,17 +716,30 @@ class LathePreviewWidget(QtWidgets.QWidget):
             if legend_enabled:
                 # --- Legend: "Legende" header is always visible, click toggles details ---
                 try:
+                    # LES-051: Label/Farbe/Stil kommen jetzt aus dem reinen
+                    # Datenvertrag LEGEND_ENTRIES (preview_geometry.py) - hier
+                    # nur noch die Qt-Adaption (QPen/QColor-Konstruktion).
+                    # Line-Style-Mapping bewusst lokal (nicht Modulebene): der
+                    # Stub-Qt-Testmodus faket QtCore.Qt als leeres Namespace-
+                    # Objekt ohne SolidLine/DashLine/DashDotLine - ein
+                    # Modulebenen-Dict wuerde den Import schon fuer Tests
+                    # brechen, die `LathePreviewWidget` nur referenzieren,
+                    # ohne paintEvent() je aufzurufen.
+                    line_styles = {
+                        "solid": QtCore.Qt.SolidLine,
+                        "dash": QtCore.Qt.DashLine,
+                        "dashdot": QtCore.Qt.DashDotLine,
+                    }
                     legend_items = [
-                        ("Werkzeugweg", QtGui.QPen(QtGui.QColor(0, 255, 0), 2, QtCore.Qt.SolidLine)),
-                        ("Werkstück", QtGui.QPen(QtGui.QColor(70, 155, 255), 2, QtCore.Qt.SolidLine)),
-                        ("Hilfsgeometrie", QtGui.QPen(QtGui.QColor(145, 145, 145), 1, QtCore.Qt.DashDotLine)),
-                        ("Aktiv", QtGui.QPen(QtGui.QColor(255, 0, 0), 2, QtCore.Qt.SolidLine)),
-                        ("Rohteil", QtGui.QPen(QtGui.QColor(180, 180, 180), 1, QtCore.Qt.SolidLine)),
-                        ("Rückzug", QtGui.QPen(QtGui.QColor(0, 255, 255), 1, QtCore.Qt.DashLine)),
-                        ("Schruppkontur", QtGui.QPen(QtGui.QColor(240, 180, 0), 2, QtCore.Qt.DashLine)),
-                        ("Freistich", QtGui.QPen(QtGui.QColor(0, 190, 255), 2, QtCore.Qt.SolidLine)),
-                        ("Bearbeitungslinie", QtGui.QPen(QtGui.QColor(255, 0, 0), 1, QtCore.Qt.DashLine)),
-                        ("Futter-Sperrzone", QtGui.QPen(QtGui.QColor(200, 60, 220), 1, QtCore.Qt.DashDotLine)),
+                        (
+                            entry["label"],
+                            QtGui.QPen(
+                                QtGui.QColor(*entry["color"]),
+                                entry["width"],
+                                line_styles[entry["style"]],
+                            ),
+                        )
+                        for entry in LEGEND_ENTRIES
                     ]
 
                     layout = legend_layout(len(legend_items), collapsed=collapsed)

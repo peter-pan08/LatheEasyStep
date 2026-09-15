@@ -1,10 +1,19 @@
-from lathe_easystep.preview_geometry import legend_layout, status_message_layout
+from lathe_easystep.preview_geometry import LEGEND_ENTRIES, legend_layout, status_message_layout
 
 # LES-024/LES-034: legend_layout()/status_message_layout() wurden aus der
 # Legende und der Statusmeldungsbox in preview_widget.paintEvent() extrahiert
 # - reine Positions-/Groessenberechnung ohne QPainter, jetzt direkt ohne
-# echtes PyQt5 testbar. Farben/Stifte bleiben bewusst im Widget (Qt-Stildaten,
-# keine Fachlogik).
+# echtes PyQt5 testbar. Farben/Stifte blieben damals bewusst im Widget
+# (Qt-Stildaten, keine Fachlogik - fuer das damalige Ziel "Geometrie von Qt
+# trennen" richtig).
+#
+# LES-051 (2026-09-15) greift das mit einem anderen Ziel wieder auf: nicht
+# Qt-Reinheit, sondern Austauschbarkeit ueber einen stabilen Datenvertrag
+# (dasselbe Muster wie `ToolVisualProvider` fuer Werkzeugbilder). Label,
+# RGB-Farbe, Linienbreite und ein Qt-freier Stilname liegen jetzt in
+# `LEGEND_ENTRIES`; `paintEvent()` konstruiert daraus nur noch die
+# QPen/QColor-Objekte. Keine sichtbare Aenderung - reine Datenquelle
+# umgezogen, exakt dieselben Werte wie zuvor direkt im Widget.
 
 
 def test_legend_layout_expanded_includes_one_row_per_item():
@@ -58,3 +67,28 @@ def test_status_message_layout_box_hugs_the_right_edge():
 def test_status_message_layout_box_width_is_capped_at_540():
     layout = status_message_layout(["a"], widget_width=5000.0)
     assert layout["box_rect"][2] == 540.0
+
+
+def test_legend_entries_are_a_pure_qt_free_data_contract():
+    """LES-051: kein QColor/QPen/QtCore.Qt-Enum in LEGEND_ENTRIES selbst -
+    reine Zahlen/Strings, importierbar und pruefbar ohne echtes PyQt5 (dieser
+    Test laeuft bewusst in der Stub-Qt-Suite, nicht bei den Real-Qt-Tests)."""
+    assert len(LEGEND_ENTRIES) == 10
+    seen_labels = set()
+    for entry in LEGEND_ENTRIES:
+        assert set(entry.keys()) == {"label", "color", "width", "style"}
+        assert isinstance(entry["label"], str) and entry["label"]
+        assert entry["label"] not in seen_labels, "Label doppelt vergeben"
+        seen_labels.add(entry["label"])
+        assert entry["style"] in ("solid", "dash", "dashdot")
+        r, g, b = entry["color"]
+        for channel in (r, g, b):
+            assert isinstance(channel, int) and 0 <= channel <= 255
+        assert isinstance(entry["width"], int) and entry["width"] > 0
+
+
+def test_legend_layout_row_count_matches_legend_entries_by_default():
+    """legend_layout() nimmt die Anzahl der Zeilen als Parameter entgegen -
+    der uebliche Aufruf in paintEvent() uebergibt len(LEGEND_ENTRIES)."""
+    layout = legend_layout(len(LEGEND_ENTRIES))
+    assert len(layout["rows"]) == len(LEGEND_ENTRIES)

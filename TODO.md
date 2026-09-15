@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 869 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
+- 871 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -92,14 +92,32 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
 - [ ] weitere austauschbare Panelbereiche identifizieren, insbesondere
   Preview-Canvas, Legende, Status-/Warnungsdarstellung und optionale
   Bedienelemente. Jede Darstellung soll ueber einen stabilen Datenvertrag
-  auswechselbar sein.
+  auswechselbar sein. Erster Baustein umgesetzt: die Vorschau-Legende
+  (10 Eintraege: Label, RGB-Farbe, Linienbreite, Qt-freier Stilname
+  "solid"/"dash"/"dashdot") liegt jetzt als reiner Datenvertrag
+  `LEGEND_ENTRIES` in `preview_geometry.py`; `paintEvent()`
+  (`preview_widget.py`) konstruiert daraus nur noch `QPen`/`QColor` (Qt-
+  Adapter). Bewusst NICHT gleichzeitig uebersetzt (die Legende ist seit je
+  her ungebunden an `_tr()`, siehe LES-044 - eigenes Thema). Stil-Mapping
+  bewusst lokal in `paintEvent()` statt auf Modulebene gehalten: ein
+  Modulebenen-Dict mit `QtCore.Qt.SolidLine` haette den Import von
+  `preview_widget.py` schon in der Stub-Qt-Suite gebrochen (`QtCore.Qt`
+  ist dort ein leeres Fake-Namespace-Objekt) - echter Regressionsfund
+  waehrend der Umsetzung, sofort korrigiert und per absichtlich
+  zurueckgesetzter Korrektur verifiziert. Zwei neue Stub-Tests
+  (`tests/test_preview_legend_and_status_layout.py`): Datenvertrag ist
+  Qt-frei/eindeutig, `legend_layout()`-Zeilenzahl passt zur Eintragsanzahl;
+  per absichtlich dupliziertem Label als echte Regression verifiziert.
+  Live im Standalone-Panel bestaetigt: Legende sieht unveraendert aus,
+  kein Fehler im Log. 871 Stub-/106 Real-Qt-Tests bestanden. Preview-
+  Canvas, Status-/Warnungsbox und optionale Bedienelemente bleiben offen.
 - [ ] Shell- und Fragment-Laden fuer Standalone und Embedded mit einem
   definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
   Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom
   konkreten Skin oder Ressourcenpaket abhaengen.
 - [x] Je ein Test fuer einen alternativen Ressourcensatz (externes PNG) und
   eine fehlende Ressource ergaenzt, dazu ein dritter fuer eine nicht
-  dekodierbare Datei (`tests/test_tool_preview_layout.py`). Stub-Qt (869)
+  dekodierbare Datei (`tests/test_tool_preview_layout.py`). Stub-Qt (871)
   und Real-Qt (106) bestehen; Standalone-Panel bis `critical done` nach
   2,337 s gestartet und sauber beendet. Kein LinuxCNC-Lauf noetig, da G-Code
   und Fahrwege unveraendert bleiben.
