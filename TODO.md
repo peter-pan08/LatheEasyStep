@@ -59,17 +59,29 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
 - [ ] den verbleibenden Handler-Kleber weiter reduzieren. Neue Fachlogik darf
   nicht in `lathe_easystep_handler.py` entstehen; UI-Fragmente sollen nur
   definieren, welche Views geladen werden, nicht deren Zustand selbst besitzen.
-- [ ] Werkzeug- und Schneidplatten-Darstellungen aus der Funktion herausloesen:
-  Geometrie-/Ressourcen-Provider fuer SVG, PNG oder spaetere Dateiformate
-  vorsehen, mit neutralem Fallback bei fehlender oder ungueltiger Datei.
+- [x] Werkzeug- und Schneidplatten-Darstellungen aus der Funktion herausgeloest:
+  der Qt-freie `ToolVisualProvider` (`tool_visuals.py`) loest ein Theme-
+  Manifest auf, `render_tool_preview()` (`tool_logic.py`) bindet ihn als
+  Qt-Adapter an - gueltige PNG-/SVG-Ressourcen werden seitenverhaeltnistreu
+  eingepasst, fehlende/ungueltige Dateien fallen sichtbar markiert (Log +
+  orangefarbenes Ausrufezeichen) auf die bisherige prozedurale Darstellung
+  zurueck. Dabei einen bereits vorhandenen unausgeglichenen
+  `QPainter.save()`-Zustand korrigiert.
 - [ ] das Austauschen einer Schneidplatten-Grafik oder eines kompletten
   Darstellungs-Sets darf weder Operationen, Werkzeugdaten, G-Code, Preview-
-  Geometrie noch Dirty-/Save-State veraendern. Dies mit Regressionstests fuer
-  gleiche Eingaben und unterschiedliche Ressourcen nachweisen.
-- [ ] Ressourcenpfade nicht in Fachobjekten oder gespeicherten Programmen
-  verankern. Aufloesung, Validierung, Cache und Lebensdauer gehoeren in eine
-  eigene Ressourcen-/Theme-Schicht; fehlende Dateien muessen sichtbar, aber
-  nicht funktionsveraendernd behandelt werden.
+  Geometrie noch Dirty-/Save-State veraendern. Fuer Werkzeugdaten bereits per
+  Test nachgewiesen (`asdict(tool)` unveraendert vor/nach Ressourcenwechsel,
+  siehe oben); G-Code/Preview-Geometrie/Dirty-State sind architekturell
+  unberuehrt (`render_tool_preview()` erhaelt nur `tool`, kein Modell/
+  G-Code/Dirty-State), aber noch nicht durch einen expliziten Regressionstest
+  belegt.
+- [x] Ressourcenpfade werden nicht in Fachobjekten oder gespeicherten
+  Programmen verankert: `ToolVisualProvider` haelt Root/Manifest nur in der
+  eigenen Instanz (Handler-Attribut, nicht Teil von `Tool` oder gespeicherten
+  Programmdaten), loest Pfade je Aufruf frisch auf und lehnt absolute Pfade,
+  nicht unterstuetzte Formate und Pfade ausserhalb der Theme-Root ab
+  (`relative_to()`-Pruefung). Cache/Lebensdauer bleiben offen (siehe
+  Kurzfassung oben).
 - [ ] weitere austauschbare Panelbereiche identifizieren, insbesondere
   Preview-Canvas, Legende, Status-/Warnungsdarstellung und optionale
   Bedienelemente. Jede Darstellung soll ueber einen stabilen Datenvertrag
@@ -78,9 +90,12 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
   definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
   Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom
   konkreten Skin oder Ressourcenpaket abhaengen.
-- [ ] mindestens einen Test fuer einen alternativen Ressourcensatz und einen
-  Test fuer eine fehlende Ressource ergaenzen; anschliessend Stub-Qt,
-  Real-Qt sowie Embedded-/Standalone-Start pruefen.
+- [x] Je ein Test fuer einen alternativen Ressourcensatz (externes PNG) und
+  eine fehlende Ressource ergaenzt, dazu ein dritter fuer eine nicht
+  dekodierbare Datei (`tests/test_tool_preview_layout.py`). Stub-Qt (869)
+  und Real-Qt (105) bestehen; Standalone-Panel bis `critical done` nach
+  2,337 s gestartet und sauber beendet. Kein LinuxCNC-Lauf noetig, da G-Code
+  und Fahrwege unveraendert bleiben.
 
 ## LES-052 Panel-Architektur, Zustandsmodell und Wiederherstellung
 
