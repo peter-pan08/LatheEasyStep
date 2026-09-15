@@ -41,6 +41,7 @@ from .preview_geometry import (
     path_hits_at_slice,
     preview_primitives_to_points,
     sample_preview_arc,
+    PREVIEW_DRAW_STYLES,
     side_view_grid_layout,
     side_points_to_screen,
     side_strokes_to_screen,
@@ -649,18 +650,20 @@ class LathePreviewWidget(QtWidgets.QWidget):
             painter.setPen(font_pen)
             painter.drawText(QtCore.QPointF(*grid["z_label_pos"]), "Z")
             painter.drawText(QtCore.QPointF(*grid["x_label_pos"]), "X")
+            # LES-051: Farben/Breiten/Stile kommen jetzt aus dem reinen
+            # Datenvertrag PREVIEW_DRAW_STYLES (preview_geometry.py).
+            preview_line_styles = {
+                "solid": QtCore.Qt.SolidLine,
+                "dash": QtCore.Qt.DashLine,
+                "dashdot": QtCore.Qt.DashDotLine,
+            }
             styles = {
-                "stock": (QtGui.QColor("gray"), 1, QtCore.Qt.DashLine),
-                "retract": (QtGui.QColor(0, 180, 180), 1, QtCore.Qt.DashLine),
-                "worklimit": (QtGui.QColor(220, 0, 0), 2, QtCore.Qt.DashLine),
-                "chuck_nogo": (QtGui.QColor(200, 60, 220), 1, QtCore.Qt.DashDotLine),
-                "contour_rough": (QtGui.QColor(240, 180, 0), 2, QtCore.Qt.DashLine),
-                "feature": (QtGui.QColor(0, 190, 255), 2, QtCore.Qt.SolidLine),
-                "feature_separate": (QtGui.QColor(0, 190, 255), 2, QtCore.Qt.DashDotLine),
-                "active": (QtGui.QColor("red"), 3, QtCore.Qt.SolidLine),
-                "workpiece": (QtGui.QColor(70, 155, 255), 2, QtCore.Qt.SolidLine),
-                "auxiliary": (QtGui.QColor(145, 145, 145), 1, QtCore.Qt.DashDotLine),
-                "tool_path": (QtGui.QColor("lime"), 2, QtCore.Qt.SolidLine),
+                key: (
+                    QtGui.QColor(*entry["color"]),
+                    entry["width"],
+                    preview_line_styles[entry["style"]],
+                )
+                for key, entry in PREVIEW_DRAW_STYLES.items()
             }
             draw_plan = build_preview_draw_plan(
                 self.paths, self.active_index, self.preview_scene

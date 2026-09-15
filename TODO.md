@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 872 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
+- 873 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -117,8 +117,27 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
   eingefuegtem unerwartetem Schluessel als echte Regression verifiziert.
   872 Stub-/106 Real-Qt-Tests bestanden (kein separater Standalone-Check -
   identisches, bereits live bestaetigtes Extraktionsmuster wie die Legende
-  unmittelbar zuvor, keine neue Risikoflaeche). Preview-Canvas und
-  optionale Bedienelemente bleiben offen.
+  unmittelbar zuvor, keine neue Risikoflaeche). Dritter Baustein: der
+  Haupt-Vorschau-Canvas (Seitenansicht) selbst - `PREVIEW_DRAW_STYLES`
+  (`preview_geometry.py`) deckt alle elf `style_key`-Werte ab, die
+  `build_preview_draw_plan()` erzeugen kann (Werkstueck/Werkzeugweg/
+  Rohteil/Rueckzug/Futter-Sperrzone/Schruppkontur/Freistich/aktiv/
+  Hilfsgeometrie), inklusive zweier vorher als Qt-Farbnamen ("gray"/
+  "red"/"lime") statt RGB-Tripel hinterlegter Eintraege - fuer Konsistenz
+  auf die per Laufzeitpruefung bestaetigten RGB-Aequivalente umgestellt
+  (gray=(128,128,128) usw.), keine sichtbare Aenderung. Ein weiterer
+  Stub-Test prueft, dass der Datenvertrag genau die von
+  `build_preview_draw_plan()` moeglichen Schluessel abdeckt (ein fehlender
+  wuerde `paintEvent()` mit `KeyError` abstuerzen lassen) - per entferntem
+  Schluessel als echte Regression verifiziert. Kein separater Standalone-
+  Klicktest (das Hinzufuegen eines Schritts per synthetischem X11-Klick
+  liess sich in dieser Sitzung wiederholt nicht zuverlaessig ausloesen);
+  stattdessen bereits bestehender, jetzt erneut gruener Real-Qt-Test
+  `test_side_view_paints_expanded_legend_and_status_messages_without_crash`
+  als staerkerer Nachweis herangezogen - er durchlaeuft denselben
+  `styles`-Dict/`draw_plan`-Code mit echten synthetischen Pfaden.
+  873 Stub-/106 Real-Qt-Tests bestanden. Preview-Canvas-Farbcontract ist
+  damit umgesetzt; optionale Bedienelemente bleiben offen.
 - [ ] Shell- und Fragment-Laden fuer Standalone und Embedded mit einem
   definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
   Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom

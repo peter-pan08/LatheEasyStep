@@ -270,6 +270,29 @@ die Legende war schon vorher rein Deutsch und ungebunden an `_tr()`, siehe
 TODO.md LES-044)."""
 
 
+PREVIEW_DRAW_STYLES: Dict[str, Dict[str, object]] = {
+    "stock": {"color": (128, 128, 128), "width": 1, "style": "dash"},
+    "retract": {"color": (0, 180, 180), "width": 1, "style": "dash"},
+    "worklimit": {"color": (220, 0, 0), "width": 2, "style": "dash"},
+    "chuck_nogo": {"color": (200, 60, 220), "width": 1, "style": "dashdot"},
+    "contour_rough": {"color": (240, 180, 0), "width": 2, "style": "dash"},
+    "feature": {"color": (0, 190, 255), "width": 2, "style": "solid"},
+    "feature_separate": {"color": (0, 190, 255), "width": 2, "style": "dashdot"},
+    "active": {"color": (255, 0, 0), "width": 3, "style": "solid"},
+    "workpiece": {"color": (70, 155, 255), "width": 2, "style": "solid"},
+    "auxiliary": {"color": (145, 145, 145), "width": 1, "style": "dashdot"},
+    "tool_path": {"color": (0, 255, 0), "width": 2, "style": "solid"},
+}
+"""LES-051: reiner Datenvertrag fuer den Haupt-Vorschau-Canvas (Seiten-
+ansicht) - pro `build_preview_draw_plan()`-`style_key` RGB-Farbe,
+Linienbreite und Qt-freier Stilname. Vorher direkt als `QColor`/
+`QtCore.Qt.<Style>`-Werte in `preview_widget.py`s `paintEvent()`
+hartkodiert (zwei davon sogar als Qt-Farbnamen "gray"/"red"/"lime" statt
+RGB-Tripel - hier fuer Konsistenz mit LEGEND_ENTRIES/STATUS_BOX_STYLE auf
+die exakt gleichwertigen RGB-Werte umgestellt: gray=(128,128,128),
+red=(255,0,0), lime=(0,255,0))."""
+
+
 def legend_layout(
     item_count: int,
     *,

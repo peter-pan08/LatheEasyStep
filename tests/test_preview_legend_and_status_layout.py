@@ -1,5 +1,6 @@
 from lathe_easystep.preview_geometry import (
     LEGEND_ENTRIES,
+    PREVIEW_DRAW_STYLES,
     STATUS_BOX_STYLE,
     legend_layout,
     status_message_layout,
@@ -111,3 +112,24 @@ def test_status_box_style_is_a_pure_qt_free_data_contract():
         assert len(channels) in (3, 4)  # RGB oder RGBA
         for channel in channels:
             assert isinstance(channel, int) and 0 <= channel <= 255
+
+
+def test_preview_draw_styles_are_a_pure_qt_free_data_contract():
+    """LES-051: analog zu LEGEND_ENTRIES/STATUS_BOX_STYLE - kein QColor/
+    QtCore.Qt-Enum in PREVIEW_DRAW_STYLES selbst. Deckt genau die style_key-
+    Werte ab, die build_preview_draw_plan() (preview_scene.py) tatsaechlich
+    erzeugen kann - fehlt einer, wuerde paintEvent() mit einem KeyError
+    abstuerzen."""
+    expected_keys = {
+        "stock", "retract", "worklimit", "chuck_nogo", "contour_rough",
+        "feature", "feature_separate", "active", "workpiece", "auxiliary",
+        "tool_path",
+    }
+    assert set(PREVIEW_DRAW_STYLES.keys()) == expected_keys
+    for entry in PREVIEW_DRAW_STYLES.values():
+        assert set(entry.keys()) == {"color", "width", "style"}
+        assert entry["style"] in ("solid", "dash", "dashdot")
+        r, g, b = entry["color"]
+        for channel in (r, g, b):
+            assert isinstance(channel, int) and 0 <= channel <= 255
+        assert isinstance(entry["width"], int) and entry["width"] > 0

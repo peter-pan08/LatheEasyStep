@@ -17,6 +17,33 @@
 
 ## [Unreleased]
 
+### LES-051: Haupt-Vorschau-Canvas als austauschbarer Datenvertrag 2026-09-15
+
+- Dritter Baustein derselben Aufraeumung: der Haupt-Vorschau-Canvas
+  (Seitenansicht) selbst. `PREVIEW_DRAW_STYLES` (`preview_geometry.py`)
+  deckt alle elf `style_key`-Werte ab, die `build_preview_draw_plan()`
+  erzeugen kann (Werkstueck, Werkzeugweg, Rohteil, Rueckzug, Futter-
+  Sperrzone, Schruppkontur, Freistich, aktiv, Hilfsgeometrie und zwei
+  weitere Feature-Varianten) - vorher direkt als `QColor`- und
+  Linienstil-Werte in `paintEvent()` hartkodiert.
+- Zwei der Eintraege waren zuvor als Qt-Farbnamen ("gray"/"red"/"lime")
+  statt RGB-Tripel hinterlegt; fuer Konsistenz mit `LEGEND_ENTRIES`/
+  `STATUS_BOX_STYLE` auf die per Laufzeitpruefung bestaetigten RGB-
+  Aequivalente umgestellt (`gray=(128,128,128)`, `red=(255,0,0)`,
+  `lime=(0,255,0)`) - keine sichtbare Aenderung.
+- Ein weiterer Stub-Test prueft, dass der Datenvertrag genau die von
+  `build_preview_draw_plan()` moeglichen Schluessel abdeckt (ein
+  fehlender wuerde `paintEvent()` mit `KeyError` abstuerzen lassen) - per
+  entferntem Schluessel als echte Regression verifiziert.
+- Kein separater Standalone-Klicktest: das Hinzufuegen eines Schritts per
+  synthetischem X11-Klick liess sich in dieser Sitzung wiederholt nicht
+  zuverlaessig ausloesen. Stattdessen den bereits bestehenden, erneut
+  gruenen Real-Qt-Test `test_side_view_paints_expanded_legend_and_status_
+  messages_without_crash` als staerkeren Nachweis herangezogen - er
+  durchlaeuft denselben `styles`-Dict/`draw_plan`-Code mit echten
+  synthetischen Pfaden.
+- 873 Stub-/106 Real-Qt-Tests bestanden. Details: TODO.md (LES-051).
+
 ### LES-051: Status-/Warnungsbox als austauschbarer Datenvertrag 2026-09-15
 
 - Zweiter Baustein derselben Aufraeumung (nach der Legende unmittelbar
