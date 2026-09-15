@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 from .contour_features import normalize_relief_mode, resolve_din_relief
+from .gcode_safety import validate_chuck_segment
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType
 from .presets import thread_preset_values
@@ -232,6 +233,60 @@ def _check_tool_width_matches_operation(operations: List[object], tools: Dict[in
             )
 
 
+def _check_groove_reaches_chuck_no_go_zone(
+    operations: List[object], tools: Dict[int, object], settings: Dict[str, object], warnings: List[str]
+) -> None:
+    """LES-032: Erreichbarkeits-/Werkzeughuellenpruefung mit Tooltable-Daten.
+
+    Bisher wurde die Futter-Sperrzone (`chuck_no_go_x_min/x_max/z_limit`,
+    siehe `gcode_safety.py::validate_chuck_segment()`) nur fuer die
+    SEPARATEN Rueckzugswege vor/nach einer Operation geprueft
+    (`emit_safe_retract_for_op()`) - die eigentliche Stechbewegung selbst
+    (Z-Position der Operation, in `gcode_groove.py` erzeugt) hatte NIE
+    eine Pruefung, und selbst die Rueckzugspruefung behandelt das Werkzeug
+    als punktfoermig. Ein Stechwerkzeug hat aber eine reale Schneidenbreite
+    (`Tool.insert_width_mm`, siehe `_check_tool_width_matches_operation()`
+    oben) - die dem Futter zugewandte Kante der Einsatzbreite kann in die
+    Sperrzone reichen, auch wenn die programmierte Z-Mitte selbst noch
+    ausserhalb liegt.
+
+    Prueft die tiefste Stechposition (Nutgrund) an beiden Kanten der
+    bekannten Werkzeugbreite (0, wenn keine ableitbar ist - dann bleibt nur
+    die Z-Mitte selbst geprueft) gegen dieselbe, bereits produktiv genutzte
+    Sperrzonen-Logik wie die Rueckzugswege. Wie diese bewusst nur aktiv,
+    wenn ueberhaupt eine Sperrzone konfiguriert ist (`validate_chuck_segment()`
+    kehrt sonst folgenlos zurueck)."""
+    for idx, op in enumerate(operations):
+        if getattr(op, "op_type", "") != "groove":
+            continue
+        params = getattr(op, "params", {}) or {}
+        try:
+            z = float(params.get("z", 0.0) or 0.0)
+            diameter = float(params.get("diameter", 0.0) or 0.0)
+            depth = float(params.get("depth", 0.0) or 0.0)
+        except Exception:
+            continue
+        floor_diameter = diameter + 2.0 * depth if is_internal_side(params.get("lage", 0)) else diameter - 2.0 * depth
+
+        tool = None
+        try:
+            tool_num = int(float(params.get("tool", 0) or 0))
+        except Exception:
+            tool_num = 0
+        if tool_num > 0:
+            tool = tools.get(tool_num)
+        insert_width = getattr(tool, "insert_width_mm", None) if tool is not None else None
+        half_width = (insert_width / 2.0) if insert_width else 0.0
+
+        for z_edge in {z - half_width, z + half_width}:
+            point = (floor_diameter, z_edge)
+            try:
+                validate_chuck_segment(settings, point, point)
+            except ValueError as exc:
+                warnings.append(f"Schritt {idx + 1}: {exc}")
+                break
+
+
 def validate_tool_table_completeness(operations: List[object], tools: Dict[int, object]) -> None:
     """LES-028: jede verwendete Werkzeugnummer muss einen Eintrag in der
     geladenen Werkzeugtabelle haben, sobald ueberhaupt eine geladen wurde.
@@ -273,6 +328,7 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
     _check_duplicate_operations(operations, warnings)
     _check_tool_kind_matches_operation(operations, tools, warnings)
     _check_tool_width_matches_operation(operations, tools, warnings)
+    _check_groove_reaches_chuck_no_go_zone(operations, tools, settings, warnings)
     for op in operations:
         op_type = getattr(op, "op_type", "")
         params = getattr(op, "params", {}) or {}
