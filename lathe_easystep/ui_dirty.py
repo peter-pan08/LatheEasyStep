@@ -196,8 +196,22 @@ def update_dirty_status(handler) -> None:
     button = getattr(handler, "btn_save_changes", None)
     if button is not None:
         base = TRANSLATIONS.tr("text.btnSaveChanges", _lang(handler))
+        dirty = has_unsaved_changes(handler)
         try:
-            button.setText(base + (" *" if has_unsaved_changes(handler) else ""))
+            button.setText(base + (" *" if dirty else ""))
+        except Exception:
+            pass
+        # LES-024: "Aenderungen speichern" ohne offene Aenderungen zeigte
+        # bisher erst NACH dem Klick eine "nichts zu speichern"-Meldung
+        # (handle_save_changes()). Wie bei "Step speichern" und den
+        # Listenaktionen (siehe update_save_step_button_state()/
+        # update_operation_action_button_states()) wird die ungueltige
+        # Aktion jetzt per Buttonzustand von vornherein verhindert statt
+        # nur beim Klick gemeldet. Die bestehende Klick-Meldung bleibt als
+        # letzte Sicherung bestehen (z. B. falls alle dirty Steps ohne
+        # verknuepfte Datei sind).
+        try:
+            button.setEnabled(dirty)
         except Exception:
             pass
 
