@@ -85,8 +85,16 @@ def test_preview_load_is_idempotent():
 
 def test_docking_removes_empty_shell_and_adds_resizable_preview_splitter():
     """Die Vorschau bleibt oben, behaelt eine brauchbare Mindesthoehe und
-    laesst sich ab LES-050 bewusst gegen den Parameterbereich vergroessern."""
+    laesst sich ab LES-050 bewusst gegen den Parameterbereich vergroessern.
+
+    Ruft `_install_workspace_splitter()` vor dem Preview-Docking auf, exakt
+    wie der echte Start (`ui_lifecycle.py`) es tut - ohne den Splitter teilen
+    sich Step-Spalte und rechte Spalte noch dieselbe Zeile im urspruenglichen
+    Geruest-Layout, wodurch die (seit LES-050 zweizeilige) Button-Gruppe der
+    Step-Spalte der Vorschau faelschlich Hoehe wegnehmen wuerde - ein reines
+    Testaufbau-Artefakt, das im echten Start nicht auftritt."""
     root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
     load_preview_uis(handler)
     _dock_preview_above_scroll(handler)
 
@@ -138,5 +146,8 @@ def test_workspace_splitter_resizes_step_column_against_editor():
     splitter.setSizes([210, 730])
     _app.processEvents()
     assert step_panel.width() < wide_step
-    assert step_panel.width() >= 190
-    assert right_panel.width() >= 360
+    # LES-050 Regressionsfund: 190/360 lagen unter dem tatsaechlichen
+    # minimumSizeHint der zweispaltigen Button-Grids (stepListPanel/
+    # stepActionsPanel) und quetschten deren Buttons unter die Textbreite.
+    assert step_panel.width() >= 330
+    assert right_panel.width() >= 380

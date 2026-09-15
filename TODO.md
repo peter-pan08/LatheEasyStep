@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 809 Stub-Qt-Tests und 81 Tests mit echtem PyQt5, keine Skips.
+- 809 Stub-Qt-Tests und 93 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -84,28 +84,47 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## LES-050 Anpassbare Arbeitsflaeche und Vorschau-Navigation
 
-- [ ] REGRESSIONSFUND beim praktischen Test: Die Buttons der Step-Liste werden
-  bei kleinen Fensterbreiten beziehungsweise unguenstiger Splitterstellung in
-  einen zu schmalen Bereich am unteren Fensterrand gepresst; vom Buttontext
-  bleiben nur Bruchstuecke lesbar. Fuer die Step-Aktionen einen eigenen,
-  layoutstabilen Bereich vorsehen. Alle Buttons muessen bei jeder unterstuetzten
-  Fenstergroesse und bei jeder erlaubten Splitterstellung vollstaendig lesbar
-  und bedienbar bleiben. Die Buttons muessen nicht nebeneinander stehen: Bei
-  schmaler Step-Spalte bevorzugt untereinander oder kontrolliert in mehreren
-  Zeilen anordnen, um Breite zu sparen. Keine automatische Schrumpfung unter
-  die Text-/`sizeHint()`-Breite und keine unnoetig grosse Mindestbreite nur fuer
-  eine horizontale Buttonreihe erzwingen. Mindestbreiten von Step-Spalte und
-  Gesamtfenster daran ausrichten und mit Real-Qt-Tests fuer minimale, normale
-  und breite Fenster sowie beide Splittergrenzen absichern.
+- [x] REGRESSIONSFUND (2026-09-14) behoben: `stepListPanel.ui`
+  (`operationButtonsLayout`, 4 Buttons) und `stepActionsPanel.ui`
+  (`buttonLayout`, 7 Buttons) waren je eine einzelne QHBoxLayout-Reihe ohne
+  Mindestbreiten-Absicherung - bei schmaler Splitterstellung wurden die
+  Buttons unter ihre Textbreite gequetscht. Beide auf zweispaltiges
+  QGridLayout umgestellt (2x2 bzw. 2x4, letzter Button ueber beide Spalten).
+  Die Splitter-Mindestbreiten (`_install_workspace_splitter`,
+  `ui_lifecycle.py`) waren mit 190/360 zu knapp fuer die Grids bemessen -
+  per echtem `sizeHint()`-Messlauf auf 330/380 korrigiert; das Gesamtfenster
+  bekommt jetzt zusaetzlich `root.setMinimumWidth(330+380+40)`, damit der
+  Splitter selbst innerhalb seines eigenen Minimums nicht wieder quetschen
+  muss. Neun neue Tests (`tests/test_step_action_buttons_stay_readable.py`):
+  kein Button faellt unter seine `sizeHint()`-Breite bei minimaler/normaler/
+  breiter Fenstergroesse (700/1000/1600px) sowie an beiden Splittergrenzen;
+  per zurueckgesetztem Layout als echte Regression verifiziert (Original:
+  "Schritt hinzufuegen" 77px statt benoetigter 155px, selbst bei 1600px
+  Fensterbreite). Echter Zweitfund beim Standalone-Test
+  (`qtvcp -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui`):
+  `_ensure_status_widgets()` (`ui_advanced.py`) rief `layout.insertWidget()`
+  auf, um das "Keine offenen Aenderungen"-Label neben `btnSaveChanges`
+  einzufuegen - eine QBoxLayout-Methode, die QGridLayout nicht hat; brach
+  beim echten Start mit `AttributeError`, kein bestehender Test deckte das
+  ab (Stub-Suite nutzt keine echten Qt-Layouts, der einzige Real-Qt-Test
+  setzte `label_dirty_status` direkt als Fake). Auf `getItemPosition()`/
+  `addWidget(row+1, ...)` umgestellt, drei neue Tests
+  (`tests/test_dirty_status_label_grid_layout.py`). Live im Standalone-Panel
+  bestaetigt: alle elf Buttons bei 900px (Standardgroesse), 650px sowie an
+  der erzwungenen Fenstermindestbreite (750px, vom Fenstermanager korrekt
+  durchgesetzt) vollstaendig lesbar; das Dirty-Status-Label sitzt sichtbar
+  korrekt unter "Aenderungen speichern".
 - [x] Verschiebbare Splitter fuer die wesentlichen Arbeitsbereiche umgesetzt:
   die Hoehe der oberen Vorschau gegenueber dem Parameterbereich sowie die
   Breite des seitlichen Blocks mit Step-Liste und Programmaktionen muessen mit
   der Maus vergroessert und verkleinert werden koennen.
-- [ ] Sinnvolle Mindestgroessen sind fuer beide Splitter festgelegt, damit
-  weder Bedienelemente noch
-  sicherheitsrelevante Informationen vollstaendig zusammengeschoben werden
-  koennen. Noch offen: Splitterpositionen sitzungsuebergreifend speichern und
-  eine robuste Standardaufteilung beziehungsweise Ruecksetzung anbieten.
+- [x] Sinnvolle Mindestgroessen sind fuer den `workspaceSplitter` jetzt an
+  echten `sizeHint()`-Messwerten der Button-Grids ausgerichtet (330/380,
+  siehe REGRESSIONSFUND oben) statt an geschaetzten Werten, damit weder
+  Bedienelemente noch sicherheitsrelevante Informationen zusammengeschoben
+  werden koennen. Noch offen: Splitterpositionen sitzungsuebergreifend
+  speichern und eine robuste Standardaufteilung beziehungsweise
+  Ruecksetzung anbieten.
 - [x] Seiten- und Schnittansicht direkt in ihrem Vorschaufenster navigierbar
   machen: Ziehen mit der Maus verschiebt die Darstellung (Pan), das Mausrad
   zoomt um die aktuelle Mausposition. Die Bedienung darf bestehende Klick- und
@@ -118,10 +137,17 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Pan und
   Zoom duerfen weder Werkstueckgeometrie noch Pruefergebnisse veraendern,
   sondern ausschliesslich die Darstellung.
-- [ ] Real-Qt-Tests sichern Splitter in beide Richtungen, Mindestgroessen,
+- [x] Real-Qt-Tests sichern Splitter in beide Richtungen, Mindestgroessen,
   Zoomzentrum unter dem Mauszeiger, Pan, Reset und den Vorrang der vorhandenen
-  Schnittlinien-Geste. Noch offen: gespeicherte Aufteilung testen und im
-  eingebetteten QtDragon-Panel bei verschiedenen Fenster- und Panelgroessen
+  Schnittlinien-Geste. Zusaetzlich (siehe REGRESSIONSFUND oben): Buttontext
+  bei minimaler/normaler/breiter Fenstergroesse sowie an beiden
+  Splittergrenzen, live im Standalone-Panel bei 900/650/750px (erzwungene
+  Mindestbreite) praktisch bestaetigt (`qtvcp -c easystep -u
+  ./lathe_easystep_handler.py ./lathe_easystep.ui` - fuer reine UI-Checks
+  einfacher/schneller als die volle QtDragon-SIM, die nur fuer G-Code-
+  Pruefung noetig ist). Noch offen: gespeicherte Aufteilung testen und im
+  eingebetteten QtDragon-Panel selbst (dessen Tab-Bereich fest/klein ist,
+  ausserhalb der LatheEasyStep-Kontrolle) bei verschiedenen Panelgroessen
   praktisch pruefen.
 
 ## LES-044 Darstellung und Texte

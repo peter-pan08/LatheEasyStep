@@ -421,7 +421,16 @@ def _ensure_status_widgets(handler, root) -> None:
         label.setStyleSheet("QLabel { color: #2e7d32; font-weight: 600; }")
     except Exception:
         pass
-    layout.insertWidget(max(layout.indexOf(button), 0), label)
+    if isinstance(layout, QtWidgets.QGridLayout):
+        # LES-050: stepActionsPanel.ui nutzt seit dem Buttonzustand-Umbau
+        # (schmale Splitter/Fenster duerfen Buttontext nicht mehr quetschen)
+        # ein QGridLayout statt QHBoxLayout - das hat kein insertWidget(),
+        # daher hier die Grid-Position von btnSaveChanges ermitteln und das
+        # Label eine Zeile darunter ueber die volle Spaltenzahl einfuegen.
+        row, _col, _row_span, col_span = layout.getItemPosition(layout.indexOf(button))
+        layout.addWidget(label, row + 1, 0, 1, max(col_span, layout.columnCount()))
+    else:
+        layout.insertWidget(max(layout.indexOf(button), 0), label)
     handler.label_dirty_status = label
 
 

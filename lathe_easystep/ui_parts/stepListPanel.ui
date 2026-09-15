@@ -26,29 +26,29 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="operationButtonsLayout">
-     <item>
+    <layout class="QGridLayout" name="operationButtonsLayout">
+     <item row="0" column="0">
       <widget class="QPushButton" name="btn_save_step">
        <property name="text">
         <string>Step speichern</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="0" column="1">
       <widget class="QPushButton" name="btn_load_step">
        <property name="text">
         <string>Step laden</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="1" column="0">
       <widget class="QPushButton" name="btn_save_program">
        <property name="text">
         <string>Programm speichern</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="1" column="1">
       <widget class="QPushButton" name="btn_load_program">
        <property name="text">
         <string>Programm laden</string>
