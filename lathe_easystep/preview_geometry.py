@@ -403,6 +403,58 @@ def side_view_ticks(
     return {"x": x_ticks, "z": z_ticks}
 
 
+def side_view_grid_layout(
+    viewport: Dict[str, float],
+    *,
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+    x_is_diameter: bool = True,
+    slice_z: float | None = None,
+) -> Dict[str, object]:
+    """Build the complete Qt-free axes/ticks/slice overlay draw geometry."""
+    axes = side_view_axis_lines(viewport, left=left, bottom=bottom)
+    ticks = side_view_ticks(
+        viewport, left=left, bottom=bottom, x_is_diameter=x_is_diameter
+    )
+    z_ticks = []
+    for value, label, point in ticks["z"]:
+        px, py = point
+        z_ticks.append({
+            "value": value,
+            "label": label,
+            "mark_line": ((px, py - 4.0), (px, py + 2.0)),
+            "label_pos": (px - 6.0, py + 14.0),
+        })
+    x_ticks = []
+    for value, label, point in ticks["x"]:
+        px, py = point
+        x_ticks.append({
+            "value": value,
+            "label": label,
+            "mark_line": ((px - 2.0, py), (px + 4.0, py)),
+            "label_pos": (px - 28.0, py + 4.0),
+        })
+    result: Dict[str, object] = {
+        "axes": axes,
+        "z_ticks": z_ticks,
+        "x_ticks": x_ticks,
+        "z_label_pos": (float(right) - 20.0, float(axes["z_line"][0][1]) - 6.0),
+        "x_label_pos": (float(axes["x_line"][0][0]) + 6.0, float(top) + 12.0),
+        "slice": None,
+    }
+    if slice_z is not None:
+        line = side_view_slice_line(
+            viewport, float(slice_z), left=left, bottom=bottom
+        )
+        result["slice"] = {
+            "line": line,
+            "label_pos": (min(float(line[0][0]) + 8.0, float(right) - 90.0), float(top) + 16.0),
+        }
+    return result
+
+
 def build_face_path(params: Dict[str, float]) -> List[Point]:
     if "path" in params and params["path"]:
         path_data = params["path"]

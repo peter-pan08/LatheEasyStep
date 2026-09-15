@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### LES-044: Seitenansicht-Raster als Qt-freier Darstellungsplan 2026-09-15
+
+- Neue Funktion `side_view_grid_layout()` buendelt Achsen, X-/Z-Ticks samt
+  Markierungslinien und Textpositionen, Achsbeschriftungen sowie die optionale
+  Schnittlinie mit Beschriftungsposition. `paintEvent()` berechnet diese
+  Koordinaten nicht mehr selbst, sondern zeichnet den fertigen Plan.
+- Ein neuer Stub-Test prueft den Plan gegen die bestehenden elementaren
+  Transformationsfunktionen. Gesamtstand: 843 Stub-Qt- und 102 Real-Qt-Tests,
+  keine Skips. Standalone-Panel bis `critical done` nach 2,143 s gestartet und
+  sauber beendet; kein LinuxCNC-Start erforderlich.
+
 ### LES-044: Kreis-/Vorderansichts-Layout Qt-frei berechnet 2026-09-15
 
 - `circular_view_layout()` berechnet fuer Schnitt- und Vorderansicht jetzt

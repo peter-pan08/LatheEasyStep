@@ -38,9 +38,7 @@ from .preview_geometry import (
     path_hits_at_slice,
     preview_primitives_to_points,
     sample_preview_arc,
-    side_view_axis_lines,
-    side_view_slice_line,
-    side_view_ticks,
+    side_view_grid_layout,
     status_message_layout,
     zoom_navigation_state,
     side_view_to_screen,
@@ -594,19 +592,29 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 )
                 return QtCore.QPointF(*point)
 
+            grid = side_view_grid_layout(
+                viewport,
+                left=rect.left(), top=rect.top(), right=rect.right(), bottom=rect.bottom(),
+                x_is_diameter=self.x_is_diameter,
+                slice_z=(
+                    float(getattr(self, "slice_z", 0.0))
+                    if getattr(self, "slice_enabled", False)
+                    and getattr(self, "view_mode", "side") == "side"
+                    else None
+                ),
+            )
+
             # optional slice indicator (selected Z)
-            if getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
+            if grid["slice"] is not None:
                 try:
                     zline = float(getattr(self, "slice_z", 0.0))
-                    line = side_view_slice_line(
-                        viewport, zline, left=rect.left(), bottom=rect.bottom()
-                    )
+                    line = grid["slice"]["line"]
                     p1, p2 = QtCore.QPointF(*line[0]), QtCore.QPointF(*line[1])
                     pen = QtGui.QPen(QtGui.QColor(255, 180, 0), 2, QtCore.Qt.DashLine)
                     painter.setPen(pen)
                     painter.drawLine(p1, p2)
                     label = f"Schnitt Z {zline:.3f}"
-                    text_pos = QtCore.QPointF(min(p1.x() + 8, rect.right() - 90), rect.top() + 16)
+                    text_pos = QtCore.QPointF(*grid["slice"]["label_pos"])
                     painter.setPen(QtGui.QPen(QtGui.QColor(255, 220, 120), 1))
                     painter.drawText(text_pos, label)
                 except Exception as exc:
@@ -615,9 +623,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
             # Achsen und Skala (außen: links/unten)
             painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-            axes = side_view_axis_lines(
-                viewport, left=rect.left(), bottom=rect.bottom()
-            )
+            axes = grid["axes"]
             x_axis, x_axis_end = (QtCore.QPointF(*point) for point in axes["x_line"])
             z_axis, z_axis_end = (QtCore.QPointF(*point) for point in axes["z_line"])
             painter.drawLine(z_axis, z_axis_end)  # Z-Achse horizontal
@@ -627,31 +633,24 @@ class LathePreviewWidget(QtWidgets.QWidget):
             font_pen = QtGui.QPen(QtGui.QColor(160, 160, 160), 1)
             painter.setFont(QtGui.QFont("Sans", 8))
 
-            ticks = side_view_ticks(
-                viewport, left=rect.left(), bottom=rect.bottom(),
-                x_is_diameter=self.x_is_diameter,
-            )
-
             # Z-Ticks (horizontal unten/oben)
-            for _value, label_value, point in ticks["z"]:
-                pt = QtCore.QPointF(*point)
+            for tick in grid["z_ticks"]:
                 painter.setPen(tick_pen)
-                painter.drawLine(QtCore.QLineF(pt.x(), pt.y() - 4, pt.x(), pt.y() + 2))
+                painter.drawLine(QtCore.QLineF(*(coordinate for point in tick["mark_line"] for coordinate in point)))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 6, pt.y() + 14), f"{label_value:.0f}")
+                painter.drawText(QtCore.QPointF(*tick["label_pos"]), f"{tick['label']:.0f}")
 
             # X-Ticks (vertikal links/rechts)
-            for _value, label_value, point in ticks["x"]:
-                pt = QtCore.QPointF(*point)
+            for tick in grid["x_ticks"]:
                 painter.setPen(tick_pen)
-                painter.drawLine(QtCore.QLineF(pt.x() - 2, pt.y(), pt.x() + 4, pt.y()))
+                painter.drawLine(QtCore.QLineF(*(coordinate for point in tick["mark_line"] for coordinate in point)))
                 painter.setPen(font_pen)
-                painter.drawText(QtCore.QPointF(pt.x() - 28, pt.y() + 4), f"{label_value:.0f}")
+                painter.drawText(QtCore.QPointF(*tick["label_pos"]), f"{tick['label']:.0f}")
 
             # Achsbeschriftungen
             painter.setPen(font_pen)
-            painter.drawText(QtCore.QPointF(rect.right() - 20, z_axis.y() - 6), "Z")
-            painter.drawText(QtCore.QPointF(x_axis.x() + 6, rect.top() + 12), "X")
+            painter.drawText(QtCore.QPointF(*grid["z_label_pos"]), "Z")
+            painter.drawText(QtCore.QPointF(*grid["x_label_pos"]), "X")
             styles = {
                 "stock": (QtGui.QColor("gray"), 1, QtCore.Qt.DashLine),
                 "retract": (QtGui.QColor(0, 180, 180), 1, QtCore.Qt.DashLine),

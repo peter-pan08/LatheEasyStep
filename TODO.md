@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 842 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 843 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -44,6 +44,10 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Bildschirmabbildung liegt in `offset_polygons_to_screen()`. Damit bleiben
   im Widget fuer diese Teile nur Stil und QPainter-Ausgabe. Zwei weitere
   Stub-Tests, Gesamtstand 842/102; Standalone-Start nach 2,060 s.
+  Drittes aktuelles Paket: `side_view_grid_layout()` liefert Achsen, komplette
+  Tick-Markierungen/Textpositionen, Achsbeschriftungen und die optionale
+  Schnittlinie als Qt-freien Darstellungsplan. Ein weiterer Stub-Test,
+  Gesamtstand 843/102; Standalone-Start nach 2,143 s.
 - [x] Entscheidung (2026-09-14) umgesetzt: G-Code-Kommentare (Werkstatt-
   kommentare im erzeugten `.ngc`) sind jetzt sprachabhaengig wie die
   UI-Texte. Die Step-Beschreibung selbst (`_describe_operation()`, landet
