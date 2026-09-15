@@ -8,6 +8,7 @@ from lathe_easystep.preview_geometry import (
     navigated_center_scale,
     nice_tick_step,
     side_view_axis_lines,
+    side_view_grid_layout,
     side_view_slice_line,
     side_view_ticks,
     side_view_to_screen,
@@ -37,6 +38,30 @@ def test_side_navigation_changes_only_view_bounds_and_scale():
     assert moved["max_z"] - moved["min_z"] == pytest.approx(10.0)
     assert moved["max_x"] - moved["min_x"] == pytest.approx(5.0)
     assert fitted == {"min_x": -5.0, "max_x": 5.0, "min_z": -10.0, "max_z": 10.0, "scale": 10.0}
+
+
+def test_side_grid_layout_contains_ready_to_draw_ticks_axes_and_slice():
+    viewport = {
+        "min_x": -5.0, "max_x": 5.0,
+        "min_z": -10.0, "max_z": 10.0,
+        "scale": 10.0,
+    }
+    layout = side_view_grid_layout(
+        viewport, left=30.0, top=20.0, right=230.0, bottom=120.0,
+        slice_z=-2.0,
+    )
+
+    assert layout["axes"] == side_view_axis_lines(viewport, left=30.0, bottom=120.0)
+    assert layout["slice"]["line"] == ((110.0, 120.0), (110.0, 20.0))
+    assert layout["slice"]["label_pos"] == (118.0, 36.0)
+    assert layout["z_ticks"]
+    first_z = layout["z_ticks"][0]
+    px, py = side_view_to_screen(
+        0.0, first_z["value"], viewport, left=30.0, bottom=120.0,
+        x_is_display=True,
+    )
+    assert first_z["mark_line"] == ((px, py - 4.0), (px, py + 2.0))
+    assert layout["x_label_pos"][1] == 32.0
 
 
 def test_empty_side_viewport_keeps_origin_and_minimum_span():
