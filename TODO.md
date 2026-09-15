@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 812 Stub-Qt-Tests und 94 Tests mit echtem PyQt5, keine Skips.
+- 823 Stub-Qt-Tests und 99 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -122,9 +122,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   echten `sizeHint()`-Messwerten der Button-Grids ausgerichtet (330/380,
   siehe REGRESSIONSFUND oben) statt an geschaetzten Werten, damit weder
   Bedienelemente noch sicherheitsrelevante Informationen zusammengeschoben
-  werden koennen. Noch offen: Splitterpositionen sitzungsuebergreifend
-  speichern und eine robuste Standardaufteilung beziehungsweise
-  Ruecksetzung anbieten.
+  werden koennen.
 - [x] Seiten- und Schnittansicht direkt in ihrem Vorschaufenster navigierbar
   machen: Ziehen mit der Maus verschiebt die Darstellung (Pan), das Mausrad
   zoomt um die aktuelle Mausposition. Die Bedienung darf bestehende Klick- und
@@ -160,6 +158,32 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   geladen) nicht aussagekraeftig - die eigentliche Wirkung ist durch die
   automatisierten Tests direkt abgesichert. 812 Stub-/94 Real-Qt-Tests
   bestanden.
+- [x] Letzter offener LES-050-Punkt umgesetzt: `workspaceSplitter` (Step-
+  Spalte/rechte Spalte) und `previewParamsSplitter` (Vorschau/Parameter)
+  merken sich ihre Groesse jetzt sitzungsuebergreifend ueber `QSettings`
+  (`LatheEasyStep/WorkspaceSplitterSizes`, `.../PreviewParamsSplitterSizes`,
+  neue Hilfsfunktionen `_restore_splitter_sizes()`/`_persist_splitter_sizes()`
+  in `ui_lifecycle.py`). Entscheidung (2026-09-15) mit dem Nutzer geklaert:
+  nur Persistenz mit sicherem Fallback, keine zusaetzliche sichtbare
+  Ruecksetzen-Aktion. Die "robuste Standardaufteilung" ergibt sich daraus,
+  dass ein gemerkter Wert nur uebernommen wird, wenn er nach dem Parsen
+  (korrekte Anzahl, ausschliesslich positive Werte) mindestens so gross ist
+  wie die jeweils bekannten Mindestgroessen (330/380 fuer den
+  Arbeitsflaechen-Splitter, siehe REGRESSIONSFUND oben) - eine zu schmale,
+  fremde oder beschaedigte Einstellung faellt automatisch auf die bisherige
+  feste Standardaufteilung zurueck, statt Buttons erneut zu quetschen.
+  `QSettings()`-Fehlschlaege (z. B. kein Schreibzugriff auf das
+  Konfigverzeichnis) werden abgefangen und wirken sich nicht auf die
+  Splitter-Funktion aus. Gespeichert wird bei jeder echten Ziehbewegung
+  (`splitterMoved`-Signal). 15 neue Tests: neun isolierte Tests fuer die
+  Parse-/Restore-/Persist-Hilfsfunktionen inkl. kaputtem Settings-Backend
+  (`tests/test_splitter_size_persistence.py`), vier Real-Qt-
+  Integrationstests je Splitter fuer Wiederherstellung, Mindestgroessen-
+  Fallback und Speichern beim Ziehen (`tests/test_preview_panel_ui_loader.py`,
+  `moveSplitter()` statt `setSizes()` verwendet, da nur das echte
+  `splitterMoved`-Signal auslöst - empirisch verifiziert). Alle Fixes per
+  entfernter Verdrahtung als echte Regression bestaetigt. 823 Stub-/99
+  Real-Qt-Tests bestanden. LES-050 ist damit vollstaendig abgeschlossen.
 - [x] Zoomgrenzen (Faktor 0,2 bis 20) und stabile Transformationen umgesetzt;
   Pan und
   Zoom duerfen weder Werkstueckgeometrie noch Pruefergebnisse veraendern,
@@ -172,10 +196,9 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   Mindestbreite) praktisch bestaetigt (`qtvcp -c easystep -u
   ./lathe_easystep_handler.py ./lathe_easystep.ui` - fuer reine UI-Checks
   einfacher/schneller als die volle QtDragon-SIM, die nur fuer G-Code-
-  Pruefung noetig ist). Noch offen: gespeicherte Aufteilung testen und im
-  eingebetteten QtDragon-Panel selbst (dessen Tab-Bereich fest/klein ist,
-  ausserhalb der LatheEasyStep-Kontrolle) bei verschiedenen Panelgroessen
-  praktisch pruefen.
+  Pruefung noetig ist). Noch offen: im eingebetteten QtDragon-Panel selbst
+  (dessen Tab-Bereich fest/klein ist, ausserhalb der LatheEasyStep-Kontrolle)
+  bei verschiedenen Panelgroessen praktisch pruefen.
 
 ## LES-044 Darstellung und Texte
 

@@ -4,6 +4,53 @@ from qtpy import QtCore, QtWidgets
 from .ui_advanced import ensure_advanced_widgets
 from .ui_split import load_split_tab_uis, load_step_management_uis, load_preview_uis
 
+_WORKSPACE_SPLITTER_SETTINGS_KEY = "LatheEasyStep/WorkspaceSplitterSizes"
+_PREVIEW_PARAMS_SPLITTER_SETTINGS_KEY = "LatheEasyStep/PreviewParamsSplitterSizes"
+
+
+def _parse_saved_splitter_sizes(raw, count):
+    """Parse a ","-joined size list, rejecting anything that could not have
+    come from `_persist_splitter_sizes()` below (wrong count, non-positive
+    values) instead of letting a corrupted/foreign setting reach setSizes()."""
+    if not raw:
+        return None
+    try:
+        sizes = [int(part) for part in str(raw).split(",")]
+    except (TypeError, ValueError):
+        return None
+    if len(sizes) != count or any(size <= 0 for size in sizes):
+        return None
+    return sizes
+
+
+def _restore_splitter_sizes(splitter, settings_key, minimums) -> None:
+    """Apply a previously saved size list if present and still plausible for
+    the current widget tree; otherwise leave the caller's own default sizes
+    (already applied via setSizes() before this runs) untouched - that
+    default IS the robust fallback."""
+    try:
+        settings = QtCore.QSettings()
+        raw = settings.value(settings_key, "", type=str)
+    except Exception:
+        return
+    sizes = _parse_saved_splitter_sizes(raw, len(minimums))
+    if sizes is None:
+        return
+    if any(size < minimum for size, minimum in zip(sizes, minimums)):
+        return
+    try:
+        splitter.setSizes(sizes)
+    except Exception:
+        pass
+
+
+def _persist_splitter_sizes(splitter, settings_key) -> None:
+    try:
+        settings = QtCore.QSettings()
+        settings.setValue(settings_key, ",".join(str(size) for size in splitter.sizes()))
+    except Exception:
+        pass
+
 
 def bootstrap_widget_refs(handler) -> None:
     """Initialize widget reference attributes early so startup code can safely probe them."""
@@ -431,6 +478,13 @@ def _dock_preview_above_scroll(handler) -> None:
             splitter.setStretchFactor(1, 1)
             right_layout.insertWidget(max(0, scroll_index), splitter, 1)
             splitter.setSizes([180, 520])
+            # LES-050: gemerkte Aufteilung aus einer frueheren Sitzung
+            # wiederherstellen, falls plausibel - sonst bleibt es bei der
+            # sicheren Standardaufteilung oben.
+            _restore_splitter_sizes(splitter, _PREVIEW_PARAMS_SPLITTER_SETTINGS_KEY, (140, 100))
+            splitter.splitterMoved.connect(
+                lambda *_args: _persist_splitter_sizes(splitter, _PREVIEW_PARAMS_SPLITTER_SETTINGS_KEY)
+            )
         try:
             # addWidget() above already reparented preview/preview_slice/
             # button away from old_parent (Qt removes a widget from its
@@ -508,6 +562,17 @@ def _install_workspace_splitter(handler) -> None:
     splitter.setStretchFactor(1, 1)
     outer.addWidget(splitter)
     splitter.setSizes([340, 700])
+    # LES-050: gemerkte Aufteilung aus einer frueheren Sitzung
+    # wiederherstellen, falls plausibel (mindestens so breit wie die
+    # gemessenen Mindestbreiten der Button-Grids) - sonst bleibt es bei der
+    # sicheren Standardaufteilung oben.
+    _restore_splitter_sizes(
+        splitter, _WORKSPACE_SPLITTER_SETTINGS_KEY,
+        (step_panel.minimumWidth(), right_panel.minimumWidth()),
+    )
+    splitter.splitterMoved.connect(
+        lambda *_args: _persist_splitter_sizes(splitter, _WORKSPACE_SPLITTER_SETTINGS_KEY)
+    )
     # LES-050: das Gesamtfenster darf nicht schmaler werden, als beide
     # Splitterseiten zusammen an Mindestbreite brauchen - sonst wuerde der
     # Splitter selbst innerhalb seines eigenen Minimums wieder Buttontext

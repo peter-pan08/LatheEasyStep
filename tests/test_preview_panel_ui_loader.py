@@ -17,6 +17,7 @@ from PyQt5 import QtCore, QtWidgets, uic  # noqa: E402
 _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 import lathe_easystep_handler  # noqa: E402,F401  # re-exported custom widgets for uic
+from lathe_easystep import ui_lifecycle  # noqa: E402
 from lathe_easystep.ui_split import (  # noqa: E402
     load_preview_uis,
     load_split_tab_uis,
@@ -26,6 +27,22 @@ from lathe_easystep.ui_lifecycle import (  # noqa: E402
     _dock_preview_above_scroll,
     _install_workspace_splitter,
 )
+
+
+class _FakeSettings:
+    """Teilt sich einen Speicher ueber alle QSettings()-Aufrufe hinweg (wie
+    das echte Backend), damit ein Speichern-dann-Wiederherstellen-Zyklus
+    innerhalb eines Tests sinnvoll geprueft werden kann."""
+
+    def __init__(self):
+        self._values = {}
+
+    def value(self, key, default=None, type=None):
+        value = self._values.get(key, default)
+        return type(value) if type is not None and value is not None else value
+
+    def setValue(self, key, value):
+        self._values[key] = value
 
 # LES-024: Vorschau/Schnittansicht (previewWidget, previewSliceWidget,
 # btn_slice_view) wurden aus dem Geruest (lathe_easystep.ui) in ein eigenes
@@ -183,3 +200,122 @@ def test_workspace_splitter_resizes_step_column_against_editor():
     # stepActionsPanel) und quetschten deren Buttons unter die Textbreite.
     assert step_panel.width() >= 330
     assert right_panel.width() >= 380
+
+
+def test_workspace_splitter_restores_saved_sizes_from_settings(monkeypatch):
+    """LES-050 letzter offener Punkt: eine aus einer frueheren Sitzung
+    gemerkte Aufteilung muss beim naechsten Start wieder angewendet werden
+    statt stets bei der festen Standardaufteilung (340/700) zu bleiben."""
+    settings = _FakeSettings()
+    settings.setValue(ui_lifecycle._WORKSPACE_SPLITTER_SETTINGS_KEY, "500,600")
+    monkeypatch.setattr(ui_lifecycle.QtCore, "QSettings", lambda: settings)
+
+    root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
+
+    root.resize(1000, 700)
+    root.show()
+    _app.processEvents()
+
+    splitter = root.findChild(QtWidgets.QSplitter, "workspaceSplitter")
+    # stepListPanel hat den Stretchfaktor 0 (behaelt seine angeforderte
+    # Groesse), rightWorkspacePanel Faktor 1 (nimmt den Rest) - die
+    # gemerkte 500 muss deshalb exakt ankommen, unabhaengig von der
+    # tatsaechlichen Fensterbreite.
+    assert splitter.sizes()[0] == 500
+
+
+def test_workspace_splitter_ignores_saved_sizes_below_minimum(monkeypatch):
+    """Eine zu schmale gemerkte Aufteilung (z. B. von einem inzwischen
+    entfernten Feature oder einem anderen Bildschirm) darf die Buttons nicht
+    wieder unter ihre Textbreite quetschen - siehe REGRESSIONSFUND oben."""
+    settings = _FakeSettings()
+    settings.setValue(ui_lifecycle._WORKSPACE_SPLITTER_SETTINGS_KEY, "50,50")
+    monkeypatch.setattr(ui_lifecycle.QtCore, "QSettings", lambda: settings)
+
+    root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
+
+    root.resize(1000, 700)
+    root.show()
+    _app.processEvents()
+
+    step_panel = root.findChild(QtWidgets.QWidget, "stepListPanel")
+    right_panel = root.findChild(QtWidgets.QWidget, "rightWorkspacePanel")
+    assert step_panel.width() >= 330
+    assert right_panel.width() >= 380
+
+
+def test_workspace_splitter_persists_sizes_when_dragged(monkeypatch):
+    settings = _FakeSettings()
+    monkeypatch.setattr(ui_lifecycle.QtCore, "QSettings", lambda: settings)
+
+    root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
+
+    root.resize(1000, 700)
+    root.show()
+    _app.processEvents()
+
+    splitter = root.findChild(QtWidgets.QSplitter, "workspaceSplitter")
+    # moveSplitter() simuliert das Ziehen am Splitter-Griff per Hand - anders
+    # als setSizes() loest es zuverlaessig das splitterMoved-Signal aus, an
+    # das die Persistenz gebunden ist (empirisch geprueft).
+    splitter.moveSplitter(450, 1)
+    _app.processEvents()
+
+    expected = ",".join(str(size) for size in splitter.sizes())
+    assert settings.value(ui_lifecycle._WORKSPACE_SPLITTER_SETTINGS_KEY, "", type=str) == expected
+
+
+def test_preview_params_splitter_restores_saved_sizes_from_settings(monkeypatch):
+    """Wie test_workspace_splitter_restores_saved_sizes_from_settings, aber
+    fuer den vertikalen Vorschau-/Parameter-Splitter. Da beide Seiten hier
+    unterschiedliche Stretchfaktoren/Mindesthoehen als beim horizontalen
+    Splitter haben, wird nicht auf einen fixen Pixelwert geprueft, sondern
+    gegen denselben Aufbau ohne gemerkte Werte verglichen - eine wirkungslose
+    _restore_splitter_sizes()-Anbindung wuerde in beiden Faellen zum
+    identischen Ergebnis fuehren."""
+
+    def build(saved_value):
+        settings = _FakeSettings()
+        if saved_value is not None:
+            settings.setValue(ui_lifecycle._PREVIEW_PARAMS_SPLITTER_SETTINGS_KEY, saved_value)
+        monkeypatch.setattr(ui_lifecycle.QtCore, "QSettings", lambda: settings)
+
+        root, handler = _load_full_root()
+        _install_workspace_splitter(handler)
+        load_preview_uis(handler)
+        _dock_preview_above_scroll(handler)
+
+        root.resize(1000, 700)
+        root.show()
+        _app.processEvents()
+
+        splitter = root.findChild(QtWidgets.QSplitter, "previewParamsSplitter")
+        return tuple(splitter.sizes())
+
+    baseline = build(None)
+    restored = build("500,300")
+    assert restored != baseline
+
+
+def test_preview_params_splitter_persists_sizes_when_dragged(monkeypatch):
+    settings = _FakeSettings()
+    monkeypatch.setattr(ui_lifecycle.QtCore, "QSettings", lambda: settings)
+
+    root, handler = _load_full_root()
+    _install_workspace_splitter(handler)
+    load_preview_uis(handler)
+    _dock_preview_above_scroll(handler)
+
+    root.resize(1000, 700)
+    root.show()
+    _app.processEvents()
+
+    splitter = root.findChild(QtWidgets.QSplitter, "previewParamsSplitter")
+    splitter.moveSplitter(250, 1)
+    _app.processEvents()
+
+    expected = ",".join(str(size) for size in splitter.sizes())
+    assert settings.value(ui_lifecycle._PREVIEW_PARAMS_SPLITTER_SETTINGS_KEY, "", type=str) == expected
