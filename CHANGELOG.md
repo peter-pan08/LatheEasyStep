@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+### LES-050: Arbeitsbereiche per Splitter, Vorschau mit Pan und Zoom 2026-09-15
+
+- Vorschau/Parameter erhalten einen vertikalen, Step-Liste/Editor einen
+  horizontalen `QSplitter`. Beide Seiten besitzen Mindestgroessen und koennen
+  nicht vollstaendig zusammengeklappt werden.
+- Seiten- und Schnittansicht lassen sich mit dem Mausrad um den Mauszeiger
+  zoomen (begrenzt auf Faktor 0,2 bis 20) und per Maus verschieben. Die linke
+  Maustaste behaelt bei aktiver Schnittlinie Vorrang fuer deren Z-Position;
+  Mittel-/Rechtsziehen verschiebt die Ansicht weiterhin. Ein Doppelklick passt
+  die Darstellung wieder ein.
+- Die Navigation veraendert nur die Bildschirmtransformation, niemals Modell-
+  oder Bearbeitungsdaten. Fuenf neue Real-Qt-Tests sichern Splitterrichtung,
+  Mindestgroessen, Groessenaenderung, Zoomanker/-grenzen, Pan, Reset und den
+  Vorrang der Schnittlinie. Gesamtstand: 809 Stub-Qt- und 81 Real-Qt-Tests,
+  keine Skips. Das eingebettete Panel erreichte in der QtDragon-SIM
+  `_finalize_ui_ready critical done` nach 13,885 s und wurde sauber beendet.
+  Offen bleiben persistente Splitterpositionen und eine sichtbar beschriftete
+  Reset-Aktion.
+
+### LES-024: Vorschau wieder oben und Schnittansicht nach Lazy-Load verbunden 2026-09-15
+
+- Die angedockte Vorschau steht wieder an erster Stelle im rechten
+  Inhaltsbereich statt unter den Parametern.
+- Die Schnittansicht wurde beim fruehen Handler-Start faelschlich als fertig
+  eingerichtet markiert, obwohl ihr ausgelagertes UI-Fragment noch nicht
+  geladen war. Der Aufbau wird nun erst nach vorhandener Vorschau, Vorderansicht
+  und Umschaltbutton abgeschlossen und nach dem Lazy-Load gezielt wiederholt.
+- Regressionstests sichern Position, unveraenderte Vorschauhoehe, entfernte
+  Leerhuelle und den einmaligen Signalanschluss nach dem verzögerten Laden ab.
+  Vollstaendige Suite: 809 Stub-Qt- und 76 Real-Qt-Tests, keine Skips. In der
+  QtDragon-SIM wurde der fruehe Aufschub und anschliessend der erfolgreiche
+  Anschluss beider Slice-Signale protokolliert; Embedded-Start bis
+  `critical done` nach 8,866 s, danach sauber beendet.
+
+### LES-024: Loeschen und Verschieben per Buttonzustand begrenzt 2026-09-15
+
+- Neue zentrale Funktion `update_operation_action_button_states()` steuert
+  "Loeschen", "hoch" und "runter" anhand der aktuellen Auswahl, des
+  Programmkopfs und der Listengrenzen. Sie wird bei Auswahlaenderungen, nach
+  jedem Neuaufbau der Step-Liste und nach dem verzögerten Laden der Buttons
+  aufgerufen.
+- Der Programmkopf bleibt unveraenderlich: alle drei Aktionen sind dort
+  gesperrt; der erste Bearbeitungsschritt kann nicht ueber ihn verschoben
+  werden, der letzte nicht weiter nach unten. Die Move-Handler besitzen
+  dieselben Grenzen als zweite Sicherung fuer direkte Aufrufe.
+- Sieben neue Tests sichern Auswahlgrenzen, Programmkopf, ersten/mittleren/
+  letzten Step, Lazy-UI und den fruehen Auswahl-Rueckgabepfad ab. Vollstaendige
+  Suite: 808 Stub-Qt- und 76 Real-Qt-Tests, keine Skips. Das eingebettete
+  Panel erreichte in der QtDragon-SIM `_finalize_ui_ready critical done` nach
+  9,025 s und wurde anschliessend sauber beendet. Details: TODO.md (LES-024).
+
 ### LES-024: "Step speichern" per Buttonzustand gesperrt (erstes Muster-Paket) 2026-09-14
 
 - Nutzerentscheidung in Umsetzung: ungueltige Aktionen sollen kuenftig

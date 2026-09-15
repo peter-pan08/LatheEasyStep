@@ -16,6 +16,7 @@ REAL_QT_TESTS = {
     "test_embedded_vs_standalone_root_resolution.py",
     "test_preview_no_synthetic_links_between_operations.py",
     "test_preview_slice_interpolation.py",
+    "test_preview_navigation.py",
 }
 
 

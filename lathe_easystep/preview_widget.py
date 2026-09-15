@@ -70,12 +70,48 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self._view_min_z = None
         self._view_max_z = None
         self._view_scale = None
+        self._view_zoom = 1.0
+        self._view_pan = QtCore.QPointF(0.0, 0.0)
+        self._pan_drag = False
+        self._pan_last_pos = None
         self.front_program: Dict[str, object] = {}
         self.front_operation: Operation | None = None
         self.status_messages: List[str] = []
         self._blink_timer.timeout.connect(self._on_blink_timer)
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
+        self.setCursor(QtCore.Qt.OpenHandCursor)
+
+    def reset_view(self) -> None:
+        """Fit the model again without changing any machining geometry."""
+        self._view_zoom = 1.0
+        self._view_pan = QtCore.QPointF(0.0, 0.0)
+        self.update()
+
+    def _navigated_center_scale(self, center: QtCore.QPointF, scale: float):
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
+        return center + pan, float(scale) * zoom
+
+    def _apply_side_navigation(self, viewport: Dict[str, float], rect: QtCore.QRect) -> Dict[str, float]:
+        zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        base_scale = float(viewport["scale"])
+        scale = max(base_scale * zoom, 1e-9)
+        center = rect.center()
+        min_z = float(viewport["min_z"]) + (center.x() - rect.left()) * (1.0 - 1.0 / zoom) / base_scale
+        min_x = float(viewport["min_x"]) + (rect.bottom() - center.y()) * (1.0 - 1.0 / zoom) / base_scale
+        min_z -= pan.x() / scale
+        min_x += pan.y() / scale
+        z_span = (float(viewport["max_z"]) - float(viewport["min_z"])) / zoom
+        x_span = (float(viewport["max_x"]) - float(viewport["min_x"])) / zoom
+        return {
+            "min_x": min_x,
+            "max_x": min_x + x_span,
+            "min_z": min_z,
+            "max_z": min_z + z_span,
+            "scale": scale,
+        }
 
     def _debug_slice(self, message: str) -> None:
         value = str(os.environ.get("LATHEEASYSTEP_DEBUG", "")).strip().lower()
@@ -208,9 +244,12 @@ class LathePreviewWidget(QtWidgets.QWidget):
             diam = 10.0
 
         r = self.rect().adjusted(20, 20, -20, -40)
-        cx, cy = r.center().x(), r.center().y()
+        center, scale = self._navigated_center_scale(
+            QtCore.QPointF(float(r.center().x()), float(r.center().y())),
+            min(r.width(), r.height()) / max(abs(float(diam)) * 1.1, 1e-3),
+        )
+        cx, cy = center.x(), center.y()
         radius = abs(float(diam)) / 2.0
-        scale = min(r.width(), r.height()) / max(radius * 2.2, 1e-3)
         pix_rad = radius * scale
 
         painter.setPen(QtGui.QPen(QtCore.Qt.white, 2))
@@ -299,8 +338,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
         max_diameter = max(self._front_reference_diameter(), 10.0)
         r = self.rect().adjusted(20, 20, -20, -36)
-        center = QtCore.QPointF(float(r.center().x()), float(r.center().y()))
-        scale = front_view_scale(max_diameter, r.width(), r.height())
+        center, scale = self._navigated_center_scale(
+            QtCore.QPointF(float(r.center().x()), float(r.center().y())),
+            front_view_scale(max_diameter, r.width(), r.height()),
+        )
 
         painter.setPen(QtGui.QPen(QtGui.QColor(70, 70, 70), 1))
         painter.drawLine(QtCore.QPointF(r.left(), center.y()), QtCore.QPointF(r.right(), center.y()))
@@ -377,12 +418,26 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 event.accept()
                 return
 
+        if event.button() in (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton, QtCore.Qt.RightButton):
+            self._pan_drag = True
+            self._pan_last_pos = event.pos()
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
+            event.accept()
+            return
+
         super().mousePressEvent(event)
 
 
     def mouseMoveEvent(self, event):  # type: ignore[override]
         if getattr(self, "_slice_drag", False) and getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
             self._set_slice_from_pos(event.pos())
+            event.accept()
+            return
+        if getattr(self, "_pan_drag", False) and self._pan_last_pos is not None:
+            delta = event.pos() - self._pan_last_pos
+            self._view_pan = self._view_pan + QtCore.QPointF(float(delta.x()), float(delta.y()))
+            self._pan_last_pos = event.pos()
+            self.update()
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -392,7 +447,38 @@ class LathePreviewWidget(QtWidgets.QWidget):
             self._slice_drag = False
             event.accept()
             return
+        if getattr(self, "_pan_drag", False):
+            self._pan_drag = False
+            self._pan_last_pos = None
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event):  # type: ignore[override]
+        delta = event.angleDelta().y()
+        if not delta:
+            super().wheelEvent(event)
+            return
+        old_zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
+        factor = 1.2 ** (float(delta) / 120.0)
+        new_zoom = max(0.2, min(20.0, old_zoom * factor))
+        ratio = new_zoom / old_zoom
+        pos = event.pos()
+        center = self.rect().center()
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        anchor = QtCore.QPointF(float(pos.x() - center.x()), float(pos.y() - center.y()))
+        self._view_pan = anchor - (anchor - pan) * ratio
+        self._view_zoom = new_zoom
+        self.update()
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):  # type: ignore[override]
+        if event.button() == QtCore.Qt.LeftButton:
+            self.reset_view()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def _sample_arc(self, p1, p2, c, ccw):
         return sample_preview_arc(p1, p2, c, ccw)
@@ -479,6 +565,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 x_is_diameter=self.x_is_diameter,
                 base_span=self._base_span,
             )
+            viewport = self._apply_side_navigation(viewport, rect)
             min_x, max_x = viewport["min_x"], viewport["max_x"]
             min_z, max_z = viewport["min_z"], viewport["max_z"]
             scale = viewport["scale"]

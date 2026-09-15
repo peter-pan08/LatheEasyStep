@@ -4,6 +4,37 @@ from .model import OpType
 from .ui_step_list_view import StepListView
 
 
+def update_operation_action_button_states(handler) -> None:
+    """Enable delete/reorder actions only when the selected step permits them."""
+    buttons = {
+        "delete": getattr(handler, "btn_delete", None),
+        "up": getattr(handler, "btn_move_up", None),
+        "down": getattr(handler, "btn_move_down", None),
+    }
+    states = {"delete": False, "up": False, "down": False}
+    try:
+        operations = handler.model.operations
+        index = handler._selected_operation_index()
+        if 0 <= index < len(operations):
+            operation = operations[index]
+            movable = getattr(operation, "op_type", None) != OpType.PROGRAM_HEADER
+            states["delete"] = movable
+            states["up"] = (
+                movable
+                and index > 0
+                and getattr(operations[index - 1], "op_type", None) != OpType.PROGRAM_HEADER
+            )
+            states["down"] = movable and index < len(operations) - 1
+    except Exception:
+        pass
+    for name, button in buttons.items():
+        if button is not None:
+            try:
+                button.setEnabled(states[name])
+            except Exception:
+                pass
+
+
 def handle_tab_changed(handler, *_args, **_kwargs) -> None:
     """Keep list selection and tab-specific helpers in sync."""
     if (
@@ -98,6 +129,10 @@ def handle_selection_change(handler, row: int) -> None:
         )
         try:
             handler._update_save_step_button_state()
+        except Exception:
+            pass
+        try:
+            handler._update_operation_action_button_states()
         except Exception:
             pass
         if row < 0 or row >= len(handler.model.operations):

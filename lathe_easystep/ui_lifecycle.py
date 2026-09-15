@@ -179,6 +179,7 @@ def finalize_ui_ready(handler) -> None:
             load_preview_uis(handler)
             handler._startup_mark("_finalize_ui_ready: load_preview_uis end")
             handler.root_widget = getattr(handler, "root_widget", None) or handler._find_root_widget()
+            _install_workspace_splitter(handler)
         except Exception as exc:
             handler._log(f"[LatheEasyStep] split UI load failed: {exc}", level="warning")
         try:
@@ -219,9 +220,9 @@ def finalize_ui_ready(handler) -> None:
         except Exception:
             pass
         try:
-            handler._startup_mark("_finalize_ui_ready: dock_preview_below_scroll begin")
-            _dock_preview_below_scroll(handler)
-            handler._startup_mark("_finalize_ui_ready: dock_preview_below_scroll end")
+            handler._startup_mark("_finalize_ui_ready: dock_preview_above_scroll begin")
+            _dock_preview_above_scroll(handler)
+            handler._startup_mark("_finalize_ui_ready: dock_preview_above_scroll end")
         except Exception:
             pass
         if handler.tab_params is not None and handler.tab_params.currentIndex() == 0:
@@ -265,6 +266,7 @@ def finalize_ui_ready(handler) -> None:
             pass
         handler._startup_mark("_finalize_ui_ready: ensure_preview_widgets begin")
         handler._ensure_preview_widgets()
+        handler._setup_slice_view()
         handler._startup_mark("_finalize_ui_ready: ensure_preview_widgets end")
         handler._startup_mark("_finalize_ui_ready: connect_core_signals begin")
         handler._connect_core_signals()
@@ -356,7 +358,7 @@ def finalize_ui_ready(handler) -> None:
         handler._finalize_ui_ready_running = False
 
 
-def _dock_preview_below_scroll(handler) -> None:
+def _dock_preview_above_scroll(handler) -> None:
     if getattr(handler, "_preview_docked", False):
         return
     root = getattr(handler, "root_widget", None) or handler._find_root_widget()
@@ -404,14 +406,27 @@ def _dock_preview_below_scroll(handler) -> None:
             preview.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
             preview_slice.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
             preview.setMinimumHeight(140)
-            preview.setMaximumHeight(220)
             preview_slice.setMinimumHeight(140)
-            preview_slice.setMaximumHeight(220)
             preview_slice.setMinimumWidth(240)
-            container.setMaximumHeight(260)
         except Exception:
             pass
-        right_layout.insertWidget(1, container, 1)
+        # LES-050: Vorschau und Parameterbereich werden durch einen vertikalen
+        # Splitter getrennt. Die Vorschau bleibt oben, kann aber nun fuer eine
+        # Detailpruefung vergroessert oder zugunsten der Parameter verkleinert
+        # werden.
+        splitter = root.findChild(QtWidgets.QSplitter, "previewParamsSplitter", QtCore.Qt.FindChildrenRecursively)
+        if splitter is None:
+            scroll_index = right_layout.indexOf(scroll)
+            right_layout.removeWidget(scroll)
+            splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, scroll.parentWidget())
+            splitter.setObjectName("previewParamsSplitter")
+            splitter.setChildrenCollapsible(False)
+            splitter.addWidget(container)
+            splitter.addWidget(scroll)
+            splitter.setStretchFactor(0, 0)
+            splitter.setStretchFactor(1, 1)
+            right_layout.insertWidget(max(0, scroll_index), splitter, 1)
+            splitter.setSizes([180, 520])
         try:
             # addWidget() above already reparented preview/preview_slice/
             # button away from old_parent (Qt removes a widget from its
@@ -441,3 +456,44 @@ def _dock_preview_below_scroll(handler) -> None:
         except Exception:
             pass
     handler._preview_docked = True
+
+
+# Kompatibilitaet fuer externe Aufrufer und aeltere Tests. Die historische
+# Funktion dockt heute bewusst oberhalb statt unterhalb des Scrollbereichs.
+_dock_preview_below_scroll = _dock_preview_above_scroll
+
+
+def _install_workspace_splitter(handler) -> None:
+    """Replace the fixed Step/parameter columns with a horizontal splitter."""
+    root = getattr(handler, "root_widget", None) or handler._find_root_widget()
+    if root is None:
+        return
+    existing = root.findChild(QtWidgets.QSplitter, "workspaceSplitter", QtCore.Qt.FindChildrenRecursively)
+    if existing is not None:
+        return
+    outer = root.findChild(QtWidgets.QHBoxLayout, "horizontalLayout", QtCore.Qt.FindChildrenRecursively)
+    right_layout = root.findChild(QtWidgets.QVBoxLayout, "rightLayout", QtCore.Qt.FindChildrenRecursively)
+    step_panel = root.findChild(QtWidgets.QWidget, "stepListPanel", QtCore.Qt.FindChildrenRecursively)
+    if outer is None or right_layout is None or step_panel is None:
+        return
+    if outer.indexOf(step_panel) < 0 or outer.indexOf(right_layout) < 0:
+        return
+
+    while outer.count():
+        outer.takeAt(0)
+    right_layout.setParent(None)
+    right_panel = QtWidgets.QWidget(root)
+    right_panel.setObjectName("rightWorkspacePanel")
+    right_panel.setMinimumWidth(360)
+    right_panel.setLayout(right_layout)
+    step_panel.setMinimumWidth(190)
+
+    splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, root)
+    splitter.setObjectName("workspaceSplitter")
+    splitter.setChildrenCollapsible(False)
+    splitter.addWidget(step_panel)
+    splitter.addWidget(right_panel)
+    splitter.setStretchFactor(0, 0)
+    splitter.setStretchFactor(1, 1)
+    outer.addWidget(splitter)
+    splitter.setSizes([260, 700])

@@ -95,5 +95,9 @@ def ensure_core_widgets(handler) -> None:
         handler._update_save_step_button_state()
     except Exception:
         pass
+    try:
+        handler._update_operation_action_button_states()
+    except Exception:
+        pass
     handler._connect_button_once(handler.btn_load_step, handler._handle_load_step, "_btn_load_step_connected")
     handler._connect_button_once(handler.btn_thread_preset, handler._apply_thread_preset_force, "_thread_preset_connected")

@@ -59,6 +59,7 @@ from lathe_easystep.ui_selection import (
     handle_selection_change,
     handle_tab_changed,
     on_step_double_clicked,
+    update_operation_action_button_states,
 )
 from lathe_easystep.ui_contour import (
     available_contour_names,
@@ -2708,6 +2709,7 @@ class HandlerClass:
 
         self._update_parting_contour_choices()
         self._update_save_step_button_state()
+        self._update_operation_action_button_states()
 
     def _ensure_preview_widgets(self):
         ensure_preview_widgets(self, LathePreviewWidget, QtWidgets.QWidget)
@@ -2958,6 +2960,9 @@ class HandlerClass:
 
     def _update_save_step_button_state(self):
         update_save_step_button_state(self)
+
+    def _update_operation_action_button_states(self):
+        update_operation_action_button_states(self)
 
     def _operation_side_hint(self, op: Operation) -> str | None:
         self.OpType = OpType
