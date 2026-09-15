@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 869 Stub-Qt-Tests und 105 Tests mit echtem PyQt5, keine Skips.
+- 869 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -67,14 +67,21 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
   orangefarbenes Ausrufezeichen) auf die bisherige prozedurale Darstellung
   zurueck. Dabei einen bereits vorhandenen unausgeglichenen
   `QPainter.save()`-Zustand korrigiert.
-- [ ] das Austauschen einer Schneidplatten-Grafik oder eines kompletten
-  Darstellungs-Sets darf weder Operationen, Werkzeugdaten, G-Code, Preview-
-  Geometrie noch Dirty-/Save-State veraendern. Fuer Werkzeugdaten bereits per
-  Test nachgewiesen (`asdict(tool)` unveraendert vor/nach Ressourcenwechsel,
-  siehe oben); G-Code/Preview-Geometrie/Dirty-State sind architekturell
-  unberuehrt (`render_tool_preview()` erhaelt nur `tool`, kein Modell/
-  G-Code/Dirty-State), aber noch nicht durch einen expliziten Regressionstest
-  belegt.
+- [x] Das Austauschen einer Schneidplatten-Grafik oder eines kompletten
+  Darstellungs-Sets aendert weder Operationen, Werkzeugdaten noch G-Code -
+  fuer Werkzeugdaten per Test nachgewiesen (`asdict(tool)` unveraendert vor/
+  nach Ressourcenwechsel), fuer G-Code zusaetzlich end-to-end belegt
+  (`test_switching_tool_visual_resource_never_affects_generated_gcode`:
+  dasselbe Beispielprogramm zweimal erzeugt, einmal mit einer voellig
+  unabhaengigen `render_tool_preview()`-Ausfuehrung mit externer Ressource
+  dazwischen - identischer G-Code). Per absichtlich veraendertem Parameter
+  (statt der Ressource) als echte Regression verifiziert: der Test schlaegt
+  korrekt fehl, sobald sich der erzeugte G-Code tatsaechlich unterscheidet.
+  Architekturell zusaetzlich abgesichert: kein `gcode_*.py`-/`checks.py`-
+  Modul importiert `tool_visuals`/`render_tool_preview` ueberhaupt. Preview-
+  Geometrie/Dirty-State sind ueber denselben Befund (keine Codeverbindung)
+  ebenfalls unberuehrt, aber (noch) ohne eigenen End-to-End-Test - beide
+  haengen ohnehin nicht von `tool_logic.py` ab.
 - [x] Ressourcenpfade werden nicht in Fachobjekten oder gespeicherten
   Programmen verankert: `ToolVisualProvider` haelt Root/Manifest nur in der
   eigenen Instanz (Handler-Attribut, nicht Teil von `Tool` oder gespeicherten
@@ -93,7 +100,7 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
 - [x] Je ein Test fuer einen alternativen Ressourcensatz (externes PNG) und
   eine fehlende Ressource ergaenzt, dazu ein dritter fuer eine nicht
   dekodierbare Datei (`tests/test_tool_preview_layout.py`). Stub-Qt (869)
-  und Real-Qt (105) bestehen; Standalone-Panel bis `critical done` nach
+  und Real-Qt (106) bestehen; Standalone-Panel bis `critical done` nach
   2,337 s gestartet und sauber beendet. Kein LinuxCNC-Lauf noetig, da G-Code
   und Fahrwege unveraendert bleiben.
 

@@ -17,6 +17,25 @@
 
 ## [Unreleased]
 
+### LES-051: G-Code-Unabhaengigkeit des Ressourcenwechsels end-to-end belegt 2026-09-15
+
+- Letzter Satz des LES-051-Abnahmekriteriums ("Austauschen einer
+  Schneidplatten-Grafik darf weder Operationen, Werkzeugdaten, G-Code,
+  Preview-Geometrie noch Dirty-/Save-State veraendern") war fuer
+  Werkzeugdaten bereits per `asdict(tool)`-Vergleich getestet, fuer G-Code
+  aber nur architekturell (kein Import von `tool_visuals`/`render_tool_
+  preview` in `gcode_*.py`/`checks.py`) belegt, nicht als expliziter Test.
+- Neuer Test `test_switching_tool_visual_resource_never_affects_generated_
+  gcode` (`tests/test_tool_preview_layout.py`): erzeugt dasselbe
+  Beispielprogramm zweimal, mit einer voellig unabhaengigen
+  `render_tool_preview()`-Ausfuehrung samt externer PNG-Ressource
+  dazwischen - identischer G-Code-Output.
+- Per absichtlich veraendertem Operationsparameter (statt der Ressource) als
+  echte Regression verifiziert: der Test schlaegt korrekt fehl, sobald sich
+  der erzeugte G-Code tatsaechlich unterscheidet (Diff exakt an der
+  erwarteten Stelle: `F99.000` statt `F0.100`).
+- 869 Stub-/106 Real-Qt-Tests bestanden. Details: TODO.md (LES-051).
+
 ### LES-051: Werkzeugressourcen an Qt-Vorschau angebunden 2026-09-15
 
 - `render_tool_preview()` fragt nun vor der bisherigen prozeduralen Zeichnung

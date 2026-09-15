@@ -211,3 +211,35 @@ def test_unreadable_external_visual_falls_back_in_qt_adapter(tmp_path):
 
     assert pixmap.size() == QtCore.QSize(140, 140)
     assert any("cannot be decoded" in message for _level, message in h.logs)
+
+
+def test_switching_tool_visual_resource_never_affects_generated_gcode(tmp_path):
+    """LES-051 Abnahmekriterium: das Austauschen einer Schneidplatten-Grafik
+    darf weder Operationen, Werkzeugdaten noch G-Code veraendern. Fuer
+    Werkzeugdaten bereits durch `test_external_png_is_rendered_without_
+    changing_tool_data` (asdict-Vergleich) belegt; hier zusaetzlich end-to-
+    end fuer den tatsaechlichen G-Code-Generatorpfad nachgewiesen - kein
+    gcode_*.py-/checks.py-Modul importiert `tool_visuals`/`render_tool_
+    preview` ueberhaupt (rein architekturell entkoppelt), dieser Test macht
+    das als Regression konkret pruefbar statt nur als Codedurchsicht."""
+    from lathe_easystep.examples import example_programs
+    from lathe_easystep.gcode_program import generate_program_gcode
+
+    ops_before, settings_before = example_programs()["Bohren.ngc"]
+    gcode_before = generate_program_gcode(ops_before, settings_before)
+
+    # Werkzeugvorschau mit einer externen Ressource "benutzen" - voellig
+    # unabhaengige Tool-/Handler-Instanzen, kein gemeinsamer Zustand mit den
+    # obigen Operationen/Settings.
+    source = QtGui.QPixmap(20, 10)
+    source.fill(QtGui.QColor("#123456"))
+    image = tmp_path / "turning.png"
+    assert source.save(str(image), "PNG")
+    h = _FakeHandler()
+    h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": image.name})
+    h._render_tool_preview(_tool(comment="DCMT Außendrehen", iso_code="DCMT110408"))
+
+    ops_after, settings_after = example_programs()["Bohren.ngc"]
+    gcode_after = generate_program_gcode(ops_after, settings_after)
+
+    assert gcode_after == gcode_before
