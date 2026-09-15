@@ -59,8 +59,29 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   wie alle anderen Kommentare zu "ss" transliteriert - reiner
   Zeichensatz-Fund, keine Bedeutungsaenderung), 43 Matrixfaelle weiterhin
   fehlerfrei. 795 Stub-/76 Real-Qt-Tests bestanden.
-- [ ] breite `except Exception`-Fallbacks pro migriertem Modul pruefen: erwartete
-  Qt-/Host-Ausnahmen gezielt behandeln, unerwartete Fehler mindestens loggen.
+- [x] Entscheidung (2026-09-15) umgesetzt: breite `except Exception`-
+  Fallbacks in den vier Vorschau-Modulen (`preview_geometry.py`,
+  `preview_widget.py`, `preview_scene.py`, `ui_preview.py`) durchgesehen -
+  72 von 82 Fundstellen fingen Ausnahmen bisher vollstaendig still ab
+  (kein Log, kein Hinweis), obwohl ein echter Bug dahinter unbemerkt
+  bliebe. Entscheidung mit dem Nutzer geklaert: kleinster Schritt zuerst -
+  nur Logging ergaenzen, Ausnahmetypen NICHT einschraenken und Verhalten
+  NICHT aendern (die vollstaendige Einzelbewertung je Fundstelle auf
+  "welcher Fehlertyp ist hier eigentlich erwartet" bleibt ein separates,
+  groesseres Thema). Jede zuvor stille Stelle bekommt jetzt
+  `_LOGGER.debug("[LatheEasyStep] <Funktion>: unexpected exception
+  suppressed: %s", exc)` als ersten Befehl im except-Block; wo noch kein
+  `as exc` vorhanden war, wurde das ergaenzt. `preview_geometry.py`/
+  `preview_scene.py` bleiben bewusst Qt-frei - `logging` ist Standard-
+  bibliothek, keine neue Qt-Abhaengigkeit. Per Skript erzeugt und manuell
+  gegengeprueft (Syntax, Importplatzierung, ein direkter Spotcheck mit
+  `logging.basicConfig` bestaetigt: die Meldung erscheint mit korrekter
+  Funktion und Fehlertext, Verhalten unveraendert). Volle Stub- und
+  Real-Qt-Suite unveraendert gruen (825/102) - reine Zusatzausgabe, keine
+  neuen Tests noetig (die bestehende Suite deckt bereits ab, dass sich am
+  Verhalten nichts geaendert hat). Die vollstaendige Einzelbewertung
+  (Ausnahmetypen gezielt einschraenken) bleibt bewusst offen fuer eine
+  spaetere, groessere Iteration.
 
 ## LES-028 Eingaben normalisieren
 

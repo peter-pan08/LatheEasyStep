@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### LES-044: stille except Exception-Fallbacks in den Vorschau-Modulen loggen 2026-09-15
+
+- 72 von 82 `except Exception`-Fundstellen in `preview_geometry.py`,
+  `preview_widget.py`, `preview_scene.py` und `ui_preview.py` fingen
+  Ausnahmen bisher vollstaendig still ab - kein Log, kein Hinweis. Ein
+  echter Bug haette sich dadurch als leise falsches Verhalten getarnt
+  statt als sichtbarer Fehler.
+- Entscheidung mit dem Nutzer geklaert: kleinster Schritt zuerst - nur
+  Logging ergaenzen, Ausnahmetypen nicht einschraenken und Verhalten nicht
+  aendern. Jede zuvor stille Stelle bekommt jetzt
+  `_LOGGER.debug("[LatheEasyStep] <Funktion>: unexpected exception
+  suppressed: %s", exc)` als ersten Befehl im except-Block; wo noch kein
+  `as exc` vorhanden war, wurde das ergaenzt.
+- `preview_geometry.py`/`preview_scene.py` bleiben bewusst Qt-frei -
+  `logging` ist Standardbibliothek, keine neue Qt-Abhaengigkeit.
+- Per Skript erzeugt (AST-basiert, damit garantiert nur innerhalb
+  bestehender except-Bloecke eingefuegt wird) und manuell gegengeprueft:
+  Syntax aller vier Dateien, Importplatzierung korrigiert, ein direkter
+  Spotcheck mit `logging.basicConfig` bestaetigt die Meldung erscheint mit
+  korrekter Funktion und Fehlertext, Verhalten unveraendert (gleicher
+  Rueckgabewert wie zuvor). Volle Stub- und Real-Qt-Suite unveraendert
+  gruen (825/102) - reine Zusatzausgabe, keine neuen Tests noetig.
+- Die vollstaendige Einzelbewertung (Ausnahmetypen je Fundstelle gezielt
+  auf den erwarteten Fehlertyp einschraenken) bleibt bewusst offen fuer
+  eine spaetere, groessere Iteration - siehe TODO.md (LES-044).
+
 ### LES-024: verbleibende QMessageBox-Klick-Validierungen bewertet (LES-024 vollstaendig abgeschlossen) 2026-09-15
 
 - Letzter offener LES-024-Punkt: alle 21 verbliebenen `QMessageBox`-

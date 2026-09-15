@@ -10,6 +10,7 @@ bestehenden Header findet).
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Dict, List, Tuple
 
@@ -41,6 +42,8 @@ from .preview_geometry import (
     status_message_layout,
     side_view_to_screen,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class LathePreviewWidget(QtWidgets.QWidget):
@@ -119,14 +122,16 @@ class LathePreviewWidget(QtWidgets.QWidget):
             return
         try:
             print(f"[LatheEasyStep][debug] {message}")
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_debug_slice", exc)
             pass
 
     def _x_to_display(self, x_val: float) -> float:
         """Map stored X values (diameter programming) to displayed X values (radius)."""
         try:
             x_num = float(x_val)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_x_to_display", exc)
             return 0.0
         return x_num * 0.5 if getattr(self, "x_is_diameter", False) else x_num
 
@@ -134,7 +139,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
         """Map display-space X back to the user-facing axis label value."""
         try:
             x_num = float(x_display)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_display_x_to_label", exc)
             return 0.0
         return x_num * 2.0 if getattr(self, "x_is_diameter", False) else x_num
 
@@ -181,7 +187,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
     def set_slice_z(self, z_val: float, emit: bool = False):
         try:
             z_val = float(z_val)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
             return
         old_z = float(getattr(self, "slice_z", 0.0) or 0.0)
         self.slice_z = z_val
@@ -193,13 +200,15 @@ class LathePreviewWidget(QtWidgets.QWidget):
         if emit:
             try:
                 self.sliceChanged.emit(self.slice_z)
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
                 pass
             callback = getattr(self, "_slice_change_callback", None)
             if callable(callback):
                 try:
                     callback(self.slice_z)
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
                     pass
         self.update()
 
@@ -323,7 +332,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 if value is None:
                     return default
                 return float(value)
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_float", exc)
                 return default
 
         prog = getattr(self, "front_program", {}) or {}
@@ -514,7 +524,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     if isinstance(pt, (list, tuple)) and len(pt) >= 2:
                         try:
                             pts.append((float(pt[0]), float(pt[1])))
-                        except Exception:
+                        except Exception as exc:
+                            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_paths", exc)
                             continue
                 if pts:
                     norm_paths.append(pts)
@@ -535,7 +546,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.primitives = primitives or []
         try:
             paths = self.primitives_to_points(self.primitives)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_primitives", exc)
             paths = []
         self.set_paths(paths)
 
@@ -598,7 +610,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     text_pos = QtCore.QPointF(min(p1.x() + 8, rect.right() - 90), rect.top() + 16)
                     painter.setPen(QtGui.QPen(QtGui.QColor(255, 220, 120), 1))
                     painter.drawText(text_pos, label)
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
                     pass
 
             # Achsen und Skala (außen: links/unten)
@@ -734,7 +747,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                         painter.setPen(QtGui.QPen(QtGui.QColor(230, 230, 230), 1))
                         painter.drawText(QtCore.QPointF(*row["label_pos"]), label)
 
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
                     self._legend_click_rect = None
 
             status_layout = status_message_layout(
@@ -749,10 +763,12 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), "Warnungen")
                     for msg, pos in zip(status_layout["messages"], status_layout["line_positions"]):
                         painter.drawText(QtCore.QPointF(*pos), f"- {msg}")
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
                     pass
 
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
             self._legend_click_rect = None
         finally:
             painter.end()

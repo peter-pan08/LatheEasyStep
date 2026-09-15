@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Callable, Dict, List, Tuple
 
 from .checks import validate_program_setup
@@ -12,6 +13,8 @@ from .translations import TRANSLATIONS
 from .ui_step_list_view import StepListView
 from .ui_preview_view import PreviewView
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def setup_slice_view(handler) -> None:
     if getattr(handler, "_slice_view_setup_done", False):
@@ -20,22 +23,26 @@ def setup_slice_view(handler) -> None:
     if handler.preview is None:
         try:
             handler.preview = handler._get_widget_by_name("previewWidget")
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
     if handler.preview_slice is None:
         try:
             handler.preview_slice = handler._get_widget_by_name("previewSliceWidget")
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
     if handler.btn_slice_view is None:
         try:
             handler.btn_slice_view = handler._get_widget_by_name("btn_slice_view")
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
     if getattr(handler, "btn_reset_view", None) is None:
         try:
             handler.btn_reset_view = handler._get_widget_by_name("btn_reset_view")
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             handler.btn_reset_view = None
 
     handler._log(
@@ -56,14 +63,16 @@ def setup_slice_view(handler) -> None:
     if handler.preview is not None:
         try:
             handler.preview.set_view_mode("side")
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
 
     if handler.preview_slice is not None:
         try:
             handler.preview_slice.set_view_mode("front")
             handler.preview_slice.setVisible(False)
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
 
     if handler.btn_slice_view is not None:
@@ -107,7 +116,8 @@ def reset_preview_view(handler) -> None:
         if callable(reset):
             try:
                 reset()
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "reset_preview_view", exc)
                 pass
 
 
@@ -117,16 +127,19 @@ def update_slice_view_button(handler, checked: bool) -> None:
         return
     try:
         lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "update_slice_view_button", exc)
         lang = "de"
     text_key = "runtime.preview.slice_view.off" if checked else "runtime.preview.slice_view.on"
     try:
         button.setText(TRANSLATIONS.tr(text_key, lang))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "update_slice_view_button", exc)
         pass
     try:
         button.setToolTip(TRANSLATIONS.tr("runtime.preview.slice_view.tooltip", lang))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "update_slice_view_button", exc)
         pass
 
 
@@ -189,7 +202,8 @@ def collect_preview_state(
     else:
         try:
             current_type = handler._current_op_type()
-        except Exception:
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
             current_type = OpType.PROGRAM_HEADER
 
         if current_type == OpType.CONTOUR and (handler.contour_start_x or handler.contour_segments):
@@ -207,7 +221,8 @@ def collect_preview_state(
         elif current_type != OpType.PROGRAM_HEADER:
             try:
                 params = handler._collect_params(current_type)
-            except Exception:
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
                 params = {}
             if current_type == OpType.ABSPANEN:
                 contour_name = handler._current_parting_contour_name()
@@ -224,7 +239,8 @@ def collect_preview_state(
             if preview_builder:
                 try:
                     draft_path = preview_builder(params)
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
                     draft_path = []
                 if draft_path:
                     paths.append(draft_path)
@@ -283,7 +299,8 @@ def collect_preview_state(
             + validate_program_setup(handler.model.operations, {**prog, "tools": getattr(handler, "tools", {})})
             + [detail["message"] for detail in handler._radius_warning_details()]
         )
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
         prog["__warnings"] = []
     try:
         inserts = 0
@@ -434,7 +451,8 @@ def sync_slice_widget(handler) -> None:
     visible = None
     try:
         visible = bool(handler.preview_slice.isVisible())
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         visible = None
     try:
         handler._log(
@@ -444,30 +462,36 @@ def sync_slice_widget(handler) -> None:
             f"active_index={getattr(handler.preview, 'active_index', None)!r}",
             level="debug",
         )
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_slice_z(getattr(handler.preview, "slice_z", 0.0))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_view_mode("front")
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_paths(getattr(handler.preview, "paths", []), getattr(handler.preview, "active_index", None))
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_front_context(
             getattr(handler.preview, "front_program", {}),
             getattr(handler.preview, "front_operation", None),
         )
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.update()
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
 
 
@@ -542,5 +566,6 @@ def _detect_preview_collision(paths) -> bool:
                         if min_z is None or z < min_z:
                             min_z = z
         return min_z is not None and min_z < zb - 1e-6
-    except Exception:
+    except Exception as exc:
+        _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_detect_preview_collision", exc)
         return False
