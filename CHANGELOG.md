@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### LES-028: Preset-/Manuell-Normalisierung abgeschlossen 2026-09-15
+
+- Echter Verdrahtungsfehler behoben: Beim Wechsel eines Gewinde-Presets setzte
+  `_apply_standard_thread_selection()` Durchmesser und Steigung, aktivierte
+  dann aber den Rekursionsschutz, bevor `apply_thread_preset()` die uebrigen
+  leeren Felder fuellen konnte. Der vorgesehene Soft-Fill lief dadurch nie.
+- Neue Qt-freie Funktion `thread_preset_values()` liefert alle aus einem
+  gueltigen Preset abgeleiteten Werte. UI und Plausibilitaetspruefung verwenden
+  damit dieselbe Berechnung fuer Gewindetiefe, erste Zustellung, Spitzenversatz,
+  Ruecklauf, Zustellwinkel, Federschnitte und Auslaufparameter.
+- Presetwechsel setzen die identitaetsbildenden Werte Durchmesser/Steigung und
+  fuellen sonst nur leere Felder; "Preset uebernehmen" ersetzt weiterhin
+  bewusst alle Presetwerte. Manuelle Abweichungen bleiben erlaubt, werden aber
+  nun ueber alle abgeleiteten Felder als eine zusammengefasste Warnung sichtbar.
+- Maschinen-/Futterprofile erzeugen keinen parallelen Presetdatensatz: Sie
+  werden sofort in die konkreten Programmkopfwerte aufgeloest. Dort gibt es
+  daher keinen spaeteren Preset-/Manuell-Widerspruch zu vergleichen.
+- Vier neue Stub-Tests fuer Normalisierung, Soft-Fill, erzwungenes Anwenden und
+  zusammengefasste Konfliktmeldung. Gesamtstand: 838 Stub-Qt- und 102
+  Real-Qt-Tests, keine Skips. Das eingebettete Panel erreichte in der
+  QtDragon-SIM `_finalize_ui_ready critical done` nach 10,946 s und wurde
+  sauber beendet. LES-028 ist damit abgeschlossen.
+
 ### LES-028: Tool.kind gegen den Operationstyp geprueft 2026-09-15
 
 - Recherche zu "Werkzeugwechsel nur aus einem normalisierten

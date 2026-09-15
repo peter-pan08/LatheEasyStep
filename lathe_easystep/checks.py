@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 from .contour_features import normalize_relief_mode, resolve_din_relief
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType
+from .presets import thread_preset_values
 
 
 ValidationError = Tuple[int, str]  # (Elementindex, Beschreibung)
@@ -295,6 +296,36 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
                         f"tatsaechlich verwendet wird aber {major_diameter:.3f} - Preset und manueller Wert "
                         "sind inkonsistent. Bitte pruefen, welcher Wert gewollt ist."
                     )
+                expected = thread_preset_values(standard)
+                if expected is not None:
+                    field_labels = {
+                        "thread_depth": "Gewindetiefe",
+                        "first_depth": "erste Zustellung",
+                        "peak_offset": "Spitzenversatz",
+                        "retract_r": "Ruecklauf R",
+                        "infeed_q": "Zustellwinkel Q",
+                        "spring_passes": "Federschnitte",
+                        "e": "Auslauf E",
+                        "l": "Auslaufmodus L",
+                    }
+                    conflicts = []
+                    for key, field_label in field_labels.items():
+                        if key not in params or params.get(key) in (None, ""):
+                            continue
+                        try:
+                            actual = float(params[key])
+                        except (TypeError, ValueError):
+                            continue
+                        target = expected[key]
+                        if abs(actual - target) > 1e-6:
+                            conflicts.append(f"{field_label} {actual:.3f} statt {target:.3f}")
+                    if conflicts:
+                        label = str(standard.get("label") or standard.get("label_key") or "").strip()
+                        warnings.append(
+                            f"Gewinde-Preset {label or '(unbenannt)'} und manuelle Werte sind "
+                            f"inkonsistent: {', '.join(conflicts)}. Bitte Preset erneut anwenden "
+                            "oder bewusst auf Benutzerdefiniert umstellen."
+                        )
         if op_type != "abspanen":
             continue
         contour_name = str(params.get("contour_name") or "").strip()

@@ -5,6 +5,7 @@ from .thread_presets import (
     get_thread_preset,
     metric_thread_presets,
     trapezoidal_thread_presets,
+    thread_preset_values,
     validate_thread_preset_data,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "metric_thread_presets",
     "relief_thread_sizes",
     "trapezoidal_thread_presets",
+    "thread_preset_values",
     "validate_thread_preset_data",
 ]
