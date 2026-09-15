@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### LES-044: Pan-/Zoom-Transformation aus dem Qt-Widget geloest 2026-09-15
+
+- `navigated_center_scale()`, `apply_side_navigation()` und
+  `zoom_navigation_state()` nach `preview_geometry.py` ausgelagert. Die
+  Berechnung von verschobenem Mittelpunkt, skaliertem Seiten-Viewport,
+  Zoomgrenzen und festem Mausanker ist damit Qt-freie Darstellungsgeometrie;
+  `preview_widget.py` uebersetzt nur noch zwischen Tupeln und Qt-Punkten.
+- Zwei neue Stub-Tests pruefen Mausanker, Mittelpunkt/Skalierung, halbierte
+  Sichtspanne bei Faktor 2 und dass der eingepasste Ausgangs-Viewport nicht
+  veraendert wird. Bestehende Real-Qt-Navigationstests bleiben gruen.
+- Gesamtstand: 840 Stub-Qt- und 102 Real-Qt-Tests, keine Skips. Standalone mit
+  `LATHEEASYSTEP_DEBUG=1 qtvcp ...` bis `_finalize_ui_ready critical done`
+  nach 2,346 s gestartet und sauber beendet; kein LinuxCNC-Start erforderlich.
+
 ### LES-028: Preset-/Manuell-Normalisierung abgeschlossen 2026-09-15
 
 - Echter Verdrahtungsfehler behoben: Beim Wechsel eines Gewinde-Presets setzte

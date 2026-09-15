@@ -129,6 +129,71 @@ def compute_side_viewport(
     }
 
 
+def navigated_center_scale(
+    center: Point, scale: float, zoom: float, pan: Point
+) -> Tuple[Point, float]:
+    """Apply display-only pan/zoom to a fitted circular/front viewport."""
+    safe_zoom = max(float(zoom), 1e-9)
+    return (
+        (float(center[0]) + float(pan[0]), float(center[1]) + float(pan[1])),
+        float(scale) * safe_zoom,
+    )
+
+
+def apply_side_navigation(
+    viewport: Dict[str, float],
+    *,
+    left: float,
+    bottom: float,
+    center: Point,
+    zoom: float,
+    pan: Point,
+) -> Dict[str, float]:
+    """Apply display-only pan/zoom while preserving the fitted model bounds."""
+    safe_zoom = max(float(zoom), 1e-9)
+    base_scale = max(float(viewport["scale"]), 1e-9)
+    scale = base_scale * safe_zoom
+    min_z = float(viewport["min_z"]) + (float(center[0]) - float(left)) * (
+        1.0 - 1.0 / safe_zoom
+    ) / base_scale
+    min_x = float(viewport["min_x"]) + (float(bottom) - float(center[1])) * (
+        1.0 - 1.0 / safe_zoom
+    ) / base_scale
+    min_z -= float(pan[0]) / scale
+    min_x += float(pan[1]) / scale
+    z_span = (float(viewport["max_z"]) - float(viewport["min_z"])) / safe_zoom
+    x_span = (float(viewport["max_x"]) - float(viewport["min_x"])) / safe_zoom
+    return {
+        "min_x": min_x,
+        "max_x": min_x + x_span,
+        "min_z": min_z,
+        "max_z": min_z + z_span,
+        "scale": scale,
+    }
+
+
+def zoom_navigation_state(
+    old_zoom: float,
+    pan: Point,
+    pointer: Point,
+    center: Point,
+    wheel_steps: float,
+    *,
+    minimum: float = 0.2,
+    maximum: float = 20.0,
+) -> Tuple[float, Point]:
+    """Return bounded zoom and compensating pan keeping the pointer anchored."""
+    current = max(float(old_zoom), 1e-9)
+    new_zoom = max(float(minimum), min(float(maximum), current * (1.2 ** float(wheel_steps))))
+    ratio = new_zoom / current
+    anchor_x = float(pointer[0]) - float(center[0])
+    anchor_y = float(pointer[1]) - float(center[1])
+    return new_zoom, (
+        anchor_x - (anchor_x - float(pan[0])) * ratio,
+        anchor_y - (anchor_y - float(pan[1])) * ratio,
+    )
+
+
 def nice_tick_step(span: float) -> float:
     """Choose a 1/2/5-based tick distance yielding at most eight intervals."""
     if span <= 0.0:

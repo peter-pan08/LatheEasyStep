@@ -1,13 +1,42 @@
 import math
 
+import pytest
+
 from lathe_easystep.preview_geometry import (
+    apply_side_navigation,
     compute_side_viewport,
+    navigated_center_scale,
     nice_tick_step,
     side_view_axis_lines,
     side_view_slice_line,
     side_view_ticks,
     side_view_to_screen,
+    zoom_navigation_state,
 )
+
+
+def test_navigation_math_is_qt_free_and_keeps_pointer_anchored():
+    zoom, pan = zoom_navigation_state(
+        1.0, (0.0, 0.0), (80.0, 30.0), (50.0, 50.0), 1.0
+    )
+    assert zoom == 1.2
+    assert pan == pytest.approx((-6.0, 4.0))
+
+    center, scale = navigated_center_scale((50.0, 50.0), 10.0, zoom, pan)
+    assert center == pytest.approx((44.0, 54.0))
+    assert scale == pytest.approx(12.0)
+
+
+def test_side_navigation_changes_only_view_bounds_and_scale():
+    fitted = {"min_x": -5.0, "max_x": 5.0, "min_z": -10.0, "max_z": 10.0, "scale": 10.0}
+    moved = apply_side_navigation(
+        fitted, left=0.0, bottom=100.0, center=(100.0, 50.0),
+        zoom=2.0, pan=(20.0, -10.0),
+    )
+    assert moved["scale"] == 20.0
+    assert moved["max_z"] - moved["min_z"] == pytest.approx(10.0)
+    assert moved["max_x"] - moved["min_x"] == pytest.approx(5.0)
+    assert fitted == {"min_x": -5.0, "max_x": 5.0, "min_z": -10.0, "max_z": 10.0, "scale": 10.0}
 
 
 def test_empty_side_viewport_keeps_origin_and_minimum_span():
