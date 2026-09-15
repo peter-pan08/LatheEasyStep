@@ -1,9 +1,13 @@
+import pytest
+
 from lathe_easystep.model import Operation, OpType
 from lathe_easystep.preview_geometry import (
+    circular_view_layout,
     front_operation_side,
     front_reference_diameter,
     front_slice_profile,
     front_view_scale,
+    offset_polygons_to_screen,
 )
 
 # LES-024/LES-034: front_operation_side/front_slice_profile/front_reference_diameter
@@ -140,3 +144,22 @@ def test_front_view_scale_uses_the_limiting_dimension():
 
 def test_front_view_scale_stays_finite_for_a_zero_diameter():
     assert front_view_scale(0.0, width=100.0, height=100.0) > 0.0
+
+
+def test_circular_view_layout_applies_pan_zoom_and_builds_axes():
+    layout = circular_view_layout(
+        100.0, (20.0, 10.0, 420.0, 210.0),
+        zoom=2.0, pan=(15.0, -5.0),
+    )
+    assert layout["center"] == (235.0, 105.0)
+    assert layout["scale"] == pytest.approx(200.0 / 115.0 * 2.0)
+    assert layout["radius"] == 50.0 * layout["scale"]
+    assert layout["horizontal_axis"] == ((20.0, 105.0), (420.0, 105.0))
+    assert layout["vertical_axis"] == ((235.0, 10.0), (235.0, 210.0))
+
+
+def test_offset_polygons_are_mapped_without_changing_input():
+    polygons = [[(-1.0, 2.0), (3.0, -4.0)]]
+    mapped = offset_polygons_to_screen(polygons, center=(100.0, 50.0), scale=10.0)
+    assert mapped == [[(90.0, 70.0), (130.0, 10.0)]]
+    assert polygons == [[(-1.0, 2.0), (3.0, -4.0)]]

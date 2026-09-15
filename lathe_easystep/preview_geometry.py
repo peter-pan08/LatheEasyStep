@@ -213,6 +213,42 @@ def front_view_scale(max_diameter: float, width: float, height: float) -> float:
     return min(float(width), float(height)) / max(float(max_diameter) * 1.15, 1e-6)
 
 
+def circular_view_layout(
+    diameter: float,
+    bounds: Tuple[float, float, float, float],
+    *,
+    zoom: float = 1.0,
+    pan: Point = (0.0, 0.0),
+    fit_factor: float = 1.15,
+) -> Dict[str, object]:
+    """Build Qt-free screen geometry for slice/front circular views."""
+    left, top, right, bottom = (float(value) for value in bounds)
+    width = max(right - left, 0.0)
+    height = max(bottom - top, 0.0)
+    base_center = ((left + right) * 0.5, (top + bottom) * 0.5)
+    base_scale = min(width, height) / max(abs(float(diameter)) * float(fit_factor), 1e-6)
+    center, scale = navigated_center_scale(base_center, base_scale, zoom, pan)
+    return {
+        "center": center,
+        "scale": scale,
+        "radius": abs(float(diameter)) * 0.5 * scale,
+        "horizontal_axis": ((left, center[1]), (right, center[1])),
+        "vertical_axis": ((center[0], top), (center[0], bottom)),
+    }
+
+
+def offset_polygons_to_screen(
+    polygons: List[List[Point]], center: Point, scale: float
+) -> List[List[Point]]:
+    """Map model-space polygons expressed as center offsets to screen space."""
+    cx, cy = float(center[0]), float(center[1])
+    factor = float(scale)
+    return [
+        [(cx + float(x) * factor, cy + float(y) * factor) for x, y in polygon]
+        for polygon in polygons
+    ]
+
+
 def legend_layout(
     item_count: int,
     *,

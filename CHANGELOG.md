@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### LES-044: Kreis-/Vorderansichts-Layout Qt-frei berechnet 2026-09-15
+
+- `circular_view_layout()` berechnet fuer Schnitt- und Vorderansicht jetzt
+  Mittelpunkt, Massstab, Kreisradius und Achslinien ausserhalb des Paint-Codes;
+  Pan/Zoom und unterschiedliche Einpassfaktoren bleiben erhalten.
+- `offset_polygons_to_screen()` verschiebt und skaliert die Keilnut-Polygone
+  Qt-frei. `_draw_front_keyway_overlay()` ist damit auf Stil und QPainter-
+  Ausgabe reduziert. Eine nach dem vorherigen Paket ungenutzte Qt-Wrapper-
+  Methode wurde entfernt.
+- Zwei neue Stub-Tests sichern Layout/Navigation und unveraenderte Eingabe-
+  Polygone. Gesamtstand: 842 Stub-Qt- und 102 Real-Qt-Tests, keine Skips.
+  Standalone-Panel bis `critical done` nach 2,060 s gestartet und sauber
+  beendet; kein LinuxCNC-Start erforderlich.
+
 ### LES-044: Pan-/Zoom-Transformation aus dem Qt-Widget geloest 2026-09-15
 
 - `navigated_center_scale()`, `apply_side_navigation()` und
