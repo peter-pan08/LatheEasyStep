@@ -122,8 +122,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
         """Map stored X values (diameter programming) to displayed X values (radius)."""
         try:
             x_num = float(x_val)
-        except Exception as exc:
-            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_x_to_display", exc)
+        except (TypeError, ValueError, OverflowError) as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "_x_to_display", exc)
             return 0.0
         return x_num * 0.5 if getattr(self, "x_is_diameter", False) else x_num
 
@@ -131,8 +131,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
         """Map display-space X back to the user-facing axis label value."""
         try:
             x_num = float(x_display)
-        except Exception as exc:
-            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_display_x_to_label", exc)
+        except (TypeError, ValueError, OverflowError) as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "_display_x_to_label", exc)
             return 0.0
         return x_num * 2.0 if getattr(self, "x_is_diameter", False) else x_num
 
@@ -179,8 +179,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
     def set_slice_z(self, z_val: float, emit: bool = False):
         try:
             z_val = float(z_val)
-        except Exception as exc:
-            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
+        except (TypeError, ValueError, OverflowError) as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "set_slice_z", exc)
             return
         old_z = float(getattr(self, "slice_z", 0.0) or 0.0)
         self.slice_z = z_val
@@ -325,8 +325,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                 if value is None:
                     return default
                 return float(value)
-            except Exception as exc:
-                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_float", exc)
+            except (TypeError, ValueError, OverflowError) as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "_float", exc)
                 return default
 
         prog = getattr(self, "front_program", {}) or {}
@@ -524,8 +524,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     if isinstance(pt, (list, tuple)) and len(pt) >= 2:
                         try:
                             pts.append((float(pt[0]), float(pt[1])))
-                        except Exception as exc:
-                            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_paths", exc)
+                        except (TypeError, ValueError, OverflowError) as exc:
+                            _LOGGER.debug("[LatheEasyStep] %s: invalid point ignored: %s", "set_paths", exc)
                             continue
                 if pts:
                     norm_paths.append(pts)

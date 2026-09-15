@@ -17,6 +17,19 @@
 
 ## [Unreleased]
 
+### LES-044/LES-052: numerische Vorschau-Fehlergrenzen verengt 2026-09-15
+
+- Fuenf reine Zahlenkonvertierungen in `preview_widget.py` fangen nur noch
+  erwartete ungueltige Eingaben (`TypeError`, `ValueError`, `OverflowError`)
+  ab. Unerwartete Programmierfehler werden nicht mehr still als Nullwert oder
+  ausgelassener Punkt verborgen.
+- Vier Regressionstests sichern beide Seiten der Fehlergrenze: ungueltige
+  Benutzerwerte behalten die bisherigen sicheren Fallbacks, waehrend eine
+  unerwartete `RuntimeError` sichtbar bleibt.
+- Gesamtstand: 864 Stub-Qt- und 102 Real-Qt-Tests, keine Skips. Standalone-Panel
+  bis `critical done` nach 2,202 s gestartet und sauber beendet; kein
+  LinuxCNC-Start erforderlich.
+
 ### LES-044: Vorderansichts-Kreise als fertiger Bildschirmplan 2026-09-15
 
 - Neue Qt-freie Funktion `build_front_view_screen_plan()` wandelt die
