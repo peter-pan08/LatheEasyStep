@@ -2,6 +2,66 @@
 
 ## [Unreleased]
 
+### LES-050: Regressionsfund "Buttontext gequetscht" behoben, Standalone-Panel als schnellerer UI-Testweg 2026-09-15
+
+- Beim praktischen Test des neuen `workspaceSplitter` (siehe vorheriger
+  Eintrag) gefunden: `stepListPanel.ui` (4 Buttons: Step/Programm speichern/
+  laden) und `stepActionsPanel.ui` (7 Buttons: hinzufuegen/loeschen/
+  verschieben/Programm erzeugen/Aenderungen speichern) standen je in einer
+  einzigen QHBoxLayout-Reihe ohne Mindestbreiten-Absicherung - bei
+  schmaler Splitterstellung wurden die Buttons unter ihre Textbreite
+  gequetscht, nur noch Fragmente lesbar (in praktisch jedem SIM-
+  Screenshot dieser gesamten Sitzung sichtbar, ohne dass es als Fund
+  erkannt wurde).
+- Beide Reihen auf zweispaltiges `QGridLayout` umgestellt (`stepListPanel`:
+  2x2, `stepActionsPanel`: 2x4 mit "Aenderungen speichern" ueber beide
+  Spalten). Die Splitter-Mindestbreiten (`_install_workspace_splitter`,
+  `ui_lifecycle.py`) waren mit 190/360 zu knapp fuer die neuen Grids
+  bemessen - per echtem `sizeHint()`-Messlauf auf 330/380 korrigiert. Das
+  Gesamtfenster bekommt zusaetzlich `root.setMinimumWidth(330+380+40)`,
+  damit der Fenstermanager selbst gar nicht erst kleiner zulaesst, als der
+  Splitter zum Vermeiden von Quetschungen braucht.
+- Echter Zweitfund beim Standalone-Test (siehe unten):
+  `_ensure_status_widgets()` (`ui_advanced.py`) rief `layout.insertWidget()`
+  auf, um das "Keine offenen Aenderungen"-Label neben "Aenderungen
+  speichern" einzufuegen - eine QBoxLayout-Methode, die das neue
+  QGridLayout nicht hat. Brach beim echten Panelstart mit `AttributeError`
+  ab; kein bestehender Test deckte das ab (Stub-Suite nutzt keine echten
+  Qt-Layouts, der einzige Real-Qt-Test setzte `label_dirty_status` direkt
+  als Fake statt die Funktion echt aufzurufen). Auf `getItemPosition()`/
+  `addWidget(row+1, ...)` umgestellt.
+- **Workflow-Verbesserung:** fuer reine UI-/Layout-Verifikation muss nicht
+  jedes Mal die volle QtDragon-SIM (`linuxcnc lathe.ini`, ~8-10s Boot,
+  Screensaver, X11-Klicknavigation durchs UTILS-Panel) gestartet werden -
+  das Panel laesst sich standalone starten
+  (`qtvcp -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui`,
+  ~1,5-2s Boot, echtes eigenstaendiges Top-Level-Fenster, direkt
+  groessenveraenderbar). Genau darueber wurde der zweite Fund
+  (QGridLayout-Crash) live entdeckt und die Fenstermindestbreite per
+  echter Fenstergroessenaenderung verifiziert (Anforderung auf 400px
+  fuehrte zu einer vom Fenstermanager korrekt durchgesetzten Groesse von
+  750px). Die volle SIM bleibt fuer G-Code-/Bewegungspruefung reserviert.
+- 12 neue Tests: neun fuer die Button-Lesbarkeit
+  (`tests/test_step_action_buttons_stay_readable.py`, minimale/normale/
+  breite Fenstergroesse plus beide Splittergrenzen, per zurueckgesetztem
+  Layout als echte Regression verifiziert - Original: "Schritt hinzufuegen"
+  77px statt benoetigter 155px, selbst bei 1600px Fensterbreite), drei fuer
+  das Dirty-Status-Label im neuen Grid
+  (`tests/test_dirty_status_label_grid_layout.py`, per zurueckgesetztem Fix
+  als echte Regression verifiziert). Ein bestehender Test
+  (`test_preview_panel_ui_loader.py`) fehlte die reale Aufrufreihenfolge
+  (`_install_workspace_splitter()` vor dem Preview-Docking, wie der echte
+  Start es immer tut) und wurde entsprechend ergaenzt - ohne den Splitter
+  teilten sich Step-Spalte und rechte Spalte noch dieselbe Zeile, wodurch
+  die jetzt zweizeilige Button-Gruppe der Vorschau faelschlich Hoehe
+  weggenommen haette (reines Testaufbau-Artefakt, im echten Start nicht
+  vorhanden).
+- Live im Standalone-Panel bestaetigt: alle elf Buttons bei 900px
+  (Standardgroesse), 650px sowie an der erzwungenen Fenstermindestbreite
+  (750px) vollstaendig lesbar; das Dirty-Status-Label sitzt sichtbar
+  korrekt unter "Aenderungen speichern". 809 Stub-/93 Real-Qt-Tests
+  bestanden, keine Skips. Details: TODO.md (LES-050).
+
 ### LES-050: Arbeitsbereiche per Splitter, Vorschau mit Pan und Zoom 2026-09-15
 
 - Vorschau/Parameter erhalten einen vertikalen, Step-Liste/Editor einen

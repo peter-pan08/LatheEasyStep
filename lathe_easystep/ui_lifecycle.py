@@ -484,9 +484,16 @@ def _install_workspace_splitter(handler) -> None:
     right_layout.setParent(None)
     right_panel = QtWidgets.QWidget(root)
     right_panel.setObjectName("rightWorkspacePanel")
-    right_panel.setMinimumWidth(360)
+    # LES-050 Regressionsfund: 360/190 stammten aus der Zeit vor den
+    # zweispaltigen Button-Grids (stepListPanel/stepActionsPanel, siehe
+    # ui_parts/*.ui) und lagen unter deren tatsaechlichem minimumSizeHint -
+    # die Buttons wurden dadurch unterhalb ihrer Textbreite zusammengepresst.
+    # Werte an das gemessene minimumSizeHint der Grids angelehnt (mit etwas
+    # Reserve fuer Schriftart-/Stilunterschiede ausserhalb des Offscreen-
+    # Messlaufs).
+    right_panel.setMinimumWidth(380)
     right_panel.setLayout(right_layout)
-    step_panel.setMinimumWidth(190)
+    step_panel.setMinimumWidth(330)
 
     splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, root)
     splitter.setObjectName("workspaceSplitter")
@@ -496,4 +503,9 @@ def _install_workspace_splitter(handler) -> None:
     splitter.setStretchFactor(0, 0)
     splitter.setStretchFactor(1, 1)
     outer.addWidget(splitter)
-    splitter.setSizes([260, 700])
+    splitter.setSizes([340, 700])
+    # LES-050: das Gesamtfenster darf nicht schmaler werden, als beide
+    # Splitterseiten zusammen an Mindestbreite brauchen - sonst wuerde der
+    # Splitter selbst innerhalb seines eigenen Minimums wieder Buttontext
+    # abschneiden muessen. +40px Reserve fuer Splitter-Griff/Aussenraender.
+    root.setMinimumWidth(step_panel.minimumWidth() + right_panel.minimumWidth() + 40)
