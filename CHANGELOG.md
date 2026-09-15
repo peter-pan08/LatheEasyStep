@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### LES-028: Tool.kind gegen den Operationstyp geprueft 2026-09-15
+
+- Recherche zu "Werkzeugwechsel nur aus einem normalisierten
+  Werkzeugdatensatz erzeugen" ergab: `T{tool_num:02d} M6` wird bereits
+  heute nur mit einer per `validate_tool_table_completeness()` vorab
+  gegen die Tabelle geprueften Nummer erzeugt. Stattdessen einen echten,
+  bisher komplett ungenutzten Datenpunkt aktiviert: `Tool.kind` (aus der
+  Q-Orientierung der Werkzeugtabelle geparst) wurde nirgends gegen den
+  tatsaechlich verwendeten Operationstyp geprueft - ein Werkzeug, dessen
+  Q-Wert laut Tabelle z. B. auf ein Bohrwerkzeug hindeutet, konnte
+  unbemerkt einer Stech- oder Gewinde-Operation zugewiesen werden.
+- Neue `_check_tool_kind_matches_operation()` (`checks.py`), in die
+  bereits aktive `validate_program_setup()`-Warnungs-Pipeline verdrahtet
+  (landet in `prog["__warnings"]` im Preview UND als `(WARN: ...)`-
+  Kommentar im erzeugten G-Code-Kopf). Bewusst konservativ, um
+  Falschmeldungen bei unklassifizierten Werkzeugen zu vermeiden: nur bei
+  tatsaechlich gesetzter Q-Orientierung geprueft (fehlende Orientierung
+  liefert nur den Fallback "turning", keine echte Klassifikation) und
+  `kind == "parting"` (Fallback fuer jeden nicht zugeordneten Q-Wert) wird
+  nie als Widerspruch gewertet.
+- Bei der Recherche bestaetigt (bereits dokumentiert in
+  `tests/test_tool_warning_wiring.py`): die aehnliche Pruefung
+  `tool_logic.py::collect_tool_orientation_warnings()` ist bewusst tote,
+  redundante Zweitimplementierung eines in `checks.py` bereits aktiven
+  Innen-/Aussen-Checks - kein neuer Fund, nur zur Einordnung bestaetigt.
+- Neun neue Tests (`tests/test_tool_kind_mismatch_check.py`), per
+  entferntem Verdrahtungsaufruf als echte Regression verifiziert. Alle
+  zwoelf Referenzen neu generiert (keine Abweichung), `rs274` sowie 43
+  Matrixfaelle weiterhin fehlerfrei. 834 Stub-/102 Real-Qt-Tests
+  bestanden. Details: TODO.md (LES-028).
+
 ### LES-044: stille except Exception-Fallbacks in den Vorschau-Modulen loggen 2026-09-15
 
 - 72 von 82 `except Exception`-Fundstellen in `preview_geometry.py`,

@@ -9,7 +9,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 ## Verifizierte Basis
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt stabile 0.7.0-Basis.
-- 825 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
+- 834 Stub-Qt-Tests und 102 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -100,7 +100,38 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   deaktiviertem Check als echte Regression verifiziert. Alle zwoelf
   Referenzen neu generiert (keine Abweichung), `rs274` sowie 43
   Matrixfaelle weiterhin fehlerfrei. 779 Stub-/76 Real-Qt-Tests bestanden.
-- [ ] Werkzeugwechsel nur aus einem normalisierten Werkzeugdatensatz erzeugen.
+- [x] Entscheidung (2026-09-15) umgesetzt: `T{tool_num:02d} M6` wird bereits
+  heute nur mit einer per `validate_tool_table_completeness()` vorab gegen
+  die Tabelle geprueften Nummer erzeugt - ein woertlicher Umbau auf
+  "Nummer aus dem `Tool`-Objekt statt aus den rohen Operationsparametern
+  lesen" waere in diesem Datenmodell folgenlos gewesen (der Dict-Schluessel
+  in `tools` IST bereits `Tool.t`, keine zweite unabhaengige Ableitung).
+  Stattdessen einen echten, bisher komplett ungenutzten Datenpunkt aus dem
+  normalisierten Datensatz aktiviert: `Tool.kind` (aus der Q-Orientierung
+  der Werkzeugtabelle geparst, `tools.py::tool_kind_from_orientation()`)
+  wurde nirgends gegen den tatsaechlich verwendeten Operationstyp geprueft
+  - ein Werkzeug, dessen Q-Wert laut Tabelle z. B. auf ein Bohrwerkzeug
+  hindeutet, konnte unbemerkt einer Stech- oder Gewinde-Operation
+  zugewiesen werden. Neue `_check_tool_kind_matches_operation()`
+  (`checks.py`), in `validate_program_setup()` verdrahtet (bereits aktive
+  Warnungs-Pipeline, landet in `prog["__warnings"]` im Preview UND als
+  `(WARN: ...)`-Kommentar im erzeugten G-Code-Kopf). Bewusst konservativ:
+  nur bei tatsaechlich gesetzter Q-Orientierung geprueft (`tool.orientation
+  is None` liefert nur den Fallback "turning", keine echte Klassifikation)
+  und `kind == "parting"` (Fallback fuer JEDEN nicht zugeordneten Q-Wert)
+  wird nie als Widerspruch gewertet - beides haette sonst zu
+  Falschmeldungen bei unklassifizierten Werkzeugen gefuehrt. Bei der
+  Recherche zusaetzlich bestaetigt (und durch einen bereits vorhandenen
+  Testkommentar in `tests/test_tool_warning_wiring.py` gedeckt): die
+  parallele, aehnliche Pruefung `tool_logic.py::collect_tool_orientation_warnings()`
+  ist bewusst tote, redundante Zweitimplementierung eines in `checks.py`
+  bereits aktiven Innen-/Aussen-Checks - kein neuer Fund, nur zur
+  Einordnung bestaetigt. Neun neue Tests
+  (`tests/test_tool_kind_mismatch_check.py`), per entferntem Verdrahtungs-
+  Aufruf als echte Regression verifiziert. Alle zwoelf Referenzen neu
+  generiert (keine Abweichung - die Referenzbeispiele verwenden durchweg
+  passende Werkzeuge), `rs274` sowie 43 Matrixfaelle weiterhin fehlerfrei.
+  834 Stub-/102 Real-Qt-Tests bestanden.
 - [ ] Preset- und manuelle Werte nachvollziehbar vergleichen und Konflikte
   sichtbar machen.
 
