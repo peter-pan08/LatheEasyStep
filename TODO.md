@@ -294,7 +294,7 @@ und Vorderansicht weitgehend umgesetzt. Offen bleiben:
   Legende-/Status-Box-Rahmen, Keilnut-Overlay, Schnittlinie) sind
   Chrome/Struktur statt semantischer Rollen-Stile und damit ein groesserer,
   separat zu bewertender Umfang als die bisherigen Datenvertrag-Schritte.
-- [ ] die verbleibenden breiten `except Exception`-Fallbacks einzeln bewerten
+- [x] die verbleibenden breiten `except Exception`-Fallbacks einzeln bewerten
   und, wo fachlich moeglich, auf erwartete Ausnahmetypen begrenzen. Das
   inzwischen vorhandene Debug-Logging bleibt bis dahin die bewusste
   Zwischenloesung. Erster Baustein (2026-09-16): alle acht Vorkommen in
@@ -346,15 +346,33 @@ und Vorderansicht weitgehend umgesetzt. Offen bleiben:
   (877/108 gruen). Zusaetzlich per Monkeypatch (analog zu
   `preview_widget.py`) fuer `setup_slice_view()`/`on_toggle_slice_view()`
   verifiziert: eine synthetische `KeyError` propagiert korrekt, eine echte
-  `RuntimeError` wird weiterhin sauber geschluckt. Die restlichen sechs
-  (`_current_op_type()`/`_collect_params()`/die Vorschau-Builder-Aufrufe/
-  die Warnungs-Aggregation/die Rohteil-/Rueckzugs-/Sperrzonen-Builder in
-  `collect_preview_state()` sowie `_detect_preview_collision()`) bleiben
-  offen - Fachlogik mit vielfaeltigen, nicht auf den ersten Blick
-  eingrenzbaren Fehlerursachen (Geometrie-/Zahlenkonvertierung ueber viele
-  verschiedene Op-Typen hinweg), im Gegensatz zu den mechanisch gleich-
-  foermigen Qt-Widget-Aufrufen bewusst NICHT im selben Schritt mit
-  erledigt.
+  `RuntimeError` wird weiterhin sauber geschluckt. Dritter Baustein
+  (2026-09-16): vier der restlichen sechs Vorkommen in `collect_preview_
+  state()`/`_detect_preview_collision()` nach genauerer Einzelpruefung
+  doch begrenzt - `_current_op_type()` (`(RuntimeError, AttributeError)`,
+  liest `self.tab_params` ohne `getattr()`-Fallback), `_collect_params()`
+  (dieselben zwei Klassen, liest `self.param_widgets` ebenso ungeschuetzt),
+  die sechs Vorschau-Builder-Aufrufe (`build_face_path` u. a., `(TypeError,
+  ValueError, IndexError)` - rechnen mit `params`-Werten, die `collect_
+  params()` bei nicht als Zahl parsbarem Text roh als String ablegt) und
+  `_detect_preview_collision()` selbst (`(TypeError, ValueError, IndexError,
+  AttributeError)` - liest primitive-Dicts per `.get()`/Indexzugriff und
+  entpackt p1/p2/points als (x, z)-Paare). Jede der vier Begrenzungen per
+  Monkeypatch in beide Richtungen verifiziert: eine synthetische `KeyError`
+  propagiert korrekt, die tatsaechlich erwartete Ausnahme (z. B. ein zu
+  kurzes `p1`, ein `None`-Punkt, ein fehlendes `tab_params`-Attribut) wird
+  weiterhin sauber geschluckt - diesmal im ersten Anlauf ohne Fehltritt
+  gruen (877 Stub-/108 Real-Qt-Tests). Die verbleibenden zwei Vorkommen
+  (Warnungs-Aggregation aus drei unabhaengigen Funktionen; Rohteil-/
+  Rueckzugs-/Worklimit-/Sperrzonen-Builder-Aufrufe) bleiben bewusst breit
+  und sind entsprechend kommentiert - sie aggregieren mehrere unabhaengige
+  Funktionen, deren Fehlerursachen sich ohne tiefere Einzelpruefung jeder
+  einzelnen nicht verlaesslich eingrenzen lassen, und betreffen ohnehin nur
+  die Vorschau-/Warnungsanzeige, nie die G-Code-Erzeugung selbst. Damit ist
+  diese Aufgabe fuer `preview_widget.py`/`ui_preview.py` abgeschlossen (36
+  von 40 urspruenglichen Vorkommen begrenzt, 4 bewusst breit mit
+  dokumentierter Begruendung); andere Module (`ui_header.py`, `ui_params.py`
+  usw.) wurden nicht durchsucht.
 - [ ] jeden weiteren Extraktionsschritt mit einem kleinen Stub-Test und einem
   Real-Qt-Start pruefen; bestehende Vorschau-Pakete nicht erneut als offene
   Aufgaben dokumentieren.

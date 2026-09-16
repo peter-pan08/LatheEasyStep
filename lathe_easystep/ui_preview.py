@@ -223,8 +223,13 @@ def collect_preview_state(
                 active_operation = op
     else:
         try:
+            # LES-044: (RuntimeError, AttributeError) - _current_op_type()
+            # liest self.tab_params ohne getattr()-Fallback (AttributeError
+            # auf einem minimalen Test-Handler ohne dieses Attribut) und
+            # ruft .currentIndex() auf einem Qt-Widget auf (RuntimeError bei
+            # zerstoertem C++-Objekt).
             current_type = handler._current_op_type()
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
             current_type = OpType.PROGRAM_HEADER
 
@@ -242,8 +247,13 @@ def collect_preview_state(
                 active_operation = Operation(OpType.CONTOUR, params, contour_prims)
         elif current_type != OpType.PROGRAM_HEADER:
             try:
+                # LES-044: (RuntimeError, AttributeError) - collect_params()
+                # liest handler.param_widgets ohne getattr()-Fallback und
+                # ruft .value()/.currentIndex()/.text() auf Qt-Widgets auf;
+                # einzelne fehlerhafte Feld-Widgets faengt die Funktion
+                # bereits selbst pro Feld ab (siehe ui_params.py).
                 params = handler._collect_params(current_type)
-            except Exception as exc:
+            except (RuntimeError, AttributeError) as exc:
                 _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
                 params = {}
             if current_type == OpType.ABSPANEN:
@@ -260,8 +270,14 @@ def collect_preview_state(
             }.get(current_type)
             if preview_builder:
                 try:
+                    # LES-044: (TypeError, ValueError, IndexError) - die
+                    # Vorschau-Builder rechnen mit params-Werten, die aus
+                    # live editierten Textfeldern stammen koennen (collect_
+                    # params() speichert einen nicht als Zahl parsbaren Text
+                    # roh als String, siehe ui_params.py) - float()/Index-
+                    # zugriffe darauf loesen genau diese drei Klassen aus.
                     draft_path = preview_builder(params)
-                except Exception as exc:
+                except (TypeError, ValueError, IndexError) as exc:
                     _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
                     draft_path = []
                 if draft_path:
@@ -315,6 +331,15 @@ def collect_preview_state(
 
     prog = handler._collect_program_header() or {}
     prog["__operations"] = list(handler.model.operations)
+    # LES-044: die folgenden zwei Bloecke bleiben bewusst breit - jeder
+    # aggregiert mehrere unabhaengige Funktionen (Warnungen: drei,
+    # Rohteil-/Rueckzugs-/Sperrzonen-Vorschau: vier), deren jeweilige
+    # Fehlerursachen (Zahlenkonvertierung, Geometrie, Werkzeugtabellen-
+    # Zugriff) sich ohne tiefere Einzelpruefung jeder Funktion nicht
+    # verlaesslich auf wenige Ausnahmeklassen eingrenzen lassen - anders
+    # als die mechanisch gleichfoermigen Qt-Widget-Aufrufe andernorts in
+    # dieser Datei. Beide betreffen nur die Vorschau-/Warnungsanzeige, nie
+    # die G-Code-Erzeugung selbst.
     try:
         prog["__warnings"] = (
             get_machine_limit_warnings(prog)
@@ -569,6 +594,10 @@ def refresh_preview(
 
 
 def _detect_preview_collision(paths) -> bool:
+    # LES-044: (TypeError, ValueError, IndexError, AttributeError) - liest
+    # primitive-Dicts per .get()/Indexzugriff und entpackt p1/p2/points als
+    # (x, z)-Paare; ein malformter Primitive-Eintrag (kein Dict, zu kurzes
+    # p1/p2, None statt eines Punkts) loest genau diese vier Klassen aus.
     try:
         zb = None
         for prim_list in paths:
@@ -597,6 +626,6 @@ def _detect_preview_collision(paths) -> bool:
                         if min_z is None or z < min_z:
                             min_z = z
         return min_z is not None and min_z < zb - 1e-6
-    except Exception as exc:
+    except (TypeError, ValueError, IndexError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_detect_preview_collision", exc)
         return False

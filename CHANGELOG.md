@@ -17,6 +17,42 @@
 
 ## [Unreleased]
 
+### LES-044: verbleibende `except Exception`-Fallbacks in ui_preview.py begrenzt 2026-09-16
+
+- Dritter und letzter Baustein: vier der sechs zuvor bewusst offen
+  gelassenen Fachlogik-Vorkommen in `collect_preview_state()`/
+  `_detect_preview_collision()` nach genauerer Einzelpruefung doch
+  begrenzt - `_current_op_type()`/`_collect_params()` auf
+  `(RuntimeError, AttributeError)` (beide lesen ein Handler-Attribut
+  ohne `getattr()`-Fallback: `self.tab_params` bzw.
+  `self.param_widgets`), die sechs Vorschau-Builder-Aufrufe (`build_
+  face_path` u. a.) auf `(TypeError, ValueError, IndexError)` (rechnen
+  mit `params`-Werten, die `collect_params()` bei nicht als Zahl
+  parsbarem Text roh als String ablegt), `_detect_preview_collision()`
+  auf `(TypeError, ValueError, IndexError, AttributeError)` (liest
+  primitive-Dicts per `.get()`/Indexzugriff, entpackt p1/p2/points als
+  (x, z)-Paare).
+- Jede der vier Begrenzungen per Monkeypatch in beide Richtungen
+  verifiziert: eine synthetische `KeyError` propagiert korrekt statt
+  geschluckt zu werden, die tatsaechlich erwartete Ausnahme (zu kurzes
+  `p1`, ein `None`-Punkt, ein fehlendes `tab_params`-Attribut auf einem
+  minimalen Test-Handler) wird weiterhin sauber abgefangen - diesmal im
+  ersten Anlauf gruen, ohne den Fehltritt wie beim zweiten Baustein.
+- Die verbleibenden zwei Vorkommen (Warnungs-Aggregation aus drei
+  unabhaengigen Funktionen; Rohteil-/Rueckzugs-/Worklimit-/Sperrzonen-
+  Builder-Aufrufe) bleiben bewusst breit und sind entsprechend
+  kommentiert - sie aggregieren mehrere unabhaengige Funktionen mit
+  Fehlerursachen, die sich ohne tiefere Einzelpruefung jeder einzelnen
+  nicht verlaesslich eingrenzen lassen, und betreffen ohnehin nur die
+  Vorschau-/Warnungsanzeige, nie die G-Code-Erzeugung.
+- Damit ist diese Aufgabe fuer `preview_widget.py`/`ui_preview.py`
+  abgeschlossen: 36 von 40 urspruenglichen `except Exception`-Vorkommen
+  begrenzt, 4 bewusst breit mit dokumentierter Begruendung. Andere Module
+  (`ui_header.py`, `ui_params.py` usw.) wurden nicht durchsucht - ausserhalb
+  des LES-044-Vorschau-Umfangs.
+- 877 Stub-/108 Real-Qt-Tests bestanden. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet. Details: TODO.md (LES-044).
+
 ### LES-044: `except Exception`-Fallbacks in ui_preview.py einzeln bewertet 2026-09-16
 
 - Zweiter Baustein derselben Aufraeumung: `ui_preview.py` (32 Vorkommen).
