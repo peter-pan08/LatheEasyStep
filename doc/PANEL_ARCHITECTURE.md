@@ -37,3 +37,102 @@ Provider denselben Fallback plus strukturierte Diagnose. Der Qt-Adapter zeigt
 diese Diagnose als Warnmarkierung und im Log, ohne Operation, Werkzeug, G-Code
 oder Dirty-State zu veraendern. Die Wahl und Lebensdauer eines konkreten Themes
 bleibt ausserhalb des Fachmodells und wird in einem weiteren Paket ergaenzt.
+
+## Zustandsmodell (LES-052, Bestandsaufnahme)
+
+Stand: 2026-09-16. Diese Bestandsaufnahme beschreibt, wo die sechs in
+LES-052 genannten Zustandskategorien HEUTE tatsaechlich leben, und ist die
+Voraussetzung fuer die eigentliche Umsetzung - LES-052 selbst verlangt
+ausdruecklich, die Grenzen vor dem Umbau festzulegen. Kein Code wurde fuer
+diese Bestandsaufnahme veraendert.
+
+### `ProgramState` / `OperationState`
+
+Bereits das best-eingegrenzte Beispiel im Projekt. `ProgramModel` und
+`Operation` (`model.py`) kapseln Operationsliste, Programmkopf-Settings und
+Geometrie-/G-Code-Erzeugung hinter Methoden (`add_operation()`,
+`update_geometry()`, `generate_gcode()`); Aufrufer mutieren keine internen
+Felder direkt. Einziger Schoenheitsfehler: `program_settings` ist ein
+untypisiertes `Dict[str, object]`, kein eigener Typ - fuer die anstehende
+Dateiformat-Versionierung (LES-053) relevant, aber kein Ownership-Problem.
+
+### `ToolTableState`
+
+**Nicht gekapselt.** Der Zustand ist ein rohes `handler.tools: Dict[int,
+Tool]` (`Tool` selbst ist ein sauberes `frozen`-Dataclass in `tools.py`,
+nur der Container drumherum fehlt) plus der lose Widget-Text
+`handler.tool_table_path`. Beides wird direkt von freien Funktionen in
+`ui_tools.py` gesetzt (`handler.tools = tools` an mindestens drei Stellen).
+`parse_tool_table()` (`tools.py`) liefert Parse-Warnungen (fehlendes ISO,
+Duplikate) bereits zurueck, aber nichts haelt sie ueber den Ladevorgang
+hinaus fest - sie werden geloggt, nicht als Teil des Zustands gefuehrt.
+Deckt sich mit LES-052 Abschnitt 5 ("Werkzeugtabelle als eigene Domaene
+kapseln").
+
+### `ViewState`
+
+**Teilweise gekapselt, aber ungetypt.** Zoom/Pan/Slice-Position/aktiver
+Ansichtsmodus/Legenden-Auf-Zu-Zustand leben als einzelne Attribute direkt
+auf `LathePreviewWidget` (`preview_widget.py::__init__`): `_view_zoom`,
+`_view_pan`, `slice_z`, `slice_enabled`, `view_mode`, `active_index`,
+`_legend_collapsed`, `show_legend`, `status_messages`. Das ist insofern
+unproblematisch, als es reiner Anzeigezustand ist, der nachweislich nie in
+Operationsdaten oder G-Code zurueckfliesst (mehrfach per Test belegt, siehe
+LES-051-Eintraege). Zusaetzlich existiert impliziter Qt-Zustand ausserhalb
+jeder eigenen Klasse: aktiver Reiter (`QTabWidget.currentIndex()`) und
+ausgewaehlte Step-Zeile (`list_ops.currentRow()`, gekapselt hinter
+`StepListView.selected_row()` in `ui_step_list_view.py` - das ist bereits
+ein brauchbarer Adapter-Ansatz). Fehlt: ein benannter `ViewState`-Typ, der
+diese Werte buendelt, statt sie als Attributliste auf einem Qt-Widget zu
+fuehren.
+
+### `DirtyState`
+
+**Nicht gekapselt - der komplexeste und riskanteste Fall.** Fuenf einzelne
+Attribute direkt auf dem Handler (`_dirty_operation_indices`,
+`_program_dirty`, `_dirty_program_header`, `_dirty_program_structure`,
+`_dirty_warning_suppressed`), gelesen und geschrieben von freien Funktionen
+in `ui_dirty.py` sowie zusaetzlich direkt aus `ui_advanced.py`,
+`ui_flow.py`, `ui_lifecycle.py`, `ui_persistence.py`, `ui_selection.py`,
+`ui_step_list_view.py`, `ui_visibility.py` und dem Handler selbst - neun
+Module insgesamt. `_dirty_operation_indices` sind reine Listenpositionen
+und muessen bei jeder Operation-Verschiebung/-Entfernung/-Einfuegung
+manuell nachgezogen werden (`reindex_dirty_operations_after_removal()`
+u. Ae. in `ui_dirty.py`); zwei der drei Nachzieh-Funktionen tragen den
+Kommentar "SICHERHEITSFUND 2026-09-13" - echte, bereits einmal aufgetretene
+Bugs durch genau dieses Streuungsmuster (ein dirty-Flag "wanderte" beim
+Verschieben auf den falschen Nachbar-Step). Groesster Nutzen einer
+Kapselung waere hier also nicht nur Architektur-Hygiene, sondern das
+Schliessen einer bereits einmal real aufgetretenen Fehlerklasse an der
+Wurzel (Index-Arithmetik lebt dann in einer Klasse mit Tests statt in neun
+Aufrufstellen).
+
+### `RuntimeState`
+
+**Nicht gekapselt.** Zwei Sorten Laufzeit-Flag, beide als lose
+Handler-Attribute: `_generating_gcode` (Reentranz-Sperre waehrend der
+G-Code-Erzeugung, gesetzt/gelesen in `ui_flow.py`) und `_ui_loading`
+(unterdrueckt Signal-Reaktionen waehrend ein Step/Programm in die Maske
+geschrieben wird, damit das Zurueckschreiben nicht selbst als
+Nutzeraenderung/Dirty-Markierung gewertet wird - gesetzt in
+`ui_selection.py`, gelesen zusaetzlich in `ui_visibility.py` und im
+Handler). Bewusst NICHT in dieser Kategorie: `MotionState`/`SpindleState`
+(`motion_state.py`, LES-022) - das sind reine, lokale Parameter innerhalb
+eines einzelnen `generate_program_gcode()`-Laufs (Werkzeug-Rueckzugs-
+position/CSS-Modalzustand waehrend der Erzeugung), nicht panelweiter
+Laufzeitzustand; sie werden nicht auf dem Handler gehalten und sind bereits
+ein brauchbares Vorbild fuer sauber gekapselten Zustand.
+
+### Zusammenfassung fuer die eigentliche Umsetzung
+
+Drei der sechs Kategorien (`ToolTableState`, `DirtyState`, `RuntimeState`)
+leben ausschliesslich als unbenannte Attribute auf dem Handler und werden
+von freien Funktionen in mehreren Modulen direkt gelesen/geschrieben -
+genau das "Handler als heimlicher Zustandsbesitzer"-Muster, das LES-052
+Abschnitt 1 beenden soll. `ProgramState`/`OperationState` (bereits
+Klassen mit Methoden) und `MotionState`/`SpindleState` (bereits lokale,
+nicht handler-gebundene Werte) zeigen, dass das Projekt das Zielmuster an
+zwei Stellen schon beherrscht - die Umsetzung fuer die drei offenen
+Kategorien kann sich daran orientieren. `DirtyState` hat dabei die
+groesste Dringlichkeit (real aufgetretene Bugs durch Index-Drift), nicht
+nur die groesste Flaeche (neun Aufrufstellen).

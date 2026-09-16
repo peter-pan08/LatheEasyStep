@@ -17,7 +17,27 @@
 
 ## [Unreleased]
 
-- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+### LES-052: Zustandsmodell-Bestandsaufnahme 2026-09-16
+
+- Erster LES-052-Baustein ("Architektur und Ladevertrag"): die sechs
+  genannten Zustandskategorien (`ProgramState`, `OperationState`,
+  `ToolTableState`, `ViewState`, `DirtyState`, `RuntimeState`) gegen den
+  tatsaechlichen Code geprueft und in `doc/PANEL_ARCHITECTURE.md`
+  dokumentiert - reine Bestandsaufnahme, kein Code veraendert.
+- `ProgramState`/`OperationState` (`model.py`) und `MotionState`/
+  `SpindleState` (`motion_state.py`) sind bereits sauber gekapselt. Drei
+  Kategorien sind es nicht: `ToolTableState` (`handler.tools`-Dict, direkt
+  von `ui_tools.py` gesetzt), `DirtyState` (fuenf Attribute direkt auf dem
+  Handler, von neun Modulen gelesen/geschrieben) und `RuntimeState`
+  (`_generating_gcode`/`_ui_loading`, ebenfalls lose Handler-Attribute).
+- `DirtyState` hat dabei nachweislich die groesste Dringlichkeit: die
+  Index-Nachzieh-Logik in `ui_dirty.py` traegt an zwei Stellen den
+  Kommentar "SICHERHEITSFUND 2026-09-13" fuer bereits real aufgetretene
+  Bugs durch genau dieses Streuungsmuster (ein dirty-Flag "wanderte" beim
+  Verschieben einer Operation auf den falschen Nachbar-Step).
+  `ViewState` (Zoom/Pan/Slice/Ansichtsmodus) ist auf `LathePreviewWidget`
+  immerhin lokal gebuendelt, aber ungetypt.
+- Details: TODO.md (LES-052).
 
 ## [0.8.0] - 2026-09-16
 

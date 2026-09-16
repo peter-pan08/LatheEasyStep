@@ -189,9 +189,25 @@ Aenderung veraendern.
 
 ### 1. Architektur und Ladevertrag
 
-- [ ] `ProgramState`, `OperationState`, `ToolTableState`, `ViewState`,
+- [x] `ProgramState`, `OperationState`, `ToolTableState`, `ViewState`,
   `DirtyState` und `RuntimeState` als fachlich getrennte Verantwortungen
-  beschreiben und ihre Besitzverhaeltnisse dokumentieren.
+  beschreiben und ihre Besitzverhaeltnisse dokumentieren. Bestandsaufnahme
+  in `doc/PANEL_ARCHITECTURE.md` ("Zustandsmodell (LES-052,
+  Bestandsaufnahme)") - reine Dokumentation, kein Code veraendert.
+  Ergebnis: `ProgramState`/`OperationState` (`model.py`) und
+  `MotionState`/`SpindleState` (`motion_state.py`, LES-022) sind bereits
+  sauber gekapselt und dienen als Vorbild. Drei der sechs Kategorien sind
+  es nicht - `ToolTableState` (`handler.tools`-Dict, von `ui_tools.py`
+  direkt gesetzt), `DirtyState` (fuenf Attribute direkt auf dem Handler,
+  von neun Modulen gelesen/geschrieben) und `RuntimeState`
+  (`_generating_gcode`/`_ui_loading`, ebenfalls lose Handler-Attribute) -
+  leben als unbenannte Handler-Attribute statt als eigene Typen.
+  `DirtyState` hat die groesste Dringlichkeit: die Index-Nachzieh-Logik in
+  `ui_dirty.py` traegt an zwei Stellen den Kommentar "SICHERHEITSFUND
+  2026-09-13" fuer bereits real aufgetretene Bugs durch genau dieses
+  Streuungsmuster. `ViewState` (Zoom/Pan/Slice/Ansichtsmodus) ist auf
+  `LathePreviewWidget` immerhin lokal gebuendelt (kein Leck ins
+  Fachmodell, mehrfach testbelegt), aber ungetypt.
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
