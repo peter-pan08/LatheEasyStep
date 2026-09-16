@@ -58,12 +58,14 @@ Abnahmekriterien:
 
 ### Aktueller Release-Gate-Status
 
-`0.8.0-dev` ist noch nicht freigabefertig. Offen sind derzeit der vollstaendige
-Planen-Radius-Referenz-/SIM-Test gemaess Realtest 19, die LinuxCNC-Backplot-
-Abnahme fuer die Richtungsvarianten der Innenbearbeitung gemaess Realtest 17
-und der 0.8-SIM-/Backplot-Nachweis fuer den DIN-76-Freistich. Die allgemeine
-Testbasis sowie die zwoelf Referenzen und 43 Matrixfaelle unter `rs274` sind
-bereits erfolgreich; die zwoelf Referenzen liefen in QtDragon-SIM bis `M30`.
+`0.8.0-dev` ist noch nicht freigabefertig. Offen ist derzeit die explizite
+LinuxCNC-Backplot-Abnahme fuer die Richtungsvarianten der Innenbearbeitung
+gemaess Realtest 17 sowie danach die abschliessende Gegenpruefung dieses Gates.
+Planen-Radius (272,6 s bis `M30`, Backplot) und DIN-76-Aussen/-Innenfall
+(103 s/122 s bis Programmende, Backplot) besitzen bereits dokumentierte
+QtDragon-SIM-Nachweise. Die allgemeine Testbasis sowie die zwoelf Referenzen
+und 43 Matrixfaelle unter `rs274` sind erfolgreich; die zwoelf Referenzen
+liefen in QtDragon-SIM bis `M30`.
 
 Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde ist kein
 0.8.0-Kriterium. Er bleibt zusammen mit den weiteren realen Maschinen-

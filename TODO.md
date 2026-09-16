@@ -31,19 +31,12 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## 0.8.0 Release-Gate
 
-`0.8.0-dev` ist noch nicht freigabefertig. Die allgemeine Testbasis ist
-erfolgreich, aber die folgenden fachlichen Realtest-Nachweise fehlen noch:
+`0.8.0-dev` ist noch nicht freigabefertig. Testbasis, Referenzen,
+Planen-Radius und DIN-76-SIM-Nachweis sind abgeschlossen. Offen bleiben:
 
-- [ ] Planen Radius: vollstaendiger Referenz-/SIM-Test gemaess Realtest 19,
-  einschliesslich Preview/G-Code/Backplot, Grenzwerten sowie Save/Load.
 - [ ] Innenbearbeitung: ausstehende LinuxCNC-Backplot-Abnahme gemaess
   Realtest 17 fuer steigende und fallende Z-Konturen.
-- [ ] DIN-76-Freistich: erforderlichen 0.8-SIM-/Backplot-Nachweis abschliessen
-  und mit der Referenzdatei dokumentieren.
 - [ ] alle 0.8.0-Abnahmekriterien aus `ROADMAP.md` abschliessend gegenpruefen.
-- [ ] komplette Stub-/Real-Qt-Suite ohne Skips.
-- [ ] zwoelf Referenzen und 43 Matrixfaelle unter `rs274`.
-- [ ] zwoelf Referenzen in der QtDragon-SIM bis `M30`.
 
 Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde beim
 DIN-76-Freistich ist kein 0.8.0-Blocker. Er gehoert zusammen mit den weiteren

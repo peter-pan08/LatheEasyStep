@@ -17,6 +17,21 @@
 
 ## [Unreleased]
 
+### 0.8.0 Release-Gate gegen vorhandene Realnachweise korrigiert 2026-09-16
+
+- Die neu angelegte Gate-Liste hatte zwei bereits abgeschlossene SIM-Abnahmen
+  irrtuemlich wieder geoeffnet. Planen-Radius ist seit 2026-09-14 mit 272,6 s
+  AUTO-Lauf bis `M30`, leerem NML-Fehlerkanal und lesbarem Backplot belegt.
+  DIN-76-Aussen/-Innengewinde sind seit 2026-09-12 mit 103 s/122 s echten
+  QtDragon-SIM-Laeufen bis Programmende und geprueftem Backplot belegt.
+- Diese Punkte aus den offenen Realtest-Fragen entfernt und TODO/Roadmap auf
+  den tatsaechlichen verbleibenden Blocker reduziert: Richtungsvergleich der
+  Innenkontur in der LinuxCNC-SIM, danach abschliessender Gate-Audit.
+- Release-Pruefungen frisch wiederholt: alle zwoelf Referenzen deterministisch
+  ohne Git-Diff regeneriert, 96 statische NGC-Pruefungen, zwoelf Referenzen und
+  43 Matrixfaelle mit `/usr/bin/rs274`, 877 Stub-Qt- und 108 Real-Qt-Tests ohne
+  Skips bestanden.
+
 ### LES-044: verbleibende `except Exception`-Fallbacks in ui_preview.py begrenzt 2026-09-16
 
 - Dritter und letzter Baustein: vier der sechs zuvor bewusst offen
