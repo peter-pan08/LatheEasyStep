@@ -9,9 +9,9 @@ Ziel ist:
 
 ## Release-Stand
 
-- `v0.7.0` ist die lauffaehige Basis auf `main`.
-- `dev` ist der aktuelle Entwicklungsstand fuer `v0.8.0`; `main` bleibt
-  die stabile, lauffaehige Basis.
+- `v0.8.0` ist die lauffaehige Basis auf `main` (freigegeben 2026-09-16).
+- `dev` ist der aktuelle Entwicklungsstand fuer die naechste Version;
+  `main` bleibt die stabile, lauffaehige Basis.
 - Aktueller Teststand: `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`.
 - Der Stand umfasst Freistich-/Hinterschnitt-Backend, harte XRI-Grenzen,
   Dirty-State, Preview-Docking, explizite Toolchange-/Park-Koordinatensysteme,

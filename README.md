@@ -1,7 +1,7 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.8.0-dev`
+Current Version: `0.8.0`
 Status Date: `2026-09-16`
 Primary Test Branch: `dev`
 
@@ -32,7 +32,7 @@ Der Stand wurde auch auf dem nativen LinuxCNC-Rechner nachgeprueft:
 wurden in der QtDragon-SIM bis `M30` ausgefuehrt. Details im
 [Pruefbericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
 
-Stand: Version 0.8.0-dev, 16. September 2026
+Stand: Version 0.8.0, 16. September 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -51,7 +51,7 @@ weiter als ein reiner Prototyp:
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.8.0-dev`.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.8.0`.
 
 Beim inneren Schlichten bleibt das Werkzeug fuer die axiale Anfahrt bis zur
 Z-Lage des Konturstarts auf der im Programmkopf festgelegten XRI-Ebene. Erst
@@ -469,7 +469,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.8.0-dev, September 16, 2026.
+Current documented state: Version 0.8.0, September 16, 2026.
 
 For internal finishing, the tool stays on the XRI clearance diameter while
 moving axially to the contour start Z position. It then feeds radially to the

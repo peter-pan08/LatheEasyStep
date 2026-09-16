@@ -10,8 +10,9 @@ Verifikation in
 
 ## Ausgangsstand
 
-- `main`: Version 0.7.0 als lauffaehige Basis
-- `dev`: aktueller Entwicklungsstand `0.8.0-dev`; `main` bleibt die stabile Basis
+- `main`: Version 0.8.0 als lauffaehige Basis (freigegeben 2026-09-16)
+- `dev`: aktueller Entwicklungsstand fuer die naechste Version; `main`
+  bleibt die stabile Basis
 - aktueller Teststand: `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`
 - UI-Shell, acht Reiter, Step-Verwaltung und Vorschau sind bereits in Teil-UIs
   und Fachmodule getrennt
@@ -56,10 +57,11 @@ Abnahmekriterien:
 - alle angebotenen 0.8.0-Faelle werden von LinuxCNC ohne Parserfehler angenommen
 - Referenzprogramme bestehen die dokumentierten SIM-/Backplot-Nachweise
 
-### Aktueller Release-Gate-Status
+### Release-Gate-Status: freigegeben
 
-`0.8.0-dev` ist inhaltlich freigabefertig - alle Abnahmekriterien oben sind
-erfuellt und gegengeprueft:
+`v0.8.0` wurde am 2026-09-16 freigegeben (Merge `dev` -> `main`, Tag
+`v0.8.0`). Alle Abnahmekriterien oben waren zu diesem Zeitpunkt erfuellt
+und gegengeprueft:
 
 - zylindrische Innenkontur/-stufe/-konus/-radius: `ngc/Innen_Stufe.ngc`,
   `ngc/Innen_Konus.ngc`, `ngc/Innen_Radius.ngc` sowie die Matrixfaelle
@@ -85,10 +87,6 @@ erfuellt und gegengeprueft:
   dokumentierte QtDragon-SIM-Nachweise. Die allgemeine Testbasis (877
   Stub-/108 Real-Qt-Tests) ist erfolgreich; alle zwoelf Referenzen liefen
   in QtDragon-SIM bis `M30`.
-
-Offen ist nur noch der eigentliche Release-Schritt (Merge `dev` -> `main`,
-Versionsbump, Tag) - dieser wird nicht ohne ausdrueckliche Anweisung
-ausgefuehrt.
 
 Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde ist kein
 0.8.0-Kriterium. Er bleibt zusammen mit den weiteren realen Maschinen-

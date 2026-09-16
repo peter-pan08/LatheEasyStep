@@ -17,6 +17,10 @@
 
 ## [Unreleased]
 
+- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+
+## [0.8.0] - 2026-09-16
+
 ### Realtest 17: Innenbearbeitung-Richtungsvergleich in der LinuxCNC-SIM 2026-09-16
 
 - Letzter offener 0.8.0-Blocker: der LinuxCNC-Backplot-Nachweis, dass die
