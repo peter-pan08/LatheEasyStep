@@ -42,6 +42,8 @@ from .preview_geometry import (
     point_cross_lines,
     path_hits_at_slice,
     preview_primitives_to_points,
+    PREVIEW_CHROME_FILLS,
+    PREVIEW_CHROME_STYLES,
     sample_preview_arc,
     PREVIEW_DRAW_STYLES,
     side_view_grid_layout,
@@ -234,6 +236,25 @@ class LathePreviewWidget(QtWidgets.QWidget):
     def _interp_x_hits_at_z(self, path, z: float):
         return interp_x_hits_at_z(path, z)
 
+    def _chrome_pen(self, key: str) -> QtGui.QPen:
+        """LES-044: Qt-Adaption fuer PREVIEW_CHROME_STYLES (preview_geometry.py)
+        - Stil-Mapping bewusst lokal im Methodenkoerper (nicht Modulebene): der
+        Stub-Qt-Testmodus faket QtCore.Qt als leeres Namespace-Objekt ohne
+        SolidLine/DashLine/DashDotLine, siehe Begruendung bei den anderen
+        lokalen Stil-Mappings in dieser Datei."""
+        entry = PREVIEW_CHROME_STYLES[key]
+        line_styles = {
+            "solid": QtCore.Qt.SolidLine,
+            "dash": QtCore.Qt.DashLine,
+            "dashdot": QtCore.Qt.DashDotLine,
+        }
+        pen = QtGui.QPen(QtGui.QColor(*entry["color"]), entry["width"])
+        pen.setStyle(line_styles[entry["style"]])
+        return pen
+
+    def _chrome_fill(self, key: str) -> QtGui.QColor:
+        return QtGui.QColor(*PREVIEW_CHROME_FILLS[key])
+
     def _paint_slice_view(self, painter: QtGui.QPainter):
         painter.fillRect(self.rect(), QtCore.Qt.black)
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -259,10 +280,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
         cx, cy = layout["center"]
         pix_rad = layout["radius"]
 
-        painter.setPen(QtGui.QPen(QtCore.Qt.white, 2))
+        painter.setPen(self._chrome_pen("slice_view_circle"))
         painter.drawEllipse(QtCore.QPointF(cx, cy), pix_rad, pix_rad)
 
-        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.setPen(self._chrome_pen("slice_view_text"))
         painter.drawText(10, self.height() - 10, f"Schnitt bei Z = {self.slice_z:.3f} mm")
 
     def set_front_context(self, program: Dict[str, object] | None = None, operation: Operation | None = None):
@@ -307,8 +328,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
     def _draw_front_keyway_overlay(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float):
         painter.save()
-        painter.setPen(QtGui.QPen(QtGui.QColor(255, 120, 120), 2))
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 80, 80, 80)))
+        painter.setPen(self._chrome_pen("front_keyway_line"))
+        painter.setBrush(QtGui.QBrush(self._chrome_fill("front_keyway_fill")))
         polygons = []
         for op in self._front_program_operations():
             if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
@@ -355,7 +376,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         center = QtCore.QPointF(*layout["center"])
         scale = float(layout["scale"])
 
-        painter.setPen(QtGui.QPen(QtGui.QColor(70, 70, 70), 1))
+        painter.setPen(self._chrome_pen("front_axes"))
         painter.drawLine(*(QtCore.QPointF(*point) for point in layout["horizontal_axis"]))
         painter.drawLine(*(QtCore.QPointF(*point) for point in layout["vertical_axis"]))
 
@@ -415,7 +436,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
         for circle in screen_plan["rings"]:
             draw_ring(circle)
 
-        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.setPen(self._chrome_pen("front_info_text"))
         painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")
         if active_diams:
             painter.drawText(10, 16, "D final: " + ", ".join(f"{d:.3f}" for d in active_diams[:3]))
@@ -619,27 +640,26 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     zline = float(getattr(self, "slice_z", 0.0))
                     line = grid["slice"]["line"]
                     p1, p2 = QtCore.QPointF(*line[0]), QtCore.QPointF(*line[1])
-                    pen = QtGui.QPen(QtGui.QColor(255, 180, 0), 2, QtCore.Qt.DashLine)
-                    painter.setPen(pen)
+                    painter.setPen(self._chrome_pen("side_slice_line"))
                     painter.drawLine(p1, p2)
                     label = f"Schnitt Z {zline:.3f}"
                     text_pos = QtCore.QPointF(*grid["slice"]["label_pos"])
-                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 220, 120), 1))
+                    painter.setPen(self._chrome_pen("side_slice_label"))
                     painter.drawText(text_pos, label)
                 except Exception as exc:
                     _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
                     pass
 
             # Achsen und Skala (außen: links/unten)
-            painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
+            painter.setPen(self._chrome_pen("side_axes"))
             axes = grid["axes"]
             x_axis, x_axis_end = (QtCore.QPointF(*point) for point in axes["x_line"])
             z_axis, z_axis_end = (QtCore.QPointF(*point) for point in axes["z_line"])
             painter.drawLine(z_axis, z_axis_end)  # Z-Achse horizontal
             painter.drawLine(x_axis, x_axis_end)  # X-Achse vertikal
 
-            tick_pen = QtGui.QPen(QtGui.QColor(100, 100, 100), 1)
-            font_pen = QtGui.QPen(QtGui.QColor(160, 160, 160), 1)
+            tick_pen = self._chrome_pen("side_tick")
+            font_pen = self._chrome_pen("side_axis_label")
             painter.setFont(QtGui.QFont("Sans", 8))
 
             # Z-Ticks (horizontal unten/oben)
@@ -704,7 +724,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                             ])
                             painter.save()
                             painter.setPen(QtCore.Qt.NoPen)
-                            painter.setBrush(QtGui.QBrush(QtGui.QColor(200, 60, 220, 55)))
+                            painter.setBrush(QtGui.QBrush(self._chrome_fill("side_chuck_nogo_fill")))
                             painter.drawPolygon(fill_poly)
                             painter.restore()
                     screen_strokes = side_strokes_to_screen(
@@ -758,15 +778,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
 
                     layout = legend_layout(len(legend_items), collapsed=collapsed)
 
-                    bg = QtGui.QColor(0, 0, 0, 160)
-                    painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80), 1))
-                    painter.setBrush(QtGui.QBrush(bg))
+                    painter.setPen(self._chrome_pen("legend_border"))
+                    painter.setBrush(QtGui.QBrush(self._chrome_fill("legend_background")))
                     painter.drawRoundedRect(QtCore.QRectF(*layout["box_rect"]), 6, 6)
 
                     # Click target = header area (always present)
                     self._legend_click_rect = QtCore.QRectF(*layout["click_rect"])
 
-                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 1))
+                    painter.setPen(self._chrome_pen("legend_header_text"))
                     painter.setFont(QtGui.QFont("Sans", 8))
                     painter.drawText(
                         QtCore.QRectF(*layout["header_text_rect"]),
@@ -777,7 +796,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     for (label, pen), row in zip(legend_items, layout["rows"]):
                         painter.setPen(pen)
                         painter.drawLine(QtCore.QPointF(*row["line"][0]), QtCore.QPointF(*row["line"][1]))
-                        painter.setPen(QtGui.QPen(QtGui.QColor(230, 230, 230), 1))
+                        painter.setPen(self._chrome_pen("legend_row_text"))
                         painter.drawText(QtCore.QPointF(*row["label_pos"]), label)
 
                 except Exception as exc:

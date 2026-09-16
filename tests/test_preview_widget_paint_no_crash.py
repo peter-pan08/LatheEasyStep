@@ -96,3 +96,15 @@ def test_side_view_paints_expanded_legend_and_status_messages_without_crash():
     w.toggle_legend()
     _paint(w)
     assert w._legend_click_rect is not None
+
+
+def test_slice_view_paints_without_crash():
+    """LES-044: _paint_slice_view() war bislang von keinem Real-Qt-Test
+    abgedeckt - deckt jetzt den bei der Chrome-Datenvertrag-Extraktion
+    (PREVIEW_CHROME_STYLES: slice_view_circle/slice_view_text) veraenderten
+    Code mit echtem PyQt5 ab."""
+    w = LathePreviewWidget()
+    w.set_view_mode("slice")
+    w.set_paths([[(30.0, 0.0), (20.0, -10.0)]])
+    w.set_slice_z(-5.0)
+    _paint(w)

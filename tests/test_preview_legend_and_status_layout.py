@@ -2,6 +2,8 @@ from lathe_easystep.preview_geometry import (
     FRONT_VIEW_FILL_COLORS,
     FRONT_VIEW_RING_STYLES,
     LEGEND_ENTRIES,
+    PREVIEW_CHROME_FILLS,
+    PREVIEW_CHROME_STYLES,
     PREVIEW_DRAW_STYLES,
     STATUS_BOX_STYLE,
     legend_layout,
@@ -161,6 +163,40 @@ def test_front_view_fill_colors_are_a_pure_qt_free_data_contract():
     expected_keys = {"end_contour_fill", "end_contour_hole"}
     assert set(FRONT_VIEW_FILL_COLORS.keys()) == expected_keys
     for color in FRONT_VIEW_FILL_COLORS.values():
+        assert len(color) == 4
+        for channel in color:
+            assert isinstance(channel, int) and 0 <= channel <= 255
+
+
+def test_preview_chrome_styles_are_a_pure_qt_free_data_contract():
+    """LES-044: analog zu FRONT_VIEW_RING_STYLES - kein QColor/QtCore.Qt-
+    Enum in PREVIEW_CHROME_STYLES selbst. Deckt genau die Stift-Schluessel
+    ab, die preview_widget.py fuer Achsen/Gitter/Schnittlinie/Legenden-
+    Rahmen-Text/Vorderansichts-Chrome/Schnittansicht benutzt - fehlt einer,
+    wuerde die betroffene paintEvent()/_paint_*-Methode mit einem KeyError
+    abstuerzen."""
+    expected_keys = {
+        "side_axes", "side_tick", "side_axis_label", "side_slice_line",
+        "side_slice_label", "legend_border", "legend_header_text",
+        "legend_row_text", "front_axes", "front_info_text",
+        "front_keyway_line", "slice_view_circle", "slice_view_text",
+    }
+    assert set(PREVIEW_CHROME_STYLES.keys()) == expected_keys
+    for entry in PREVIEW_CHROME_STYLES.values():
+        assert set(entry.keys()) == {"color", "width", "style"}
+        assert entry["style"] in ("solid", "dash", "dashdot")
+        r, g, b = entry["color"]
+        for channel in (r, g, b):
+            assert isinstance(channel, int) and 0 <= channel <= 255
+        assert isinstance(entry["width"], int) and entry["width"] > 0
+
+
+def test_preview_chrome_fills_are_a_pure_qt_free_data_contract():
+    """LES-044: analog zu FRONT_VIEW_FILL_COLORS - die restlichen RGBA-
+    Fuellfarben (Futter-Sperrzone, Legenden-Hintergrund, Keilnut-Overlay)."""
+    expected_keys = {"side_chuck_nogo_fill", "legend_background", "front_keyway_fill"}
+    assert set(PREVIEW_CHROME_FILLS.keys()) == expected_keys
+    for color in PREVIEW_CHROME_FILLS.values():
         assert len(color) == 4
         for channel in color:
             assert isinstance(channel, int) and 0 <= channel <= 255

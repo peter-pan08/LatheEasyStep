@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 875 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
+- 877 Stub-Qt-Tests und 107 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -138,6 +138,36 @@ konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
   `styles`-Dict/`draw_plan`-Code mit echten synthetischen Pfaden.
   873 Stub-/106 Real-Qt-Tests bestanden. Preview-Canvas-Farbcontract ist
   damit umgesetzt; optionale Bedienelemente bleiben offen.
+  Vierter/fuenfter Baustein (2026-09-16, LES-044): die verbliebenen
+  Vorderansichts- und "Chrome"-Farben. `FRONT_VIEW_RING_STYLES`/
+  `FRONT_VIEW_FILL_COLORS` decken alle sieben `style_key`-Werte von
+  `build_front_view_draw_plan()` ab (Rohteilringe, Durchmesserringe,
+  Endkontur-Fuellung/-Loch). Danach `PREVIEW_CHROME_STYLES`/
+  `PREVIEW_CHROME_FILLS`: Achsen, Gitterticks/-beschriftung, Schnittlinie/
+  -label der Seitenansicht, Legenden-Rahmen/-Hintergrund/-Text, Vorder-
+  ansichts-Achsen/-Infotext, Keilnut-Overlay-Umriss/-Fuellung, Kreis/Text
+  der Schnittansicht - Struktur-/Chrome-Elemente statt semantischer Rollen-
+  Stile, aber genauso vorher hartkodiert. Zwei neue Hilfsmethoden
+  `_chrome_pen()`/`_chrome_fill()` (`preview_widget.py`) buendeln die Qt-
+  Adaption statt sie an jeder Stelle zu wiederholen; Stil-Mapping weiterhin
+  lokal im Methodenkoerper (nicht Modulebene). Dabei eine echte Test-
+  luecke geschlossen: `_paint_slice_view()` (Schnittansicht) hatte bislang
+  keinen Real-Qt-Test - neuer Test `test_slice_view_paints_without_crash`
+  (`tests/test_preview_widget_paint_no_crash.py`) deckt sie jetzt ab. Per
+  entferntem Schluessel als echte Regression verifiziert - im Stub-Test als
+  sauberer `AssertionError`, im Real-Qt-Test als harter Prozessabsturz
+  (PyQt5 kann eine unbehandelte Python-Exception aus `paintEvent()` nicht
+  sauber propagieren), beides wie erwartet. Einzig verbliebenes Farb-
+  literal in `preview_widget.py`: der schwarze Canvas-Hintergrund
+  (`QtCore.Qt.black`, 3x identisch) - bewusst nicht extrahiert, da eine
+  einzelne, ueberall gleiche Konstante ohne Duplizierungsrisiko. Damit ist
+  LES-044s erster Punkt ("Darstellungsberechnungen aus preview_widget.py/
+  ui_preview.py in Qt-freie Planfunktionen verschieben") fuer alle
+  Farb-/Stil-Werte des Preview-Widgets abgeschlossen; verbleibende
+  fachliche Geometrieberechnungen (falls noch vorhanden) und die breiten
+  `except Exception`-Fallbacks (zweiter Punkt) sind separat zu pruefen.
+  877 Stub-/107 Real-Qt-Tests bestanden. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet.
 - [ ] Shell- und Fragment-Laden fuer Standalone und Embedded mit einem
   definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
   Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom

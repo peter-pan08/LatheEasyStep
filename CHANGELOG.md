@@ -17,6 +17,36 @@
 
 ## [Unreleased]
 
+### LES-044: verbleibende "Chrome"-Farben des Preview-Widgets als Datenvertrag 2026-09-16
+
+- Letzter Schritt derselben Aufraeumung: alle noch direkt in
+  `preview_widget.py` hartkodierten `QColor`/`QtCore.Qt.<Style>`/
+  `QtCore.Qt.white`-Werte, die keiner semantischen Rolle zugeordnet sind
+  (Achsen, Gitterticks/-beschriftung, Schnittlinie/-label der Seiten-
+  ansicht, Legenden-Rahmen/-Hintergrund/-Text, Vorderansichts-Achsen/-
+  Infotext, Keilnut-Overlay-Umriss/-Fuellung, Kreis/Text der
+  Schnittansicht) in `PREVIEW_CHROME_STYLES`/`PREVIEW_CHROME_FILLS`
+  (`preview_geometry.py`) verschoben.
+- Zwei neue Hilfsmethoden `_chrome_pen()`/`_chrome_fill()` auf
+  `LathePreviewWidget` buendeln die Qt-Adaption (Stil-Mapping weiterhin
+  lokal im Methodenkoerper, nicht Modulebene - siehe fruehere Eintraege
+  in diesem Abschnitt).
+- Dabei eine echte Testluecke geschlossen: `_paint_slice_view()` (die
+  Schnittansicht mit rundem Werkstueckquerschnitt) hatte bislang keinen
+  Real-Qt-Test. Neuer Test `test_slice_view_paints_without_crash`
+  (`tests/test_preview_widget_paint_no_crash.py`) deckt sie jetzt ab.
+- Per entferntem Schluessel als echte Regression verifiziert: im Stub-Test
+  ein sauberer `AssertionError`, im Real-Qt-Test dagegen ein harter
+  Prozessabsturz - PyQt5 kann eine unbehandelte Python-`KeyError` aus
+  `paintEvent()` nicht sauber propagieren. Beide Male wie erwartet
+  fehlgeschlagen, danach beide Male gruen nach Wiederherstellung.
+- Einzig verbliebenes Farbliteral in `preview_widget.py`: der schwarze
+  Canvas-Hintergrund (`QtCore.Qt.black`, dreimal identisch verwendet) -
+  bewusst nicht extrahiert, da eine einzelne, ueberall gleiche Konstante
+  kein Duplizierungsrisiko traegt.
+- 877 Stub-/107 Real-Qt-Tests bestanden. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet. Details: TODO.md (LES-044).
+
 ### LES-044/LES-051: Vorderansicht-Ringe/-Fuellungen als austauschbarer Datenvertrag 2026-09-16
 
 - Gleiche Aufraeumung wie beim Haupt-Vorschau-Canvas, jetzt fuer

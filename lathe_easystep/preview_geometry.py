@@ -321,6 +321,43 @@ RGB, da die Endkontur-Fuellung eine Transparenz nutzt. Vorher direkt als
 hartkodiert."""
 
 
+PREVIEW_CHROME_STYLES: Dict[str, Dict[str, object]] = {
+    "side_axes": {"color": (80, 80, 80), "width": 1, "style": "solid"},
+    "side_tick": {"color": (100, 100, 100), "width": 1, "style": "solid"},
+    "side_axis_label": {"color": (160, 160, 160), "width": 1, "style": "solid"},
+    "side_slice_line": {"color": (255, 180, 0), "width": 2, "style": "dash"},
+    "side_slice_label": {"color": (255, 220, 120), "width": 1, "style": "solid"},
+    "legend_border": {"color": (80, 80, 80), "width": 1, "style": "solid"},
+    "legend_header_text": {"color": (255, 255, 255), "width": 1, "style": "solid"},
+    "legend_row_text": {"color": (230, 230, 230), "width": 1, "style": "solid"},
+    "front_axes": {"color": (70, 70, 70), "width": 1, "style": "solid"},
+    "front_info_text": {"color": (255, 255, 255), "width": 1, "style": "solid"},
+    "front_keyway_line": {"color": (255, 120, 120), "width": 2, "style": "solid"},
+    "slice_view_circle": {"color": (255, 255, 255), "width": 2, "style": "solid"},
+    "slice_view_text": {"color": (255, 255, 255), "width": 1, "style": "solid"},
+}
+"""LES-044: reiner Datenvertrag fuer die restlichen "Chrome"-Stifte in
+`preview_widget.py` (Achsen, Gitterticks/-beschriftung, Schnittlinie/-label
+der Seitenansicht, Legenden-Rahmen/-Text, Vorderansichts-Achsen/-Infotext,
+Keilnut-Overlay-Umriss, Kreis/Text der Schnittansicht) - Struktur-/Chrome-
+Elemente statt semantischer Rollen-Stile (die bleiben in LEGEND_ENTRIES/
+PREVIEW_DRAW_STYLES/FRONT_VIEW_RING_STYLES/STATUS_BOX_STYLE), aber genauso
+vorher als `QColor`/`QtCore.Qt.<Style>`/`QtCore.Qt.white`-Werte direkt im
+Qt-Paint-Code hartkodiert. `QtCore.Qt.white` durch das RGB-Aequivalent
+(255,255,255) ersetzt - keine sichtbare Aenderung."""
+
+
+PREVIEW_CHROME_FILLS: Dict[str, Tuple[int, int, int, int]] = {
+    "side_chuck_nogo_fill": (200, 60, 220, 55),
+    "legend_background": (0, 0, 0, 160),
+    "front_keyway_fill": (255, 80, 80, 80),
+}
+"""LES-044: reiner Datenvertrag fuer die restlichen "Chrome"-Fuellfarben
+(RGBA) in `preview_widget.py` - Futter-Sperrzonen-Fuellung in der
+Seitenansicht, Legenden-Hintergrund, Keilnut-Overlay-Fuellung. Vorher
+direkt als `QColor(r, g, b, a)` im Qt-Paint-Code hartkodiert."""
+
+
 def legend_layout(
     item_count: int,
     *,
