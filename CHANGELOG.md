@@ -17,6 +17,66 @@
 
 ## [Unreleased]
 
+### Realtest 17: Innenbearbeitung-Richtungsvergleich in der LinuxCNC-SIM 2026-09-16
+
+- Letzter offener 0.8.0-Blocker: der LinuxCNC-Backplot-Nachweis, dass die
+  Punktreihenfolge einer Innenkontur (steigend vs. fallend in Z) keinen
+  Einfluss auf den erzeugten G-Code/Materialabtrag hat. Die algorithmische
+  Richtungsunabhaengigkeit war seit 2026-08-22 bereits automatisiert
+  getestet (`is_monotonic_z()`, `test_internal_roughing_never_uses_g71_
+  g72_cycle`); offen war nur noch der reale SIM-/Backplot-Nachweis.
+- Testpaar aus der bestehenden 43-Matrix regeneriert:
+  `inside_step_forward_rough_finish.ngc`/`inside_step_reverse_rough_
+  finish.ngc` (identisches Stufenprofil `[(12,-30),(12,-15),(18,-15),
+  (18,0)]`, einmal in Original- und einmal in umgekehrter Punktreihenfolge,
+  Schruppen+Schlichten kombiniert). G-Code-Diff ausserhalb des
+  Programmnamens: nur die Schlichtbahn durchlaeuft dieselbe Kontur in
+  umgekehrter Richtung, alle Schrupppaesse sind byte-identisch.
+- Beide Programme in der nativen QtDragon-SIM (`linuxcnc lathe.ini`)
+  vollstaendig im AUTO-Modus bis `M30` ausgefuehrt: 187,1 s (vorwaerts)
+  bzw. 186,2 s (rueckwaerts), je leerer NML-Fehlerkanal, identische
+  Endposition (X150.000/Z300.000 Werkzeugwechselpunkt), Backplot beider
+  Richtungen visuell deckungsgleich. XRI (X9.000) kommt in beiden
+  Programmen ausschliesslich als `G0`-Rueckzug vor, nie als Schnittbahn.
+  Gesteuert ueber das `linuxcnc`-Python-Modul (NML-Status-/Kommando-API)
+  statt GUI-Dateibrowser, nachdem sich dessen "User"-Panel trotz "All (*)"-
+  Filter und deaktiviertem "Restricted" als reiner Verzeichnis- statt
+  Datei-Browser erwies - robuster und fuer den zweiten Lauf per Skript
+  sofort als echter Regressionsfund nutzbar (siehe naechster Punkt).
+- Dabei zwei reale Fehler ausserhalb des LatheEasyStep-Codes gefunden und
+  behoben:
+  - `lathe_postgui.hal` der SIM-Konfiguration (ausserhalb dieses Repos,
+    `/home/adm1n/linuxcnc/configs/sim.qtdragon_lathe.basic_xz_lathe-1/`)
+    verband zwei rein kosmetische Achslast-/Drehzahl-Anzeigen
+    (`joint.N.vel-cmd`/`spindle-speed-limited`, beide `float`) mit
+    `qtdragon.axis-*-load`/`qtdragon.spindle-rpm`, die in der installierten
+    QtDragon-Version jetzt `s32` sind - liess den SIM-Start hart mit
+    `Signal ... of type 'float' cannot add pin ... of type 's32'`
+    abbrechen. Beide Netze auskommentiert (Backup unter
+    `/tmp/lathe_postgui.hal.orig.bak`), keine Bewegungs-/Koordinatenlogik
+    betroffen.
+  - Eigenes Steuerskript: der zweite (Rueckwaerts-)Lauf meldete zunaechst
+    faelschlich "fertig nach 1,0 s" ohne echte Bewegung - `c.mode(MODE_
+    AUTO)` griff nach dem ersten `M30` nicht mehr zuverlaessig, `c.auto(
+    AUTO_RUN, ...)` wurde im noch aktiven MANUAL-Modus stillschweigend
+    ignoriert. Behoben durch expliziten Moduswechsel unmittelbar vor
+    `AUTO_RUN` mit Ruecklesepruefung (`task_mode == MODE_AUTO`) sowie eine
+    Abschlusspruefung, die eine tatsaechliche Positionsaenderung
+    voraussetzt, bevor "fertig" gemeldet wird - Wiederholung lief korrekt
+    186,2 s mit echter Bewegung.
+- Realtest-17-Eintrag aus `doc/REALTEST_FRAGEN_2026-07-15.md` entfernt
+  (Datei-eigene Konvention: beantwortete/umgesetzte Punkte werden hier
+  dokumentiert statt dort offengehalten).
+- Damit ist der letzte 0.8.0-Blocker geschlossen. Alle Abnahmekriterien aus
+  `ROADMAP.md` gegengeprueft (Referenzfaelle, gemeinsame Primitive,
+  Freistich-in-Kontur, kein ungenutzter Generator-Pfad, CSS-Position,
+  Planen-Radius, Parserannahme, SIM-/Backplot-Nachweise) - Details dort
+  unter "Aktueller Release-Gate-Status". `0.8.0-dev` ist damit inhaltlich
+  freigabefertig; der Release-Schritt selbst (Merge nach `main`,
+  Versionsbump, Tag) steht noch aus.
+- 877 Stub-/108 Real-Qt-Tests weiterhin bestanden (unveraendert durch diese
+  reine Verifikationsarbeit).
+
 ### 0.8.0 Release-Gate gegen vorhandene Realnachweise korrigiert 2026-09-16
 
 - Die neu angelegte Gate-Liste hatte zwei bereits abgeschlossene SIM-Abnahmen

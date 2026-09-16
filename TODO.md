@@ -31,12 +31,25 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## 0.8.0 Release-Gate
 
-`0.8.0-dev` ist noch nicht freigabefertig. Testbasis, Referenzen,
-Planen-Radius und DIN-76-SIM-Nachweis sind abgeschlossen. Offen bleiben:
+`0.8.0-dev` ist inhaltlich freigabefertig; das eigentliche Release (Merge
+`dev` -> `main`, Versionsbump, Tag) steht noch aus und wird nicht ohne
+ausdrueckliche Anweisung ausgefuehrt.
 
-- [ ] Innenbearbeitung: ausstehende LinuxCNC-Backplot-Abnahme gemaess
-  Realtest 17 fuer steigende und fallende Z-Konturen.
-- [ ] alle 0.8.0-Abnahmekriterien aus `ROADMAP.md` abschliessend gegenpruefen.
+- [x] Innenbearbeitung: LinuxCNC-Backplot-Abnahme gemaess Realtest 17 fuer
+  steigende und fallende Z-Konturen. `inside_step_forward_rough_finish.ngc`/
+  `inside_step_reverse_rough_finish.ngc` (identische Kontur, umgekehrte
+  Punktreihenfolge) in der nativen QtDragon-SIM je vollstaendig im AUTO-
+  Modus bis `M30` ausgefuehrt: 187,1 s bzw. 186,2 s, je leerer NML-
+  Fehlerkanal, identische Endposition (X150.000/Z300.000 Werkzeugwechsel-
+  punkt), Backplot beider Richtungen deckungsgleich. G-Code-Diff der beiden
+  Programme zeigt ausserhalb des Programmnamens nur den erwarteten
+  Unterschied: die Schlichtbahn durchlaeuft die identische Kontur in
+  umgekehrter Richtung, alle Schrupppaesse sind byte-identisch. XRI
+  (X9.000) kommt in beiden Programmen ausschliesslich als `G0`-Rueckzug
+  vor, nie als Schnittbahn - erfuellt "XRI nur Einfahr-/Rueckszugsebene".
+  Details: CHANGELOG.md.
+- [x] alle 0.8.0-Abnahmekriterien aus `ROADMAP.md` gegengeprueft (Details
+  dort unter "Aktueller Release-Gate-Status").
 
 Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde beim
 DIN-76-Freistich ist kein 0.8.0-Blocker. Er gehoert zusammen mit den weiteren

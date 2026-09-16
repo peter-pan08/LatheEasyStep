@@ -58,14 +58,37 @@ Abnahmekriterien:
 
 ### Aktueller Release-Gate-Status
 
-`0.8.0-dev` ist noch nicht freigabefertig. Offen ist derzeit die explizite
-LinuxCNC-Backplot-Abnahme fuer die Richtungsvarianten der Innenbearbeitung
-gemaess Realtest 17 sowie danach die abschliessende Gegenpruefung dieses Gates.
-Planen-Radius (272,6 s bis `M30`, Backplot) und DIN-76-Aussen/-Innenfall
-(103 s/122 s bis Programmende, Backplot) besitzen bereits dokumentierte
-QtDragon-SIM-Nachweise. Die allgemeine Testbasis sowie die zwoelf Referenzen
-und 43 Matrixfaelle unter `rs274` sind erfolgreich; die zwoelf Referenzen
-liefen in QtDragon-SIM bis `M30`.
+`0.8.0-dev` ist inhaltlich freigabefertig - alle Abnahmekriterien oben sind
+erfuellt und gegengeprueft:
+
+- zylindrische Innenkontur/-stufe/-konus/-radius: `ngc/Innen_Stufe.ngc`,
+  `ngc/Innen_Konus.ngc`, `ngc/Innen_Radius.ngc` sowie die Matrixfaelle
+  `inside_cylinder_*`; Innenfreistich: Matrixfaelle
+  `thread_relief_inside_left/right.ngc`.
+- Vorschau/Subroutine/Schlichtweg: gemeinsame Primitive ueber
+  `preview_scene.py`/`gcode_*.py`, durch die bestehende Testsuite gedeckt.
+- lokale Freistiche mitten in einer Kontur: `ngc/Freistich_Mitte.ngc`.
+- keine ungenutzte Generator-Kopie: ein einziger Einstiegspunkt
+  (`generate_program_gcode()`, `gcode_program.py`) und je eine
+  `rough_turn_parallel_x/z()`-Implementierung (`gcode_roughing.py`).
+- G96/G97/CSS-Positionierung: `ngc/CSS_Wechsel.ngc`,
+  `tests/test_css_and_drill_validation.py`,
+  `tests/test_css_clearance.py`.
+- Planen-Kantenform "Radius": LES-036, `ngc/Planen_Radius.ngc`,
+  272,6 s AUTO-Lauf bis `M30`, Backplot.
+- Parserannahme: zwoelf Referenzen und 43 Matrixfaelle bestehen `rs274`
+  ohne Fehler.
+- SIM-/Backplot-Nachweise: Planen-Radius (272,6 s bis `M30`), DIN-76-
+  Aussen-/Innenfall (103 s/122 s bis Programmende) und die Innenbearbeitungs-
+  Richtungsvarianten (187,1 s/186,2 s bis `M30`, identische Endposition,
+  deckungsgleicher Backplot, je leerer NML-Fehlerkanal) besitzen
+  dokumentierte QtDragon-SIM-Nachweise. Die allgemeine Testbasis (877
+  Stub-/108 Real-Qt-Tests) ist erfolgreich; alle zwoelf Referenzen liefen
+  in QtDragon-SIM bis `M30`.
+
+Offen ist nur noch der eigentliche Release-Schritt (Merge `dev` -> `main`,
+Versionsbump, Tag) - dieser wird nicht ohne ausdrueckliche Anweisung
+ausgefuehrt.
 
 Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde ist kein
 0.8.0-Kriterium. Er bleibt zusammen mit den weiteren realen Maschinen-
