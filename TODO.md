@@ -323,9 +323,38 @@ und Vorderansicht weitgehend umgesetzt. Offen bleiben:
   verschlucken, statt ihn wie zuvor (als Absturz) sichtbar zu machen. Per
   entferntem Datenvertrag-Schluessel als echte Regression verifiziert: vor
   der Aenderung Prozessabsturz, danach sauberer, `caplog`-basierter
-  Testfehlschlag. 877 Stub-/108 Real-Qt-Tests bestanden. `ui_preview.py`
-  (32 weitere Vorkommen) ist damit noch NICHT bewertet - separater, groesserer
-  Schritt.
+  Testfehlschlag. 877 Stub-/108 Real-Qt-Tests bestanden. Zweiter Baustein
+  (2026-09-16): `ui_preview.py` (32 Vorkommen). 26 davon liessen sich
+  begrenzen - durchgaengig Qt-Widget-Methodenaufrufe auf `handler.preview`/
+  `preview_slice`/`btn_slice_view`/`btn_reset_view` oder auf per
+  `_get_widget_by_name()` ermittelte Objekte, deren Lebensdauer/Typ nicht
+  garantiert ist: `(RuntimeError, AttributeError)` (RuntimeError bei einem
+  zwischen Lookup und Aufruf zerstoerten C++-Qt-Objekt, AttributeError bei
+  fehlender Methode/fehlendem Attribut), bei `.connect()`-Aufrufen
+  zusaetzlich `TypeError` (nicht-kompatible Signatur). Dabei zwei echte
+  Fehleinschaetzungen gemacht und durch den vollen Testlauf sofort
+  gefunden: `update_slice_view_button()`s `button.setText()`/
+  `setToolTip()` zunaechst nur auf `RuntimeError` begrenzt, obwohl ein
+  minimaler Test-Stub ohne `setToolTip()`-Methode (uebliches Testmuster in
+  diesem Projekt) ein `AttributeError` ausloest - `test_keyway_preview.py::
+  test_toggle_slice_view_switches_main_preview_mode` schlug prompt fehl.
+  Ebenso `_current_language_code()`s eigener `get_widget_by_name()`-Aufruf:
+  liest `self.root_widget` OHNE `getattr()`-Fallback - auf einem
+  `object.__new__(HandlerClass)`-Test-Handler ohne dieses Attribut ebenfalls
+  ein `AttributeError`, nicht nur `RuntimeError`. Beide Male die Ausnahme-
+  liste um `AttributeError` ergaenzt, erneut den vollen Testlauf geprueft
+  (877/108 gruen). Zusaetzlich per Monkeypatch (analog zu
+  `preview_widget.py`) fuer `setup_slice_view()`/`on_toggle_slice_view()`
+  verifiziert: eine synthetische `KeyError` propagiert korrekt, eine echte
+  `RuntimeError` wird weiterhin sauber geschluckt. Die restlichen sechs
+  (`_current_op_type()`/`_collect_params()`/die Vorschau-Builder-Aufrufe/
+  die Warnungs-Aggregation/die Rohteil-/Rueckzugs-/Sperrzonen-Builder in
+  `collect_preview_state()` sowie `_detect_preview_collision()`) bleiben
+  offen - Fachlogik mit vielfaeltigen, nicht auf den ersten Blick
+  eingrenzbaren Fehlerursachen (Geometrie-/Zahlenkonvertierung ueber viele
+  verschiedene Op-Typen hinweg), im Gegensatz zu den mechanisch gleich-
+  foermigen Qt-Widget-Aufrufen bewusst NICHT im selben Schritt mit
+  erledigt.
 - [ ] jeden weiteren Extraktionsschritt mit einem kleinen Stub-Test und einem
   Real-Qt-Start pruefen; bestehende Vorschau-Pakete nicht erneut als offene
   Aufgaben dokumentieren.

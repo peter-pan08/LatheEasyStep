@@ -20,28 +20,34 @@ def setup_slice_view(handler) -> None:
     if getattr(handler, "_slice_view_setup_done", False):
         return
 
+    # LES-044: (RuntimeError, AttributeError) statt Exception - get_widget_
+    # by_name() faengt selbst schon fast jeden Fehler intern ab und liefert
+    # sonst None, aber sein schneller Pfad (getattr(widget_root, name, None))
+    # kann bei einem bereits zerstoerten C++-Qt-Objekt trotzdem ein
+    # RuntimeError("wrapped C/C++ object ... has been deleted") durchlassen -
+    # getattr() mit Default faengt nur AttributeError ab, kein RuntimeError.
     if handler.preview is None:
         try:
             handler.preview = handler._get_widget_by_name("previewWidget")
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
     if handler.preview_slice is None:
         try:
             handler.preview_slice = handler._get_widget_by_name("previewSliceWidget")
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
     if handler.btn_slice_view is None:
         try:
             handler.btn_slice_view = handler._get_widget_by_name("btn_slice_view")
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
     if getattr(handler, "btn_reset_view", None) is None:
         try:
             handler.btn_reset_view = handler._get_widget_by_name("btn_reset_view")
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             handler.btn_reset_view = None
 
@@ -60,10 +66,15 @@ def setup_slice_view(handler) -> None:
         return
     handler._slice_view_setup_done = True
 
+    # LES-044: (RuntimeError, AttributeError) fuer alle folgenden Qt-Widget-
+    # Methodenaufrufe in dieser Funktion - RuntimeError bei einem zwischen
+    # Lookup und Aufruf zerstoerten C++-Qt-Objekt, AttributeError bei einer
+    # fehlenden Methode/einem fehlenden Handler-Attribut (z. B. beim
+    # `.connect()` auf einen nicht vorhandenen Handler-Slot).
     if handler.preview is not None:
         try:
             handler.preview.set_view_mode("side")
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
 
@@ -71,7 +82,7 @@ def setup_slice_view(handler) -> None:
         try:
             handler.preview_slice.set_view_mode("front")
             handler.preview_slice.setVisible(False)
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "setup_slice_view", exc)
             pass
 
@@ -83,24 +94,24 @@ def setup_slice_view(handler) -> None:
             handler.btn_slice_view.setToolTip(TRANSLATIONS.tr("runtime.preview.slice_view.tooltip", lang))
             handler.btn_slice_view.toggled.connect(handler._on_toggle_slice_view)
             handler._log("[LatheEasyStep] slice toggle connected", level="info")
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError):
             handler._log("[LatheEasyStep] slice toggle connect failed", level="warning")
     if handler.btn_reset_view is not None:
         try:
             handler.btn_reset_view.clicked.connect(handler._reset_preview_view)
             handler._log("[LatheEasyStep] reset view button connected", level="info")
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError):
             handler._log("[LatheEasyStep] reset view button connect failed", level="warning")
     if handler.preview is not None:
         try:
             handler.preview.sliceChanged.connect(handler._on_slice_changed)
             handler._log("[LatheEasyStep] sliceChanged signal connected", level="info")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError) as exc:
             handler._log(f"[LatheEasyStep] sliceChanged signal connect failed: {exc}", level="warning")
         try:
             handler.preview._slice_change_callback = handler._on_slice_changed
             handler._log("[LatheEasyStep] slice callback fallback installed", level="info")
-        except Exception as exc:
+        except (RuntimeError, AttributeError) as exc:
             handler._log(f"[LatheEasyStep] slice callback fallback install failed: {exc}", level="warning")
 
 
@@ -115,8 +126,10 @@ def reset_preview_view(handler) -> None:
         reset = getattr(widget, "reset_view", None)
         if callable(reset):
             try:
+                # LES-044: RuntimeError bei zerstoertem C++-Qt-Objekt
+                # zwischen getattr() und Aufruf.
                 reset()
-            except Exception as exc:
+            except RuntimeError as exc:
                 _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "reset_preview_view", exc)
                 pass
 
@@ -126,19 +139,28 @@ def update_slice_view_button(handler, checked: bool) -> None:
     if button is None:
         return
     try:
+        # LES-044: _current_language_code() faengt ihre eigenen Qt-Wert-
+        # Zugriffe (combo.currentData()/currentIndex()) bereits intern ab,
+        # aber ihr get_widget_by_name()-Aufruf liest "self.root_widget"
+        # ohne getattr()-Fallback - auf einem minimalen Test-Handler ohne
+        # dieses Attribut (verbreitetes Testmuster in diesem Projekt) loest
+        # das ein AttributeError aus, kein RuntimeError.
         lang = handler._current_language_code() if hasattr(handler, "_current_language_code") else "de"
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "update_slice_view_button", exc)
         lang = "de"
     text_key = "runtime.preview.slice_view.off" if checked else "runtime.preview.slice_view.on"
     try:
+        # AttributeError zusaetzlich zu RuntimeError: "button" ist ein per
+        # Widget-Lookup/Test-Double ermitteltes Objekt, dessen Typ (und
+        # damit das Vorhandensein von setText()) nicht garantiert ist.
         button.setText(TRANSLATIONS.tr(text_key, lang))
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "update_slice_view_button", exc)
         pass
     try:
         button.setToolTip(TRANSLATIONS.tr("runtime.preview.slice_view.tooltip", lang))
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "update_slice_view_button", exc)
         pass
 
@@ -411,29 +433,34 @@ def on_toggle_slice_view(handler, checked: bool) -> None:
         f"slice_enabled={getattr(handler.preview, 'slice_enabled', None)}",
         level="info",
     )
+    # LES-044: (RuntimeError, AttributeError) - Qt-Widget-Methodenaufrufe auf
+    # handler.preview/preview_slice/btn_slice_view, deren Lebensdauer nicht
+    # garantiert ist (siehe Begruendung in setup_slice_view() oben).
     try:
         handler.preview.set_slice_enabled(checked)
-    except Exception:
+    except (RuntimeError, AttributeError):
         handler._log("[LatheEasyStep] set_slice_enabled failed", level="warning")
     try:
         handler.preview.set_view_mode("side")
-    except Exception:
+    except (RuntimeError, AttributeError):
         handler._log("[LatheEasyStep] set_view_mode failed", level="warning")
     if handler.preview_slice is not None:
         try:
             handler.preview_slice.setVisible(checked)
-        except Exception:
+        except (RuntimeError, AttributeError):
             handler._log("[LatheEasyStep] preview_slice visibility change failed", level="warning")
     if handler.btn_slice_view is not None:
         try:
             update_slice_view_button(handler, checked)
-        except Exception:
+        except (RuntimeError, AttributeError):
             handler._log("[LatheEasyStep] btn_slice_view text update failed", level="warning")
     if checked:
         try:
+            # _suggest_slice_z_for_preview() -> default_slice_z_for_operation()
+            # faengt ihre eigenen Umrechnungsfehler bereits intern ab.
             suggested = handler._suggest_slice_z_for_preview()
             handler.preview.set_slice_z(0.0 if suggested is None else suggested, emit=True)
-        except Exception:
+        except (RuntimeError, AttributeError):
             handler._log("[LatheEasyStep] set_slice_z failed", level="warning")
     handler._log(
         f"[LatheEasyStep] slice view updated: mode={getattr(handler.preview, 'view_mode', None)} "
@@ -448,10 +475,14 @@ def on_toggle_slice_view(handler, checked: bool) -> None:
 def sync_slice_widget(handler) -> None:
     if handler.preview is None or handler.preview_slice is None:
         return
+    # LES-044: (RuntimeError, AttributeError) fuer die Qt-Widget-Aufrufe
+    # unten - siehe Begruendung in setup_slice_view() oben; das Debug-Log
+    # zwischendrin bekommt zusaetzlich TypeError (Formatierungs-/len()-
+    # Fehler bei unerwarteten Attributwerten statt einem Qt-Aufruf).
     visible = None
     try:
         visible = bool(handler.preview_slice.isVisible())
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         visible = None
     try:
@@ -462,22 +493,22 @@ def sync_slice_widget(handler) -> None:
             f"active_index={getattr(handler.preview, 'active_index', None)!r}",
             level="debug",
         )
-    except Exception as exc:
+    except (RuntimeError, TypeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_slice_z(getattr(handler.preview, "slice_z", 0.0))
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_view_mode("front")
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.set_paths(getattr(handler.preview, "paths", []), getattr(handler.preview, "active_index", None))
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
@@ -485,12 +516,12 @@ def sync_slice_widget(handler) -> None:
             getattr(handler.preview, "front_program", {}),
             getattr(handler.preview, "front_operation", None),
         )
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
     try:
         handler.preview_slice.update()
-    except Exception as exc:
+    except (RuntimeError, AttributeError) as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "sync_slice_widget", exc)
         pass
 

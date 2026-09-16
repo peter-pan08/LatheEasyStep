@@ -17,6 +17,48 @@
 
 ## [Unreleased]
 
+### LES-044: `except Exception`-Fallbacks in ui_preview.py einzeln bewertet 2026-09-16
+
+- Zweiter Baustein derselben Aufraeumung: `ui_preview.py` (32 Vorkommen).
+  26 davon liessen sich begrenzen - durchgaengig Qt-Widget-Methodenaufrufe
+  auf `handler.preview`/`preview_slice`/`btn_slice_view`/`btn_reset_view`
+  oder auf per `_get_widget_by_name()` ermittelte Objekte:
+  `(RuntimeError, AttributeError)` (RuntimeError bei einem zwischen Lookup
+  und Aufruf zerstoerten C++-Qt-Objekt, AttributeError bei fehlender
+  Methode/fehlendem Attribut), bei `.connect()`-Aufrufen zusaetzlich
+  `TypeError`.
+- Dabei zwei echte Fehleinschaetzungen gemacht und durch den vollen
+  Testlauf sofort gefunden, nicht nur durch Ueberlegung: `update_slice_
+  view_button()`s `button.setText()`/`setToolTip()` zunaechst nur auf
+  `RuntimeError` begrenzt - ein minimaler Test-Stub ohne `setToolTip()`
+  (uebliches Testmuster in diesem Projekt) loeste tatsaechlich ein
+  `AttributeError` aus und liess `test_keyway_preview.py::test_toggle_
+  slice_view_switches_main_preview_mode` fehlschlagen. Ebenso `_current_
+  language_code()`s eigener `get_widget_by_name()`-Aufruf: liest
+  `self.root_widget` ohne `getattr()`-Fallback - auf einem
+  `object.__new__(HandlerClass)`-Test-Handler ohne dieses Attribut
+  ebenfalls ein `AttributeError`, kein `RuntimeError`. Beide Male die
+  Ausnahmeliste korrigiert, erneut den vollen Testlauf geprueft (877
+  Stub-/108 Real-Qt-Tests gruen). Lehre: bei diesem Muster IMMER
+  `AttributeError` mitfangen, nie nur `RuntimeError` allein - Test-Stubs
+  in diesem Projekt implementieren durchgehend nur die Methoden, die der
+  jeweilige Test braucht.
+- Zusaetzlich per Monkeypatch (wie beim ersten Baustein) fuer
+  `setup_slice_view()`/`on_toggle_slice_view()` verifiziert: eine
+  synthetische `KeyError` propagiert korrekt (statt geschluckt zu
+  werden), eine echte `RuntimeError` wird weiterhin sauber abgefangen.
+- Die restlichen sechs Vorkommen (`_current_op_type()`/`_collect_params()`/
+  die Vorschau-Builder-Aufrufe/die Warnungs-Aggregation/die Rohteil-/
+  Rueckzugs-/Sperrzonen-Builder in `collect_preview_state()` sowie
+  `_detect_preview_collision()`) bleiben bewusst offen - Fachlogik mit
+  vielfaeltigen, nicht auf den ersten Blick eingrenzbaren Fehlerursachen
+  ueber viele verschiedene Operationstypen hinweg, anders als die
+  mechanisch gleichfoermigen Qt-Widget-Aufrufe dieses Schritts.
+- 877 Stub-/108 Real-Qt-Tests bestanden. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet, kein Verbindungsfehler im
+  Log (`slice toggle connect failed` u. ae. traten nicht auf). Details:
+  TODO.md (LES-044).
+
 ### LES-044: `except Exception`-Fallbacks in preview_widget.py einzeln bewertet 2026-09-16
 
 - Alle acht Vorkommen in `preview_widget.py` einzeln bewertet (erster
