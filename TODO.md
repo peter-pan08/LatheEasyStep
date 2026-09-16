@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 873 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
+- 875 Stub-Qt-Tests und 106 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -243,6 +243,27 @@ und Vorderansicht weitgehend umgesetzt. Offen bleiben:
 - [ ] verbleibende fachliche Darstellungsberechnungen aus
   `preview_widget.py`/`ui_preview.py` in Qt-freie Planfunktionen verschieben;
   Qt-Code soll nur Stil, Widget-Zustand und QPainter-Ausgabe enthalten.
+  Teilschritt (2026-09-16): die Ringe/Fuellungen der Vorderansicht
+  (`_paint_front_view()`) folgen jetzt demselben Datenvertrag-Muster wie die
+  Seitenansicht (LES-051) - `FRONT_VIEW_RING_STYLES` (Rohteil-Aussen-/
+  Innendurchmesser, sichtbare Aussen-/Innen-Durchmesserringe, aktiver Ring)
+  und `FRONT_VIEW_FILL_COLORS` (Endkontur-Fuellung/-Loch, RGBA wegen
+  Transparenz) in `preview_geometry.py` decken alle sieben `style_key`-Werte
+  ab, die `build_front_view_draw_plan()` (`preview_scene.py`) erzeugen kann.
+  Zwei neue Stub-Tests (`tests/test_preview_legend_and_status_layout.py`,
+  875 Stub-/106 Real-Qt-Tests bestanden), per entferntem Schluessel als
+  echte Regression verifiziert. Real-Qt-Abdeckung ueber die bereits
+  bestehenden, weiterhin gruenen Tests
+  `test_front_view_paints_external_abspanen_without_crash`/
+  `test_front_view_paints_internal_abspanen_without_crash`/
+  `test_front_view_paints_keyway_without_crash`
+  (`tests/test_preview_widget_paint_no_crash.py`), die `_paint_front_view()`
+  mit echtem PyQt5 durchlaufen. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet. Bewusst NICHT mit erledigt:
+  die uebrigen Qt-Farbliterale in `preview_widget.py` (Achsen/Gitterticks,
+  Legende-/Status-Box-Rahmen, Keilnut-Overlay, Schnittlinie) sind
+  Chrome/Struktur statt semantischer Rollen-Stile und damit ein groesserer,
+  separat zu bewertender Umfang als die bisherigen Datenvertrag-Schritte.
 - [ ] die verbleibenden breiten `except Exception`-Fallbacks einzeln bewerten
   und, wo fachlich moeglich, auf erwartete Ausnahmetypen begrenzen. Das
   inzwischen vorhandene Debug-Logging bleibt bis dahin die bewusste

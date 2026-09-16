@@ -1,4 +1,6 @@
 from lathe_easystep.preview_geometry import (
+    FRONT_VIEW_FILL_COLORS,
+    FRONT_VIEW_RING_STYLES,
     LEGEND_ENTRIES,
     PREVIEW_DRAW_STYLES,
     STATUS_BOX_STYLE,
@@ -133,3 +135,32 @@ def test_preview_draw_styles_are_a_pure_qt_free_data_contract():
         for channel in (r, g, b):
             assert isinstance(channel, int) and 0 <= channel <= 255
         assert isinstance(entry["width"], int) and entry["width"] > 0
+
+
+def test_front_view_ring_styles_are_a_pure_qt_free_data_contract():
+    """LES-044/LES-051: analog zu PREVIEW_DRAW_STYLES - kein QColor/
+    QtCore.Qt-Enum in FRONT_VIEW_RING_STYLES selbst. Deckt genau die
+    style_key-Werte ab, die build_front_view_draw_plan() (preview_scene.py)
+    fuer nicht gefuellte Kreise erzeugt - fehlt einer, wuerde
+    _paint_front_view() mit einem KeyError abstuerzen."""
+    expected_keys = {"stock_od", "stock_id", "outer_ring", "inner_ring", "active_ring"}
+    assert set(FRONT_VIEW_RING_STYLES.keys()) == expected_keys
+    for entry in FRONT_VIEW_RING_STYLES.values():
+        assert set(entry.keys()) == {"color", "width", "style"}
+        assert entry["style"] in ("solid", "dash", "dashdot")
+        r, g, b = entry["color"]
+        for channel in (r, g, b):
+            assert isinstance(channel, int) and 0 <= channel <= 255
+        assert isinstance(entry["width"], int) and entry["width"] > 0
+
+
+def test_front_view_fill_colors_are_a_pure_qt_free_data_contract():
+    """LES-044/LES-051: die restlichen zwei style_key-Werte, die
+    build_front_view_draw_plan() mit filled=True erzeugt (Endkontur-
+    Fuellung/-Loch) - RGBA statt RGB, da die Fuellung Transparenz nutzt."""
+    expected_keys = {"end_contour_fill", "end_contour_hole"}
+    assert set(FRONT_VIEW_FILL_COLORS.keys()) == expected_keys
+    for color in FRONT_VIEW_FILL_COLORS.values():
+        assert len(color) == 4
+        for channel in color:
+            assert isinstance(channel, int) and 0 <= channel <= 255

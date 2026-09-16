@@ -32,6 +32,8 @@ from .preview_geometry import (
     front_operation_side,
     front_reference_diameter,
     front_slice_profile,
+    FRONT_VIEW_FILL_COLORS,
+    FRONT_VIEW_RING_STYLES,
     interp_x_at_z,
     interp_x_hits_at_z,
     legend_layout,
@@ -366,12 +368,22 @@ class LathePreviewWidget(QtWidgets.QWidget):
             inner_hits=inner_hits,
             active_diameters=active_diams,
         )
+        # LES-044/LES-051: Farben/Breiten/Stile kommen aus dem reinen
+        # Datenvertrag FRONT_VIEW_RING_STYLES (preview_geometry.py). Stil-
+        # Mapping bewusst lokal (nicht Modulebene) - siehe Begruendung beim
+        # Legende-Stil-Mapping weiter unten in dieser Datei.
+        front_ring_line_styles = {
+            "solid": QtCore.Qt.SolidLine,
+            "dash": QtCore.Qt.DashLine,
+            "dashdot": QtCore.Qt.DashDotLine,
+        }
         ring_styles = {
-            "stock_od": (QtGui.QColor(150, 150, 150), 1, QtCore.Qt.DashLine),
-            "stock_id": (QtGui.QColor(110, 110, 110), 1, QtCore.Qt.DashLine),
-            "outer_ring": (QtGui.QColor(255, 80, 80), 2, QtCore.Qt.SolidLine),
-            "inner_ring": (QtGui.QColor(255, 170, 70), 2, QtCore.Qt.SolidLine),
-            "active_ring": (QtGui.QColor(255, 220, 120), 1, QtCore.Qt.SolidLine),
+            key: (
+                QtGui.QColor(*entry["color"]),
+                entry["width"],
+                front_ring_line_styles[entry["style"]],
+            )
+            for key, entry in FRONT_VIEW_RING_STYLES.items()
         }
 
         screen_plan = build_front_view_screen_plan(
@@ -393,9 +405,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
             painter.setPen(QtCore.Qt.NoPen)
             for circle in end_contour:
                 painter.setBrush(
-                    QtGui.QBrush(QtCore.Qt.black)
-                    if circle.style_key == "end_contour_hole"
-                    else QtGui.QBrush(QtGui.QColor(255, 80, 80, 70))
+                    QtGui.QBrush(QtGui.QColor(*FRONT_VIEW_FILL_COLORS[circle.style_key]))
                 )
                 painter.drawEllipse(QtCore.QPointF(*circle.center), circle.radius, circle.radius)
             painter.restore()

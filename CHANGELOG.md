@@ -17,6 +17,34 @@
 
 ## [Unreleased]
 
+### LES-044/LES-051: Vorderansicht-Ringe/-Fuellungen als austauschbarer Datenvertrag 2026-09-16
+
+- Gleiche Aufraeumung wie beim Haupt-Vorschau-Canvas, jetzt fuer
+  `_paint_front_view()`: `FRONT_VIEW_RING_STYLES` (Rohteil-Aussen-/
+  Innendurchmesser, sichtbare Aussen-/Innen-Durchmesserringe, aktiver Ring)
+  und `FRONT_VIEW_FILL_COLORS` (Endkontur-Fuellung/-Loch, RGBA wegen
+  Transparenz) in `preview_geometry.py` decken alle sieben `style_key`-
+  Werte ab, die `build_front_view_draw_plan()` (`preview_scene.py`)
+  erzeugen kann - vorher direkt als `QColor`/`QtCore.Qt.<Style>`/
+  `QtCore.Qt.black` in `preview_widget.py` hartkodiert.
+- Zwei weitere Stub-Tests pruefen, dass beide Datenvertraege genau die von
+  `build_front_view_draw_plan()` moeglichen Schluessel abdecken (ein
+  fehlender wuerde `_paint_front_view()` mit `KeyError` abstuerzen lassen) -
+  per entferntem Schluessel als echte Regression verifiziert.
+- Kein separater Standalone-Klicktest fuer die Vorderansicht noetig: die
+  bereits bestehenden, weiterhin gruenen Real-Qt-Tests
+  `test_front_view_paints_external_abspanen_without_crash`,
+  `test_front_view_paints_internal_abspanen_without_crash` und
+  `test_front_view_paints_keyway_without_crash`
+  (`tests/test_preview_widget_paint_no_crash.py`) durchlaufen
+  `_paint_front_view()` bereits mit echtem PyQt5 und decken damit den
+  neuen Ring-/Fuellungs-Code ab. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet.
+- 875 Stub-/106 Real-Qt-Tests bestanden. Die uebrigen Qt-Farbliterale in
+  `preview_widget.py` (Achsen/Gitterticks, Legende-/Status-Box-Rahmen,
+  Keilnut-Overlay, Schnittlinie) sind Chrome/Struktur statt semantischer
+  Rollen-Stile und bleiben bewusst offen - siehe TODO.md (LES-044).
+
 ### LES-051: Haupt-Vorschau-Canvas als austauschbarer Datenvertrag 2026-09-15
 
 - Dritter Baustein derselben Aufraeumung: der Haupt-Vorschau-Canvas

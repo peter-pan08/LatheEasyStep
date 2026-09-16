@@ -293,6 +293,34 @@ die exakt gleichwertigen RGB-Werte umgestellt: gray=(128,128,128),
 red=(255,0,0), lime=(0,255,0))."""
 
 
+FRONT_VIEW_RING_STYLES: Dict[str, Dict[str, object]] = {
+    "stock_od": {"color": (150, 150, 150), "width": 1, "style": "dash"},
+    "stock_id": {"color": (110, 110, 110), "width": 1, "style": "dash"},
+    "outer_ring": {"color": (255, 80, 80), "width": 2, "style": "solid"},
+    "inner_ring": {"color": (255, 170, 70), "width": 2, "style": "solid"},
+    "active_ring": {"color": (255, 220, 120), "width": 1, "style": "solid"},
+}
+"""LES-044/LES-051: reiner Datenvertrag fuer die gezeichneten Ringe der
+Vorderansicht - deckt genau die `style_key`-Werte ab, die
+`build_front_view_draw_plan()` (`preview_scene.py`) fuer nicht gefuellte
+Kreise erzeugt (Rohteil-Aussen-/Innendurchmesser, sichtbare Aussen-/Innen-
+Durchmesserringe, aktiver Ring). Vorher direkt als `QColor`/
+`QtCore.Qt.<Style>`-Werte im lokalen `ring_styles`-Dict in
+`_paint_front_view()` (`preview_widget.py`) hartkodiert."""
+
+
+FRONT_VIEW_FILL_COLORS: Dict[str, Tuple[int, int, int, int]] = {
+    "end_contour_fill": (255, 80, 80, 70),
+    "end_contour_hole": (0, 0, 0, 255),
+}
+"""LES-044/LES-051: reiner Datenvertrag fuer die gefuellte Endkontur der
+Vorderansicht - deckt die restlichen zwei `style_key`-Werte ab, die
+`build_front_view_draw_plan()` erzeugen kann (`filled=True`). RGBA statt
+RGB, da die Endkontur-Fuellung eine Transparenz nutzt. Vorher direkt als
+`QColor(255, 80, 80, 70)`/`QtCore.Qt.black` in `_paint_front_view()`
+hartkodiert."""
+
+
 def legend_layout(
     item_count: int,
     *,
