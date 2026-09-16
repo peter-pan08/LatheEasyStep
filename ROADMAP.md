@@ -1,6 +1,6 @@
 # Roadmap LatheEasyStep
 
-Stand: 2026-09-15
+Stand: 2026-09-16
 
 LatheEasyStep soll ein werkstattnahes, konversationelles Drehpanel fuer
 LinuxCNC werden. Die Roadmap beschreibt Release-Ziele und Abhaengigkeiten.
@@ -11,9 +11,10 @@ Verifikation in
 ## Ausgangsstand
 
 - `main`: Version 0.7.0 als lauffaehige Basis
-- `dev`: aktueller Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile Basis
+- `dev`: aktueller Entwicklungsstand `0.8.0-dev`; `main` bleibt die stabile Basis
 - aktueller Teststand: `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`
-- UI-Shell und acht Reiter sind bereits in Teil-UIs getrennt
+- UI-Shell, acht Reiter, Step-Verwaltung und Vorschau sind bereits in Teil-UIs
+  und Fachmodule getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,
   nichtleere Sprachschluessel
 - G53-Werkzeugwechsel, erster Werkzeugwechsel, Tooltips, Sprachumschaltung,
@@ -23,38 +24,15 @@ Verifikation in
 Der Umfang auf `dev` ist als Entwicklung zu Version 0.8.0 einzuordnen, nicht
 als kleine Patchversion 0.7.1.
 
-## 0.8.0-alpha - Sicherheits- und Realtest-Gate
-
-Ziel: Keine bekannte Operation darf unsichere, leere oder widerspruechlich
-gewarnte Fahrwege erzeugen.
-
-Verbindliche Aufgaben:
-
-- LES-001 sichere Anfahrt zwischen Operationen
-- LES-039 sichere erste Freifahrt und Werkzeugwechsel
-- LES-040 vollstaendige Zahlen- und Wertebereichspruefung
-- LES-003 Innen-Schruppen Parallel-Z abschliessend verifizieren
-- LES-005 Innen-Schlichtanfahrt und Rueckzug absichern
-
-Abnahmekriterien:
-
-- kein offener P0-Punkt
-- kein diagonaler Eilgang allein aufgrund von `_is_at_safe`
-- kein erfolgreicher Roughing-Step ohne reale Schnittbewegung
-- Innen-Schruppen besitzt einen bestaetigten Referenz-, Backplot- und
-  Trockenlauffall fuer monoton steigende und fallende Z-Konturen
-- mindestens ein G7-Bogen mit `I != 0` wird sowohl im direkten Schlichtweg
-  als auch in der G71/G72-Subroutine vom LinuxCNC-Parser akzeptiert
-- Warnung und ausgegebener Fahrweg widersprechen sich nicht
-- komplette Testsuite, Referenzprogramme und LinuxCNC-Parser laufen erfolgreich
-
-## 0.8.0 - Belastbare Kontur- und Innenbearbeitung
+## 0.8.0 - Generator- und Sicherheitsrelease
 
 Ziel: Die angebotenen Konturfaelle sind innen und aussen nachvollziehbar
 nutzbar und verwenden in Vorschau und G-Code dieselbe Geometrie.
 
 Verbindliche Aufgaben:
 
+- LES-001/039 sichere Anfahrten, Freifahrten und Werkzeugwechsel
+- LES-003/005 belastbare Innen-Schrupp- und Schlichtfahrwege
 - LES-006 Rueckzugsstrategie je Bearbeitungsart
 - LES-010 lokale DIN-Freistichgeometrie
 - LES-012 G1/G2/G3-Primitive durchgaengig erhalten
@@ -76,29 +54,45 @@ Abnahmekriterien:
 - die im UI angebotene Planen-Kantenform "Radius" besitzt Generator-,
   Preview-, Save/Load- und LinuxCNC-Referenztests
 - alle angebotenen 0.8.0-Faelle werden von LinuxCNC ohne Parserfehler angenommen
+- Referenzprogramme bestehen die dokumentierten SIM-/Backplot-Nachweise
 
-## 0.9.0 - Bedienung und technische Konsolidierung
+Eine 0.8.1 oder 0.8.2 wird vorab nicht verplant. Patchversionen bleiben
+spaeter tatsaechlichen Fehlerkorrekturen des 0.8.0-Releases vorbehalten.
 
-Ziel: Die funktionale Basis wird leichter wartbar, besser testbar und im
-Werkstattalltag eindeutiger.
+## 0.9.0 - Panel-, Zustands- und Datenarchitektur
 
-Aufgabenbereiche:
+Ziel: Die in 0.8.0 verifizierte Generatorbasis wird in eine dauerhaft
+wartbare Panelarchitektur eingebettet. Aenderungen an Darstellung und
+Bedienung duerfen Bearbeitungsdaten und G-Code nicht beeinflussen.
 
-- LES-018 optionale G70-Wiederverwendung
-- LES-020 weitere Handler-Extraktionen
+Verbindliche Aufgaben:
+
 - LES-022 zentraler Bewegungs- und Modalzustand
-- LES-024 Vorschau-/Step-UI und Controllergrenzen
-- LES-027 Embedded-/Standalone-Performance
-- LES-028 normalisierte Werkzeug- und G76-Daten
-- LES-031 redundante Bewegungen und Modals
-- LES-032 Werkzeuggeometrie und Tooltable-Plausibilitaet
-- LES-033 reale Gewindevorschau
-- LES-034 fachlich getrennte Preview-Pipeline
-- LES-035 Embedded-/Standalone-Paritaet
+- LES-044 vollstaendige Trennung von Vorschaugeometrie und Qt-Darstellung
+- LES-051 Panel-Grundgeruest und Darstellungsadapter
+- LES-052 Zustandsmodell, Controller und Wiederherstellung
+- LES-053 Programm-/Step-Dateiformat versionieren
+- LES-054 deterministische Programmerzeugung
+- LES-032 normalisierte Werkzeuggeometrie und Tooltable-Auswertung
 
-Die bereits erledigte Trennung der acht Bearbeitungsreiter wird nicht erneut
-geplant. Offen bleiben Vorschau, Step-Verwaltung und saubere Schnittstellen
-zwischen den Modulen.
+Abnahmekriterien:
+
+- Generator bleibt vollstaendig Qt-unabhaengig
+- UI-Fragmente besitzen keinen fachlichen Zustand
+- `ProgramState`, `OperationState`, `ToolTableState`, `ViewState`,
+  `DirtyState` und `RuntimeState` besitzen definierte Eigentuemer
+- Embedded und Standalone verwenden denselben Ladevertrag
+- optische Ressourcen-Aenderungen veraendern weder Programmdaten noch G-Code
+- Bewegungs- und Modalzustaende werden zentral gefuehrt
+- Save/Load stellt fachlichen Zustand reproduzierbar wieder her
+- unterstuetzte Dateiformate werden zentral migriert; unbekannte neuere
+  Versionen werden sauber abgelehnt
+- gleiche normalisierte Programmdaten erzeugen unabhaengig von UI, Sprache,
+  Theme und Ladeweg identischen G-Code
+
+Die bereits erledigte Trennung der Bearbeitungsreiter wird nicht erneut
+geplant. LES-055 beschreibt eine sicherheitsrelevante Erweiterung fuer die
+Maschinenprofil-Kompatibilitaet und ist fuer 1.0.0 verpflichtend.
 
 ## 1.0.0 - Werkstattgeeigneter dokumentierter Stand
 
@@ -112,6 +106,10 @@ Voraussetzungen:
 - jede angebotene Bearbeitungsart besitzt mindestens ein Referenzprogramm
 - Innen- und Aussenvarianten sind getrennt getestet
 - Save/Load-Roundtrips fuer aktuelle und unterstuetzte aeltere Dateien
+- versioniertes Dateiformat mit getesteten Migrationen; unbekannte neuere
+  Versionen werden nicht stillschweigend geladen
+- deterministische G-Code-Erzeugung aus normalisierten Programmdaten
+- Maschinenprofil-Identitaet und erkennbare Kompatibilitaetspruefung
 - LinuxCNC-Parsing und Backplot aller Referenzprogramme
 - dokumentierte Trockenlaeufe an der realen Maschine
 - konsistente Vorschau- und G-Code-Geometrie

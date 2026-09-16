@@ -1,8 +1,8 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.7.0+unreleased`
-Status Date: `2026-09-09`
+Current Version: `0.8.0-dev`
+Status Date: `2026-09-16`
 Primary Test Branch: `dev`
 
 Deutsch
@@ -27,13 +27,12 @@ CAM-Ersatz.
 ## Projektstatus
 
 Der Stand wurde auch auf dem nativen LinuxCNC-Rechner nachgeprueft:
-843/102 Tests und alle 55 Interpreterfaelle (zwoelf Referenzen, 43
-Matrixfaelle) bestanden. Nach einem SIM-Konfigurationsfix liegen zudem
-echte AUTO-Trockenlaeufe bis `M30` inkl. lesbarem Backplot-Screenshot
-fuer die drei Innenkontur-Referenzen vor. Details im
+877 Stub-Qt- und 108 Real-Qt-Tests sowie alle 55 Interpreterfaelle
+(zwoelf Referenzen, 43 Matrixfaelle) bestanden. Alle zwoelf Referenzen
+wurden in der QtDragon-SIM bis `M30` ausgefuehrt. Details im
 [Pruefbericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
 
-Stand: Version 0.7.0 + Unreleased (Entwicklung fuer 0.8.0), 14. September 2026
+Stand: Version 0.8.0-dev, 16. September 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -43,7 +42,7 @@ weiter als ein reiner Prototyp:
 - Save/Load fuer einzelne Steps und komplette Programme ist vorhanden
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
-- Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.7.0 deutlich weiter modularisiert
+- Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.8.0 deutlich weiter modularisiert
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
@@ -52,7 +51,7 @@ weiter als ein reiner Prototyp:
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0` plus aktuelle `Unreleased`-Erweiterungen.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.8.0-dev`.
 
 Beim inneren Schlichten bleibt das Werkzeug fuer die axiale Anfahrt bis zur
 Z-Lage des Konturstarts auf der im Programmkopf festgelegten XRI-Ebene. Erst
@@ -470,7 +469,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.7.0 + Unreleased (development toward 0.8.0), September 9, 2026.
+Current documented state: Version 0.8.0-dev, September 16, 2026.
 
 For internal finishing, the tool stays on the XRI clearance diameter while
 moving axially to the contour start Z position. It then feeds radially to the
@@ -489,7 +488,7 @@ early prototype:
 - save/load for single steps and complete programs is available
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
-- handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
+- handler, generator, contour and preview logic have been modularized substantially further for version 0.8.0
 - the current development baseline is validated with `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell; eight operation tabs, the step list/program management area and the action button bar live as separate `.ui` fragments under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys

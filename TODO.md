@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-09-15
+Stand: 2026-09-16
 
 Diese Datei enthaelt ausschliesslich offene Aufgaben. Abgeschlossene Arbeiten,
 Befunde und historische Teststaende stehen im [CHANGELOG.md](CHANGELOG.md) und
@@ -8,7 +8,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## Verifizierte Basis
 
-- Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
+- Branch `dev`, Entwicklungsstand `0.8.0-dev`; `main` bleibt die stabile
   0.7.0-Basis.
 - 877 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
@@ -229,6 +229,9 @@ Aenderung veraendern.
   ohne erwartete optionale Ressourcenfehler zu verschlucken.
 - [ ] Fehlerdiagnosen zentral sammeln und fuer Log, UI-Warnung und Tests
   strukturiert nutzbar machen.
+- [ ] Fehlerklassen vereinheitlichen: `INFO`, `WARNING`, `BLOCKING_ERROR` und
+  `INTERNAL_ERROR`; insbesondere muss klar sein, wann kein G-Code entstehen
+  darf.
 
 ### 4. Bedienbarkeit und Wiederherstellung
 
@@ -248,6 +251,8 @@ Aenderung veraendern.
   Werkzeuge, Parse-Warnungen, unbekannte Felder und optionales Zurueckschreiben.
 - [ ] Werkzeugdaten, Werkzeuggeometrie und Werkzeugdarstellung getrennt
   halten; dies bildet die Grundlage fuer die offenen LES-032-Pruefungen.
+- [ ] beim Laden oder Erzeugen gespeicherte erwartete Werkzeugmerkmale gegen
+  die aktuelle Werkzeugtabelle pruefen und erkennbare Abweichungen melden.
 - [ ] einen technischen Pruefbericht pro Programm vorsehen: Werkzeuge,
   Grenzen, Futter-Sperrzone, XRI/XRA, Vorschub/Drehzahl, Warnungen und
   verwendete G-Code-Strategien.
@@ -264,6 +269,54 @@ Aenderung veraendern.
 - [ ] bei Generator- oder Fahrwegaenderungen zusaetzlich Referenzen, statische
   NGC-Pruefung, `rs274` und erforderliche SIM-/Backplot-Nachweise aus den
   Abschlussregeln ausfuehren.
+
+## LES-053 Programm-/Step-Dateiformat versionieren
+
+Das Dateiformat wird vor 1.0 explizit versioniert. Migrationen gehoeren in
+eine zentrale Persistenzschicht und duerfen nicht von UI- oder Generator-
+Modulen erraten werden.
+
+- [ ] `format_version` in Programm- und Step-Dateien einfuehren.
+- [ ] Migrationen fuer alle unterstuetzten Altformate zentral definieren
+  (zunaechst `v1 -> v2` und `v2 -> v3`).
+- [ ] kein Format-Raten in Loadern, UI-Fragmenten oder Generatoren.
+- [ ] Roundtrip-Tests fuer jede unterstuetzte Altversion ergaenzen.
+- [ ] unbekannte neuere Versionen sauber ablehnen.
+- [ ] Migrationen duerfen die Quelldatei nicht ungefragt ueberschreiben.
+
+Ziel: 0.9.0, verpflichtendes 1.0.0-Gate.
+
+## LES-054 Deterministische Programmerzeugung
+
+Aus denselben normalisierten Programmdaten muss unabhaengig von Eingabeweg,
+Sprache, Vorschau, Theme sowie Embedded-/Standalone-Betrieb derselbe fachlich
+identische G-Code entstehen.
+
+- [ ] deterministische Erzeugung als expliziten Vertrag dokumentieren.
+- [ ] Eingabe -> Speichern -> Laden -> Erzeugen als Regression testen.
+- [ ] Erzeugen -> Vorschau/Theme-/Sprachwechsel -> Erzeugen als Regression
+  testen.
+- [ ] Embedded und Standalone gegen dieselben normalisierten Daten pruefen.
+- [ ] G-Code-Vergleiche auf fachlicher Ebene statt auf UI-Zustaenden aufbauen.
+
+Ziel: 0.9.0, Gate fuer die 1.0.0-Abnahme.
+
+## LES-055 Maschinenprofil-Identitaet und Kompatibilitaet
+
+Ein gespeichertes Programm muss erkennen lassen, fuer welches Maschinenprofil
+es erstellt wurde. Das Profil umfasst mindestens Achsgrenzen,
+Werkzeugwechselpunkt, Futter-/Sperrzonen, X/Z-Konvention und
+Drehzahlgrenzen.
+
+- [ ] stabile Identitaet und Version fuer Maschinenprofile definieren.
+- [ ] verwendetes Profil in Programm- oder Laufmetadaten speichern.
+- [ ] Abweichung zwischen gespeichertem und aktuellem Profil erkennen und
+  nachvollziehbar melden.
+- [ ] Kompatibilitaetspruefung fuer sicherheitsrelevante Profilparameter
+  spezifizieren; eine harte Sperre ist gesondert zu entscheiden.
+- [ ] positive, inkompatible und fehlende Profilfaelle testen.
+
+Ziel: 1.0.0.
 
 ## LES-044 Vorschau und Darstellung
 
@@ -390,6 +443,10 @@ Aussenableitung ist bewusst verworfen; Details stehen im Changelog.
   erweitern; keine Geometrie aus geratenen Defaults ableiten.
 - [ ] fuer jede neue Reichweiten-/Kollisionsregel einen positiven und einen
   negativen Test mit realistischen Tooltable-Daten ergaenzen.
+- [ ] Aenderungen der Werkzeugmerkmale seit Programmerstellung erkennen;
+  mindestens Werkzeugnummer, Radius und Orientierung vergleichen. Eine
+  Diskrepanz muss nachvollziehbar gemeldet werden, ohne pauschal jede
+  Abweichung als harte Sperre zu behandeln.
 
 ## LES-043 Gegenspindel
 
@@ -404,6 +461,9 @@ Die nicht implementierten Bedienelemente bleiben sichtbar, aber gesperrt.
 
 - [ ] unterschiedliche reale Drehmaschinen mit Achsgrenzen,
   Werkzeugwechselpositionen und Futterbauformen verifizieren.
+- [ ] Referenzprogramme als formale Schnittstelle dokumentieren: Quelldatei,
+  normalisierte Operationen, G-Code-Eigenschaften, `rs274`-, SIM- und
+  Backplot-Ergebnis sowie gegebenenfalls Maschinenlauf.
 
 Dieser Punkt ist mit der vorhandenen einzelnen QtDragon-SIM nicht abschliessbar
 und blockiert die 0.8.0-Softwarebasis nicht.
