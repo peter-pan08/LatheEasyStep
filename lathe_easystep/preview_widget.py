@@ -121,9 +121,11 @@ class LathePreviewWidget(QtWidgets.QWidget):
             return
         try:
             print(f"[LatheEasyStep][debug] {message}")
-        except Exception as exc:
-            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "_debug_slice", exc)
-            pass
+        except (OSError, UnicodeError) as exc:
+            # LES-044: nur Ausgabefehler abfangen (z. B. geschlossene Pipe/
+            # Terminal, nicht kodierbare Zeichen) - ein reiner Debug-Print
+            # ohne fachliche Logik, andere Ausnahmen sollen sichtbar bleiben.
+            _LOGGER.debug("[LatheEasyStep] %s: print failed: %s", "_debug_slice", exc)
 
     def _x_to_display(self, x_val: float) -> float:
         """Map stored X values (diameter programming) to displayed X values (radius)."""
@@ -198,6 +200,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
             )
         if emit:
             try:
+                # LES-044: bewusst breit - emit() ruft synchron beliebigen
+                # verbundenen Empfaengercode auf (Handler-Slots); dessen
+                # Ausnahmeklassen liegen ausserhalb der Kontrolle dieser
+                # Methode.
                 self.sliceChanged.emit(self.slice_z)
             except Exception as exc:
                 _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
@@ -205,6 +211,9 @@ class LathePreviewWidget(QtWidgets.QWidget):
             callback = getattr(self, "_slice_change_callback", None)
             if callable(callback):
                 try:
+                    # LES-044: bewusst breit - Fallback-Callback fuer
+                    # denselben Zweck wie sliceChanged.emit() oben, ebenso
+                    # beliebiger Fremdcode.
                     callback(self.slice_z)
                 except Exception as exc:
                     _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
@@ -580,8 +589,13 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self.primitives = primitives or []
         try:
             paths = self.primitives_to_points(self.primitives)
-        except Exception as exc:
-            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_primitives", exc)
+        except (TypeError, ValueError, IndexError) as exc:
+            # LES-044: preview_primitives_to_points() liest p1/p2/c aus
+            # primitive-Dicts per tuple()/Indexzugriff und rechnet damit
+            # (math.hypot) - fehlerhafte Primitives (falsche Laenge/Typ)
+            # loesen TypeError/IndexError/ValueError aus, keine anderen
+            # Ausnahmeklassen.
+            _LOGGER.debug("[LatheEasyStep] %s: malformed primitives ignored: %s", "set_primitives", exc)
             paths = []
         self.set_paths(paths)
 
@@ -590,12 +604,22 @@ class LathePreviewWidget(QtWidgets.QWidget):
         if getattr(self, "view_mode", "side") == "slice":
             try:
                 self._paint_slice_view(painter)
+            except Exception as exc:
+                # LES-044: bewusst breit, wie beim Seitenansicht-Zweig weiter
+                # unten - ohne dieses Netz beendet PyQt5 den ganzen Prozess,
+                # sobald _paint_slice_view() eine unbehandelte Ausnahme
+                # wirft (empirisch bestaetigt), statt nur diesen einen Frame
+                # auszulassen.
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent/slice", exc)
             finally:
                 painter.end()
             return
         if getattr(self, "view_mode", "side") == "front":
             try:
                 self._paint_front_view(painter)
+            except Exception as exc:
+                # LES-044: siehe Begruendung beim Schnittansicht-Zweig oben.
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent/front", exc)
             finally:
                 painter.end()
             return

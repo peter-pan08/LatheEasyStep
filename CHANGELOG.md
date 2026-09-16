@@ -17,6 +17,44 @@
 
 ## [Unreleased]
 
+### LES-044: `except Exception`-Fallbacks in preview_widget.py einzeln bewertet 2026-09-16
+
+- Alle acht Vorkommen in `preview_widget.py` einzeln bewertet (erster
+  Baustein - `ui_preview.py` mit 32 weiteren Vorkommen folgt separat).
+- Zwei sicher begrenzt: `_debug_slice()` (nur `print()`, jetzt
+  `(OSError, UnicodeError)`) und `set_primitives()` (liest primitive-Dicts
+  per `tuple()`/Indexzugriff, jetzt `(TypeError, ValueError, IndexError)`).
+  Per Monkeypatch verifiziert: eine synthetische `AttributeError` wird
+  korrekt NICHT mehr geschluckt, sondern propagiert - die Begrenzung ist
+  nicht nur enger, sondern tatsaechlich praezise. Neuer Stub-unabhaengiger
+  Real-Qt-Test `test_set_primitives_with_malformed_line_ignores_it_
+  without_crash` (`tests/test_preview_widget_paint_no_crash.py`).
+- Zwei bleiben bewusst breit und sind jetzt entsprechend kommentiert:
+  `sliceChanged.emit()`/`_slice_change_callback()` in `set_slice_z()` rufen
+  synchron beliebigen verbundenen Fremdcode auf, dessen Ausnahmeklassen
+  ausserhalb der Kontrolle dieser Methode liegen.
+- Die restlichen vier (`paintEvent()`-interne QPainter-Bloecke) bleiben
+  ebenfalls bewusst breit, aber aus einem waehrenddessen entdeckten,
+  wichtigeren Grund: eine unbehandelte Ausnahme in `paintEvent()` beendet
+  unter echtem PyQt5 nicht nur den Zeichenvorgang, sondern den gesamten
+  Prozess (empirisch reproduziert - ein absichtlich entfernter Datenvertrag-
+  Schluessel liess den Real-Qt-Testlauf hart abstuerzen statt einen Test
+  fehlschlagen zu lassen).
+- Dabei eine echte Luecke gefunden und geschlossen: die "slice"/"front"-
+  Zweige in `paintEvent()` hatten bislang GAR kein Exception-Netz (nur
+  `finally: painter.end()`) - jetzt wie der "side"-Zweig mit
+  `except Exception` abgesichert, damit ein kuenftiger Regressionsfund dort
+  nicht das ganze Panel abstuerzen laesst.
+- Damit dieses neue Sicherheitsnetz einen echten Bug nicht nur noch still
+  verschluckt (statt ihn wie zuvor als Absturz sichtbar zu machen), pruefen
+  die bestehenden Real-Qt-Paint-Tests jetzt zusaetzlich per `caplog`, dass
+  `paintEvent()` keine unterdrueckte Ausnahme geloggt hat.
+- Per entferntem Datenvertrag-Schluessel als echte Regression verifiziert:
+  vor der Aenderung Prozessabsturz, danach sauberer, `caplog`-basierter
+  Testfehlschlag.
+- 877 Stub-/108 Real-Qt-Tests bestanden. Standalone-Panel offscreen bis
+  `_finalize_ui_ready DONE` sauber gestartet. Details: TODO.md (LES-044).
+
 ### LES-044: verbleibende "Chrome"-Farben des Preview-Widgets als Datenvertrag 2026-09-16
 
 - Letzter Schritt derselben Aufraeumung: alle noch direkt in

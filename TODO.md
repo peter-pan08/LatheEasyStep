@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, Entwicklungsstand fuer 0.8.0; `main` bleibt die stabile
   0.7.0-Basis.
-- 877 Stub-Qt-Tests und 107 Tests mit echtem PyQt5, keine Skips.
+- 877 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -297,7 +297,35 @@ und Vorderansicht weitgehend umgesetzt. Offen bleiben:
 - [ ] die verbleibenden breiten `except Exception`-Fallbacks einzeln bewerten
   und, wo fachlich moeglich, auf erwartete Ausnahmetypen begrenzen. Das
   inzwischen vorhandene Debug-Logging bleibt bis dahin die bewusste
-  Zwischenloesung.
+  Zwischenloesung. Erster Baustein (2026-09-16): alle acht Vorkommen in
+  `preview_widget.py` einzeln bewertet. Zwei liessen sich sicher begrenzen -
+  `_debug_slice()` (nur `print()`, jetzt `(OSError, UnicodeError)`) und
+  `set_primitives()` (liest primitive-Dicts per `tuple()`/Indexzugriff,
+  jetzt `(TypeError, ValueError, IndexError)`, verifiziert per Monkeypatch:
+  eine synthetische `AttributeError` wird korrekt NICHT mehr geschluckt,
+  sondern propagiert). Zwei bleiben bewusst breit (`sliceChanged.emit()`/
+  `_slice_change_callback()` in `set_slice_z()` - rufen synchron beliebigen
+  Fremdcode auf, dessen Ausnahmeklassen ausserhalb der Kontrolle dieser
+  Methode liegen) - jeweils mit Begruendung kommentiert. Die restlichen vier
+  (`paintEvent()`-interne QPainter-Bloecke) bleiben ebenfalls bewusst breit,
+  aber aus einem anderen, waehrenddessen entdeckten Grund: eine unbehandelte
+  Ausnahme in `paintEvent()` beendet unter echtem PyQt5 nicht nur den
+  Zeichenvorgang, sondern den gesamten Prozess (empirisch reproduziert -
+  ein absichtlich entfernter Datenvertrag-Schluessel liess den Real-Qt-
+  Testlauf hart abstuerzen statt einen Test fehlschlagen zu lassen). Dabei
+  eine echte Luecke gefunden und geschlossen: die "slice"/"front"-Zweige in
+  `paintEvent()` hatten bislang GAR kein Exception-Netz (nur `finally:
+  painter.end()`) - jetzt wie der "side"-Zweig mit `except Exception`
+  abgesichert. Die bestehenden Real-Qt-Paint-Tests
+  (`tests/test_preview_widget_paint_no_crash.py`) pruefen jetzt zusaetzlich
+  per `caplog`, dass `paintEvent()` keine unterdrueckte Ausnahme geloggt hat
+  - sonst wuerde das neue Sicherheitsnetz einen echten Bug nur noch still
+  verschlucken, statt ihn wie zuvor (als Absturz) sichtbar zu machen. Per
+  entferntem Datenvertrag-Schluessel als echte Regression verifiziert: vor
+  der Aenderung Prozessabsturz, danach sauberer, `caplog`-basierter
+  Testfehlschlag. 877 Stub-/108 Real-Qt-Tests bestanden. `ui_preview.py`
+  (32 weitere Vorkommen) ist damit noch NICHT bewertet - separater, groesserer
+  Schritt.
 - [ ] jeden weiteren Extraktionsschritt mit einem kleinen Stub-Test und einem
   Real-Qt-Start pruefen; bestehende Vorschau-Pakete nicht erneut als offene
   Aufgaben dokumentieren.
