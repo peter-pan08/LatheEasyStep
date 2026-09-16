@@ -46,8 +46,9 @@ verwendete Referenzdatei dokumentiert sind.
   Materialabtrag-Zustellung selbst war zusaetzlich fehlerhaft (siehe
   CHANGELOG "Innen-Schruppen erzeugt jetzt echte Mehrfachpaesse") und ist
   jetzt ebenfalls behoben und real bestaetigt.
-- Status: offen, nur noch fuer den ausstehenden LinuxCNC-Backplot/Trockenlauf
-  am realen Referenzteil -> LES-003/LES-015/LES-030
+- Status: offen, 0.8.0-Blocker fuer den ausstehenden LinuxCNC-Backplot-/
+  SIM-Nachweis; der reale Maschinenlauf bleibt dem 1.0.0-Gate vorbehalten ->
+  LES-003/LES-015/LES-030
 
 ### 19. Planen mit Kantenform Radius
 
@@ -62,7 +63,7 @@ verwendete Referenzdatei dokumentiert sind.
   - gueltige Radien als korrekte G2/G3-Geometrie erscheinen
   - ungueltige Radien vor der G-Code-Ausgabe klar abgewiesen werden
 - Antwort:
-- Status: offen -> LES-036/LES-030
+- Status: offen, 0.8.0-Blocker -> LES-036/LES-030
 
 ### 20. Automatischer DIN-76-Freistich am Gewindeende
 
@@ -92,4 +93,5 @@ verwendete Referenzdatei dokumentiert sind.
   bestaetigt: "vorschau und gcode generierung mit freistich ...
   funktioniert"). Offen bleibt ausschliesslich der reale Trockenlauf mit
   tatsaechlich geschnittenem Gewinde an der Maschine.
-- Status: offen, nur noch fuer den realen Trockenlauf -> LES-037/LES-030
+- Status: offen fuer den 0.8.0-SIM-/Backplot-Nachweis. Der reale Trockenlauf
+  mit tatsaechlich geschnittenem Gewinde ist ein 1.0.0-Gate -> LES-037/LES-030

@@ -56,6 +56,19 @@ Abnahmekriterien:
 - alle angebotenen 0.8.0-Faelle werden von LinuxCNC ohne Parserfehler angenommen
 - Referenzprogramme bestehen die dokumentierten SIM-/Backplot-Nachweise
 
+### Aktueller Release-Gate-Status
+
+`0.8.0-dev` ist noch nicht freigabefertig. Offen sind derzeit der vollstaendige
+Planen-Radius-Referenz-/SIM-Test gemaess Realtest 19, die LinuxCNC-Backplot-
+Abnahme fuer die Richtungsvarianten der Innenbearbeitung gemaess Realtest 17
+und der 0.8-SIM-/Backplot-Nachweis fuer den DIN-76-Freistich. Die allgemeine
+Testbasis sowie die zwoelf Referenzen und 43 Matrixfaelle unter `rs274` sind
+bereits erfolgreich; die zwoelf Referenzen liefen in QtDragon-SIM bis `M30`.
+
+Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde ist kein
+0.8.0-Kriterium. Er bleibt zusammen mit den weiteren realen Maschinen-
+Trockenlaeufen dem 1.0.0-Gate vorbehalten.
+
 Eine 0.8.1 oder 0.8.2 wird vorab nicht verplant. Patchversionen bleiben
 spaeter tatsaechlichen Fehlerkorrekturen des 0.8.0-Releases vorbehalten.
 
