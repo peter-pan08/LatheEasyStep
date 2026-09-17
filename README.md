@@ -8,6 +8,16 @@ Primary Test Branch: `dev`
 Deutsch
 -------
 
+> [!IMPORTANT]
+> **Hinweis für bestehende Klone**
+>
+> Die Git-Historie des `main`-Branches und die Release-Tags `v0.7.0` und `v0.8.0`
+> wurden am 17.09.2026 einmalig neu aufgebaut, um Entwicklungsdateien und
+> Entwicklungshistorie von den veröffentlichten Versionen zu trennen.
+>
+> Falls das Repository bereits vor diesem Datum geklont wurde, sollte es neu
+> geklont werden. Neue Klone und zukünftige Releases sind davon nicht betroffen.
+
 ## Was ist Lathe EasyStep?
 
 Lathe EasyStep ist ein konversationelles Drehbank-Panel fuer LinuxCNC. Typische
@@ -453,6 +463,16 @@ Controllergrenzen sowie der weitere Abbau von `lathe_easystep_handler.py`.
 
 English
 -------
+
+> [!IMPORTANT]
+> **Notice for existing clones**
+>
+> The Git history of the `main` branch and the `v0.7.0` and `v0.8.0` release tags
+> were rebuilt once on September 17, 2026 to separate development files and
+> development history from published releases.
+>
+> If you cloned the repository before this date, please clone it again.
+> New clones and future releases are not affected.
 
 ## What is Lathe EasyStep?
 
