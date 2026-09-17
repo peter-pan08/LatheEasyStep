@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-09-16
+Stand: 2026-09-17
 
 Diese Datei enthaelt ausschliesslich offene Aufgaben. Abgeschlossene Arbeiten,
 Befunde und historische Teststaende stehen im [CHANGELOG.md](CHANGELOG.md) und
@@ -8,8 +8,12 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 ## Verifizierte Basis
 
-- Branch `dev`, aktueller Entwicklungsstand fuer die naechste Version;
-  `main` ist seit 2026-09-16 auf Version `0.8.0` (Tag `v0.8.0`).
+- Branch `dev` ist der vollstaendige Entwicklungsstand (Quelltext, Tests,
+  Entwicklungsdokumentation). `main` enthaelt seit dem 17.09.2026 nur noch
+  kompakte Release-Commits nach `RELEASE_POLICY.md`
+  (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
+  Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
+  neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
 - 898 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
@@ -21,6 +25,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
+| Release-Prozess | P1 | echten Release-Pfad testen, Manifest-Vollstaendigkeit absichern | S | vor 0.9.0 |
 | LES-022 | P2 | Bewegungs- und Modalzustand vollstaendig fuehren | L | 0.9.0 |
 | LES-051 | P1 | Panel-Grundgeruest und Darstellungsadapter weiter entkoppeln | XL | 0.9.0 |
 | LES-052 | P1 | Panel-Architektur, Zustandsmodell und Wiederherstellung planen/umsetzen | XL | 0.9.0 |
@@ -28,6 +33,29 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | LES-032 | P2 | Werkzeuggeometrie fuer Plausibilitaet und Kollision erweitern | L | 0.9.0 |
 | LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
 | LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
+
+## Release-Prozess
+
+`RELEASE_POLICY.md` und `scripts/create_release.py` (mit `release_manifest.txt`)
+wurden am 17.09.2026 eingefuehrt und bislang nur mit `--check` gegengeprueft
+(reine Validierung, kein Schreibvorgang). Vor 0.9.0 noch offen:
+
+- [ ] den tatsaechlich schreibenden Release-Pfad einmal vollstaendig
+  durchspielen: `scripts/create_release.py` ohne `--check` fuer einen
+  Wegwerf-/Test-Release ausfuehren, den erzeugten `main`-Commit und den
+  Manifestvergleich pruefen, danach lokal zuruecksetzen (`git branch -f
+  main <vorheriger main-Commit>`, temporaeren Worktree/Tag entfernen).
+  Bisher wurde nur der lesende `--check`-Pfad unter Windows und Debian
+  getestet.
+- [ ] vor jedem Release explizit pruefen, ob seit dem letzten Release neue
+  Laufzeitabhaengigkeiten ausserhalb der `release_manifest.txt`-Pfade
+  hinzugekommen sind. Das Skript erkennt fehlende/veraenderte Manifest-
+  Eintraege, aber nicht, dass ein neuer Laufzeitpfad ueberhaupt ins Manifest
+  gehoert.
+- [ ] die vorhandenen Agenten-Instruktionsdateien (`CLAUDE.md` u. Ae.) um
+  einen kurzen Verweis ergaenzen: fuer Release-Arbeiten ist
+  `RELEASE_POLICY.md` verbindlich. Keine Kopie der Regeln, sonst laufen
+  beide Texte auseinander.
 
 ## LES-022 Bewegungs- und Modalzustand
 
@@ -48,136 +76,30 @@ keine vollstaendige Trennung von Zustand, Fachlogik und optischer Darstellung.
 Das Panel soll ueber ein stabiles Grundgeruest geladen werden, waehrend
 Darstellungen und Ressourcen austauschbare Adapter bleiben.
 
-Erster Baustein umgesetzt: Besitzgrenzen sind in
-`doc/PANEL_ARCHITECTURE.md` dokumentiert. Der Qt-freie `ToolVisualProvider`
-loest logische Werkzeugdarstellungen aus einem Theme-Manifest auf und liefert
-bei fehlenden oder ungueltigen PNG-/SVG-Dateien einen diagnostizierten
-prozeduralen Fallback. Die Qt-Anbindung passt externe Bilder ein; Ressourcen-
-fehler werden geloggt und im Fallback sichtbar markiert. Offen bleiben
-konfigurierbare Theme-Auswahl, Cache und Lebensdauer.
+Umgesetzt (Details im Changelog): Besitzgrenzen sind in
+`doc/PANEL_ARCHITECTURE.md` dokumentiert; der Qt-freie `ToolVisualProvider`
+loest Werkzeug-/Schneidplatten-Darstellungen aus einem Theme-Manifest auf
+(diagnostizierter Fallback bei fehlenden/ungueltigen Ressourcen, Pfade nicht
+in Fachobjekten verankert, per Test belegt dass ein Ressourcenwechsel weder
+Operationen/Werkzeugdaten noch G-Code veraendert); Vorschau-Legende,
+Status-/Warnungsbox, Haupt-Vorschau-Canvas, Vorderansicht-Ringe/-Fuellungen
+und die uebrigen "Chrome"-Farben (Achsen, Gitterticks, Legenden-/Status-Box-
+Rahmen, Keilnut-Overlay, Schnittlinie) sind vollstaendig als Qt-freie
+Datenvertraege in `preview_geometry.py` ausgelagert. Offen bleiben
+konfigurierbare Theme-Auswahl, Cache und Lebensdauer fuer `ToolVisualProvider`.
 
 - [ ] den verbleibenden Handler-Kleber weiter reduzieren. Neue Fachlogik darf
   nicht in `lathe_easystep_handler.py` entstehen; UI-Fragmente sollen nur
   definieren, welche Views geladen werden, nicht deren Zustand selbst besitzen.
-- [x] Werkzeug- und Schneidplatten-Darstellungen aus der Funktion herausgeloest:
-  der Qt-freie `ToolVisualProvider` (`tool_visuals.py`) loest ein Theme-
-  Manifest auf, `render_tool_preview()` (`tool_logic.py`) bindet ihn als
-  Qt-Adapter an - gueltige PNG-/SVG-Ressourcen werden seitenverhaeltnistreu
-  eingepasst, fehlende/ungueltige Dateien fallen sichtbar markiert (Log +
-  orangefarbenes Ausrufezeichen) auf die bisherige prozedurale Darstellung
-  zurueck. Dabei einen bereits vorhandenen unausgeglichenen
-  `QPainter.save()`-Zustand korrigiert.
-- [x] Das Austauschen einer Schneidplatten-Grafik oder eines kompletten
-  Darstellungs-Sets aendert weder Operationen, Werkzeugdaten noch G-Code -
-  fuer Werkzeugdaten per Test nachgewiesen (`asdict(tool)` unveraendert vor/
-  nach Ressourcenwechsel), fuer G-Code zusaetzlich end-to-end belegt
-  (`test_switching_tool_visual_resource_never_affects_generated_gcode`:
-  dasselbe Beispielprogramm zweimal erzeugt, einmal mit einer voellig
-  unabhaengigen `render_tool_preview()`-Ausfuehrung mit externer Ressource
-  dazwischen - identischer G-Code). Per absichtlich veraendertem Parameter
-  (statt der Ressource) als echte Regression verifiziert: der Test schlaegt
-  korrekt fehl, sobald sich der erzeugte G-Code tatsaechlich unterscheidet.
-  Architekturell zusaetzlich abgesichert: kein `gcode_*.py`-/`checks.py`-
-  Modul importiert `tool_visuals`/`render_tool_preview` ueberhaupt. Preview-
-  Geometrie/Dirty-State sind ueber denselben Befund (keine Codeverbindung)
-  ebenfalls unberuehrt, aber (noch) ohne eigenen End-to-End-Test - beide
-  haengen ohnehin nicht von `tool_logic.py` ab.
-- [x] Ressourcenpfade werden nicht in Fachobjekten oder gespeicherten
-  Programmen verankert: `ToolVisualProvider` haelt Root/Manifest nur in der
-  eigenen Instanz (Handler-Attribut, nicht Teil von `Tool` oder gespeicherten
-  Programmdaten), loest Pfade je Aufruf frisch auf und lehnt absolute Pfade,
-  nicht unterstuetzte Formate und Pfade ausserhalb der Theme-Root ab
-  (`relative_to()`-Pruefung). Cache/Lebensdauer bleiben offen (siehe
-  Kurzfassung oben).
-- [ ] weitere austauschbare Panelbereiche identifizieren, insbesondere
-  Preview-Canvas, Legende, Status-/Warnungsdarstellung und optionale
-  Bedienelemente. Jede Darstellung soll ueber einen stabilen Datenvertrag
-  auswechselbar sein. Erster Baustein umgesetzt: die Vorschau-Legende
-  (10 Eintraege: Label, RGB-Farbe, Linienbreite, Qt-freier Stilname
-  "solid"/"dash"/"dashdot") liegt jetzt als reiner Datenvertrag
-  `LEGEND_ENTRIES` in `preview_geometry.py`; `paintEvent()`
-  (`preview_widget.py`) konstruiert daraus nur noch `QPen`/`QColor` (Qt-
-  Adapter). Bewusst NICHT gleichzeitig uebersetzt (die Legende ist seit je
-  her ungebunden an `_tr()`, siehe LES-044 - eigenes Thema). Stil-Mapping
-  bewusst lokal in `paintEvent()` statt auf Modulebene gehalten: ein
-  Modulebenen-Dict mit `QtCore.Qt.SolidLine` haette den Import von
-  `preview_widget.py` schon in der Stub-Qt-Suite gebrochen (`QtCore.Qt`
-  ist dort ein leeres Fake-Namespace-Objekt) - echter Regressionsfund
-  waehrend der Umsetzung, sofort korrigiert und per absichtlich
-  zurueckgesetzter Korrektur verifiziert. Zwei neue Stub-Tests
-  (`tests/test_preview_legend_and_status_layout.py`): Datenvertrag ist
-  Qt-frei/eindeutig, `legend_layout()`-Zeilenzahl passt zur Eintragsanzahl;
-  per absichtlich dupliziertem Label als echte Regression verifiziert.
-  Live im Standalone-Panel bestaetigt: Legende sieht unveraendert aus,
-  kein Fehler im Log. 871 Stub-/106 Real-Qt-Tests bestanden. Zweiter
-  Baustein: dieselbe Behandlung fuer die Status-/Warnungsbox -
-  `STATUS_BOX_STYLE` (`preview_geometry.py`: Randfarbe, Fuellfarbe inkl.
-  Alpha, Textfarbe, Kopfzeile "Warnungen") ersetzt die bisher direkt in
-  `paintEvent()` hartkodierten `QColor`-Werte. Ein weiterer Stub-Test, per
-  eingefuegtem unerwartetem Schluessel als echte Regression verifiziert.
-  872 Stub-/106 Real-Qt-Tests bestanden (kein separater Standalone-Check -
-  identisches, bereits live bestaetigtes Extraktionsmuster wie die Legende
-  unmittelbar zuvor, keine neue Risikoflaeche). Dritter Baustein: der
-  Haupt-Vorschau-Canvas (Seitenansicht) selbst - `PREVIEW_DRAW_STYLES`
-  (`preview_geometry.py`) deckt alle elf `style_key`-Werte ab, die
-  `build_preview_draw_plan()` erzeugen kann (Werkstueck/Werkzeugweg/
-  Rohteil/Rueckzug/Futter-Sperrzone/Schruppkontur/Freistich/aktiv/
-  Hilfsgeometrie), inklusive zweier vorher als Qt-Farbnamen ("gray"/
-  "red"/"lime") statt RGB-Tripel hinterlegter Eintraege - fuer Konsistenz
-  auf die per Laufzeitpruefung bestaetigten RGB-Aequivalente umgestellt
-  (gray=(128,128,128) usw.), keine sichtbare Aenderung. Ein weiterer
-  Stub-Test prueft, dass der Datenvertrag genau die von
-  `build_preview_draw_plan()` moeglichen Schluessel abdeckt (ein fehlender
-  wuerde `paintEvent()` mit `KeyError` abstuerzen lassen) - per entferntem
-  Schluessel als echte Regression verifiziert. Kein separater Standalone-
-  Klicktest (das Hinzufuegen eines Schritts per synthetischem X11-Klick
-  liess sich in dieser Sitzung wiederholt nicht zuverlaessig ausloesen);
-  stattdessen bereits bestehender, jetzt erneut gruener Real-Qt-Test
-  `test_side_view_paints_expanded_legend_and_status_messages_without_crash`
-  als staerkerer Nachweis herangezogen - er durchlaeuft denselben
-  `styles`-Dict/`draw_plan`-Code mit echten synthetischen Pfaden.
-  873 Stub-/106 Real-Qt-Tests bestanden. Preview-Canvas-Farbcontract ist
-  damit umgesetzt; optionale Bedienelemente bleiben offen.
-  Vierter/fuenfter Baustein (2026-09-16, LES-044): die verbliebenen
-  Vorderansichts- und "Chrome"-Farben. `FRONT_VIEW_RING_STYLES`/
-  `FRONT_VIEW_FILL_COLORS` decken alle sieben `style_key`-Werte von
-  `build_front_view_draw_plan()` ab (Rohteilringe, Durchmesserringe,
-  Endkontur-Fuellung/-Loch). Danach `PREVIEW_CHROME_STYLES`/
-  `PREVIEW_CHROME_FILLS`: Achsen, Gitterticks/-beschriftung, Schnittlinie/
-  -label der Seitenansicht, Legenden-Rahmen/-Hintergrund/-Text, Vorder-
-  ansichts-Achsen/-Infotext, Keilnut-Overlay-Umriss/-Fuellung, Kreis/Text
-  der Schnittansicht - Struktur-/Chrome-Elemente statt semantischer Rollen-
-  Stile, aber genauso vorher hartkodiert. Zwei neue Hilfsmethoden
-  `_chrome_pen()`/`_chrome_fill()` (`preview_widget.py`) buendeln die Qt-
-  Adaption statt sie an jeder Stelle zu wiederholen; Stil-Mapping weiterhin
-  lokal im Methodenkoerper (nicht Modulebene). Dabei eine echte Test-
-  luecke geschlossen: `_paint_slice_view()` (Schnittansicht) hatte bislang
-  keinen Real-Qt-Test - neuer Test `test_slice_view_paints_without_crash`
-  (`tests/test_preview_widget_paint_no_crash.py`) deckt sie jetzt ab. Per
-  entferntem Schluessel als echte Regression verifiziert - im Stub-Test als
-  sauberer `AssertionError`, im Real-Qt-Test als harter Prozessabsturz
-  (PyQt5 kann eine unbehandelte Python-Exception aus `paintEvent()` nicht
-  sauber propagieren), beides wie erwartet. Einzig verbliebenes Farb-
-  literal in `preview_widget.py`: der schwarze Canvas-Hintergrund
-  (`QtCore.Qt.black`, 3x identisch) - bewusst nicht extrahiert, da eine
-  einzelne, ueberall gleiche Konstante ohne Duplizierungsrisiko. Damit ist
-  LES-044s erster Punkt ("Darstellungsberechnungen aus preview_widget.py/
-  ui_preview.py in Qt-freie Planfunktionen verschieben") fuer alle
-  Farb-/Stil-Werte des Preview-Widgets abgeschlossen; verbleibende
-  fachliche Geometrieberechnungen (falls noch vorhanden) und die breiten
-  `except Exception`-Fallbacks (zweiter Punkt) sind separat zu pruefen.
-  877 Stub-/107 Real-Qt-Tests bestanden. Standalone-Panel offscreen bis
-  `_finalize_ui_ready DONE` sauber gestartet.
+- [ ] weitere austauschbare Panelbereiche identifizieren. Preview-Canvas,
+  Legende und Status-/Warnungsdarstellung sind als Farb-/Stil-Datenvertraege
+  bereits umgesetzt (siehe oben); offen bleiben optionale Bedienelemente
+  (z. B. Schnittansicht-/Ansicht-zuruecksetzen-Buttons) als austauschbare
+  Komponenten ueber einen eigenen Datenvertrag.
 - [ ] Shell- und Fragment-Laden fuer Standalone und Embedded mit einem
   definierten Ladevertrag absichern: Reihenfolge, Widget-Registrierung,
   Signalbindung, Fehlerbehandlung und Wiederholung duerfen nicht vom
   konkreten Skin oder Ressourcenpaket abhaengen.
-- [x] Je ein Test fuer einen alternativen Ressourcensatz (externes PNG) und
-  eine fehlende Ressource ergaenzt, dazu ein dritter fuer eine nicht
-  dekodierbare Datei (`tests/test_tool_preview_layout.py`). Stub-Qt (871)
-  und Real-Qt (106) bestehen; Standalone-Panel bis `critical done` nach
-  2,337 s gestartet und sauber beendet. Kein LinuxCNC-Lauf noetig, da G-Code
-  und Fahrwege unveraendert bleiben.
 
 ## LES-052 Panel-Architektur, Zustandsmodell und Wiederherstellung
 
@@ -189,83 +111,16 @@ Aenderung veraendern.
 
 ### 1. Architektur und Ladevertrag
 
-- [x] `ProgramState`, `OperationState`, `ToolTableState`, `ViewState`,
-  `DirtyState` und `RuntimeState` als fachlich getrennte Verantwortungen
-  beschreiben und ihre Besitzverhaeltnisse dokumentieren. Bestandsaufnahme
-  in `doc/PANEL_ARCHITECTURE.md` ("Zustandsmodell (LES-052,
-  Bestandsaufnahme)") - reine Dokumentation, kein Code veraendert.
-  Ergebnis: `ProgramState`/`OperationState` (`model.py`) und
-  `MotionState`/`SpindleState` (`motion_state.py`, LES-022) sind bereits
-  sauber gekapselt und dienen als Vorbild. Drei der sechs Kategorien sind
-  es nicht - `ToolTableState` (`handler.tools`-Dict, von `ui_tools.py`
-  direkt gesetzt), `DirtyState` (fuenf Attribute direkt auf dem Handler,
-  von neun Modulen gelesen/geschrieben) und `RuntimeState`
-  (`_generating_gcode`/`_ui_loading`, ebenfalls lose Handler-Attribute) -
-  leben als unbenannte Handler-Attribute statt als eigene Typen.
-  `DirtyState` hat die groesste Dringlichkeit: die Index-Nachzieh-Logik in
-  `ui_dirty.py` traegt an zwei Stellen den Kommentar "SICHERHEITSFUND
-  2026-09-13" fuer bereits real aufgetretene Bugs durch genau dieses
-  Streuungsmuster. `ViewState` (Zoom/Pan/Slice/Ansichtsmodus) ist auf
-  `LathePreviewWidget` immerhin lokal gebuendelt (kein Leck ins
-  Fachmodell, mehrfach testbelegt), aber ungetypt.
-  Zweiter Baustein (2026-09-16): `DirtyState` gekapselt - Qt-freie Klasse
-  `DirtyState` (`dirty_state.py`) buendelt die fuenf Felder in einem
-  Objekt (`handler._dirty`); `ui_dirty.py`s freie Funktionen bleiben als
-  duenne Adapter mit unveraenderter Signatur bestehen (Koerper delegiert
-  an Methoden auf `DirtyState`), damit alle Aufrufstellen in
-  `ui_flow.py`/`ui_persistence.py`/`ui_selection.py`/
-  `lathe_easystep_handler.py` nicht umgebaut werden mussten - nur der
-  direkte Attributzugriff wurde auf `handler._dirty.<feld>` umgestellt.
-  14 neue eigenstaendige Tests (`tests/test_dirty_state.py`, Qt-frei).
-  Per absichtlich entfernter Nachzieh-Arithmetik zweimal als echte
-  Regression verifiziert (`reindex_after_removal()` und die abgeleitete
-  `program_dirty`-Logik in `clear_program()`). Dabei nebenbei entdeckt:
-  `RuntimeState` hat tatsaechlich neun statt der urspruenglich notierten
-  zwei Flags (`lathe_easystep_handler.py`s `__init__` setzt zusaetzlich
-  `_loading_step`/`_deleting`/`_saving_step`/`_saving_changes`/
-  `_moving_up`/`_moving_down`/`_generating_gcode`/`_creating_new_program`
-  direkt auf `self`) - Bestandsaufnahme in `doc/PANEL_ARCHITECTURE.md`
-  entsprechend korrigiert. 891 Stub-/108 Real-Qt-Tests bestanden,
-  Standalone-Panel sauber gestartet.
-  Dritter Baustein (2026-09-17): `ToolTableState` gekapselt - Qt-freie
-  Klasse `ToolTableState` (`tool_table_state.py`) buendelt `handler.tools`
-  sowie zwei bei der ersten Bestandsaufnahme uebersehene lose Attribute
-  (`_loaded_tools`: Cache der letzten nicht-leeren Tabelle fuer lazy
-  auftauchende Combo-Widgets; `_missing_iso_tools`: von
-  `parse_tool_table()` gelieferte ISO-Warnungen, geschrieben aber nirgends
-  gelesen - bewusst nicht repariert, nur mituebernommen) in
-  `handler._tool_table`. `set_tools()` kapselt exakt die bisherige
-  "leere Tabelle ueberschreibt den Cache nicht"-Logik aus
-  `ui_tools.py::populate_tool_combos()`. `handler.tool_table_path`
-  (Qt-Widget-Text, kein Fachdatum) bleibt bewusst aussen vor. 4 neue
-  eigenstaendige Tests (`tests/test_tool_table_state.py`), per
-  absichtlich entferntem Leer-Dict-Schutz als echte Regression
-  verifiziert. 895 Stub-/108 Real-Qt-Tests bestanden; Standalone-Panel-
-  Log bestaetigt den echten Ladepfad (`tool.tbl` automatisch geladen,
-  Combos befuellt).
-  Vierter und letzter Baustein (2026-09-17): `RuntimeState` gekapselt -
-  damit sind jetzt ALLE sechs Zustandskategorien fachlich getrennte,
-  Qt-freie Verantwortungen mit dokumentierten Besitzverhaeltnissen. Neun
-  lose Reentranz-/Ladezustands-Flags (`_loading_step`, `_deleting`,
-  `_saving_step`, `_saving_changes`, `_moving_up`, `_moving_down`,
-  `_generating_gcode`, `_creating_new_program`, `_ui_loading`) in
-  `RuntimeState` (`runtime_state.py`) gebuendelt, als `handler._runtime`
-  gehalten. Acht Felder folgen dem immer gleichen Reentranz-Muster an
-  neun Aufrufstellen - bewusst NICHT zu einer `guard()`-Kontextmanager-
-  Abstraktion zusammengefasst, das waere eine echte Struktur- statt nur
-  Speicherort-Aenderung gewesen. `_ui_loading` war zuvor NIE explizit
-  initialisiert (nur per `getattr(..., False)` defensiv gelesen) - jetzt
-  ein regulaeres Feld mit Default `False`. Groesste Testflaeche der
-  vier LES-052-Bausteine: 12 Testdateien mit minimalen/bare Test-Handlern
-  mussten um `handler._runtime = RuntimeState()` ergaenzt werden (mehr als
-  bei `DirtyState`/`ToolTableState`, weil `_ui_loading` bisher ueberall
-  defensiv gelesen wurde und dadurch auf fehlenden Testattributen nie
-  sichtbar auffiel). 3 neue eigenstaendige Tests
-  (`tests/test_runtime_state.py`) - ohne Regressionsverifikation per
-  entfernter Logik wie bei den anderen beiden, da die Klasse selbst keine
-  Methoden enthaelt (alles reentranz-relevante Verhalten blieb unveraendert
-  an den Aufrufstellen). 898 Stub-/108 Real-Qt-Tests bestanden, Standalone-
-  Panel sauber gestartet. Details: `doc/PANEL_ARCHITECTURE.md`.
+Umgesetzt (Details im Changelog und `doc/PANEL_ARCHITECTURE.md`): alle sechs
+Zustandskategorien (`ProgramState`, `OperationState`, `ToolTableState`,
+`ViewState`, `DirtyState`, `RuntimeState`) sind jetzt fachlich getrennte,
+Qt-freie Verantwortungen mit dokumentierten Besitzverhaeltnissen -
+`ProgramState`/`OperationState` (`model.py`) und `MotionState`/`SpindleState`
+(`motion_state.py`) waren es schon vorher; `DirtyState` (`dirty_state.py`),
+`ToolTableState` (`tool_table_state.py`) und `RuntimeState`
+(`runtime_state.py`) wurden neu gekapselt, jeweils als duenner `handler.
+_<name>`-Adapter ueber den bestehenden Aufrufstellen.
+
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
@@ -395,111 +250,19 @@ Ziel: 1.0.0.
 ## LES-044 Vorschau und Darstellung
 
 Die Qt-freie Geometrieplanung ist fuer Navigation, Raster, Pfade, Sperrzonen
-und Vorderansicht weitgehend umgesetzt. Offen bleiben:
+und Vorderansicht weitgehend umgesetzt. Farb-/Stil-Datenvertraege fuer das
+Preview-Widget sind vollstaendig ausgelagert (siehe LES-051); die breiten
+`except Exception`-Fallbacks in `preview_widget.py`/`ui_preview.py` wurden
+einzeln bewertet und, wo fachlich moeglich, auf erwartete Ausnahmetypen
+begrenzt (36 von 40 Vorkommen, Details im Changelog). Offen bleiben:
 
-- [ ] verbleibende fachliche Darstellungsberechnungen aus
-  `preview_widget.py`/`ui_preview.py` in Qt-freie Planfunktionen verschieben;
-  Qt-Code soll nur Stil, Widget-Zustand und QPainter-Ausgabe enthalten.
-  Teilschritt (2026-09-16): die Ringe/Fuellungen der Vorderansicht
-  (`_paint_front_view()`) folgen jetzt demselben Datenvertrag-Muster wie die
-  Seitenansicht (LES-051) - `FRONT_VIEW_RING_STYLES` (Rohteil-Aussen-/
-  Innendurchmesser, sichtbare Aussen-/Innen-Durchmesserringe, aktiver Ring)
-  und `FRONT_VIEW_FILL_COLORS` (Endkontur-Fuellung/-Loch, RGBA wegen
-  Transparenz) in `preview_geometry.py` decken alle sieben `style_key`-Werte
-  ab, die `build_front_view_draw_plan()` (`preview_scene.py`) erzeugen kann.
-  Zwei neue Stub-Tests (`tests/test_preview_legend_and_status_layout.py`,
-  875 Stub-/106 Real-Qt-Tests bestanden), per entferntem Schluessel als
-  echte Regression verifiziert. Real-Qt-Abdeckung ueber die bereits
-  bestehenden, weiterhin gruenen Tests
-  `test_front_view_paints_external_abspanen_without_crash`/
-  `test_front_view_paints_internal_abspanen_without_crash`/
-  `test_front_view_paints_keyway_without_crash`
-  (`tests/test_preview_widget_paint_no_crash.py`), die `_paint_front_view()`
-  mit echtem PyQt5 durchlaufen. Standalone-Panel offscreen bis
-  `_finalize_ui_ready DONE` sauber gestartet. Bewusst NICHT mit erledigt:
-  die uebrigen Qt-Farbliterale in `preview_widget.py` (Achsen/Gitterticks,
-  Legende-/Status-Box-Rahmen, Keilnut-Overlay, Schnittlinie) sind
-  Chrome/Struktur statt semantischer Rollen-Stile und damit ein groesserer,
-  separat zu bewertender Umfang als die bisherigen Datenvertrag-Schritte.
-- [x] die verbleibenden breiten `except Exception`-Fallbacks einzeln bewerten
-  und, wo fachlich moeglich, auf erwartete Ausnahmetypen begrenzen. Das
-  inzwischen vorhandene Debug-Logging bleibt bis dahin die bewusste
-  Zwischenloesung. Erster Baustein (2026-09-16): alle acht Vorkommen in
-  `preview_widget.py` einzeln bewertet. Zwei liessen sich sicher begrenzen -
-  `_debug_slice()` (nur `print()`, jetzt `(OSError, UnicodeError)`) und
-  `set_primitives()` (liest primitive-Dicts per `tuple()`/Indexzugriff,
-  jetzt `(TypeError, ValueError, IndexError)`, verifiziert per Monkeypatch:
-  eine synthetische `AttributeError` wird korrekt NICHT mehr geschluckt,
-  sondern propagiert). Zwei bleiben bewusst breit (`sliceChanged.emit()`/
-  `_slice_change_callback()` in `set_slice_z()` - rufen synchron beliebigen
-  Fremdcode auf, dessen Ausnahmeklassen ausserhalb der Kontrolle dieser
-  Methode liegen) - jeweils mit Begruendung kommentiert. Die restlichen vier
-  (`paintEvent()`-interne QPainter-Bloecke) bleiben ebenfalls bewusst breit,
-  aber aus einem anderen, waehrenddessen entdeckten Grund: eine unbehandelte
-  Ausnahme in `paintEvent()` beendet unter echtem PyQt5 nicht nur den
-  Zeichenvorgang, sondern den gesamten Prozess (empirisch reproduziert -
-  ein absichtlich entfernter Datenvertrag-Schluessel liess den Real-Qt-
-  Testlauf hart abstuerzen statt einen Test fehlschlagen zu lassen). Dabei
-  eine echte Luecke gefunden und geschlossen: die "slice"/"front"-Zweige in
-  `paintEvent()` hatten bislang GAR kein Exception-Netz (nur `finally:
-  painter.end()`) - jetzt wie der "side"-Zweig mit `except Exception`
-  abgesichert. Die bestehenden Real-Qt-Paint-Tests
-  (`tests/test_preview_widget_paint_no_crash.py`) pruefen jetzt zusaetzlich
-  per `caplog`, dass `paintEvent()` keine unterdrueckte Ausnahme geloggt hat
-  - sonst wuerde das neue Sicherheitsnetz einen echten Bug nur noch still
-  verschlucken, statt ihn wie zuvor (als Absturz) sichtbar zu machen. Per
-  entferntem Datenvertrag-Schluessel als echte Regression verifiziert: vor
-  der Aenderung Prozessabsturz, danach sauberer, `caplog`-basierter
-  Testfehlschlag. 877 Stub-/108 Real-Qt-Tests bestanden. Zweiter Baustein
-  (2026-09-16): `ui_preview.py` (32 Vorkommen). 26 davon liessen sich
-  begrenzen - durchgaengig Qt-Widget-Methodenaufrufe auf `handler.preview`/
-  `preview_slice`/`btn_slice_view`/`btn_reset_view` oder auf per
-  `_get_widget_by_name()` ermittelte Objekte, deren Lebensdauer/Typ nicht
-  garantiert ist: `(RuntimeError, AttributeError)` (RuntimeError bei einem
-  zwischen Lookup und Aufruf zerstoerten C++-Qt-Objekt, AttributeError bei
-  fehlender Methode/fehlendem Attribut), bei `.connect()`-Aufrufen
-  zusaetzlich `TypeError` (nicht-kompatible Signatur). Dabei zwei echte
-  Fehleinschaetzungen gemacht und durch den vollen Testlauf sofort
-  gefunden: `update_slice_view_button()`s `button.setText()`/
-  `setToolTip()` zunaechst nur auf `RuntimeError` begrenzt, obwohl ein
-  minimaler Test-Stub ohne `setToolTip()`-Methode (uebliches Testmuster in
-  diesem Projekt) ein `AttributeError` ausloest - `test_keyway_preview.py::
-  test_toggle_slice_view_switches_main_preview_mode` schlug prompt fehl.
-  Ebenso `_current_language_code()`s eigener `get_widget_by_name()`-Aufruf:
-  liest `self.root_widget` OHNE `getattr()`-Fallback - auf einem
-  `object.__new__(HandlerClass)`-Test-Handler ohne dieses Attribut ebenfalls
-  ein `AttributeError`, nicht nur `RuntimeError`. Beide Male die Ausnahme-
-  liste um `AttributeError` ergaenzt, erneut den vollen Testlauf geprueft
-  (877/108 gruen). Zusaetzlich per Monkeypatch (analog zu
-  `preview_widget.py`) fuer `setup_slice_view()`/`on_toggle_slice_view()`
-  verifiziert: eine synthetische `KeyError` propagiert korrekt, eine echte
-  `RuntimeError` wird weiterhin sauber geschluckt. Dritter Baustein
-  (2026-09-16): vier der restlichen sechs Vorkommen in `collect_preview_
-  state()`/`_detect_preview_collision()` nach genauerer Einzelpruefung
-  doch begrenzt - `_current_op_type()` (`(RuntimeError, AttributeError)`,
-  liest `self.tab_params` ohne `getattr()`-Fallback), `_collect_params()`
-  (dieselben zwei Klassen, liest `self.param_widgets` ebenso ungeschuetzt),
-  die sechs Vorschau-Builder-Aufrufe (`build_face_path` u. a., `(TypeError,
-  ValueError, IndexError)` - rechnen mit `params`-Werten, die `collect_
-  params()` bei nicht als Zahl parsbarem Text roh als String ablegt) und
-  `_detect_preview_collision()` selbst (`(TypeError, ValueError, IndexError,
-  AttributeError)` - liest primitive-Dicts per `.get()`/Indexzugriff und
-  entpackt p1/p2/points als (x, z)-Paare). Jede der vier Begrenzungen per
-  Monkeypatch in beide Richtungen verifiziert: eine synthetische `KeyError`
-  propagiert korrekt, die tatsaechlich erwartete Ausnahme (z. B. ein zu
-  kurzes `p1`, ein `None`-Punkt, ein fehlendes `tab_params`-Attribut) wird
-  weiterhin sauber geschluckt - diesmal im ersten Anlauf ohne Fehltritt
-  gruen (877 Stub-/108 Real-Qt-Tests). Die verbleibenden zwei Vorkommen
-  (Warnungs-Aggregation aus drei unabhaengigen Funktionen; Rohteil-/
-  Rueckzugs-/Worklimit-/Sperrzonen-Builder-Aufrufe) bleiben bewusst breit
-  und sind entsprechend kommentiert - sie aggregieren mehrere unabhaengige
-  Funktionen, deren Fehlerursachen sich ohne tiefere Einzelpruefung jeder
-  einzelnen nicht verlaesslich eingrenzen lassen, und betreffen ohnehin nur
-  die Vorschau-/Warnungsanzeige, nie die G-Code-Erzeugung selbst. Damit ist
-  diese Aufgabe fuer `preview_widget.py`/`ui_preview.py` abgeschlossen (36
-  von 40 urspruenglichen Vorkommen begrenzt, 4 bewusst breit mit
-  dokumentierter Begruendung); andere Module (`ui_header.py`, `ui_params.py`
-  usw.) wurden nicht durchsucht.
+- [ ] verbleibende fachliche Darstellungsberechnungen (Geometrie, nicht
+  Farbe/Stil) aus `preview_widget.py`/`ui_preview.py` in Qt-freie
+  Planfunktionen verschieben; Qt-Code soll nur Stil, Widget-Zustand und
+  QPainter-Ausgabe enthalten.
+- [ ] `except Exception`-Fallbacks ausserhalb von `preview_widget.py`/
+  `ui_preview.py` (z. B. `ui_header.py`, `ui_params.py`) noch nicht
+  durchsucht - falls dort ebenfalls relevant, nach demselben Muster bewerten.
 - [ ] jeden weiteren Extraktionsschritt mit einem kleinen Stub-Test und einem
   Real-Qt-Start pruefen; bestehende Vorschau-Pakete nicht erneut als offene
   Aufgaben dokumentieren.

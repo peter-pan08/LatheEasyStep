@@ -17,6 +17,37 @@
 
 ## [Unreleased]
 
+### Dokumentation: TODO.md auf offene Aufgaben reduziert 2026-09-17
+
+- `TODO.md` war entgegen der eigenen Einleitung ("enthaelt ausschliesslich
+  offene Aufgaben") wieder zu einem Entwicklungsprotokoll angewachsen: 6
+  abgehakte (`[x]`) Punkte mit mehrseitigen Umsetzungsnarrativen sowie lange,
+  in offene (`[ ]`) Punkte eingebettete Baustein-Historien (u. a. teilweise
+  veraltete Zwischen-Teststaende wie "877 Stub-/107 Real-Qt-Tests" neben
+  einer bereits auf 898/108 aktualisierten "Verifizierte Basis" oben).
+  Von 560 auf 323 Zeilen reduziert: alle 6 `[x]`-Punkte entfernt (jeder
+  bereits mit eigenem, vollstaendigem Changelog-Eintrag dokumentiert -
+  ueberprueft vor dem Entfernen), Baustein-Historien in den verbleibenden
+  offenen Punkten auf kurze "umgesetzt, Details im Changelog"-Absaetze
+  gekuerzt. Alle 57 zuvor offenen Teilaufgaben inhaltlich unveraendert
+  erhalten (per Zeilenvergleich verifiziert) - nur die Umsetzungsnarrative
+  entfernt, keine Aufgabe geaendert oder gestrichen.
+- Drei neue offene Punkte ergaenzt (neuer Abschnitt "Release-Prozess"): der
+  am 17.09.2026 eingefuehrte `scripts/create_release.py`-Release-Pfad wurde
+  bisher nur mit `--check` (rein lesend) getestet, nicht der tatsaechlich
+  schreibende Pfad; Manifest-Vollstaendigkeit (neue Laufzeitpfade ausserhalb
+  `release_manifest.txt`) muss vor jedem Release explizit geprueft werden,
+  da das Skript das nicht selbst erkennen kann; die Agenten-
+  Instruktionsdateien sollen auf `RELEASE_POLICY.md` als verbindliche Quelle
+  verweisen, statt deren Regeln zu duplizieren.
+- Ausserdem in "Verifizierte Basis" nachgezogen: `main` enthaelt seit dem
+  17.09.2026 nur noch kompakte Release-Commits nach der neu eingefuehrten
+  `RELEASE_POLICY.md` (`release_manifest.txt`), nicht mehr den vollstaendigen
+  `dev`-Baum per Fast-Forward wie beim 0.8.0-Release. `main`s Historie sowie
+  die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig neu aufgebaut.
+- 898 Stub-/108 Real-Qt-Tests weiterhin bestanden (reine Dokumentations-
+  aenderung, kein Code betroffen).
+
 ### LES-052: RuntimeState gekapselt - Zustandsmodell abgeschlossen 2026-09-17
 
 - Vierter und letzter LES-052-Baustein: neun lose Reentranz-/Ladezustands-
