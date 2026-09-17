@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List
 
 
@@ -36,6 +36,14 @@ class Tool:
     kind: str
     wear: bool = False
     radius_source: str | None = None
+    # LES-052 Abschnitt 5: Tool-Tabellen-Token, die parse_tool_table() liest,
+    # aber nicht in ein eigenes Tool-Feld uebernimmt (alles ausser T/P/D/Q,
+    # z. B. X/Y/Z/A/B/C/U/V/W/I/J/R aus dem Standard-LinuxCNC-Tooltable-
+    # Layout). Vorher stillschweigend verworfen - jetzt erhalten, damit ein
+    # spaeteres Zurueckschreiben der Tabelle (separater, noch offener
+    # Schritt) keine vorhandenen Werte verliert. Rein additiv: wird aktuell
+    # von keiner Fachlogik gelesen.
+    unknown_fields: Dict[str, str] = field(default_factory=dict)
 
     @property
     def toolno(self) -> int:
@@ -186,6 +194,9 @@ def parse_tool_table(
                 radius_value = diameter
                 radius_source = "D"
             kind = tool_kind_from_orientation(orientation)
+            unknown_fields = {
+                key: value for key, value in token_map.items() if key not in ("T", "P", "D", "Q")
+            }
             tool = Tool(
                 t=toolno,
                 p=pocket,
@@ -197,6 +208,7 @@ def parse_tool_table(
                 radius_mm=radius_value,
                 kind=kind,
                 radius_source=radius_source,
+                unknown_fields=unknown_fields,
             )
             tools[toolno] = tool
 

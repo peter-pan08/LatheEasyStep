@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 917 Stub-Qt-Tests und 110 Tests mit echtem PyQt5, keine Skips.
+- 921 Stub-Qt-Tests und 110 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -235,8 +235,21 @@ Regressionsbewiesen.
 
 ### 5. Werkzeugdaten und technische Pruefung
 
-- [ ] die Werkzeugtabelle als eigene Domaene kapseln: Parser, normalisierte
-  Werkzeuge, Parse-Warnungen, unbekannte Felder und optionales Zurueckschreiben.
+Bestandsaufnahme 2026-09-17: `parse_tool_table()`/`Tool`/`ToolTableState`
+existieren bereits (Parser, normalisierte Werkzeuge, Parse-Warnungen ueber
+`missing_iso`/Duplikat-Log). Kleinste offene Teilluecke geschlossen:
+unbekannte Tool-Tabellen-Token (alles ausser T/P/D/Q, z. B. X/Y/Z/R) wurden
+bisher beim Parsen stillschweigend verworfen - jetzt in `Tool.
+unknown_fields` erhalten (reine Datenerhaltung, noch keine Fachlogik liest
+das Feld). `parse_tool_table()` hatte bislang ueberhaupt keine eigene
+Testdatei (`tests/test_tool_table_parsing.py` neu). Bewusst NICHT
+umgesetzt: Zurueckschreiben in die `tool.tbl`-Datei selbst - das ist ein
+groesserer, eigenstaendiger Schritt mit Schreibzugriff auf eine externe
+Maschinenkonfigurationsdatei, verdient eigene Klaerung vor der Umsetzung.
+
+- [ ] Werkzeugtabelle als eigene Domaene mit optionalem Zurueckschreiben
+  vollstaendig kapseln (Parser/Normalisierung/Warnungen sind vorhanden,
+  Zurueckschreiben fehlt noch - siehe oben).
 - [ ] Werkzeugdaten, Werkzeuggeometrie und Werkzeugdarstellung getrennt
   halten; dies bildet die Grundlage fuer die offenen LES-032-Pruefungen.
 - [ ] beim Laden oder Erzeugen gespeicherte erwartete Werkzeugmerkmale gegen

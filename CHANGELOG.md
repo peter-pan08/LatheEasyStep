@@ -17,6 +17,29 @@
 
 ## [Unreleased]
 
+### LES-052: Abschnitt 5 - unbekannte Tool-Tabellen-Felder werden erhalten 2026-09-17
+
+- Kleinsten offenen Teil von Abschnitt 5 ("Werkzeugtabelle als eigene
+  Domaene kapseln ... unbekannte Felder") umgesetzt, nach Nutzer-
+  Entscheidung bewusst ohne das Zurueckschreiben in die `tool.tbl`-Datei
+  selbst (separater, groesserer Schritt mit Schreibzugriff auf eine
+  externe Maschinenkonfigurationsdatei).
+- `parse_tool_table()` (`tools.py`) las Tool-Tabellen-Token wie X/Y/Z/A/B/
+  C/U/V/W/I/J/R (alles ausser T/P/D/Q, aus dem Standard-LinuxCNC-
+  Tooltable-Layout) bisher in ein lokales `token_map`, verwarf sie danach
+  aber stillschweigend - nie an das `Tool`-Objekt weitergegeben. Neues
+  Feld `Tool.unknown_fields: Dict[str, str]` (mit Default `{}`, daher
+  keine bestehende `Tool(...)`-Konstruktion betroffen) erhaelt diese Werte
+  jetzt. Rein additive Datenerhaltung, noch keine Fachlogik liest das Feld.
+- `parse_tool_table()` hatte bislang ueberhaupt keine eigene Testdatei -
+  nur `Tool`-Konstruktion und darauf aufbauende Pruefungen waren getestet,
+  nie der Parser selbst. Neue Datei `tests/test_tool_table_parsing.py` (4
+  Tests) deckt jetzt auch den Grundfall (bekannte Felder korrekt geparst)
+  ab. Regressionsbewiesen: ein Test schlug vor dem Fix nachweislich fehl.
+- 921 Stub-/110 Real-Qt-Tests bestanden (917 vorher + 4 neue),
+  Standalone-Panel sauber gestartet (echter `tool.tbl`-Ladepfad
+  durchlaufen).
+
 ### LES-052: Abschnitt 3 - Rollback-Luecke gefunden und behoben 2026-09-17
 
 - Abschnitt 3 ("Atomare Zustandsaenderungen und Fehlergrenzen") gegen den
