@@ -140,13 +140,38 @@ liess ihn je weg).
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
-- [ ] einen einheitlichen Ladevertrag fuer Grundgeruest, UI-Fragmente,
-  Widget-Registrierung und Signalbindung fuer Standalone und Embedded
-  definieren. Laden muss idempotent und in einer nachvollziehbaren Reihenfolge
-  erfolgen.
-- [ ] Views duerfen keinen eigenen fachlichen Programmzustand als zweite
-  Wahrheit fuehren. Benutzeraktionen werden als definierte Events oder
-  Controller-Aufrufe an das Modell gemeldet.
+- [ ] Ladevertrag (Bestandsaufnahme + Umsetzungsvorschlag abgeschlossen,
+  siehe `doc/PANEL_ARCHITECTURE.md` → "Ladevertrag: Standalone und
+  Embedded"; noch nicht umgesetzt):
+  - [ ] `connect_mode_visibility_signals()` (`ui_signals.py`) fehlt als
+    einzigem der sechs Signal-Connectoren ein Dedup-Schutz - echtes
+    Mehrfachverbindungs-Risiko ueber die drei `_finalize_ui_ready()`-
+    Durchlaeufe hinweg, besonders im Embedded-Fall.
+  - [ ] klaeren, ob `process_deferred_lookups()` (`ui_widget_lookup.py`)
+    ueberhaupt eine Aufrufstelle hat (im `_finalize_ui_ready()`-Ablauf
+    keine gefunden); danach entweder einbinden oder als toten Code
+    entfernen.
+  - [ ] toten Code `HandlerClass._connect_signals()`
+    (`lathe_easystep_handler.py`) klaeren - wird laut Projektsuche
+    nirgends aufgerufen, divergiert von der tatsaechlich laufenden
+    Signalbindung in `finalize_ui_ready()`.
+  - [ ] den bestehenden Drei-Durchlaeufe-Ladeablauf NICHT strukturell
+    umbauen - er ist funktional und idempotent; der Ladevertrag-Punkt wird
+    durch die drei Fixes oben plus die bereits geschriebene Dokumentation
+    erfuellt, nicht durch eine neue Abstraktion.
+- [ ] Views ohne eigenen Fachzustand (Bestandsaufnahme + Umsetzungsvorschlag
+  abgeschlossen, siehe `doc/PANEL_ARCHITECTURE.md` → "Views ohne eigenen
+  Fachzustand"; noch nicht umgesetzt): Stichprobe (`StepListView`,
+  `PreviewView`, `LathePreviewWidget`, `ToolVisualProvider`, Kontur-Tabelle)
+  fand KEINE strukturelle Verletzung, aber zwei fehlende Regressionstests:
+  - [ ] Test ergaenzen: identischer G-Code bei vollstaendigen vs. fehlenden/
+    alternativen Darstellungsressourcen (schliesst das entsprechende
+    LES-052-Abnahmekriterium).
+  - [ ] Test ergaenzen: `LathePreviewWidget`s Rendering-Cache-Felder
+    (`paths`/`primitives`/`front_program`/`front_operation`/
+    `preview_scene`) fliessen nachweislich nie in `handler.model`/G-Code
+    zurueck - macht die bisher nur beobachtete Eigenschaft beweisbar
+    (analog zu `ViewState`).
 
 ### 2. Darstellungs- und Ressourcenadapter
 

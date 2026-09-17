@@ -17,6 +17,41 @@
 
 ## [Unreleased]
 
+### LES-052: Ladevertrag + Views-Bestandsaufnahme 2026-09-17
+
+- Die beiden verbleibenden Punkte aus LES-052 Abschnitt 1 ("einheitlicher
+  Ladevertrag" und "Views ohne eigenen Fachzustand") gegen den
+  tatsaechlichen Code geprueft und in `doc/PANEL_ARCHITECTURE.md`
+  dokumentiert - reine Bestandsaufnahme, kein Code veraendert.
+- **Ladevertrag:** kein expliziter Standalone-/Embedded-Modus im Code -
+  Unterscheidung ist rein strukturell (`_looks_like_panel_widget()`). Der
+  bestehende Drei-Durchlaeufe-Timer (`_finalize_ui_ready`, 0/500/2000ms)
+  ist idempotent gut abgesichert (`_ui_finalized`-Riegel,
+  `_finalize_ui_ready_running`-Reentranzschutz, pro Schicht konsistente,
+  aber unterschiedliche Dedup-Muster). Zwei konkrete Befunde: (1)
+  `connect_mode_visibility_signals()` fehlt als einzigem von sechs
+  Signal-Connectoren ein Dedup-Schutz - echtes Mehrfachverbindungsrisiko
+  ueber die drei Durchlaeufe, besonders embedded; (2) toter Code
+  `HandlerClass._connect_signals()` wird laut projektweiter Suche nirgends
+  aufgerufen, divergiert von der tatsaechlich laufenden Signalbindung in
+  `finalize_ui_ready()`; (3) unklar, ob `process_deferred_lookups()`
+  ueberhaupt eine Aufrufstelle hat. Vorschlag: die drei Punkte beheben/
+  klaeren, den bestehenden Ablauf selbst NICHT strukturell umbauen.
+- **Views ohne eigenen Fachzustand:** Stichprobe der View-Klassen
+  (`StepListView`, `PreviewView`, `LathePreviewWidget`, `ToolVisualProvider`,
+  Kontur-Tabelle) fand keine tatsaechliche "zweite Wahrheit" - das in
+  LES-051 bereits dokumentierte Prinzip wird eingehalten. Der eigentliche
+  Befund: keines der beiden LES-052-Abnahmekriterien dazu (identischer
+  G-Code bei unterschiedlichen Darstellungs-/Ressourcensaetzen; fehlende
+  Ressource aendert G-Code nicht) hat heute eine automatisierte
+  Absicherung. Vorschlag: zwei neue Regressionstests statt eines
+  strukturellen Umbaus.
+- Details und vollstaendige Fundstellen: `doc/PANEL_ARCHITECTURE.md`
+  (neue Abschnitte "Ladevertrag: Standalone und Embedded" und "Views ohne
+  eigenen Fachzustand"), `TODO.md` (LES-052 Abschnitt 1).
+- 912 Stub-/109 Real-Qt-Tests weiterhin bestanden (reine
+  Dokumentationsaenderung, kein Code betroffen).
+
 ### LES-052: toten Code in `refresh_operation_list()` entfernt 2026-09-17
 
 - Der bei der `refresh_operation_list()`-Handler-Kleber-Extraktion

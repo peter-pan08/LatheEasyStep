@@ -376,3 +376,241 @@ Widget-Lookup-Bootstrap-Methoden (`_ensure_contour_widgets()`,
 `_ensure_thread_widgets()`) blieben bewusst auf dem Handler. Die naechsten
 LES-052-Schritte (Abschnitt 1s verbleibende Punkte: einheitlicher
 Ladevertrag, Views ohne eigenen Fachzustand) bauen auf dieser Trennung auf.
+
+## Ladevertrag: Standalone und Embedded (LES-052, Bestandsaufnahme 2026-09-17)
+
+Reine Bestandsaufnahme, kein Code veraendert. Bestaetigt den tatsaechlichen
+Ladeablauf gegen den Code (`lathe_easystep_handler.py`, `ui_lifecycle.py`,
+`ui_split.py`, `ui_widget_lookup.py`, `ui_signals.py`), als Grundlage fuer
+den noch offenen Punkt "einheitlicher Ladevertrag ... Laden muss idempotent
+und in einer nachvollziehbaren Reihenfolge erfolgen" (`TODO.md`).
+
+### Kein expliziter Standalone-/Embedded-Modus
+
+Es gibt keine einzige `if standalone:`/`if embedded:`-Weiche im Code.
+QtVCP ruft in beiden Faellen identisch `get_handlers()` ->
+`HandlerClass(halcomp, widgets, paths)` auf. Die Unterscheidung ist rein
+strukturell: `__init__` (`lathe_easystep_handler.py:874-981`) sucht den
+Panel-Root per Eltern-Kette und `findChild()` nach bekannten Namen
+(`PANEL_WIDGET_NAMES`, `ui_registry.py`) bzw. `_looks_like_panel_widget()`.
+Letztere prueft bewusst `listOperations` ODER `stepListPanel` UND
+`tabParams`, weil `listOperations` selbst erst nach dem Laden der
+UI-Fragmente existiert - ein Check nur auf `listOperations` wuerde den
+Panel-Root waehrend des fruehen Embedded-Host-Suchfensters verfehlen. Der
+einzige praktische Unterschied ist Timing: Standalone laedt die `.ui`-Datei
+synchron vor `initialized__()`, alles ist meist schon in Durchlauf 1 (0ms)
+auffindbar; im QtDragon-Embed-Host kann die Widget-Realisierung noch
+laufen, wenn `initialized__()` feuert.
+
+### Drei-Durchlaeufe-Timer (`_finalize_ui_ready`)
+
+`initialized__()` (`lathe_easystep_handler.py:1337-1599`) plant nach eigener
+Vorarbeit (Widget-IDs vergeben, einzelne Combos direkt verbinden, acht
+`singleShot(0, ...)`-Startaufgaben) drei Durchlaeufe dergleichen Funktion:
+
+```python
+QtCore.QTimer.singleShot(0, self._finalize_ui_ready)
+QtCore.QTimer.singleShot(500, self._finalize_ui_ready)
+QtCore.QTimer.singleShot(2000, self._finalize_ui_ready)
+```
+
+Kommentar direkt darueber (`:1589-1596`) benennt den Grund: im Embed-Fall
+kann die Widget-Realisierung des Host-GUI noch nicht abgeschlossen sein,
+wenn der erste Durchlauf laeuft - statt Event-basiert zu warten, wird
+einfach bei 0/500/2000ms erneut versucht. `finalize_ui_ready()`
+(`ui_lifecycle.py:202-405`) fuehrt **denselben** Ablauf bei jedem Durchlauf
+aus (kein "Durchlauf 1 macht X, Durchlauf 2 macht Y") - jeder Einzelschritt
+ist fuer sich genommen idempotent (siehe naechster Abschnitt), sodass
+Wiederholung guenstig ist. Drei Waechter am Funktionsanfang:
+
+1. `if not handler.w: return` - noch keine Widgets.
+2. `if handler._ui_finalized: return` - der eigentliche "fertig"-Riegel;
+   macht alle spaeteren Durchlaeufe (500ms/2000ms, oder jeden versehentlichen
+   erneuten Aufruf) zu einem reinen No-Op.
+3. `if handler._finalize_ui_ready_running: return` - Reentranz-Schutz
+   waehrend EINES Durchlaufs (z. B. gegen eine verschachtelte Qt-
+   Ereignisschleife waehrend `findChild`/Dialogen).
+
+Fertig ist ein Durchlauf, wenn `list_ops`, `btn_add`, `btn_generate` und
+`tab_params` alle gefunden wurden - dann `_ui_finalized = True`,
+`_startup_complete = True`, Log `"DONE after pass N"` (das ist exakt die
+Zeile, die alle Standalone-Panel-Smoke-Checks in diesem Projekt seit
+Session-Beginn abfragen).
+
+### Idempotenz pro Schicht - drei verschiedene, aber konsistente Muster
+
+- **UI-Fragmente** (`ui_split.py`, `load_split_tab_uis`/
+  `load_step_management_uis`/`load_preview_uis`, bei jedem Durchlauf
+  unbedingt aufgerufen): doppelt abgesichert - ein grober Bool-Flag pro
+  Fragmentgruppe (`_split_tabs_loaded` etc.) UND eine Pruefung pro
+  Container (`findChild(..., f"{container_name}_content")`) - macht den
+  Loader sicher aufrufbar, selbst wenn der grobe Flag je zurueckgesetzt
+  wuerde. Vorbildlich robust.
+- **Widget-Registrierung** (`ui_widget_lookup.py`): mehrschichtige, jeweils
+  fuer sich idempotente Kaskade - `register_known_widgets()` (setzt nur,
+  was gerade aufloesbar ist), `resolve_core_widgets_strict()`
+  (`if getattr(self, attr, None) is not None: continue`),
+  `force_attach_core_widgets()` (`or`-verkettete Zuweisung). Eine
+  "authoritative Cache"-Umschaltung (`_widget_name_cache_authoritative`,
+  nach Durchlauf-Schritt "rebuild widget name cache") verhindert nach
+  Abschluss teure wiederholte volle Baum-Scans - mit Messwert im Code
+  belegt (LES-027: `connect_param_change_signals()` allein kostete vorher
+  ~6,7s von ~18s Startzeit).
+- **Signalbindung** (`ui_signals.py`): fuenf real existierende
+  `connect_*`-Funktionen, **kein** `connect_remaining_signals` (das ist nur
+  ein Log-Label in `ui_lifecycle.py`, keine echte Funktion). Vier
+  verschiedene, aber jeweils konsistente Schutzmuster: `WeakSet` fuer
+  Param-/Global-Form-Widgets, `set()` von `id(widget)` fuer Sprach-Combos,
+  einzelne Bool-Flags fuer Tool-Preview-Combos, sowie fuer Buttons ein
+  bewusst anderes Muster (`_connect_button_once()`: **immer** erst
+  `disconnect()`, dann `connect()` - Docstring begruendet das explizit mit
+  "Buttons werden an mehreren Stellen initialisiert").
+
+### Zwei konkrete Befunde (kein Code veraendert, nur festgestellt)
+
+- **Fehlender Schutz:** `connect_mode_visibility_signals()`
+  (`ui_signals.py:170-182`) verbindet `face_mode`/`face_edge_type`/
+  `drill_mode` OHNE jeden Dedup-Schutz - anders als alle fuenf anderen
+  Connectoren. Da `finalize_ui_ready()` das bei jedem der drei Durchlaeufe
+  erneut aufruft, bis `_ui_finalized` greift, ist eine Mehrfachverbindung
+  ueber die drei Durchlaeufe hinweg ein echtes Risiko, wenn der Widget
+  bereits in Durchlauf 1 gefunden wird, `_ui_finalized` aber aus anderem
+  Grund (ein anderes der vier kritischen Widgets fehlt noch) erst in
+  Durchlauf 2 oder 3 gesetzt wird - genau der Fall, den Embedded typischer-
+  weise auslöst.
+- **Toter Code:** `HandlerClass._connect_signals()`
+  (`lathe_easystep_handler.py:1926-1935`) ist eine vollstaendige "alles
+  verbinden"-Sammelmethode, die neun Einzelfunktionen in einer bestimmten
+  Reihenfolge aufruft - wird aber laut projektweiter Suche NIRGENDS
+  aufgerufen (nur einmal in einem Docstring-Kommentar erwaehnt). Der
+  tatsaechlich laufende Ablauf lebt ausschliesslich in
+  `finalize_ui_ready()`, mit anderer Zusammensetzung/Reihenfolge als diese
+  ungenutzte Methode nahelegt - zwei divergierende "verbinde alles"-
+  Erzaehlungen im Code, von denen nur eine wirklich laeuft. Direkt relevant
+  fuer "nachvollziehbare Reihenfolge".
+- **Zu verifizieren:** `process_deferred_lookups()`
+  (`ui_widget_lookup.py:146-176`) leert eine Warteschlange fuer Widget-
+  Lookups, die vor `ui_ready = True` deferred wurden - im gesamten
+  `finalize_ui_ready()`-Ablauf wurde keine Aufrufstelle dafuer gefunden.
+  Entweder wird sie an anderer Stelle getriggert (noch zu pruefen) oder die
+  Warteschlange leert sich nie - muss vor jeder Aenderung an diesem Bereich
+  geklaert werden.
+
+### Bisherige Dokumentation
+
+Bisher undokumentiert ausserhalb von Code-Kommentaren. `doc/
+PANEL_ARCHITECTURE.md` hatte bislang nur einen Vorwaertsverweis (LES-052 §1
+verschiebe das hierher), `DEV.md` dokumentiert nur einen engeren, bereits
+behobenen Einzelfall ("Embedded-Widget-Binding (2026-02 Fix)"). Die
+eigentliche Begruendung fuer idempotentes, mehrfach laufendes Laden steckt
+ausschliesslich in Code-Kommentaren, v. a. drei Bloecke mit realen
+Regressionsfunden: der `initialized__`-Kommentar ueber den drei Timern
+(oben zitiert), `_dock_preview_above_scroll()` (LES-024: eine leer
+gebliebene Fragment-Huelle verschob sichtbar die Preview-Groesse, deshalb
+`removeWidget()` + `deleteLater()` statt blossem `hide()`), und
+`_install_workspace_splitter()` (mehrere REGRESSIONSFUND-Kommentare zu
+QtDragon-Embed-spezifischen Breiten-/Scroll-Problemen, z. B. gemessene
+638px verfuegbar vs. 710px benoetigt ohne `QScrollArea`).
+
+### Umsetzungsvorschlag (noch nicht umgesetzt)
+
+1. **Bugfix:** `connect_mode_visibility_signals()` einen Dedup-Schutz nach
+   demselben Muster wie die anderen Connectoren geben (Bool-Flags pro
+   Widget) - mit dem in dieser Session etablierten Verfahren (Test vorher
+   schreiben, der eine Mehrfachverbindung erkennt; Fix; Regressionsbeweis
+   per absichtlichem Rueckbau).
+2. **Klaeren, dann entscheiden:** `process_deferred_lookups()`-Aufrufstelle
+   suchen. Falls keine existiert: entweder sauber einbinden (in
+   `finalize_ui_ready()`, nach dem Setzen von `ui_ready = True`) oder als
+   toten Code entfernen - Entscheidung erst nach Klaerung, ob die
+   Warteschlange in der Praxis je etwas enthaelt.
+3. **Toten Code entfernen oder beleben:** `_connect_signals()` - entweder
+   nachweisen, dass sie wirklich nirgends gebraucht wird und entfernen, oder
+   falls sie mal als sauberer Alternativeinstieg gedacht war, klaeren ob
+   `finalize_ui_ready()` sie stattdessen nutzen sollte (staerkere Aenderung,
+   nur falls die beiden Ablaeufe sich als aequivalent erweisen).
+4. **Dokumentieren, nicht umbauen:** diesen Abschnitt als dauerhafte
+   Doku-Grundlage belassen (bereits geschrieben) - der bestehende Ablauf
+   selbst (drei-Durchlaeufe-Timer mit Idempotenz-Waechtern) ist funktional
+   und gut, ein struktureller Umbau ist NICHT vorgeschlagen. Der TODO-Punkt
+   "einheitlicher Ladevertrag ... nachvollziehbare Reihenfolge" ist damit
+   im Kern durch Dokumentation plus die zwei kleinen Fixes oben erfuellbar,
+   nicht durch eine groessere Umstrukturierung.
+
+## Views ohne eigenen Fachzustand (LES-052, Bestandsaufnahme 2026-09-17)
+
+Reine Bestandsaufnahme, kein Code veraendert. Das leitende Prinzip ist
+bereits dokumentiert (siehe "Abhaengigkeitsrichtung" oben, aus LES-051:
+"Qt-Views ... sind aber keine zweite Wahrheit fuer Programm- oder
+Werkzeugdaten") - dieser Abschnitt prueft es gegen den tatsaechlichen Code.
+
+### Stichprobe der View-Klassen
+
+Im gesamten Paket existieren nur ~15 echte Klassen; die View-relevanten
+wurden einzeln geprueft:
+
+- **`StepListView`** (`ui_step_list_view.py`): vollstaendig zustandslos -
+  liest `handler.list_ops` bei jedem Aufruf frisch, haelt selbst keine
+  Kopie irgendeiner Operationsliste. Vorbildlich, im eigenen Docstring
+  bereits so benannt.
+- **`PreviewView`** (`ui_preview_view.py`): reiner Durchreiche-Adapter -
+  nimmt `paths`/`scene`/Kontext als Methodenparameter entgegen und schreibt
+  sie in die Preview-Widgets, haelt selbst nichts.
+- **`LathePreviewWidget`** (`preview_widget.py`): haelt `paths`,
+  `primitives`, `front_program`, `front_operation`, `preview_scene` als
+  Instanzattribute - eine Rendering-Kopie von Programmdaten. Grep ueber das
+  gesamte Projekt zeigt: nirgends ausserhalb von Tests und dem eigenen
+  Sync-Code (`sync_slice_widget()` in `ui_preview.py`, das lediglich diese
+  Werte auf ein zweites Preview-Widget uebertraegt) liest irgendein
+  Fachlogik-Code diese Felder zurueck. Reine Schreib-Senke vom Controller,
+  nie Quelle - dasselbe Verhalten, das fuer `ViewState` bereits per Test
+  belegt ist ("mehrfach per Test belegt, siehe LES-051-Eintraege"), hier
+  aber bisher nicht explizit fuer genau diese fuenf Felder abgesichert.
+- **`ToolVisualProvider`** (`tool_visuals.py`): vollstaendig zustandslos
+  (nur feste Konfiguration `_root`/`_manifest`), loest pro Aufruf frisch
+  auf, cached kein Ergebnis. Docstring nennt das Ziel bereits explizit
+  ("without leaking resource paths into models").
+- **Kontur-Tabelle** (`ui_contour.py`, `QTableWidget`): folgt demselben
+  Muster wie jedes andere Formularfeld im Projekt - jede Aenderung
+  (`handle_contour_add_segment`, `-delete_segment`, `-table_change`) ruft
+  sofort `handler._update_selected_operation()` auf, das die Tabelle in
+  `Operation.params` zurueckschreibt. Kein Sonderfall, keine laenger
+  lebende Divergenz zwischen Tabelle und Modell als bei jedem Spinbox-Feld
+  auch.
+
+### Befund: keine strukturelle Verletzung gefunden - aber keine Absicherung
+
+Die Stichprobe findet keine tatsaechliche "zweite Wahrheit" im Sinne von
+Code, der Programmdaten aus einer View zurueckliest. Der eigentliche Befund
+ist ein anderer: **keines** der beiden in LES-052s "Abnahme"-Abschnitt
+genannten Kriterien hat heute eine automatisierte Absicherung:
+
+- "gleicher Programmzustand und identischer G-Code bei mindestens zwei
+  Darstellungs-/Ressourcensaetzen" - keine Testdatei prueft das.
+- "fehlende optionale Ressource fuehrt zu sichtbarer Diagnose, aber nicht zu
+  geaendertem G-Code" - ebenfalls keine direkte Testabdeckung gefunden
+  (grep nach `resource_set`/vergleichbaren Mustern in `tests/` ohne
+  Treffer).
+
+Das Prinzip steht also schon in `doc/PANEL_ARCHITECTURE.md`, ist bislang
+aber unbewiesen statt durchgesetzt.
+
+### Umsetzungsvorschlag (noch nicht umgesetzt)
+
+1. Einen Regressionstest ergaenzen, der `generate_program_gcode()` (oder
+   die hoehere `build_gcode_lines()`-Ebene) einmal mit vollstaendigen und
+   einmal mit fehlenden/alternativen Darstellungsressourcen (z. B.
+   `ToolVisualProvider` ohne Manifest-Eintrag) aufruft und byteidentisches
+   G-Code-Ergebnis erwartet - schliesst direkt die erste Abnahme-Luecke.
+2. Einen zweiten, kleineren Test ergaenzen, der gezielt `LathePreviewWidget`
+   mit Test-Operationsdaten befuellt und danach prueft, dass
+   `handler.model.operations`/erzeugter G-Code unveraendert bleiben -
+   macht die bisher nur "beobachtete" Eigenschaft der fuenf
+   Rendering-Cache-Felder (`paths`/`primitives`/`front_program`/
+   `front_operation`/`preview_scene`) genauso beweisbar wie bei
+   `ViewState`.
+3. Kein struktureller Umbau vorgeschlagen: Die Stichprobe findet die
+   Architektur bereits konform; der offene TODO-Punkt sollte durch die
+   beiden neuen Tests plus eine kurze Doku-Ergaenzung ("gepruefte
+   Konformitaet, siehe Tests X/Y") geschlossen werden, nicht durch neue
+   Abstraktionen.
