@@ -206,6 +206,36 @@ erkannt - das bestaetigt echte Regressionsabdeckung fuer den produktiv
 genutzten Pfad. 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel
 sauber gestartet.
 
+**Dritte Handler-Kleber-Extraktion (2026-09-17):**
+`_handle_param_change()` (~73 Zeilen, generischer Signal-Handler fuer alle
+Parameter-Widgets: Spinbox/Combo/Checkbox/Lineedit) nach `handle_param_
+change(handler)` in `ui_flow.py` verschoben, Handler-Methode auf einen
+einzeiligen Delegations-Wrapper reduziert. In `ui_signals.py` per
+`widget.valueChanged.connect(handler._handle_param_change)` u. ae. als
+Qt-Slot verbunden - bleibt unveraendert funktionsfaehig, da nur der
+Methodenkoerper, nicht die Bindung (weiterhin eine gebundene Methode auf
+`handler`) verschoben wurde. Ein Audit-Test
+(`test_current_text_occurrences_are_limited_to_audited_fallbacks`,
+`tests/test_ui_visibility_guards.py`) fuehrt eine Positivliste erlaubter
+`currentText()`-Fallback-Vorkommen je Datei; die beiden verschobenen Zeilen
+wurden dort von `lathe_easystep_handler.py` nach `ui_flow.py` umgehaengt
+(reine Ortsangabe, keine inhaltliche Aenderung der Pruefung).
+Bestandsaufnahme vor der Extraktion ergab: kein einziger Test rief
+`_handle_param_change()`/`handle_param_change()` bisher end-zu-end auf -
+die vorhandenen zwei Tests pruefen nur, dass die Methode als Signal-Slot
+verbunden wird, bzw. dass das *Befuellen* der Formularfelder keine Signale
+ausloest (LES-025), nie die eigentliche Wert-Lese-/Dirty-Markier-Logik der
+Methode selbst. Geschlossen durch drei neue End-zu-Ende-Tests in
+`tests/test_dirty_and_messages.py`
+(`test_handle_param_change_marks_operation_dirty_for_spinbox`,
+`test_handle_param_change_marks_program_dirty_for_header`,
+`test_handle_param_change_ignores_unnamed_widget`). Regressionsverifikation
+bestaetigt: eine absichtliche Verstuemmelung der PROGRAM_HEADER-vs-Step-
+Unterscheidung (`_mark_dirty(program=True)` vs. `_mark_dirty(operation_
+index=idx)`) wurde vom neuen `test_handle_param_change_marks_program_dirty_
+for_header` korrekt erkannt. 903 Stub-/108 Real-Qt-Tests bestanden,
+Standalone-Panel sauber gestartet.
+
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
 Stand 2026-09-17: Alle sechs Zustandskategorien sind jetzt gekapselt -

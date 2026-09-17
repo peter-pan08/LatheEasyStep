@@ -16,7 +16,7 @@ from lathe_easystep.ui_dirty import (
     update_dirty_status,
     warn_if_dirty,
 )
-from lathe_easystep.ui_flow import handle_move_down, handle_move_up, jump_to_error_location
+from lathe_easystep.ui_flow import handle_move_down, handle_move_up, handle_param_change, jump_to_error_location
 from lathe_easystep.ui_messages import format_user_error, parse_error_location
 from lathe_easystep.ui_groove import update_groove_tab_ui
 import lathe_easystep.ui_dirty as ui_dirty
@@ -228,6 +228,67 @@ def test_move_down_marks_program_structure_but_not_all_steps():
     assert handler.model.moved == 0
     assert handler.structure_calls == 1
     assert handler.refresh_calls == [1]
+
+
+class _SpinWidget:
+    def __init__(self, name, val):
+        self._name = name
+        self._val = val
+
+    def objectName(self):
+        return self._name
+
+    def value(self):
+        return self._val
+
+
+def test_handle_param_change_marks_operation_dirty_for_spinbox():
+    """LES-052-Extraktion: handle_param_change() (ui_flow.py) muss den
+    Widget-Wert je nach Widget-Typ lesen (hier: Spinbox ueber value()), die
+    ausgewaehlte Operation neu aus dem Formular aufbauen und genau diesen
+    Step als dirty markieren - nicht das ganze Programm."""
+    handler = _handler()
+    handler.list_ops = _List(1)  # Zeile 1 -> GROOVE-Step
+    widget = _SpinWidget("groove_depth", 3.5)
+    handler.sender = lambda: widget
+    handler._log = lambda *a, **kw: None
+    update_calls = []
+    handler._update_selected_operation = lambda force=False: update_calls.append(force)
+    dirty_calls = []
+    handler._mark_dirty = lambda **kw: dirty_calls.append(kw)
+
+    handle_param_change(handler)
+
+    assert update_calls == [True]
+    assert dirty_calls == [{"operation_index": 1}]
+
+
+def test_handle_param_change_marks_program_dirty_for_header():
+    handler = _handler()
+    handler.list_ops = _List(0)  # Zeile 0 -> PROGRAM_HEADER
+    widget = _SpinWidget("program_xt", 10.0)
+    handler.sender = lambda: widget
+    handler._log = lambda *a, **kw: None
+    handler._update_selected_operation = lambda force=False: None
+    dirty_calls = []
+    handler._mark_dirty = lambda **kw: dirty_calls.append(kw)
+
+    handle_param_change(handler)
+
+    assert dirty_calls == [{"program": True}]
+
+
+def test_handle_param_change_ignores_unnamed_widget():
+    handler = _handler()
+    handler.list_ops = _List(1)
+    widget = _SpinWidget("", 1.0)
+    handler.sender = lambda: widget
+    dirty_calls = []
+    handler._mark_dirty = lambda **kw: dirty_calls.append(kw)
+
+    handle_param_change(handler)
+
+    assert dirty_calls == []
 
 
 def test_user_error_formatter_maps_required_field_to_tab_and_label():

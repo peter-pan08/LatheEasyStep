@@ -523,10 +523,12 @@ def test_current_text_occurrences_are_limited_to_audited_fallbacks():
         "lathe_easystep/ui_header.py": {
             'token = str(widget.currentText() or "").strip().upper()',
         },
-        "lathe_easystep_handler.py": {
-            'f"current=\'{self.program_retract_mode.currentText()}\'", level="info")',
+        "lathe_easystep/ui_flow.py": {
             "val = data if data is not None else w.currentText()",
             "val = w.currentText()",
+        },
+        "lathe_easystep_handler.py": {
+            'f"current=\'{self.program_retract_mode.currentText()}\'", level="info")',
         },
     }
 

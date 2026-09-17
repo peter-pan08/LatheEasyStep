@@ -108,6 +108,7 @@ from lathe_easystep.ui_flow import (
     handle_move_down,
     handle_move_up,
     handle_new_program,
+    handle_param_change,
     refresh_operation_list,
     renumber_operations,
 )
@@ -2898,78 +2899,7 @@ class HandlerClass:
         return build_program_filepath(self, name_raw)
 
     def _handle_param_change(self):
-        """Generic handler for parameter widgets (spinboxes, combos, checkboxes, lineedits)."""
-        try:
-            w = self.sender()
-        except Exception:
-            return
-        if w is None:
-            return
-
-        # Determine current operation
-        idx = -1
-        try:
-            if self.list_ops is not None:
-                idx = int(self.list_ops.currentRow())
-        except Exception:
-            idx = -1
-
-        if idx < 0 or idx >= len(self.model.operations):
-            return
-
-        op = self.model.operations[idx]
-        if op.params is None:
-            op.params = {}
-
-        name = getattr(w, "objectName", lambda: "")()
-        if not name:
-            return
-
-        # Read widget value
-        val = None
-        try:
-            # QComboBox
-            if hasattr(w, "currentText") and hasattr(w, "currentIndex"):
-                # Prefer itemData if present (but fall back to text)
-                try:
-                    data = w.itemData(w.currentIndex())
-                    val = data if data is not None else w.currentText()
-                except Exception:
-                    val = w.currentText()
-            # QCheckBox
-            elif hasattr(w, "isChecked"):
-                val = bool(w.isChecked())
-            # Spin boxes
-            elif hasattr(w, "value"):
-                val = float(w.value())
-            # Line edit
-            elif hasattr(w, "text"):
-                val = str(w.text())
-        except Exception:
-            return
-
-        self._log(f"[LatheEasyStep][debug] param change: widget={name} op_type={op.op_type} row={idx} value={val!r}", level="debug")
-
-        # Do NOT write widget.objectName() directly into op.params.
-        # The authoritative mapping is built by _collect_params(op_type),
-        # so we rebuild the selected operation from the UI and refresh geometry/preview.
-        try:
-            self._update_selected_operation(force=True)
-        except Exception:
-            pass
-        if name.endswith("_spindle_mode"):
-            try:
-                self._update_spindle_mode_visibility()
-            except Exception:
-                pass
-        try:
-            if op.op_type == OpType.PROGRAM_HEADER:
-                self._mark_dirty(program=True)
-            else:
-                self._mark_dirty(operation_index=idx)
-        except Exception:
-            pass
-        return
+        handle_param_change(self)
 
 
     def _handle_selection_change(self, row: int):

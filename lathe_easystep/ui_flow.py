@@ -339,6 +339,80 @@ def refresh_operation_list(handler, select_index: int | None = None) -> None:
     handler._update_operation_action_button_states()
 
 
+def handle_param_change(handler) -> None:
+    """Generic handler for parameter widgets (spinboxes, combos, checkboxes, lineedits)."""
+    try:
+        w = handler.sender()
+    except Exception:
+        return
+    if w is None:
+        return
+
+    # Determine current operation
+    idx = -1
+    try:
+        if handler.list_ops is not None:
+            idx = int(handler.list_ops.currentRow())
+    except Exception:
+        idx = -1
+
+    if idx < 0 or idx >= len(handler.model.operations):
+        return
+
+    op = handler.model.operations[idx]
+    if op.params is None:
+        op.params = {}
+
+    name = getattr(w, "objectName", lambda: "")()
+    if not name:
+        return
+
+    # Read widget value
+    val = None
+    try:
+        # QComboBox
+        if hasattr(w, "currentText") and hasattr(w, "currentIndex"):
+            # Prefer itemData if present (but fall back to text)
+            try:
+                data = w.itemData(w.currentIndex())
+                val = data if data is not None else w.currentText()
+            except Exception:
+                val = w.currentText()
+        # QCheckBox
+        elif hasattr(w, "isChecked"):
+            val = bool(w.isChecked())
+        # Spin boxes
+        elif hasattr(w, "value"):
+            val = float(w.value())
+        # Line edit
+        elif hasattr(w, "text"):
+            val = str(w.text())
+    except Exception:
+        return
+
+    handler._log(f"[LatheEasyStep][debug] param change: widget={name} op_type={op.op_type} row={idx} value={val!r}", level="debug")
+
+    # Do NOT write widget.objectName() directly into op.params.
+    # The authoritative mapping is built by _collect_params(op_type),
+    # so we rebuild the selected operation from the UI and refresh geometry/preview.
+    try:
+        handler._update_selected_operation(force=True)
+    except Exception:
+        pass
+    if name.endswith("_spindle_mode"):
+        try:
+            handler._update_spindle_mode_visibility()
+        except Exception:
+            pass
+    try:
+        if op.op_type == OpType.PROGRAM_HEADER:
+            handler._mark_dirty(program=True)
+        else:
+            handler._mark_dirty(operation_index=idx)
+    except Exception:
+        pass
+
+
 def handle_move_up(handler):
     if handler._runtime.moving_up:
         return

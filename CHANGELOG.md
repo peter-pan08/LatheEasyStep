@@ -17,6 +17,36 @@
 
 ## [Unreleased]
 
+### LES-052: dritte Handler-Kleber-Extraktion (`handle_param_change`) 2026-09-17
+
+- `_handle_param_change()` (Handler-Methode, ~73 Zeilen; generischer
+  Signal-Handler fuer alle Parameter-Widgets - Spinbox/Combo/Checkbox/
+  Lineedit) nach `handle_param_change(handler)` in `ui_flow.py` verschoben;
+  Handler-Methode auf einen einzeiligen Delegations-Wrapper reduziert. Bleibt
+  als Qt-Slot in `ui_signals.py` (`widget.valueChanged.connect(handler.
+  _handle_param_change)` u. ae.) unveraendert funktionsfaehig, da weiterhin
+  eine gebundene Methode auf `handler` verbunden wird.
+- `test_current_text_occurrences_are_limited_to_audited_fallbacks`
+  (`tests/test_ui_visibility_guards.py`, eine Positivliste erlaubter
+  `currentText()`-Fallback-Vorkommen je Datei) musste um die verschobene
+  Datei ergaenzt werden - reine Ortsangabe, keine inhaltliche Aenderung der
+  Pruefung selbst.
+- Bestandsaufnahme vor der Extraktion ergab eine echte Testluecke: kein
+  Test rief `_handle_param_change()`/`handle_param_change()` bisher
+  end-zu-end auf. Die beiden vorhandenen Tests pruefen nur die Signal-
+  Verbindung bzw. dass das Befuellen der Formularfelder keine Signale
+  ausloest (LES-025), nie die eigentliche Wert-Lese-/Dirty-Markier-Logik.
+  Geschlossen durch drei neue Tests in `tests/test_dirty_and_messages.py`
+  (`test_handle_param_change_marks_operation_dirty_for_spinbox`,
+  `test_handle_param_change_marks_program_dirty_for_header`,
+  `test_handle_param_change_ignores_unnamed_widget`).
+- Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung der
+  PROGRAM_HEADER-vs-Step-Unterscheidung beim Dirty-Markieren wurde vom
+  neuen `test_handle_param_change_marks_program_dirty_for_header` korrekt
+  erkannt.
+- 903 Stub-/108 Real-Qt-Tests bestanden (900 vorher + 3 neue), Standalone-
+  Panel sauber gestartet.
+
 ### LES-052: zweite Handler-Kleber-Extraktion (`refresh_operation_list`) 2026-09-17
 
 - `_refresh_operation_list()` (Handler-Methode, ~74 Zeilen) nach
