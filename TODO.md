@@ -242,14 +242,20 @@ unbekannte Tool-Tabellen-Token (alles ausser T/P/D/Q, z. B. X/Y/Z/R) wurden
 bisher beim Parsen stillschweigend verworfen - jetzt in `Tool.
 unknown_fields` erhalten (reine Datenerhaltung, noch keine Fachlogik liest
 das Feld). `parse_tool_table()` hatte bislang ueberhaupt keine eigene
-Testdatei (`tests/test_tool_table_parsing.py` neu). Bewusst NICHT
-umgesetzt: Zurueckschreiben in die `tool.tbl`-Datei selbst - das ist ein
-groesserer, eigenstaendiger Schritt mit Schreibzugriff auf eine externe
-Maschinenkonfigurationsdatei, verdient eigene Klaerung vor der Umsetzung.
+Testdatei (`tests/test_tool_table_parsing.py` neu).
 
-- [ ] Werkzeugtabelle als eigene Domaene mit optionalem Zurueckschreiben
-  vollstaendig kapseln (Parser/Normalisierung/Warnungen sind vorhanden,
-  Zurueckschreiben fehlt noch - siehe oben).
+**Dauerhaft ausgeschlossen (Sicherheitsregel, nutzerbestaetigt
+2026-09-17):** Zurueckschreiben in die `tool.tbl`-Datei (oder wie auch
+immer der Anwender seine Werkzeugtabelle nennt) selbst. Das Panel darf
+LinuxCNC-Konfigurationsdateien ausschliesslich LESEN, niemals schreiben -
+geschrieben wird ausschliesslich, was zum Programm/G-Code gehoert. Das ist
+keine offene Scoping-Frage fuer spaeter, sondern eine feste Grenze. `Tool.
+unknown_fields` bleibt bewusst reine Datenerhaltung ohne jeden
+Schreibpfad.
+
+- [ ] Werkzeugtabelle als eigene Domaene kapseln (Parser/Normalisierung/
+  Warnungen sind vorhanden) - ausschliesslich lesend, kein
+  Zurueckschreiben in die Datei (siehe Sicherheitsregel oben).
 - [ ] Werkzeugdaten, Werkzeuggeometrie und Werkzeugdarstellung getrennt
   halten; dies bildet die Grundlage fuer die offenen LES-032-Pruefungen.
 - [ ] beim Laden oder Erzeugen gespeicherte erwartete Werkzeugmerkmale gegen

@@ -17,6 +17,23 @@
 
 ## [Unreleased]
 
+### Klarstellung: LinuxCNC-Konfigurationsdateien sind fuer dieses Panel dauerhaft nur lesbar 2026-09-17
+
+- Der vorige Changelog-Eintrag ("Zurueckschreiben in die `tool.tbl`-Datei
+  ... separater, groesserer Schritt ... verdient eigene Klaerung") hatte
+  das faelschlich als offene Scoping-Frage fuer spaeter dargestellt. Vom
+  Nutzer klargestellt: das Panel darf LinuxCNC-Konfigurationsdateien -
+  dazu zaehlt die Werkzeugtabelle (`tool.tbl` oder wie auch immer vom
+  Anwender benannt) - ausschliesslich LESEN, niemals schreiben.
+  Geschrieben wird ausschliesslich, was zum Programm/G-Code gehoert. Das
+  ist eine feste, dauerhafte Grenze, keine spaeter zu klaerende Frage.
+- `TODO.md` entsprechend korrigiert (Abschnitt 5): das Zurueckschreiben in
+  die Werkzeugtabelle ist jetzt als dauerhaft ausgeschlossen markiert,
+  nicht mehr als offener Punkt. `Tool.unknown_fields` (voriger Commit)
+  bleibt davon unberuehrt - reine Datenerhaltung ohne jeden Schreibpfad,
+  genau wie beabsichtigt.
+- Reine Dokumentationskorrektur, kein Code veraendert.
+
 ### LES-052: Abschnitt 5 - unbekannte Tool-Tabellen-Felder werden erhalten 2026-09-17
 
 - Kleinsten offenen Teil von Abschnitt 5 ("Werkzeugtabelle als eigene

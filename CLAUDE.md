@@ -49,3 +49,16 @@ fahrwegrelevante Änderung als abgeschlossen gilt (siehe TODO.md →
 "Verbindlicher Abschluss jeder Generatoraenderung", Punkt 6/9). Ist kein
 Interpreter verfügbar, das explizit vermerken (wie bisher in
 TODO.md/CHANGELOG.md dokumentiert) statt es stillschweigend auszulassen.
+
+## LinuxCNC-Konfigurationsdateien: nur lesen, niemals schreiben
+
+Das Panel darf LinuxCNC-Konfigurationsdateien - dazu zählt insbesondere
+die Werkzeugtabelle (`tool.tbl` oder wie auch immer der Anwender seine
+Datei nennt) - ausschließlich **lesen**, niemals schreiben oder
+verändern. Geschrieben wird ausschließlich, was zum Programm/G-Code
+selbst gehört (gespeicherte Step-/Programmdateien, erzeugtes NGC). Das
+ist eine feste, dauerhafte Grenze (nutzerbestätigt 2026-09-17), keine
+Scoping-Frage, die später neu bewertet werden darf - auch nicht, wenn ein
+"Zurückschreiben"-Feature architektonisch naheliegend erscheint (z. B. als
+Erweiterung von `parse_tool_table()`/`Tool.unknown_fields` in
+`lathe_easystep/tools.py`).
