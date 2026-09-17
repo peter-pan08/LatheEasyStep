@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 898 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
+- 900 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -119,7 +119,10 @@ Qt-freie Verantwortungen mit dokumentierten Besitzverhaeltnissen -
 (`motion_state.py`) waren es schon vorher; `DirtyState` (`dirty_state.py`),
 `ToolTableState` (`tool_table_state.py`) und `RuntimeState`
 (`runtime_state.py`) wurden neu gekapselt, jeweils als duenner `handler.
-_<name>`-Adapter ueber den bestehenden Aufrufstellen.
+_<name>`-Adapter ueber den bestehenden Aufrufstellen. Erste Handler-Kleber-
+Extraktion auf dieser Basis: `_handle_add_operation()`/
+`_handle_delete_operation()` nach `ui_flow.py` verschoben, Details im
+Changelog und `doc/PANEL_ARCHITECTURE.md`.
 
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter

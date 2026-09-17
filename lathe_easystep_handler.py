@@ -102,6 +102,8 @@ from lathe_easystep.ui_flow import (
     _looks_like_generated_step_comment,
     build_gcode_lines,
     describe_operation,
+    handle_add_operation,
+    handle_delete_operation,
     handle_generate_gcode,
     handle_move_down,
     handle_move_up,
@@ -2720,152 +2722,10 @@ class HandlerClass:
 
     # ---- Button-Handler -----------------------------------------------
     def _handle_add_operation(self):
-        # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
-        self._ensure_core_widgets()
-        self._force_attach_core_widgets()
-        if not self._tool_table.tools:
-            try:
-                self._auto_load_tool_table()
-            except Exception:
-                pass
-        # Schutz gegen doppelte Auslösung (UI kann Click-Events doppelt feuern)
-        if getattr(self, "_adding_operation", False):
-            return
-        now = time.monotonic()
-        last = getattr(self, "_last_add_operation_ts", 0.0)
-        if now - last < 0.8:
-            return
-        self._last_add_operation_ts = now
-        self._adding_operation = True
-        try:
-            try:
-                self._log("[LatheEasyStep] add operation triggered", level="info")
-            except Exception:
-                pass
-            op_type = self._current_op_type()
-            if op_type == OpType.PROGRAM_HEADER:
-                params = self._collect_program_header()
-                # nur einen Programmkopf zulassen -> ersetzen oder neu hinzufügen
-                for i, existing in enumerate(self.model.operations):
-                    if existing.op_type == OpType.PROGRAM_HEADER:
-                        existing.params = params
-                        if self.list_ops:
-                            item = self.list_ops.item(i)
-                            if item:
-                                item.setText(self._describe_operation(existing, i + 1))
-                            self.list_ops.setCurrentRow(i)
-                        self._refresh_preview()
-                        return
-                # noch kein Programmkopf: vorne einfügen
-                op = Operation(op_type, params)
-                self.model.update_geometry(op)
-                self.model.operations.insert(0, op)
-                try:
-                    self._reindex_dirty_operations_after_insert(0)
-                except Exception:
-                    pass
-                self._refresh_operation_list(select_index=0)
-                self._refresh_preview()
-            else:
-                params = self._collect_params(op_type)
-                if op_type == OpType.ABSPANEN:
-                    contour_name = self._current_parting_contour_name()
-                    contour_path = self._resolve_contour_path(contour_name)
-                    if not contour_name or not contour_path:
-                        self._log("[LatheEasyStep] Abspanen benötigt eine vorhandene Kontur-Auswahl", level="info")
-                        self._update_parting_ready_state()
-                        return
-                    params["contour_name"] = contour_name
-                    params["source_path"] = contour_path
-                op = Operation(op_type, params)
-                self.model.update_geometry(op)
-                parent = self.root_widget or self._find_root_widget()
-                settings = QtCore.QSettings()
-                next_index = len(self.model.operations)
-                if any(existing.op_type == OpType.PROGRAM_HEADER for existing in self.model.operations):
-                    next_index += 1
-                if not self._ensure_step_file_link(
-                    op,
-                    index_hint=next_index,
-                    parent=parent,
-                    settings=settings,
-                ):
-                    self._log("[LatheEasyStep] add operation cancelled: no step file selected", level="info")
-                    return
-                self.model.add_operation(op)
-                # Kommentar leer -> Erstbefuellung; sieht er bereits wie eine
-                # maschinell nummerierte Beschreibung aus -> Nummer auffrischen
-                # (gleiche Regel wie _insert_loaded_operation(), LES-023). Ein
-                # bewusst individueller Kommentar bleibt unangetastet.
-                if _looks_like_generated_step_comment(op.params.get("comment")):
-                    update_auto_comment(op, self._describe_operation(op, len(self.model.operations)))
-                try:
-                    self._mark_program_structure_dirty(operation_indices={len(self.model.operations) - 1})
-                except Exception:
-                    pass
-                try:
-                    debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
-                    self._log(f"[LatheEasyStep][debug] operations now: {debug_ops}", level="debug")
-                except Exception:
-                    pass
-
-                self._refresh_operation_list(select_index=len(self.model.operations) - 1)
-                self._refresh_preview()
-                self._update_parting_ready_state()
-        finally:
-            self._adding_operation = False
+        handle_add_operation(self)
 
     def _handle_delete_operation(self):
-        if self._runtime.deleting:
-            return
-        self._runtime.deleting = True
-        try:
-            if self.list_ops is None:
-                return
-            idx = self.list_ops.currentRow()
-            self._log(
-                f"[LatheEasyStep] delete: currentRow={idx}, "
-                f"ops_count={len(self.model.operations)}",
-                level="info",
-            )
-            if idx < 0 or idx >= len(self.model.operations):
-                return
-            if idx == 0:
-                parent = self.root_widget or self._find_root_widget()
-                lang = self._current_language_code()
-                if parent is not None:
-                    try:
-                        QtWidgets.QMessageBox.warning(
-                            parent,
-                            TRANSLATIONS.tr("dialog.delete.title", lang),
-                            TRANSLATIONS.tr("message.delete.program_header_forbidden", lang),
-                        )
-                    except Exception:
-                        self._log(
-                            "[LatheEasyStep] blocked delete of program header without Qt parent",
-                            level="warning",
-                        )
-                else:
-                    self._log(
-                        "[LatheEasyStep] blocked delete of program header without Qt parent",
-                        level="warning",
-                    )
-                return
-            self.model.remove_operation(idx)
-            try:
-                self._reindex_dirty_operations_after_removal(idx)
-            except Exception:
-                pass
-            try:
-                self._mark_program_structure_dirty()
-            except Exception:
-                pass
-            new_idx = min(idx, len(self.model.operations) - 1)
-            self._refresh_operation_list(select_index=new_idx)
-            self._renumber_operations()
-            self._refresh_preview()
-        finally:
-            self._runtime.deleting = False
+        handle_delete_operation(self)
 
     def _selected_operation_index(self) -> int:
         if self.list_ops is None:

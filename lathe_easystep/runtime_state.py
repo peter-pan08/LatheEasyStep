@@ -1,7 +1,9 @@
-"""Zentraler Panel-Laufzeitzustand (LES-052, vierte Etappe).
+"""Zentraler Panel-Laufzeitzustand (LES-052, vierte Etappe; `adding_operation`/
+`last_add_operation_ts` bei der `_handle_add_operation()`-Extraktion nach
+`ui_flow.py` ergaenzt, siehe TODO.md/CHANGELOG.md).
 
-Ersetzt die bisherigen neun losen Handler-Attribute durch ein einzelnes
-typisiertes Objekt (`handler._runtime`). Qt-frei. Acht der neun Felder sind
+Ersetzt die bisherigen losen Handler-Attribute durch ein einzelnes
+typisiertes Objekt (`handler._runtime`). Qt-frei. Neun der elf Felder sind
 reine Reentranz-Sperren nach demselben Muster: `if state.x: return`,
 `state.x = True`, dann im `finally`-Block `state.x = False` - verhindert,
 dass ein doppelt gefeuertes Qt-Signal (z. B. ein versehentlicher Doppel-
@@ -9,7 +11,12 @@ klick) dieselbe Aktion zweimal parallel ausfuehrt. `ui_loading` ist
 semantisch anders: es unterdrueckt Signal-Reaktionen (Dirty-Markierung,
 Parameter-Uebernahme) waehrend ein Step/Programm programmatisch in die
 Formularfelder zurueckgeschrieben wird, damit dieses Zurueckschreiben nicht
-selbst als Nutzeraenderung gewertet wird.
+selbst als Nutzeraenderung gewertet wird. `last_add_operation_ts` ist keine
+Reentranz-Sperre, sondern ein Debounce-Zeitstempel: `handle_add_operation()`
+(`ui_flow.py`) ignoriert einen weiteren Aufruf innerhalb von 0,8 s, selbst
+wenn `adding_operation` (die eigentliche Reentranz-Sperre) zwischenzeitlich
+schon wieder `False` ist - Schutz gegen sehr schnell aufeinanderfolgende,
+aber nicht ueberlappende Klicks.
 
 Bewusst NICHT Teil dieser Klasse: eine `guard()`-Kontextmanager-Abstraktion
 fuer das wiederkehrende Reentranz-Muster - das waere eine echte
@@ -34,6 +41,8 @@ class RuntimeState:
     generating_gcode: bool = False
     creating_new_program: bool = False
     ui_loading: bool = False
+    adding_operation: bool = False
+    last_add_operation_ts: float = 0.0
 
 
 __all__ = ["RuntimeState"]

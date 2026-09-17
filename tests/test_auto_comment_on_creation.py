@@ -3,6 +3,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType
+from lathe_easystep.dirty_state import DirtyState
+from lathe_easystep.runtime_state import RuntimeState
+from lathe_easystep.tool_table_state import ToolTableState
 
 
 class _StubModel:
@@ -85,7 +88,7 @@ def test_insert_loaded_operation_refreshes_stale_numbered_comment():
     assert op.params["_auto_comment"] is True
 
 
-def test_handle_add_operation_refreshes_stale_numbered_comment_via_helper():
+def test_looks_like_generated_step_comment_helper():
     from lathe_easystep.ui_flow import _looks_like_generated_step_comment
 
     assert _looks_like_generated_step_comment("") is True
@@ -94,3 +97,57 @@ def test_handle_add_operation_refreshes_stale_numbered_comment_via_helper():
     assert _looks_like_generated_step_comment("12. Planen") is True
     assert _looks_like_generated_step_comment("Bewusst individueller Kommentar") is False
     assert _looks_like_generated_step_comment("Kommentar mit 5. mittendrin") is False
+
+
+def _make_add_operation_handler(op_type, params):
+    """Handler-Fixture speziell fuer `handle_add_operation()` (ui_flow.py):
+    deckt den End-zu-Ende-Pfad ab, nicht nur den `_looks_like_generated_step_
+    comment()`-Helfer alleine - siehe test_looks_like_generated_step_comment_
+    helper() oben, das nur die reine Funktion prueft."""
+    handler = _make_handler()
+    handler._runtime = RuntimeState()
+    handler._dirty = DirtyState()
+    handler._tool_table = ToolTableState(tools={1: object()})
+    handler._ensure_core_widgets = lambda: None
+    handler._force_attach_core_widgets = lambda: None
+    handler._current_op_type = lambda: op_type
+    handler._collect_params = lambda _op_type: dict(params)
+    handler._ensure_step_file_link = lambda *a, **kw: True
+    handler._mark_program_structure_dirty = lambda **kw: None
+    handler._log = lambda *a, **kw: None
+    return handler
+
+
+def test_handle_add_operation_refreshes_stale_numbered_comment():
+    """LES-023-Regel end-to-end ueber `handle_add_operation()` (ui_flow.py),
+    nicht nur ueber `_insert_loaded_operation()` (siehe Tests oben): ein
+    bereits nummeriert aussehender Kommentar muss beim Hinzufuegen einer
+    neuen Operation aufgefrischt werden."""
+    from lathe_easystep.ui_flow import handle_add_operation
+
+    handler = _make_add_operation_handler(
+        OpType.GROOVE,
+        {"tool": 7, "lage": 1, "diameter": 12.0, "width": 4.0, "z": -40.0, "comment": "5. Innenabspanen (Werkzeug 3)"},
+    )
+
+    handle_add_operation(handler)
+
+    assert len(handler.model.operations) == 1
+    op = handler.model.operations[0]
+    comment = str(op.params.get("comment") or "")
+    assert comment != "5. Innenabspanen (Werkzeug 3)"
+    assert op.params["_auto_comment"] is True
+
+
+def test_handle_add_operation_keeps_individual_comment():
+    from lathe_easystep.ui_flow import handle_add_operation
+
+    handler = _make_add_operation_handler(
+        OpType.GROOVE,
+        {"tool": 7, "lage": 1, "diameter": 12.0, "width": 4.0, "z": -40.0, "comment": "Bewusst individueller Kommentar"},
+    )
+
+    handle_add_operation(handler)
+
+    op = handler.model.operations[0]
+    assert op.params["comment"] == "Bewusst individueller Kommentar"

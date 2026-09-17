@@ -17,6 +17,38 @@
 
 ## [Unreleased]
 
+### LES-052: erste Handler-Kleber-Extraktion (`handle_add_operation`/`handle_delete_operation`) 2026-09-17
+
+- `_handle_add_operation()`/`_handle_delete_operation()` (Handler-Methoden in
+  `lathe_easystep_handler.py`, ~95/~54 Zeilen) nach `handle_add_operation
+  (handler)`/`handle_delete_operation(handler)` in `ui_flow.py` verschoben;
+  Handler-Methoden auf einzeilige Delegations-Wrapper reduziert - gleiches
+  Muster wie zuvor `handle_move_up`/`handle_move_down`.
+- Zwei bei der urspruenglichen `RuntimeState`-Bestandsaufnahme uebersehene
+  lose Reentranz-/Debounce-Attribute (`_adding_operation`,
+  `_last_add_operation_ts`) beim Lesen des Methodenkoerpers entdeckt und
+  direkt als `adding_operation`/`last_add_operation_ts` in `RuntimeState`
+  aufgenommen statt als weitere lose Handler-Attribute stehen zu lassen.
+  `last_add_operation_ts` ist ein 0,8s-Debounce-Zeitstempel gegen sehr
+  schnell aufeinanderfolgende, aber nicht ueberlappende Klicks - kein
+  Reentranz-Flag wie die anderen zehn `RuntimeState`-Felder.
+- Regressionsverifikation (absichtliche `if False:`-Verstuemmelung der
+  Kommentar-Auffrisch-Zeile in `handle_add_operation()`) deckte eine echte
+  Testluecke auf: `test_handle_add_operation_refreshes_stale_numbered_
+  comment_via_helper` (`tests/test_auto_comment_on_creation.py`) pruefte
+  trotz seines Namens nur den reinen `_looks_like_generated_step_comment()`-
+  Helfer, nie `handle_add_operation()` end-to-end - die Korruption blieb
+  dadurch unbemerkt. Behoben: der irrefuehrend benannte Test in
+  `test_looks_like_generated_step_comment_helper` umbenannt (unveraenderter
+  Inhalt) und zwei neue End-zu-Ende-Tests ergaenzt
+  (`test_handle_add_operation_refreshes_stale_numbered_comment`,
+  `test_handle_add_operation_keeps_individual_comment`), die
+  `handle_add_operation()` tatsaechlich aufrufen. Luecke danach nachweislich
+  geschlossen: Korruption fuehrte zu einem Testfehlschlag, Ruecknahme wieder
+  zu gruen.
+- 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel sauber gestartet
+  (kein `AttributeError`, `_finalize_ui_ready DONE`).
+
 ### Dokumentation: TODO.md auf offene Aufgaben reduziert 2026-09-17
 
 - `TODO.md` war entgegen der eigenen Einleitung ("enthaelt ausschliesslich

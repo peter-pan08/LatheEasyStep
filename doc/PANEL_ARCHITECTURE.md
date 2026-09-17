@@ -155,6 +155,33 @@ enthaelt (alles reentranz-relevante Verhalten bleibt an den Aufrufstellen,
 unveraendert durch diese Kapselung). 898 Stub-/108 Real-Qt-Tests bestanden,
 Standalone-Panel sauber gestartet.
 
+**Erste Handler-Kleber-Extraktion auf dieser Basis (2026-09-17):**
+`_handle_add_operation()`/`_handle_delete_operation()` (Handler-Methoden,
+~95/~54 Zeilen) nach `handle_add_operation(handler)`/
+`handle_delete_operation(handler)` in `ui_flow.py` verschoben, Handler-
+Methoden auf duenne einzeilige Delegations-Wrapper reduziert - gleiches
+Muster wie zuvor bei `handle_move_up`/`handle_move_down`. Beim Lesen des
+Methodenkoerpers fielen zwei weitere, bei der urspruenglichen
+`RuntimeState`-Bestandsaufnahme uebersehene lose Reentranz-/Debounce-
+Attribute auf (`_adding_operation`, `_last_add_operation_ts`) und wurden
+direkt als `adding_operation`/`last_add_operation_ts` in `RuntimeState`
+aufgenommen, statt sie als weitere lose Handler-Attribute stehen zu lassen.
+`last_add_operation_ts` ist kein Reentranz-Flag, sondern ein 0,8s-Debounce-
+Zeitstempel gegen sehr schnell aufeinanderfolgende, aber nicht ueberlappende
+Klicks. Regressionsverifikation deckte eine echte Testluecke auf: der
+bestehende Test `test_handle_add_operation_refreshes_stale_numbered_
+comment_via_helper` (`tests/test_auto_comment_on_creation.py`) pruefte trotz
+seines Namens nur den reinen `_looks_like_generated_step_comment()`-Helfer,
+nie `handle_add_operation()` end-to-end - die absichtliche `if False:`-
+Verstuemmelung der Kommentar-Auffrisch-Zeile wurde dadurch von keinem Test
+erkannt. Behoben durch zwei neue End-zu-Ende-Tests
+(`test_handle_add_operation_refreshes_stale_numbered_comment`,
+`test_handle_add_operation_keeps_individual_comment`), die `handle_add_
+operation()` tatsaechlich aufrufen; die Luecke war danach nachweislich
+geschlossen (Korruption fuehrte zu einem Testfehlschlag, Ruecknahme wieder
+zu 900/108 gruen). 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel
+sauber gestartet.
+
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
 Stand 2026-09-17: Alle sechs Zustandskategorien sind jetzt gekapselt -
