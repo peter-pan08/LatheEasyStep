@@ -143,38 +143,6 @@ def register_known_widgets(self):
         except Exception:
             continue
 
-def process_deferred_lookups(self):
-    """Abarbeiten aller in `self._deferred_lookup_queue` gesammelten Lookup-Anfragen.
-    Wird in `_finalize_ui_ready()` aufgerufen, nachdem `ui_ready` True gesetzt wurde.
-    """
-    if not getattr(self, '_deferred_lookup_queue', None):
-        return
-    queue = list(self._deferred_lookup_queue)
-    self._deferred_lookup_queue.clear()
-    for item in queue:
-        try:
-            attr_name, name, cls, debug_context = item
-        except Exception:
-            continue
-        try:
-            w = getattr(self.w, name, None)
-        except Exception:
-            w = None
-        if w is None:
-            try:
-                w = self._find_any_widget(name)
-            except Exception:
-                w = None
-        try:
-            setattr(self, attr_name, w)
-        except Exception:
-            pass
-        if w is not None and debug_context and getattr(self, "_verbose_widget_logs", False):
-            try:
-                self._log(f"[LatheEasyStep] deferred-resolved '{name}' -> {attr_name}", level="debug")
-            except Exception:
-                pass
-
 def setup_resolver(self):
     widget_list = []
     try:
@@ -500,8 +468,7 @@ def resolve_core_widgets_strict(self):
         except Exception:
             ui_ready = False
         if not ui_ready:
-            # Panel not ready; defer the lookup until _finalize_ui_ready
-            self._deferred_lookup_queue.append((attr, obj_name, cls, False))
+            # Panel not ready yet; skip for now, a later pass retries.
             continue
         w = self._resolver.try_resolve(cls, obj_name, debug_context=True)
         if w is not None:

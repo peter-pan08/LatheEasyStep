@@ -17,6 +17,46 @@
 
 ## [Unreleased]
 
+### LES-052: Ladevertrag- und Views-Bestandsaufnahme umgesetzt 2026-09-17
+
+- Alle vier Punkte aus der vorangegangenen Ladevertrag-/Views-
+  Bestandsaufnahme umgesetzt (Details: `doc/PANEL_ARCHITECTURE.md`).
+- **Bugfix:** `connect_mode_visibility_signals()` (`ui_signals.py`) hat
+  jetzt denselben Dedup-Schutz wie die anderen fuenf Signal-Connectoren
+  (ein Bool-Flag pro Widget). Regressionsbewiesen: ein neuer Test schlug
+  vor dem Fix nachweislich fehl (3 statt 1 Verbindung nach drei Aufrufen).
+- **Toter Code entfernt:** `process_deferred_lookups()` (`ui_widget_
+  lookup.py`) hatte nachweislich keine Aufrufstelle im gesamten Projekt -
+  entfernt, zusammen mit der nie geleerten `_deferred_lookup_queue`
+  (Initialisierung im Handler-`__init__`, Befuellungslogik in
+  `resolve_core_widgets_strict()` und `bootstrap_widget_refs()`). Reine
+  Aufraeumarbeit, keine Verhaltensaenderung.
+- **Toter Code entfernt, aber differenzierter als gedacht:**
+  `HandlerClass._connect_signals()` war tatsaechlich toter Code (nirgends
+  aufgerufen) und wurde entfernt, ebenso die davon exklusiv aufgerufenen
+  `_connect_live_update_signals()`/`_connect_live_update()`/
+  `_on_param_changed()` (nachweislich redundant mit dem laengst laufenden
+  `connect_param_change_signals()`-Pfad) und `prepare_signal_connection_
+  context()` (alle vier Einzelaktionen bereits anderweitig abgedeckt).
+  `connect_resolver_fallbacks()` dagegen war NICHT redundant - ein
+  einzigartiger 5s-Polling-Rueckfall speziell fuer `listOperations` (eines
+  der vier `_ui_finalized`-kritischen Widgets). Statt entfernt: sauber in
+  `finalize_ui_ready()` eingebunden, mit neuem
+  `_list_ops_resolver_fallback_started`-Schutz gegen mehrfach gestartete
+  Polling-Ketten ueber die drei Durchlaeufe. Zwei neue Tests decken das ab,
+  regressionsbewiesen.
+- **Zwei neue Regressionstests** fuer die LES-052-Abnahmekriterien zu
+  "Views ohne eigenen Fachzustand" (`tests/test_regression_contracts.py`):
+  identischer G-Code bei unterschiedlichen `ToolVisualProvider`-
+  Ressourcensaetzen; `LathePreviewWidget`s Rendering-Cache-Felder
+  (`paths`/`primitives`/`front_program`/`front_operation`/
+  `preview_scene`) fliessen nachweislich nie in G-Code zurueck. Beide per
+  absichtlicher Mutation der verglichenen Werte sanity-geprueft.
+- Kein struktureller Umbau des Drei-Durchlaeufe-Ladeablaufs, wie in der
+  Bestandsaufnahme vorgeschlagen - nur die konkreten Befunde behoben.
+- 917 Stub-/109 Real-Qt-Tests bestanden (912 Stub-Tests vorher + 5 neue,
+  alle Stub-only), Standalone-Panel sauber gestartet.
+
 ### LES-052: Ladevertrag + Views-Bestandsaufnahme 2026-09-17
 
 - Die beiden verbleibenden Punkte aus LES-052 Abschnitt 1 ("einheitlicher

@@ -96,13 +96,12 @@ def bootstrap_widget_refs(handler) -> None:
             handler._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
         return widget
 
-    def resolve_or_defer_local(attr_name: str, name: str, cls=None, debug_context: bool = False):
+    def resolve_or_defer_local(attr_name: str, name: str):
         try:
             ui_ready = getattr(handler.w, "ui_ready", False)
         except Exception:
             ui_ready = False
         if not ui_ready:
-            handler._deferred_lookup_queue.append((attr_name, name, cls, debug_context))
             return None
         widget = getattr(handler.w, name, None)
         if widget is not None:
@@ -112,8 +111,6 @@ def bootstrap_widget_refs(handler) -> None:
             widget = handler._find_any_widget(name)
         except Exception:
             widget = None
-        if widget is not None and debug_context:
-            handler._log(f"[LatheEasyStep] resolved '{name}' via global search", level="info")
         setattr(handler, attr_name, widget)
         return widget
 
@@ -282,6 +279,11 @@ def finalize_ui_ready(handler) -> None:
         handler._startup_mark("_finalize_ui_ready: force_attach_core_widgets end")
         if handler.list_ops is None:
             handler.list_ops = handler._find_any_widget("listOperations")
+        if handler.list_ops is None:
+            # Letzter Rueckfall: bis zu 5s per QTimer-Polling erneut versuchen
+            # (ueber die drei festen Durchlaeufe von _finalize_ui_ready hinaus),
+            # falls listOperations im Embed-Fall besonders spaet realisiert wird.
+            handler._connect_resolver_fallbacks()
         handler.tab_params = handler.tab_params or handler._find_any_widget("tabParams")
         handler.btn_add = handler.btn_add or handler._find_any_widget("id:34721") or handler._find_any_widget("btnAdd")
         handler.btn_delete = handler.btn_delete or handler._find_any_widget("btnDelete")

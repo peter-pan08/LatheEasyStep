@@ -8,6 +8,8 @@ from lathe_easystep.presets import validate_thread_preset_data
 from lathe_easystep.preview_geometry import build_chuck_nogo_primitives
 from lathe_easystep.ui_signals import connect_language_signal
 from lathe_easystep.ui_signals import connect_global_form_signals
+from lathe_easystep.ui_signals import connect_mode_visibility_signals
+from lathe_easystep.ui_signals import connect_resolver_fallbacks
 from lathe_easystep.ui_tooltips import apply_registered_tooltips, set_tooltip_deep
 from lathe_easystep.ui_visibility import handle_global_change
 from lathe_easystep.translations import TRANSLATIONS
@@ -528,6 +530,83 @@ def test_connect_global_form_signals_connects_subspindle_visibility_separately()
 
     assert len(check.toggled.calls) == 2
     assert handler._program_has_subspindle_visibility_connected is True
+
+
+def test_connect_mode_visibility_signals_does_not_double_connect_across_repeated_calls():
+    """LES-052-Bestandsaufnahme-Befund (Ladevertrag, doc/PANEL_ARCHITECTURE.md):
+    connect_mode_visibility_signals() lief bisher ohne Dedup-Schutz - anders
+    als alle anderen fuenf Signal-Connectoren in diesem Modul. Da
+    _finalize_ui_ready() diese Funktion bei jedem der drei Durchlaeufe
+    (0/500/2000ms) erneut aufruft, bis _ui_finalized greift, ist das ein
+    echtes Mehrfachverbindungsrisiko, sobald die Widgets bereits vor dem
+    letzten Durchlauf gefunden werden - der Normalfall im Embedded-Betrieb."""
+    class _Signal:
+        def __init__(self):
+            self.calls = []
+
+        def connect(self, fn):
+            self.calls.append(fn)
+
+    class _Combo:
+        def __init__(self):
+            self.currentIndexChanged = _Signal()
+
+    handler = types.SimpleNamespace(
+        face_mode=_Combo(),
+        face_edge_type=_Combo(),
+        drill_mode=_Combo(),
+    )
+
+    connect_mode_visibility_signals(handler)
+    connect_mode_visibility_signals(handler)
+    connect_mode_visibility_signals(handler)
+
+    assert len(handler.face_mode.currentIndexChanged.calls) == 1
+    assert len(handler.face_edge_type.currentIndexChanged.calls) == 1
+    assert len(handler.drill_mode.currentIndexChanged.calls) == 1
+
+
+def test_connect_resolver_fallbacks_starts_polling_once_when_list_ops_missing():
+    """LES-052-Bestandsaufnahme-Fund (Ladevertrag, doc/PANEL_ARCHITECTURE.md):
+    connect_resolver_fallbacks() war zuvor toter Code, nur ueber die nie
+    aufgerufene _connect_signals() erreichbar. Jetzt aus finalize_ui_ready()
+    als letzter Rueckfall verdrahtet, wenn listOperations auch nach allen
+    synchronen Versuchen noch fehlt. Der neue
+    _list_ops_resolver_fallback_started-Schutz verhindert, dass jeder der
+    drei _finalize_ui_ready()-Durchlaeufe eine eigene 5s-Polling-Kette
+    startet."""
+    class _Resolver:
+        def __init__(self):
+            self.calls = []
+
+        def resolve_later(self, cls, name, callback, **kwargs):
+            self.calls.append((cls, name, callback, kwargs))
+
+    handler = types.SimpleNamespace(list_ops=None, _resolver=_Resolver())
+
+    connect_resolver_fallbacks(handler)
+    connect_resolver_fallbacks(handler)
+    connect_resolver_fallbacks(handler)
+
+    assert len(handler._resolver.calls) == 1
+    _cls, name, _callback, kwargs = handler._resolver.calls[0]
+    assert name == "listOperations"
+    assert kwargs["timeout_ms"] == 5000
+
+
+def test_connect_resolver_fallbacks_does_nothing_once_list_ops_is_already_bound():
+    class _Resolver:
+        def __init__(self):
+            self.calls = []
+
+        def resolve_later(self, *a, **kw):
+            self.calls.append((a, kw))
+
+    handler = types.SimpleNamespace(list_ops=object(), _resolver=_Resolver())
+
+    connect_resolver_fallbacks(handler)
+
+    assert handler._resolver.calls == []
 
 
 def test_general_tooltips_cover_upper_program_tab_fields():

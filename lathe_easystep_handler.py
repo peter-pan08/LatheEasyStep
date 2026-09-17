@@ -180,7 +180,6 @@ from lathe_easystep.ui_signals import (
     connect_param_change_signals,
     connect_resolver_fallbacks,
     connect_tool_preview_signals,
-    prepare_signal_connection_context,
 )
 from lathe_easystep.presets import (
     validate_thread_preset_data,
@@ -967,8 +966,6 @@ class HandlerClass:
         self.btn_slice_view = getattr(self.w, "btn_slice_view", None)
         self.btn_reset_view = getattr(self.w, "btn_reset_view", None)
         self.contour_preview = getattr(self.w, "contourPreview", None)
-        # Queue für nachträgliche Widget-Suchen, bis das Panel vollständig geladen ist
-        self._deferred_lookup_queue: List[Tuple[str, str, object, bool]] = []
         self.debug_mode = _debug_mode_enabled()
         self._verbose_widget_logs = self.debug_mode
         if self.debug_mode:
@@ -1798,7 +1795,7 @@ class HandlerClass:
 
         Wir disconnecten *immer* zuerst, weil Buttons an mehreren Stellen initialisiert werden können
 
-        (_ensure_core_widgets, _connect_signals, usw.). Das verhindert zuverlässig Mehrfachverbindungen.
+        (_ensure_core_widgets, _connect_core_signals, usw.). Das verhindert zuverlässig Mehrfachverbindungen.
 
         """
 
@@ -1881,62 +1878,6 @@ class HandlerClass:
 
     # ---- Signalanschlüsse ---------------------------------------------
 
-    def _connect_live_update(self, widget):
-            """Connect changes of a widget to live-update the currently selected operation."""
-            if widget is None:
-                return
-            from PyQt5 import QtWidgets
-
-            def _safe_connect(signal):
-                try:
-                    signal.connect(self._on_param_changed)
-                except Exception:
-                    pass
-
-            if isinstance(widget, QtWidgets.QComboBox):
-                _safe_connect(widget.currentIndexChanged)
-            elif isinstance(widget, QtWidgets.QAbstractSpinBox):
-                _safe_connect(widget.valueChanged)
-            elif isinstance(widget, QtWidgets.QCheckBox):
-                _safe_connect(widget.toggled)
-            elif isinstance(widget, QtWidgets.QLineEdit):
-                _safe_connect(widget.textChanged)
-
-    def _on_param_changed(self, *args):
-        """Called whenever a parameter field changes; updates op + preview."""
-        if self._runtime.ui_loading:
-            return
-        row = -1
-        try:
-            if self.list_ops:
-                row = self.list_ops.currentRow()
-        except Exception:
-            row = -1
-        if row < 0:
-            try:
-                self._refresh_preview()
-            except Exception:
-                pass
-            return
-        try:
-            self._update_selected_operation(force=True)
-        except Exception as e:
-            self._log(f"[LatheEasyStep] _on_param_changed: update failed: {e}", level="error")
-
-    def _connect_signals(self):
-            self._prepare_signal_connection_context()
-            self._connect_core_signals()
-            self._connect_resolver_fallbacks()
-            self._connect_tool_preview_signals()
-            self._connect_param_change_signals()
-            self._connect_global_form_signals()
-            self._connect_language_signal()
-            self._connect_mode_visibility_signals()
-            self._connect_live_update_signals()
-
-    def _prepare_signal_connection_context(self):
-            prepare_signal_connection_context(self)
-
     def _connect_resolver_fallbacks(self):
             connect_resolver_fallbacks(self)
 
@@ -1954,20 +1895,6 @@ class HandlerClass:
 
     def _connect_mode_visibility_signals(self):
             connect_mode_visibility_signals(self)
-
-    def _connect_live_update_signals(self):
-            for w in [
-                getattr(self, "face_start_z", None), getattr(self, "face_end_z", None),
-                getattr(self, "face_stepover", None), getattr(self, "face_doc", None),
-                getattr(self, "face_allowance_x", None), getattr(self, "face_allowance_z", None),
-                getattr(self, "face_finish_allow_x", None), getattr(self, "face_finish_allow_z", None),
-                getattr(self, "face_rpm", None), getattr(self, "face_feed", None),
-                getattr(self, "face_plunge", None), getattr(self, "face_retract", None),
-                getattr(self, "face_mode", None), getattr(self, "face_finish_direction", None),
-                getattr(self, "face_edge_type", None), getattr(self, "face_edge_size", None),
-                getattr(self, "face_tool", None), getattr(self, "face_coolant", None),
-            ]:
-                self._connect_live_update(w)
 
     def _connect_core_signals(self):
             connect_core_signals(self)

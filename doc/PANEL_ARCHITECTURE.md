@@ -512,30 +512,59 @@ gebliebene Fragment-Huelle verschob sichtbar die Preview-Groesse, deshalb
 QtDragon-Embed-spezifischen Breiten-/Scroll-Problemen, z. B. gemessene
 638px verfuegbar vs. 710px benoetigt ohne `QScrollArea`).
 
-### Umsetzungsvorschlag (noch nicht umgesetzt)
+### Umsetzung (2026-09-17, alle vier Punkte erledigt)
 
-1. **Bugfix:** `connect_mode_visibility_signals()` einen Dedup-Schutz nach
-   demselben Muster wie die anderen Connectoren geben (Bool-Flags pro
-   Widget) - mit dem in dieser Session etablierten Verfahren (Test vorher
-   schreiben, der eine Mehrfachverbindung erkennt; Fix; Regressionsbeweis
-   per absichtlichem Rueckbau).
-2. **Klaeren, dann entscheiden:** `process_deferred_lookups()`-Aufrufstelle
-   suchen. Falls keine existiert: entweder sauber einbinden (in
-   `finalize_ui_ready()`, nach dem Setzen von `ui_ready = True`) oder als
-   toten Code entfernen - Entscheidung erst nach Klaerung, ob die
-   Warteschlange in der Praxis je etwas enthaelt.
-3. **Toten Code entfernen oder beleben:** `_connect_signals()` - entweder
-   nachweisen, dass sie wirklich nirgends gebraucht wird und entfernen, oder
-   falls sie mal als sauberer Alternativeinstieg gedacht war, klaeren ob
-   `finalize_ui_ready()` sie stattdessen nutzen sollte (staerkere Aenderung,
-   nur falls die beiden Ablaeufe sich als aequivalent erweisen).
-4. **Dokumentieren, nicht umbauen:** diesen Abschnitt als dauerhafte
-   Doku-Grundlage belassen (bereits geschrieben) - der bestehende Ablauf
-   selbst (drei-Durchlaeufe-Timer mit Idempotenz-Waechtern) ist funktional
-   und gut, ein struktureller Umbau ist NICHT vorgeschlagen. Der TODO-Punkt
-   "einheitlicher Ladevertrag ... nachvollziehbare Reihenfolge" ist damit
-   im Kern durch Dokumentation plus die zwei kleinen Fixes oben erfuellbar,
-   nicht durch eine groessere Umstrukturierung.
+1. **Bugfix umgesetzt:** `connect_mode_visibility_signals()` hat jetzt
+   denselben Dedup-Schutz wie die anderen Connectoren (ein Bool-Flag pro
+   Widget: `_face_mode_visibility_connected`,
+   `_face_edge_type_visibility_connected`,
+   `_drill_mode_visibility_connected`). Regressionsbewiesen: ein neuer Test
+   (`test_connect_mode_visibility_signals_does_not_double_connect_across_
+   repeated_calls`, `tests/test_preview_safety_and_language.py`) schlug vor
+   dem Fix nachweislich fehl (3 statt 1 Verbindung), danach gruen.
+2. **Geklaert und entschieden:** `process_deferred_lookups()` hatte
+   nachweislich KEINE Aufrufstelle - auch nicht an anderer Stelle im
+   Projekt. Als toten Code entfernt, zusammen mit der zugehoerigen
+   `_deferred_lookup_queue` (Initialisierung in `__init__`,
+   Befuellungslogik in `resolve_core_widgets_strict()` und
+   `bootstrap_widget_refs()`s `resolve_or_defer_local()`) - die dortigen
+   `if not ui_ready: ...` Kurzschluesse bleiben unveraendert bestehen
+   (naechster Durchlauf versucht es erneut), nur das sinnlose Anhaengen an
+   eine nie geleerte Warteschlange wurde entfernt. Reine Aufraeumarbeit,
+   volle Suite bestaetigt unveraendertes Verhalten.
+3. **Geklaert und entschieden - differenzierter als gedacht:**
+   `_connect_signals()` selbst ist tatsaechlich toter Code und wurde
+   entfernt. Aber die von ihr exklusiv aufgerufenen Untermethoden waren
+   NICHT alle gleich zu behandeln:
+   - `_connect_live_update_signals()`/`_connect_live_update()`/
+     `_on_param_changed()`: nachweislich redundant - `face_start_z` u. a.
+     sind bereits Teil der generischen `param_widgets`-Zuordnung
+     (`ui_params.py`), die ueber den echten, laufenden
+     `connect_param_change_signals()`-Pfad laengst verbunden wird und
+     denselben `_update_selected_operation(force=True)`-Kernaufruf macht.
+     Entfernt.
+   - `prepare_signal_connection_context()`: alle vier Einzelaktionen
+     (`_ensure_core_widgets()`, `tab_params`-Fallback,
+     `_ensure_list_ops_type()`, `_setup_resolver()`) sind bereits durch
+     andere, tatsaechlich laufende Aufrufstellen abgedeckt. Entfernt.
+   - `connect_resolver_fallbacks()`: **kein** redundanter Fall - ein
+     einzigartiger 5-Sekunden-Polling-Rueckfall speziell fuer
+     `listOperations` (eines der vier `_ui_finalized`-kritischen Widgets),
+     den es sonst nirgends gibt. Statt zu entfernen: sauber in
+     `finalize_ui_ready()` eingebunden (als letzter Rueckfall, wenn
+     `listOperations` auch nach dem synchronen `_find_any_widget()`-Versuch
+     noch fehlt), mit einem neuen `_list_ops_resolver_fallback_started`-
+     Schutz, damit nicht jeder der drei Durchlaeufe eine eigene Polling-
+     Kette startet. Zwei neue Tests
+     (`test_connect_resolver_fallbacks_starts_polling_once_when_list_ops_
+     missing`, `test_connect_resolver_fallbacks_does_nothing_once_list_ops_
+     is_already_bound`) decken das direkt ab; Regressionsbewiesen (der neue
+     Schutz wurde absichtlich entfernt, Test schlug wie erwartet fehl:
+     3 statt 1 `resolve_later()`-Aufruf).
+4. **Nicht strukturell umgebaut**, wie vorgeschlagen - der Drei-Durchlaeufe-
+   Ablauf selbst blieb unangetastet, nur die drei konkreten Befunde wurden
+   behoben. 917 Stub-/109 Real-Qt-Tests bestanden (912 Stub-Tests vorher + 5
+   neue, alle Stub-only), Standalone-Panel sauber gestartet.
 
 ## Views ohne eigenen Fachzustand (LES-052, Bestandsaufnahme 2026-09-17)
 
@@ -595,22 +624,28 @@ genannten Kriterien hat heute eine automatisierte Absicherung:
 Das Prinzip steht also schon in `doc/PANEL_ARCHITECTURE.md`, ist bislang
 aber unbewiesen statt durchgesetzt.
 
-### Umsetzungsvorschlag (noch nicht umgesetzt)
+### Umsetzung (2026-09-17)
 
-1. Einen Regressionstest ergaenzen, der `generate_program_gcode()` (oder
-   die hoehere `build_gcode_lines()`-Ebene) einmal mit vollstaendigen und
-   einmal mit fehlenden/alternativen Darstellungsressourcen (z. B.
-   `ToolVisualProvider` ohne Manifest-Eintrag) aufruft und byteidentisches
-   G-Code-Ergebnis erwartet - schliesst direkt die erste Abnahme-Luecke.
-2. Einen zweiten, kleineren Test ergaenzen, der gezielt `LathePreviewWidget`
-   mit Test-Operationsdaten befuellt und danach prueft, dass
-   `handler.model.operations`/erzeugter G-Code unveraendert bleiben -
-   macht die bisher nur "beobachtete" Eigenschaft der fuenf
-   Rendering-Cache-Felder (`paths`/`primitives`/`front_program`/
-   `front_operation`/`preview_scene`) genauso beweisbar wie bei
-   `ViewState`.
-3. Kein struktureller Umbau vorgeschlagen: Die Stichprobe findet die
-   Architektur bereits konform; der offene TODO-Punkt sollte durch die
-   beiden neuen Tests plus eine kurze Doku-Ergaenzung ("gepruefte
-   Konformitaet, siehe Tests X/Y") geschlossen werden, nicht durch neue
-   Abstraktionen.
+1. Regressionstest ergaenzt:
+   `test_gcode_identical_across_different_tool_visual_resource_sets`
+   (`tests/test_regression_contracts.py`) - laeuft alle
+   `example_programs()` je zweimal durch `generate_program_gcode()`,
+   dazwischen wird ein voller (`ToolVisualProvider` mit echter SVG-Datei)
+   und ein leerer Ressourcensatz aufgeloest (mit Sanity-Check, dass die
+   beiden Provider tatsaechlich divergieren: `uses_resource is True` vs.
+   `source == "procedural"`). Erwartet byteidentisches G-Code-Ergebnis und
+   unveraenderte `Operation.params`/`.path` - schliesst die erste
+   Abnahme-Luecke.
+2. Zweiter Test ergaenzt: `test_gcode_unaffected_by_preview_widget_
+   rendering_cache` (`tests/test_regression_contracts.py`) - befuellt
+   `LathePreviewWidget.paths`/`primitives`/`front_program`/
+   `front_operation`/`preview_scene` mit bewusst falschen Werten (u. a.
+   Operationen mit anderen Werkzeugnummern) und prueft, dass der fuer ein
+   unabhaengiges Programm erzeugte G-Code exakt gleich bleibt - macht die
+   bisher nur "beobachtete" Eigenschaft dieser fuenf Rendering-Cache-Felder
+   genauso beweisbar wie bei `ViewState`. Beide Tests per absichtlicher
+   Mutation der verglichenen Werte sanity-geprueft (die Assertion schlaegt
+   nachweislich fehl, wenn die G-Code-Ausgaben tatsaechlich divergieren).
+3. Kein struktureller Umbau vorgenommen, wie vorgeschlagen - die
+   Architektur war bereits konform, der offene TODO-Punkt ist jetzt durch
+   die beiden neuen Tests geschlossen statt durch neue Abstraktionen.

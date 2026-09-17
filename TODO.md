@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 912 Stub-Qt-Tests und 109 Tests mit echtem PyQt5, keine Skips.
+- 917 Stub-Qt-Tests und 109 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -140,38 +140,21 @@ liess ihn je weg).
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
-- [ ] Ladevertrag (Bestandsaufnahme + Umsetzungsvorschlag abgeschlossen,
-  siehe `doc/PANEL_ARCHITECTURE.md` → "Ladevertrag: Standalone und
-  Embedded"; noch nicht umgesetzt):
-  - [ ] `connect_mode_visibility_signals()` (`ui_signals.py`) fehlt als
-    einzigem der sechs Signal-Connectoren ein Dedup-Schutz - echtes
-    Mehrfachverbindungs-Risiko ueber die drei `_finalize_ui_ready()`-
-    Durchlaeufe hinweg, besonders im Embedded-Fall.
-  - [ ] klaeren, ob `process_deferred_lookups()` (`ui_widget_lookup.py`)
-    ueberhaupt eine Aufrufstelle hat (im `_finalize_ui_ready()`-Ablauf
-    keine gefunden); danach entweder einbinden oder als toten Code
-    entfernen.
-  - [ ] toten Code `HandlerClass._connect_signals()`
-    (`lathe_easystep_handler.py`) klaeren - wird laut Projektsuche
-    nirgends aufgerufen, divergiert von der tatsaechlich laufenden
-    Signalbindung in `finalize_ui_ready()`.
-  - [ ] den bestehenden Drei-Durchlaeufe-Ladeablauf NICHT strukturell
-    umbauen - er ist funktional und idempotent; der Ladevertrag-Punkt wird
-    durch die drei Fixes oben plus die bereits geschriebene Dokumentation
-    erfuellt, nicht durch eine neue Abstraktion.
-- [ ] Views ohne eigenen Fachzustand (Bestandsaufnahme + Umsetzungsvorschlag
-  abgeschlossen, siehe `doc/PANEL_ARCHITECTURE.md` → "Views ohne eigenen
-  Fachzustand"; noch nicht umgesetzt): Stichprobe (`StepListView`,
-  `PreviewView`, `LathePreviewWidget`, `ToolVisualProvider`, Kontur-Tabelle)
-  fand KEINE strukturelle Verletzung, aber zwei fehlende Regressionstests:
-  - [ ] Test ergaenzen: identischer G-Code bei vollstaendigen vs. fehlenden/
-    alternativen Darstellungsressourcen (schliesst das entsprechende
-    LES-052-Abnahmekriterium).
-  - [ ] Test ergaenzen: `LathePreviewWidget`s Rendering-Cache-Felder
-    (`paths`/`primitives`/`front_program`/`front_operation`/
-    `preview_scene`) fliessen nachweislich nie in `handler.model`/G-Code
-    zurueck - macht die bisher nur beobachtete Eigenschaft beweisbar
-    (analog zu `ViewState`).
+
+Ladevertrag und Views ohne eigenen Fachzustand: Bestandsaufnahme +
+Umsetzung abgeschlossen (Details: `doc/PANEL_ARCHITECTURE.md` →
+"Ladevertrag: Standalone und Embedded" / "Views ohne eigenen Fachzustand").
+`connect_mode_visibility_signals()` hat jetzt denselben Dedup-Schutz wie
+die anderen fuenf Connectoren; der tote `process_deferred_lookups()`-Code
+und die nie geleerte `_deferred_lookup_queue` wurden entfernt; der eigentlich
+tote `_connect_signals()` wurde entfernt, aber `connect_resolver_fallbacks()`
+(bisher nur ueber diesen toten Pfad erreichbar, aber als einziger echter
+5s-Polling-Rueckfall fuer `listOperations` NICHT redundant) wurde stattdessen
+sauber in `finalize_ui_ready()` eingebunden. Fuer "Views ohne eigenen
+Fachzustand" fand die Stichprobe keine strukturelle Verletzung; zwei neue
+Regressionstests sichern die beiden LES-052-Abnahmekriterien dazu jetzt ab
+(identischer G-Code bei unterschiedlichen Ressourcensaetzen; `LathePreview
+Widget`s Rendering-Cache fliesst nie zurueck).
 
 ### 2. Darstellungs- und Ressourcenadapter
 

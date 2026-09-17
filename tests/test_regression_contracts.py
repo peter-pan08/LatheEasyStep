@@ -9,6 +9,7 @@ from lathe_easystep.gcode_program import generate_program_gcode
 from lathe_easystep.model import OpType, Operation
 from lathe_easystep.motion_state import MotionState
 from lathe_easystep.persistence import build_program_data, step_data_to_operation
+from lathe_easystep.tool_visuals import ToolVisualProvider, ToolVisualRequest
 from lathe_easystep.ui_flow import describe_operation
 
 
@@ -21,6 +22,64 @@ def test_example_programs_match_reference_ngc_files():
         with open(os.path.join(ngc_dir, filename), "r", encoding="utf-8") as f:
             expected = f.read()
         assert generated.rstrip("\n") == expected.rstrip("\n"), filename
+
+
+def test_gcode_identical_across_different_tool_visual_resource_sets(tmp_path):
+    """LES-052-Abnahmekriterium (doc/PANEL_ARCHITECTURE.md, Abschnitt
+    "Views ohne eigenen Fachzustand"): gleicher Programmzustand und
+    identischer G-Code bei mindestens zwei Darstellungs-/Ressourcensaetzen.
+    generate_program_gcode()/ProgramModel nehmen nie eine ToolVisualProvider-
+    Instanz oder ein Ressourcen-Manifest entgegen - dieser Test haelt das
+    als Vertrag fest: ein vollstaendiger Ressourcensatz und ein komplett
+    fehlender (nur prozedurale Fallbacks) aendern nichts am erzeugten
+    G-Code fuer dasselbe Programm, und das Aufloesen selbst veraendert die
+    Operationsdaten nicht."""
+    image = tmp_path / "external.svg"
+    image.write_text("<svg/>", encoding="utf-8")
+    provider_full = ToolVisualProvider(tmp_path, {"turning.external": "external.svg"})
+    provider_empty = ToolVisualProvider()
+
+    for filename, (operations, settings) in example_programs().items():
+        operations_before = copy.deepcopy(operations)
+
+        gcode_full_resources = "\n".join(generate_program_gcode(copy.deepcopy(operations), dict(settings)))
+        visual_full = provider_full.resolve(ToolVisualRequest(family="turning", handed="external"))
+        assert visual_full.uses_resource is True
+
+        gcode_missing_resources = "\n".join(generate_program_gcode(copy.deepcopy(operations), dict(settings)))
+        visual_empty = provider_empty.resolve(ToolVisualRequest(family="turning", handed="external"))
+        assert visual_empty.source == "procedural"
+
+        assert gcode_full_resources == gcode_missing_resources, filename
+        assert [op.params for op in operations] == [op.params for op in operations_before], filename
+        assert [op.path for op in operations] == [op.path for op in operations_before], filename
+
+
+def test_gcode_unaffected_by_preview_widget_rendering_cache():
+    """LES-052-Abnahmekriterium (doc/PANEL_ARCHITECTURE.md, Abschnitt
+    "Views ohne eigenen Fachzustand"): LathePreviewWidget haelt paths/
+    primitives/front_program/front_operation/preview_scene als reine
+    Rendering-Kopie von Programmdaten (preview_widget.py). Dieser Test haelt
+    fest, dass beliebige (sogar bewusst falsche) Werte in diesen Feldern den
+    fuer ein unabhaengiges Programm erzeugten G-Code nicht beeinflussen -
+    macht die bisher nur beobachtete Eigenschaft beweisbar."""
+    from lathe_easystep.preview_widget import LathePreviewWidget
+    from lathe_easystep.view_state import ViewState
+
+    filename, (operations, settings) = next(iter(example_programs().items()))
+    gcode_before = "\n".join(generate_program_gcode(copy.deepcopy(operations), dict(settings)))
+
+    widget = LathePreviewWidget.__new__(LathePreviewWidget)
+    widget._view = ViewState()
+    widget.paths = [[(999.0, -999.0)]]
+    widget.primitives = [[{"bogus": True}]]
+    widget.front_program = {"__operations": [Operation(OpType.ABSPANEN, {"tool": 99})]}
+    widget.front_operation = Operation(OpType.THREAD, {"tool": 42})
+    widget.preview_scene = object()
+
+    gcode_after = "\n".join(generate_program_gcode(copy.deepcopy(operations), dict(settings)))
+
+    assert gcode_before == gcode_after, filename
 
 
 def test_example_programs_roundtrip_through_program_payload():
