@@ -12,6 +12,8 @@ import os
 import sys
 from weakref import WeakSet
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType, ProgramModel
 from lathe_easystep.dirty_state import DirtyState
@@ -400,6 +402,36 @@ def test_sync_form_to_operation_preserves_unmapped_keyway_values():
     assert keyway.params["slot_start_angle"] == 15.0
     assert keyway.params["slot_angle_step"] == 45.0
     assert keyway.params["start_x_dia"] == 30.0
+
+
+def test_sync_form_to_operation_rolls_back_params_when_geometry_fails():
+    """LES-052-Bestandsaufnahme-Fund (Abschnitt 3, doc/PANEL_ARCHITECTURE.md):
+    op.params wurde bisher mit den neu gesammelten Werten ueberschrieben,
+    BEVOR update_geometry() validiert - schlug die Validierung fehl (z. B.
+    NaN/Inf via validate_finite_data() in model.py), blieb das Modell auf
+    dem halb angewendeten, ungueltigen Stand stehen, ohne dass irgendetwas
+    das sichtbar gemacht haette. Ein Fehlschlag von update_geometry() muss
+    die vorherigen Parameter wiederherstellen, bevor die Exception
+    weitergereicht wird."""
+    h = _make_handler()
+    op = Operation(OpType.GROOVE, {"tool": 1, "depth": 2.0}, path=[])
+    h.model.add_operation(op)
+    h.list_ops.addItem("1: Nut")
+    h.list_ops.setCurrentRow(0)
+
+    h._collect_params = lambda op_type: {"depth": 999.0}
+    h._describe_operation = lambda op, idx: f"{idx}: Nut"
+
+    def _boom(_op):
+        raise ValueError("boom")
+
+    h.model.update_geometry = _boom
+
+    with pytest.raises(ValueError):
+        h._sync_form_to_operation(0)
+
+    assert op.params["depth"] == 2.0
+    assert op.params["tool"] == 1
 
 
 def test_double_click_flushes_current_operation():

@@ -155,6 +155,7 @@ def sync_form_to_operation(handler, idx: int) -> None:
     try:
         handler.model.update_geometry(op)
     except Exception as exc:
+        op.params = previous_params
         try:
             handler._log(f"[LatheEasyStep][debug] update_geometry failed for idx={idx} op_type={op.op_type}: {exc!r}", level="debug")
         except Exception:

@@ -17,6 +17,35 @@
 
 ## [Unreleased]
 
+### LES-052: Abschnitt 3 - Rollback-Luecke gefunden und behoben 2026-09-17
+
+- Abschnitt 3 ("Atomare Zustandsaenderungen und Fehlergrenzen") gegen den
+  Code geprueft - anders als Abschnitt 1/2 ist das hier NICHT ueberwiegend
+  bereits erledigt. Details: `doc/PANEL_ARCHITECTURE.md` → "Atomare
+  Zustandsaenderungen und Fehlergrenzen".
+- **Konkreter, sicherheitsrelevanter Fund und behoben:**
+  `sync_form_to_operation()` (`ui_program.py`) ueberschrieb `op.params` mit
+  den neu gesammelten Formularwerten, BEVOR `update_geometry()`
+  validierte. `validate_finite_data()` (`model.py`/`numeric.py`) wirft bei
+  NaN/Inf oder nicht-numerischen Eingaben eine echte, erreichbare
+  Exception - schlug diese Validierung fehl, blieb `op.params` auf dem
+  halb angewendeten, ungueltigen Stand stehen, ohne jede sichtbare
+  Meldung (der einzige Aufrufer `handle_param_change()` schluckt die
+  Exception komplett). Jetzt wird bei einem Fehlschlag von
+  `update_geometry()` auf die vorherigen Parameter zurueckgesetzt, bevor
+  die Exception weitergereicht wird. Regressionsbewiesen: ein neuer Test
+  schlug vor dem Fix nachweislich fehl.
+- Die anderen drei Punkte des Abschnitts (projektweite `except Exception`-
+  Haertung: ~400 Vorkommen in 40+ Dateien, deutlich groesser als der
+  bereits laufende, engere LES-044-Umfang; zentrale Fehlerdiagnose-
+  Sammlung; einheitliche Fehlerklassen `INFO`/`WARNING`/`BLOCKING_ERROR`/
+  `INTERNAL_ERROR`) sind vollstaendig unimplementiert und bewusst NICHT in
+  dieser Session angegangen - eigenstaendige, projektweite
+  Entwurfsentscheidungen, die vor der Umsetzung eigene Klaerung
+  verdienen.
+- 917 Stub-/110 Real-Qt-Tests bestanden, Standalone-Panel sauber
+  gestartet.
+
 ### LES-052: Abschnitt 2 vollstaendig - vierter Punkt war ebenfalls schon erledigt 2026-09-17
 
 - Vierten und letzten offenen Punkt aus Abschnitt 2 ("Preview-Canvas,

@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 916 Stub-Qt-Tests und 110 Tests mit echtem PyQt5, keine Skips.
+- 917 Stub-Qt-Tests und 110 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -184,19 +184,42 @@ grafisches Theme, oder ist das bewusst ausreichend?
 
 ### 3. Atomare Zustandsaenderungen und Fehlergrenzen
 
+Anders als Abschnitt 1/2: hier gibt es echte, teils sicherheitsrelevante
+Luecken (Bestandsaufnahme + erster Fix 2026-09-17, Details:
+`doc/PANEL_ARCHITECTURE.md` → "Atomare Zustandsaenderungen und
+Fehlergrenzen"). Konkreter Fund und behoben: `sync_form_to_operation()`
+(`ui_program.py`) ueberschrieb `op.params` mit den neu gesammelten Werten,
+BEVOR `update_geometry()` validierte (`validate_finite_data()` in
+`model.py`, ein echter, erreichbarer Fehlerfall bei NaN/Inf/nicht-
+numerischen Eingaben) - schlug die Validierung fehl, blieb das Modell ohne
+jede sichtbare Meldung auf dem halb angewendeten, ungueltigen Stand stehen
+(der Aufrufer `handle_param_change()` schluckt die Exception). Jetzt wird
+bei einem Fehlschlag auf die vorherigen Parameter zurueckgesetzt.
+Regressionsbewiesen.
+
 - [ ] Aenderungen nach dem Ablauf Eingabe -> Normalisierung -> Validierung ->
-  Modelluebernahme -> Dirty-State -> Preview/Warnungen ordnen.
-- [ ] bei Validierungs- oder Darstellungsfehlern den letzten gueltigen
-  Modellzustand behalten; keine teilweise aktualisierten Widget-Zustaende als
-  neue fachliche Wahrheit uebernehmen.
+  Modelluebernahme -> Dirty-State -> Preview/Warnungen ordnen - der obige
+  Fund/Fix deckt nur den Rollback-Teil ab, nicht die vollstaendige
+  Reihenfolge-Pruefung ueber alle Aenderungspfade.
+- [ ] weitere Stellen mit demselben Muster (Modelluebernahme vor
+  Validierung, kein Rollback bei Fehlschlag) suchen - `sync_form_to_
+  operation()` war nur die eine gefundene, gezielt untersuchte Stelle.
 - [ ] breite `except Exception`-Fallbacks in den betroffenen UI-/Preview-
   Modulen durch definierte Fehlerklassen oder engere Fehlergrenzen ersetzen,
-  ohne erwartete optionale Ressourcenfehler zu verschlucken.
+  ohne erwartete optionale Ressourcenfehler zu verschlucken. Ueberschneidet
+  sich mit LES-044s engerem Punkt (nur `preview_widget.py`/`ui_preview.py`);
+  projektweite Zaehlung ergab ~400 Vorkommen in 40+ Dateien - deutlich
+  groesser als der bisherige LES-044-Umfang, nicht in einem Rutsch
+  angehen, sondern inkrementell oder explizit in Etappen zerlegen.
 - [ ] Fehlerdiagnosen zentral sammeln und fuer Log, UI-Warnung und Tests
-  strukturiert nutzbar machen.
+  strukturiert nutzbar machen - vollstaendig unimplementiert, eigene
+  Entwurfsarbeit.
 - [ ] Fehlerklassen vereinheitlichen: `INFO`, `WARNING`, `BLOCKING_ERROR` und
   `INTERNAL_ERROR`; insbesondere muss klar sein, wann kein G-Code entstehen
-  darf.
+  darf. Vollstaendig unimplementiert (`checks.py`s `ValidationError` ist nur
+  ein `Tuple[int, str]`-Typalias, keine Klassenhierarchie) - eigenstaendige
+  Entwurfsentscheidung mit projektweiter Auswirkung, verdient eigene
+  Klaerung vor der Umsetzung.
 
 ### 4. Bedienbarkeit und Wiederherstellung
 

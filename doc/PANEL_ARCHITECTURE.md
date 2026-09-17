@@ -683,3 +683,86 @@ bestehende Test erweitert.
    +1 Stub fuer die Rendering-Cache-Regression, +1 Real-Qt fuer die neue
    Dirty-State-Regression, der zunaechst hinzugefuegte und wieder entfernte
    Stub-Test gleicht sich aus).
+
+## Atomare Zustandsaenderungen und Fehlergrenzen (LES-052 Abschnitt 3, Bestandsaufnahme 2026-09-17)
+
+Anders als Abschnitt 1 (Ladevertrag/Views) und Abschnitt 2 (Darstellungs-
+adapter) ist Abschnitt 3 **nicht** ueberwiegend bereits erledigt - hier
+gibt es echte, teils sicherheitsrelevante Luecken.
+
+### Konkreter Befund: kein Rollback bei fehlgeschlagener Geometrieberechnung
+
+`sync_form_to_operation()` (`ui_program.py:137-166`) faengt zwar
+`previous_params = dict(op.params or {})` vorher ab, verwendet das aber
+NUR, um `__`-praefixierte interne Schluessel zu erhalten - nicht als
+Rollback-Basis:
+
+```python
+op.params = dict(previous_params)
+op.params.update(collected_params)   # <- Modell schon ueberschrieben
+...
+try:
+    handler.model.update_geometry(op)   # <- validate_finite_data() etc.
+except Exception as exc:
+    ...
+    raise                                # <- op.params bleibt korrumpiert
+```
+
+`update_geometry()` (`model.py:80`) ruft `validate_finite_data()`
+(`numeric.py`) auf, die bei NaN/Inf-Werten oder nicht-numerischen Strings
+in numerischen Feldern eine echte, erreichbare Exception wirft - kein
+theoretischer Fall. Der einzige Aufrufer,
+`handler._update_selected_operation()` (`lathe_easystep_handler.py:2488`),
+wird wiederum von `handle_param_change()` (`ui_flow.py`) in ein
+schluckendes `except Exception: pass` gewickelt. Ergebnis: bei ungueltiger
+Eingabe bleibt `op.params` auf dem halb angewendeten, ungueltigen Stand
+stehen, ohne jede sichtbare Fehlermeldung - genau das Gegenteil von
+Abschnitt 3s erstem und zweitem Punkt ("Eingabe -> Normalisierung ->
+Validierung -> Modelluebernahme -> Dirty-State -> Preview/Warnungen";
+"bei Validierungs-/Darstellungsfehlern den letzten gueltigen Modellzustand
+behalten"). Keine bestehende Testdatei deckt dieses Rollback-Verhalten ab
+(`previous_params` wird nur fuer den `__`-Schluessel-Erhalt getestet, nicht
+fuer echtes Rollback).
+
+### Die anderen drei Punkte: real offen, aber sehr unterschiedlich gross
+
+- **`except Exception`-Haertung projektweit** (Abschnitt-3-Punkt 3):
+  ueberschneidet sich mit dem bereits laufenden, enger gefassten LES-044-
+  Punkt (dort nur `preview_widget.py`/`ui_preview.py`, 36 von 40 bewertet).
+  Projektweite Zaehlung: **~400 `except Exception`-Vorkommen in 40+
+  Dateien** (`lathe_easystep_handler.py` allein 77). Das ist eine Groessen-
+  ordnung groesser als der bereits bearbeitete LES-044-Umfang und sollte
+  NICHT in einem Rutsch angegangen werden.
+- **Zentrale Fehlerdiagnose-Sammlung** (Punkt 4) und **einheitliche
+  Fehlerklassen `INFO`/`WARNING`/`BLOCKING_ERROR`/`INTERNAL_ERROR`**
+  (Punkt 5): beide vollstaendig unimplementiert - `checks.py`s
+  `ValidationError` ist nur ein `Tuple[int, str]`-Typalias, keine echte
+  Klassenhierarchie; kein `BLOCKING_ERROR`/`INTERNAL_ERROR`-Treffer im
+  gesamten Projekt. Das ist echte, noch nicht begonnene Entwurfsarbeit
+  (Klassenhierarchie, Zuordnung "wann darf kein G-Code entstehen"), keine
+  Bestandsaufnahme-Korrektur wie bei den Abschnitten 1/2.
+
+### Umsetzung (2026-09-17, Punkt 1 erledigt, Punkte 3-5 bewusst offen)
+
+1. **Umgesetzt:** `sync_form_to_operation()` (`ui_program.py`) setzt
+   `op.params` bei einer `update_geometry()`-Exception jetzt auf
+   `previous_params` zurueck, bevor die Exception weitergereicht wird - der
+   Aufrufer (`handle_param_change()`) schluckt sie weiterhin (separates
+   Thema, siehe Punkte 3-5), aber das Modell bleibt in jedem Fall
+   konsistent, auch wenn niemand die Exception sieht. Regressionsbewiesen:
+   ein neuer Test (`test_sync_form_to_operation_rolls_back_params_when_
+   geometry_fails`, `tests/test_step_double_click.py`) schlug vor dem Fix
+   nachweislich fehl (Modell zeigte den halb angewendeten ungueltigen Wert
+   statt des vorherigen gueltigen).
+2. **Bewusst NICHT in dieser Session:** die projektweite `except
+   Exception`-Haertung (Abschnitt-3-Punkt 3) - zu gross fuer einen
+   einzelnen Schritt; eher inkrementell "beim naechsten Beruehren der
+   Datei" statt als eigene Grosskampagne, oder explizit in kleine, nach
+   Datei geordnete Etappen zerlegen, falls gewuenscht.
+3. **Bewusst NICHT in dieser Session:** Fehlerklassen-Taxonomie und
+   zentrale Diagnose-Sammlung (Punkte 4/5) - das sind eigenstaendige
+   Entwurfsentscheidungen mit projektweiter Auswirkung (jede Warnung/jeder
+   Fehler im Panel waere betroffen), die vor der Umsetzung eine eigene
+   Klaerung verdienen, nicht nebenbei in diesem Durchgang.
+4. 917 Stub-/110 Real-Qt-Tests bestanden, Standalone-Panel sauber
+   gestartet.
