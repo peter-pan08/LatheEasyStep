@@ -124,3 +124,21 @@ def test_double_click_restores_fitted_view():
     assert event.accepted is True
     assert widget._view_zoom == 1.0
     assert widget._view_pan == QtCore.QPointF(0.0, 0.0)
+
+
+def test_view_zoom_and_pan_properties_delegate_to_view_state():
+    """LES-052-Extraktion (ViewState, preview_widget.py): `_view_zoom`/
+    `_view_pan` sind jetzt Properties auf `self._view` (ViewState.zoom,
+    ViewState.pan_x/pan_y als reine floats, kein QPointF im Zustandsobjekt
+    selbst). Diese Rueckuebersetzung an der Qt-Grenze ist die einzige echte
+    Logik dieser Kapselung - direkt abgesichert, unabhaengig von den
+    komplexeren Navigations-Tests oben."""
+    widget = _widget()
+
+    widget._view_zoom = 2.5
+    assert widget._view.zoom == 2.5
+
+    widget._view_pan = QtCore.QPointF(12.0, -7.5)
+    assert widget._view.pan_x == 12.0
+    assert widget._view.pan_y == -7.5
+    assert widget._view_pan == QtCore.QPointF(12.0, -7.5)

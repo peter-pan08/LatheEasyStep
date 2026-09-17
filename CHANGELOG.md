@@ -17,6 +17,47 @@
 
 ## [Unreleased]
 
+### LES-052: `ViewState` gekapselt - fuenfte Zustandskategorie 2026-09-17
+
+- `view_state.py` neu: fasst die neun bisher losen Attribute auf
+  `LathePreviewWidget` (`_view_zoom`, `_view_pan`, `slice_z`,
+  `slice_enabled`, `view_mode`, `active_index`, `_legend_collapsed`,
+  `show_legend`, `status_messages`) in einer einzigen, Qt-freien Klasse
+  zusammen (`widget._view`). `_view_pan` (vormals `QtCore.QPointF`) wird
+  als zwei reine `float`-Felder (`pan_x`/`pan_y`) gehalten, damit das Modul
+  komplett ohne Qt-Import auskommt.
+- Anders als bei `DirtyState`/`ToolTableState`/`RuntimeState` (deren
+  Aufrufstellen ueber viele Module verteilt waren, deshalb per Umbenennung
+  auf `handler._<name>.<feld>` umgestellt) liegt die gesamte Nutzung dieser
+  neun Felder innerhalb einer einzigen Klasse (62 Fundstellen in
+  `preview_widget.py`). Deshalb ein anderer Adapter-Mechanismus:
+  `LathePreviewWidget` haelt fuer jedes Feld eine gleichnamige `@property`,
+  die transparent an `self._view.<feld>` delegiert - keine der 62 internen
+  Nutzungsstellen musste angefasst werden, und externer Code (mehrere
+  Tests lesen/setzen `widget.slice_z`/`widget.active_index`/`widget.
+  _view_zoom`/`widget._view_pan` direkt) funktioniert unveraendert weiter.
+- 4 Testfixturen (`LathePreviewWidget.__new__(LathePreviewWidget)`,
+  `__init__` uebersprungen) in `tests/test_front_slice_profile.py`,
+  `tests/test_preview_widget_error_boundaries.py`,
+  `tests/test_slice_view_sync.py` mussten um `widget._view = ViewState()`
+  ergaenzt werden.
+- 4 neue eigenstaendige Tests (`tests/test_view_state.py`, Qt-frei) plus 1
+  neuer Property-Rundlauf-Test in `tests/test_preview_navigation.py`
+  (`test_view_zoom_and_pan_properties_delegate_to_view_state`), der
+  gezielt die `_view_pan`-QPointF-Rueckuebersetzung absichert - die
+  einzige echte Logik dieser Kapselung.
+- Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung der
+  `_view_pan`-Setter-Property (Y-Komponente faelschlich aus `value.x()`
+  statt `value.y()`) wurde von mehreren Tests korrekt erkannt, darunter
+  zwei bereits vorher bestehende Navigationstests.
+- Damit sind jetzt alle sechs in LES-052 genannten Zustandskategorien
+  tatsaechlich gekapselt (`ProgramState`, `OperationState`, `ToolTableState`,
+  `ViewState`, `DirtyState`, `RuntimeState`) - siehe auch die fruehere
+  Korrektur weiter unten, die diese Aussage vorschnell fuer `ViewState`
+  behauptet hatte, bevor die Arbeit tatsaechlich erledigt war.
+- 912 Stub-/109 Real-Qt-Tests bestanden (908 vorher + 4 neue Stub- und 1
+  neuer Real-Qt-Test), Standalone-Panel sauber gestartet.
+
 ### LES-052: fuenfte Handler-Kleber-Extraktion (`tool_change_position_lines`) 2026-09-17
 
 - `_tool_change_position_lines()` (~35 Zeilen, baut G-Code zum Anfahren der

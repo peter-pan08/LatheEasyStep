@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from lathe_easystep.preview_widget import LathePreviewWidget
 from lathe_easystep.ui_preview import reset_preview_view, setup_slice_view, sync_slice_widget
+from lathe_easystep.view_state import ViewState
 from lathe_easystep_handler import HandlerClass
 
 
@@ -198,6 +199,7 @@ def test_on_slice_changed_logs_and_syncs_widget():
 
 def test_preview_widget_emit_uses_callback_fallback():
     widget = LathePreviewWidget.__new__(LathePreviewWidget)
+    widget._view = ViewState()
     widget.slice_z = 0.0
     widget.view_mode = "side"
     widget._slice_change_callback_calls = []

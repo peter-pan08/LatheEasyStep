@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 from qtpy import QtCore, QtGui, QtWidgets
 
 from .model import Operation, OpType
+from .view_state import ViewState
 from .preview_scene import (
     build_front_view_draw_plan,
     build_front_view_screen_plan,
@@ -61,14 +62,12 @@ class LathePreviewWidget(QtWidgets.QWidget):
     sliceChanged = QtCore.Signal(float)
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._view = ViewState()
         self.x_is_diameter = True  # X values are treated as radius for drawing but labeled as diameter
         self.paths: List[List[Tuple[float, float]]] = []
         self.primitives: List[List[dict]] = []
-        self.active_index: int | None = None
         self.preview_scene = None
         # Legend visibility & collision indication
-        self.show_legend = True
-        self._legend_collapsed = False
         self._legend_click_rect = None
 
         self._collision_active = False
@@ -76,25 +75,95 @@ class LathePreviewWidget(QtWidgets.QWidget):
         self._blink_timer = QtCore.QTimer(self)
         self._blink_timer.setInterval(350)
         # Slice view support (side view + draggable Z-slice)
-        self.view_mode = "side"  # "side" or "slice"
-        self.slice_enabled = False
-        self.slice_z = 0.0
         self._slice_drag = False
         self._view_rect = None
         self._view_min_z = None
         self._view_max_z = None
         self._view_scale = None
-        self._view_zoom = 1.0
-        self._view_pan = QtCore.QPointF(0.0, 0.0)
         self._pan_drag = False
         self._pan_last_pos = None
         self.front_program: Dict[str, object] = {}
         self.front_operation: Operation | None = None
-        self.status_messages: List[str] = []
         self._blink_timer.timeout.connect(self._on_blink_timer)
         self.setMinimumHeight(200)
         self._base_span = 10.0  # Default 10x10 mm viewport
         self.setCursor(QtCore.Qt.OpenHandCursor)
+
+    # ---- ViewState-Properties (LES-052) --------------------------------
+    # Delegieren transparent an self._view, damit bestehende Lese-/
+    # Schreibzugriffe (intern wie in Tests) unveraendert weiter funktionieren.
+    @property
+    def active_index(self) -> int | None:
+        return self._view.active_index
+
+    @active_index.setter
+    def active_index(self, value: int | None) -> None:
+        self._view.active_index = value
+
+    @property
+    def show_legend(self) -> bool:
+        return self._view.show_legend
+
+    @show_legend.setter
+    def show_legend(self, value: bool) -> None:
+        self._view.show_legend = value
+
+    @property
+    def _legend_collapsed(self) -> bool:
+        return self._view.legend_collapsed
+
+    @_legend_collapsed.setter
+    def _legend_collapsed(self, value: bool) -> None:
+        self._view.legend_collapsed = value
+
+    @property
+    def view_mode(self) -> str:
+        return self._view.view_mode
+
+    @view_mode.setter
+    def view_mode(self, value: str) -> None:
+        self._view.view_mode = value
+
+    @property
+    def slice_enabled(self) -> bool:
+        return self._view.slice_enabled
+
+    @slice_enabled.setter
+    def slice_enabled(self, value: bool) -> None:
+        self._view.slice_enabled = value
+
+    @property
+    def slice_z(self) -> float:
+        return self._view.slice_z
+
+    @slice_z.setter
+    def slice_z(self, value: float) -> None:
+        self._view.slice_z = value
+
+    @property
+    def _view_zoom(self) -> float:
+        return self._view.zoom
+
+    @_view_zoom.setter
+    def _view_zoom(self, value: float) -> None:
+        self._view.zoom = value
+
+    @property
+    def _view_pan(self) -> QtCore.QPointF:
+        return QtCore.QPointF(self._view.pan_x, self._view.pan_y)
+
+    @_view_pan.setter
+    def _view_pan(self, value: QtCore.QPointF) -> None:
+        self._view.pan_x = float(value.x())
+        self._view.pan_y = float(value.y())
+
+    @property
+    def status_messages(self) -> List[str]:
+        return self._view.status_messages
+
+    @status_messages.setter
+    def status_messages(self, value: List[str]) -> None:
+        self._view.status_messages = value
 
     def reset_view(self) -> None:
         """Fit the model again without changing any machining geometry."""

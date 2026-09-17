@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 908 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
+- 912 Stub-Qt-Tests und 109 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -129,21 +129,14 @@ Widget-Lookup-Bootstrap-Methoden
 (`_ensure_contour_widgets()`, `_ensure_thread_widgets()`) bewusst NICHT
 extrahiert - das ist Bootstrap-Code, der laut diesem Punkt auf dem Handler
 bleiben soll; ihre eigentliche offene Aufgabe ist der Ladevertrag-Punkt
-unten. `ViewState` (Zoom/Pan/Slice/
-Ansichtsmodus, siehe zweiter Punkt unten) ist bewusst NICHT Teil dieser
-Liste: es ist nur lokal auf `LathePreviewWidget` gebuendelt, aber ungetypt -
-eine fruehere Formulierung hatte das faelschlich als abgeschlossen
-hingestellt (korrigiert, siehe Changelog).
+unten. `ViewState` (Zoom/Pan/Slice/Ansichtsmodus, vormals lose Attribute
+auf `LathePreviewWidget`) ist jetzt ebenfalls gekapselt (`view_state.py`,
+fuenfte Zustandskategorie) - Details im Changelog und
+`doc/PANEL_ARCHITECTURE.md`.
 
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
-- [ ] `ViewState` als benannten, Qt-freien Typ einfuehren, der
-  Zoom/Pan/Slice-Position/Ansichtsmodus/Legenden-Auf-Zu-Zustand aus
-  `LathePreviewWidget.__init__` (`_view_zoom`, `_view_pan`, `slice_z`,
-  `slice_enabled`, `view_mode`, `active_index`, `_legend_collapsed`,
-  `show_legend`, `status_messages`) buendelt, statt sie als lose
-  Attributliste auf einem Qt-Widget zu fuehren.
 - [ ] toten Code entfernen, der bei der Handler-Kleber-Extraktion auffiel:
   in `refresh_operation_list()` (`ui_flow.py`) ist der `select_index is
   None`-Zweig ("vorherige Auswahl beibehalten") unerreichbar, da jeder

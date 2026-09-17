@@ -80,20 +80,47 @@ Tests bestanden; Standalone-Panel-Log bestaetigt den echten Ladepfad
 
 ### `ViewState`
 
-**Teilweise gekapselt, aber ungetypt.** Zoom/Pan/Slice-Position/aktiver
-Ansichtsmodus/Legenden-Auf-Zu-Zustand leben als einzelne Attribute direkt
-auf `LathePreviewWidget` (`preview_widget.py::__init__`): `_view_zoom`,
-`_view_pan`, `slice_z`, `slice_enabled`, `view_mode`, `active_index`,
-`_legend_collapsed`, `show_legend`, `status_messages`. Das ist insofern
-unproblematisch, als es reiner Anzeigezustand ist, der nachweislich nie in
-Operationsdaten oder G-Code zurueckfliesst (mehrfach per Test belegt, siehe
-LES-051-Eintraege). Zusaetzlich existiert impliziter Qt-Zustand ausserhalb
-jeder eigenen Klasse: aktiver Reiter (`QTabWidget.currentIndex()`) und
+**Gekapselt seit 2026-09-17 (fuenfte Zustandskategorie, `view_state.py`).**
+Zoom/Pan/Slice-Position/aktiver Ansichtsmodus/Legenden-Auf-Zu-Zustand lebten
+als neun einzelne Attribute direkt auf `LathePreviewWidget`
+(`preview_widget.py::__init__`): `_view_zoom`, `_view_pan`, `slice_z`,
+`slice_enabled`, `view_mode`, `active_index`, `_legend_collapsed`,
+`show_legend`, `status_messages`. Anders als bei `DirtyState`/
+`ToolTableState`/`RuntimeState` (deren Aufrufstellen ueber viele Module
+verteilt waren, deshalb per Umbenennung auf `handler._<name>.<feld>`
+umgestellt) liegt die gesamte Nutzung dieser neun Felder innerhalb einer
+einzigen Klasse (62 Fundstellen in `preview_widget.py` allein). Deshalb ein
+anderer Adapter-Mechanismus: `LathePreviewWidget` haelt fuer jedes Feld
+eine gleichnamige `@property`, die transparent an `self._view.<feld>`
+delegiert - keine der 62 internen Nutzungsstellen musste angefasst werden,
+und extern lesender/schreibender Code (mehrere Tests lesen/setzen
+`widget.slice_z`/`widget.active_index`/`widget._view_zoom`/`widget.
+_view_pan` direkt) funktioniert unveraendert weiter. `_view_pan` (vormals
+ein `QtCore.QPointF`) wird in `ViewState` bewusst als zwei reine `float`-
+Felder (`pan_x`/`pan_y`) gehalten, nicht als `QPointF` - damit `view_state.py`
+komplett ohne Qt-Import auskommt und wie die anderen vier Zustandsklassen
+ohne laufende Qt-Anwendung testbar bleibt; die `_view_pan`-Property baut
+das `QPointF` erst an der Grenze zu Qt (die einzige echte Logik dieser
+Kapselung, direkt per `test_view_zoom_and_pan_properties_delegate_to_
+view_state` in `tests/test_preview_navigation.py` abgesichert).
+5 bare `LathePreviewWidget.__new__(LathePreviewWidget)`-Testfixturen (4
+Aufrufstellen in `tests/test_front_slice_profile.py`,
+`tests/test_preview_widget_error_boundaries.py`,
+`tests/test_slice_view_sync.py`) mussten um `widget._view = ViewState()`
+ergaenzt werden - kleinere Testflaeche als bei `RuntimeState`, da nur diese
+eine Widget-Klasse betroffen ist. 4 neue eigenstaendige Tests
+(`tests/test_view_state.py`, Qt-frei) plus 1 neuer Property-Rundlauf-Test
+in `tests/test_preview_navigation.py`.
+Zusaetzlich existiert weiterhin impliziter Qt-Zustand ausserhalb jeder
+eigenen Klasse: aktiver Reiter (`QTabWidget.currentIndex()`) und
 ausgewaehlte Step-Zeile (`list_ops.currentRow()`, gekapselt hinter
 `StepListView.selected_row()` in `ui_step_list_view.py` - das ist bereits
-ein brauchbarer Adapter-Ansatz). Fehlt: ein benannter `ViewState`-Typ, der
-diese Werte buendelt, statt sie als Attributliste auf einem Qt-Widget zu
-fuehren.
+ein brauchbarer Adapter-Ansatz, bewusst nicht Teil dieser Kapselung).
+Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung der
+`_view_pan`-Setter-Property (Y-Komponente faelschlich aus `value.x()` statt
+`value.y()`) wurde von mehreren Tests korrekt erkannt, darunter zwei
+bereits vorher bestehende Navigationstests. 912 Stub-/109 Real-Qt-Tests
+bestanden, Standalone-Panel sauber gestartet.
 
 ### `DirtyState`
 
@@ -308,17 +335,22 @@ Tests bestanden, Standalone-Panel sauber gestartet.
 
 Stand 2026-09-17: Alle sechs Zustandskategorien sind jetzt gekapselt -
 LES-052 Abschnitt 1s erster Punkt ist damit vollstaendig abgeschlossen.
-Drei Kategorien lebten urspruenglich ausschliesslich als unbenannte
-Attribute auf dem Handler, direkt gelesen/geschrieben von freien Funktionen
-in mehreren Modulen - genau das "Handler als heimlicher Zustandsbesitzer"-
-Muster, das LES-052 beenden soll: `DirtyState`, `ToolTableState` und
-zuletzt `RuntimeState` (zweiter bis vierter LES-052-Baustein). Alle drei
-nach demselben Muster: Qt-freie Klasse (Methoden bei `DirtyState`/
-`ToolTableState`, bei `RuntimeState` reine Felder, da die Reentranz-Logik
-bewusst an den Aufrufstellen blieb statt in einer neuen `guard()`-
-Abstraktion), duenne `ui_*.py`-Adapter mit unveraenderter Signatur, damit
-bestehende Aufrufstellen nur den Attributzugriff, nicht ihre Struktur,
-aendern mussten. Bei allen drei Umsetzungen kamen zusaetzliche, bei der
+Vier Kategorien lebten urspruenglich als unbenannte Attribute direkt auf
+Handler oder Widget, gelesen/geschrieben von freien Funktionen oder Code in
+mehreren Modulen - genau das "heimlicher Zustandsbesitzer"-Muster, das
+LES-052 beenden soll: `DirtyState`, `ToolTableState`, `RuntimeState`
+(zweiter bis vierter LES-052-Baustein, alle drei auf dem Handler) und
+zuletzt `ViewState` (fuenfter Baustein, auf `LathePreviewWidget`). Die
+ersten drei nach demselben Muster: Qt-freie Klasse (Methoden bei
+`DirtyState`/`ToolTableState`, bei `RuntimeState` reine Felder, da die
+Reentranz-Logik bewusst an den Aufrufstellen blieb statt in einer neuen
+`guard()`-Abstraktion), duenne `ui_*.py`-Adapter mit unveraenderter
+Signatur, damit bestehende Aufrufstellen nur den Attributzugriff, nicht
+ihre Struktur, aendern mussten. `ViewState` weicht davon bewusst ab: da
+alle 62 Nutzungsstellen innerhalb einer einzigen Klasse liegen (statt ueber
+viele Module verteilt), delegieren `@property`-Deskriptoren transparent an
+`self._view.<feld>` - keine einzige interne Nutzungsstelle musste
+umbenannt werden. Bei mehreren Umsetzungen kamen zusaetzliche, bei der
 ersten Bestandsaufnahme uebersehene lose Attribute zum Vorschein
 (`_loaded_tools`/`_missing_iso_tools` bei `ToolTableState`; die
 tatsaechliche Groesse von `RuntimeState` selbst kam erst bei der
@@ -326,7 +358,13 @@ tatsaechliche Groesse von `RuntimeState` selbst kam erst bei der
 selbst nur der erste, nicht der letzte Blick auf den tatsaechlichen Code
 sein sollte. `ProgramState`/`OperationState` und `MotionState`/
 `SpindleState` waren schon vorher sauber gekapselt und dienten durchgehend
-als Vorbild fuer die drei Umsetzungen. Die naechsten LES-052-Schritte
-(Abschnitt 1s verbleibende Punkte: Handler auf Bootstrap begrenzen,
-einheitlicher Ladevertrag, Views ohne eigenen Fachzustand) bauen auf dieser
-jetzt vollstaendigen Zustandstrennung auf.
+als Vorbild. Auf der jetzt vollstaendigen Zustandstrennung aufbauend wurden
+bereits sechs Handler-Kleber-Methoden (fuenf Extraktionsschritte) nach
+`ui_flow.py`/`ui_thread.py` verschoben (`handle_add_operation`,
+`handle_delete_operation`,
+`refresh_operation_list`, `handle_param_change`,
+`populate_thread_standard_options`, `tool_change_position_lines`); reine
+Widget-Lookup-Bootstrap-Methoden (`_ensure_contour_widgets()`,
+`_ensure_thread_widgets()`) blieben bewusst auf dem Handler. Die naechsten
+LES-052-Schritte (Abschnitt 1s verbleibende Punkte: einheitlicher
+Ladevertrag, Views ohne eigenen Fachzustand) bauen auf dieser Trennung auf.

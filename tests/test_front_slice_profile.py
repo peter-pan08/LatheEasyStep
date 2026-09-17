@@ -5,10 +5,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from lathe_easystep.model import OpType, Operation
 from lathe_easystep.preview_widget import LathePreviewWidget
+from lathe_easystep.view_state import ViewState
 
 
 def test_front_slice_profile_keeps_outer_and_inner_hits_at_same_z():
     widget = LathePreviewWidget.__new__(LathePreviewWidget)
+    widget._view = ViewState()
     widget.slice_z = -5.0
     widget.paths = []
     widget.active_index = None
@@ -28,6 +30,7 @@ def test_front_slice_profile_keeps_outer_and_inner_hits_at_same_z():
 
 def test_front_slice_profile_preserves_multiple_thread_diameters_per_side():
     widget = LathePreviewWidget.__new__(LathePreviewWidget)
+    widget._view = ViewState()
     widget.slice_z = -2.5
     widget.paths = []
     widget.active_index = None

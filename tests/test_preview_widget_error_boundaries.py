@@ -1,6 +1,7 @@
 import pytest
 
 from lathe_easystep.preview_widget import LathePreviewWidget
+from lathe_easystep.view_state import ViewState
 
 
 class _BrokenNumber:
@@ -10,6 +11,7 @@ class _BrokenNumber:
 
 def _bare_widget():
     widget = LathePreviewWidget.__new__(LathePreviewWidget)
+    widget._view = ViewState()
     widget.x_is_diameter = True
     widget.slice_z = 4.0
     widget.update = lambda: None
