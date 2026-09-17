@@ -1,0 +1,9 @@
+.gitignore
+CHANGELOG.md
+LICENSE
+QUICK_REFERENCE.md
+README.md
+doc/Bilder/
+lathe_easystep/
+lathe_easystep.ui
+lathe_easystep_handler.py

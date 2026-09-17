@@ -64,3 +64,54 @@ commit message:
 
 This allows every release to be traced back to the exact tested development
 state.
+
+## Mandatory release procedure
+
+This policy applies to all development environments and all automated or
+AI-assisted development tools.
+
+Releases must be created exclusively using the repository release procedure.
+
+Do not merge `dev` into `main`.
+Do not merge `main` into `dev`.
+Do not manually copy development trees to `main`.
+Do not modify an existing published release or release tag.
+
+Before creating a release, read:
+
+- `RELEASE_POLICY.md`
+- `release_manifest.txt`
+
+Use:
+
+    python scripts/create_release.py <version>
+
+The release script must not publish or push a release automatically.
+The generated release must be reviewed before `main` and the new version tag
+are pushed.
+
+The release tree must be created from the exact tested `dev` commit.
+
+`release_manifest.txt` defines the files and directories that belong to a
+published release. Only paths listed in this manifest may be included in
+`main`.
+
+All listed files must be taken unchanged from the selected `dev` commit.
+Development-only files must remain on `dev`.
+
+The release commit must include:
+
+    Source-Dev-Commit: <commit SHA>
+
+These rules are platform-independent and apply equally on Linux, Windows and
+other development environments. The tool or agent creating the release is
+responsible for following this procedure.
+
+Before publishing, verify that:
+
+1. every path in `release_manifest.txt` exists in the selected `dev` commit;
+2. every released file is byte-identical to the corresponding file in that
+   `dev` commit;
+3. no path outside `release_manifest.txt` is present in the release;
+4. `main` contains only the new release commit in addition to previous
+   release commits.
