@@ -108,6 +108,7 @@ from lathe_easystep.ui_flow import (
     handle_move_down,
     handle_move_up,
     handle_new_program,
+    refresh_operation_list,
     renumber_operations,
 )
 from lathe_easystep.tool_logic import (
@@ -2624,79 +2625,7 @@ class HandlerClass:
         self._log(f"[LatheEasyStep][debug] preview refreshed in {time.monotonic() - t0:.3f}s", level="debug")
 
     def _refresh_operation_list(self, select_index: int | None = None):
-        """Synchronisiert die linke Operationsliste mit dem internen Modell."""
-        if self.list_ops is not None:
-            try:
-                if self.list_ops.objectName() not in ("listOperations", "list_ops"):
-                    self.list_ops = None
-            except Exception:
-                self.list_ops = None
-
-        if self.list_ops is None:
-            root = self.root_widget or self._find_root_widget()
-            if root:
-                for w in root.findChildren(QtWidgets.QListWidget):
-                    if w.objectName() in ("listOperations", "list_ops"):
-                        self.list_ops = w
-                        break
-
-        if self.list_ops is None:
-            self._update_parting_contour_choices()
-            return
-
-        # Nur die Operations-Liste updaten (nicht andere QListWidgets).
-        for lst in [self.list_ops]:
-            current = lst.currentRow()
-            lst.blockSignals(True)
-            self._op_row_user_selected = False
-            lst.clear()
-            for i, op in enumerate(self.model.operations):
-                lst.addItem(self._describe_operation(op, i + 1))
-
-            if select_index is None:
-                target_idx = current
-            else:
-                target_idx = select_index
-            if target_idx is None:
-                target_idx = -1
-
-            if 0 <= target_idx < lst.count():
-                lst.setCurrentRow(target_idx)
-            elif lst.count() > 0:
-                lst.setCurrentRow(lst.count() - 1)
-            lst.blockSignals(False)
-            try:
-                if getattr(self, "_verbose_widget_logs", False):
-                    items = [lst.item(i).text() for i in range(lst.count())]
-                    self._log(
-                        f"[LatheEasyStep][debug] list '{lst.objectName()}' "
-                        f"count={lst.count()} items={items} vis={lst.isVisible()} "
-                        f"size={lst.size()}", level="debug")
-                # Sichtbarkeit erzwingen – eigener Style gegen dunkle QSS
-                lst.setStyleSheet(
-                    "QListWidget { background: #f5f5f5; color: #000000; }"
-                    "QListWidget::item:selected { background: #4fa3f7; color: #ffffff; }"
-                )
-                lst.show()
-                lst.raise_()
-                lst.setMinimumWidth(220)
-            except Exception:
-                pass
-            try:
-                lst.repaint()
-                lst.update()
-                # Zum selektierten Step scrollen, nicht immer ans Ende.
-                sel_item = lst.item(lst.currentRow())
-                if sel_item:
-                    lst.scrollToItem(sel_item)
-                elif lst.count() > 0:
-                    lst.scrollToBottom()
-            except Exception:
-                pass
-
-        self._update_parting_contour_choices()
-        self._update_save_step_button_state()
-        self._update_operation_action_button_states()
+        refresh_operation_list(self, select_index)
 
     def _ensure_preview_widgets(self):
         ensure_preview_widgets(self, LathePreviewWidget, QtWidgets.QWidget)

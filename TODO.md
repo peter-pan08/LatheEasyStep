@@ -119,10 +119,11 @@ Verantwortungen mit dokumentierten Besitzverhaeltnissen -
 (`motion_state.py`) waren es schon vorher; `DirtyState` (`dirty_state.py`),
 `ToolTableState` (`tool_table_state.py`) und `RuntimeState`
 (`runtime_state.py`) wurden neu gekapselt, jeweils als duenner `handler.
-_<name>`-Adapter ueber den bestehenden Aufrufstellen. Erste Handler-Kleber-
-Extraktion auf dieser Basis: `_handle_add_operation()`/
-`_handle_delete_operation()` nach `ui_flow.py` verschoben, Details im
-Changelog und `doc/PANEL_ARCHITECTURE.md`. `ViewState` (Zoom/Pan/Slice/
+_<name>`-Adapter ueber den bestehenden Aufrufstellen. Handler-Kleber-
+Extraktionen auf dieser Basis: `_handle_add_operation()`/
+`_handle_delete_operation()` und `_refresh_operation_list()` nach
+`ui_flow.py` verschoben, Details im Changelog und
+`doc/PANEL_ARCHITECTURE.md`. `ViewState` (Zoom/Pan/Slice/
 Ansichtsmodus, siehe zweiter Punkt unten) ist bewusst NICHT Teil dieser
 Liste: es ist nur lokal auf `LathePreviewWidget` gebuendelt, aber ungetypt -
 eine fruehere Formulierung hatte das faelschlich als abgeschlossen
@@ -137,6 +138,12 @@ hingestellt (korrigiert, siehe Changelog).
   `slice_enabled`, `view_mode`, `active_index`, `_legend_collapsed`,
   `show_legend`, `status_messages`) buendelt, statt sie als lose
   Attributliste auf einem Qt-Widget zu fuehren.
+- [ ] toten Code entfernen, der bei der Handler-Kleber-Extraktion auffiel:
+  in `refresh_operation_list()` (`ui_flow.py`) ist der `select_index is
+  None`-Zweig ("vorherige Auswahl beibehalten") unerreichbar, da jeder
+  Aufrufer im Projekt bereits einen expliziten `select_index` uebergibt.
+  Kein Verhaltens-Fix, nur Aufraeumen - separat von der reinen
+  Verschiebungs-Extraktion zu behandeln.
 - [ ] einen einheitlichen Ladevertrag fuer Grundgeruest, UI-Fragmente,
   Widget-Registrierung und Signalbindung fuer Standalone und Embedded
   definieren. Laden muss idempotent und in einer nachvollziehbaren Reihenfolge

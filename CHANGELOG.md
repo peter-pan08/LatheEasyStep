@@ -17,6 +17,30 @@
 
 ## [Unreleased]
 
+### LES-052: zweite Handler-Kleber-Extraktion (`refresh_operation_list`) 2026-09-17
+
+- `_refresh_operation_list()` (Handler-Methode, ~74 Zeilen) nach
+  `refresh_operation_list(handler, select_index=None)` in `ui_flow.py`
+  verschoben; Handler-Methode auf einen einzeiligen Delegations-Wrapper
+  reduziert - gleiches Muster wie zuvor `handle_add_operation`/
+  `handle_delete_operation`. Bestehende Tests, die `handler.
+  _refresh_operation_list` als Instanz-Lambda ueberschreiben (u. a.
+  `test_dirty_and_messages.py`), bleiben unveraendert funktionsfaehig, da
+  nur der Methodenkoerper und nicht die Aufruf-Signatur verschoben wurde.
+- Regressionsverifikation deckte einen zweiten, andersartigen Befund auf:
+  der `select_index is None`-Zweig ("vorherige Auswahl beibehalten") ist
+  toter Code - jeder Aufrufer im Projekt uebergibt bereits einen expliziten
+  `select_index`, nie `None`. Eine Verstuemmelung dieser Zeile wurde
+  folgerichtig von keinem Test erkannt, weil kein Aufrufpfad sie erreicht.
+  Bewusst NICHT behoben (waere eine Verhaltensaenderung ueber reine
+  Code-Verschiebung hinaus); als eigener Aufraeumpunkt in `TODO.md`
+  vermerkt. Eine zweite Korruption am tatsaechlich erreichten
+  `select_index`-Zweig wurde dagegen korrekt von
+  `test_delete_last_step_selects_previous`
+  (`tests/test_step_double_click.py`) erkannt - bestaetigt echte
+  Regressionsabdeckung fuer den produktiv genutzten Pfad.
+- 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel sauber gestartet.
+
 ### Korrektur: `ViewState` in LES-052 faelschlich als abgeschlossen gefuehrt 2026-09-17
 
 - Die Formulierung "alle sechs Zustandskategorien ... sind jetzt fachlich

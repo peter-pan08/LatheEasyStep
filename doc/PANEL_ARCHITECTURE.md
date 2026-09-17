@@ -182,6 +182,30 @@ geschlossen (Korruption fuehrte zu einem Testfehlschlag, Ruecknahme wieder
 zu 900/108 gruen). 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel
 sauber gestartet.
 
+**Zweite Handler-Kleber-Extraktion (2026-09-17):**
+`_refresh_operation_list()` (~74 Zeilen) nach `refresh_operation_list
+(handler, select_index=None)` in `ui_flow.py` verschoben, Handler-Methode
+auf einen einzeiligen Delegations-Wrapper reduziert. Mehrere Tests
+ueberschreiben `handler._refresh_operation_list` bereits als Instanz-Lambda
+(`test_dirty_and_messages.py` u. a.) - das bleibt unveraendert moeglich, da
+nur der Methodenkoerper, nicht die Aufruf-Signatur verschoben wurde.
+Regressionsverifikation deckte einen zweiten, aber andersartigen Befund auf:
+der `select_index is None`-Zweig (Zeile `target_idx = current`, "vorherige
+Auswahl beibehalten") ist toter Code - jeder einzelne Aufrufer im gesamten
+Projekt uebergibt einen expliziten `select_index`, nie `None`. Eine
+Verstuemmelung genau dieser Zeile wurde folgerichtig von keinem Test
+erkannt, weil kein Aufrufpfad sie je erreicht (anders als bei
+`handle_add_operation()` oben, wo eine reale, erreichbare Regel ungetestet
+war). Bewusst NICHT behoben - Entfernen des toten Zweigs waere eine
+Verhaltensaenderung ueber reine Code-Verschiebung hinaus und gehoert nicht
+in diese Extraktion; als moeglicher spaeterer Aufraeumpunkt vermerkt. Eine
+zweite Korruption am tatsaechlich erreichten `select_index`-Zweig (`target_
+idx = 0` statt `target_idx = select_index`) wurde dagegen korrekt von
+`test_delete_last_step_selects_previous` (`tests/test_step_double_click.py`)
+erkannt - das bestaetigt echte Regressionsabdeckung fuer den produktiv
+genutzten Pfad. 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel
+sauber gestartet.
+
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
 Stand 2026-09-17: Alle sechs Zustandskategorien sind jetzt gekapselt -
