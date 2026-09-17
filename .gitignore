@@ -53,14 +53,13 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+*.cps
 
 # --- Local generated program files (outside source control) ---
 *.step.json
 *.lse
 
 # --- Repo cleanup scope (user-selected) ---
-tests/
-ngc/*.ngc
 *_REPORT.md
 *_SUMMARY.md
 IMPLEMENTATION_*.md

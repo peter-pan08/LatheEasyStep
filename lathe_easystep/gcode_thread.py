@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
+from .contour_logic import thread_relief_spec
 from .model import Operation
+from .numeric import finite_float, whole_number, validate_finite_data
+from .gcode_utils import gcode_comment, is_internal_side, is_left_hand, resolve_internal_safe_x, validate_internal_x_limit
+from .gcode_safety import _motion_state, activate_pending_css
 
 
 THREAD_ORIENTATION_LABELS: Tuple[str, str] = ("Aussen", "Innen")
-
-
+THREAD_HAND_LABELS: Tuple[str, str] = ("Rechtsgewinde", "Linksgewinde")
 def generate_thread_gcode(
     op: Operation,
     settings: Dict[str, object] | None,
@@ -20,50 +23,93 @@ def generate_thread_gcode(
     sanitize_comment_text: Callable[[object], str],
 ) -> List[str]:
     settings = settings or {}
+    validate_finite_data(op.params, "THREAD")
+    validate_finite_data(settings, "Programmkopf")
     require_tool(op.params, "THREAD")
+    lang = settings.get("lang")
     safe_z = float(op.params.get("safe_z", 2.0))
     major_diameter = float(op.params.get("major_diameter", 0.0))
     pitch = float(op.params.get("pitch", 1.5))
-    pitch_warning: str | None = None
     if pitch <= 0.0:
-        pitch_warning = "(WARN: Ungueltige Steigung; P=1.0 fallback)"
-        pitch = 1.0
+        raise ValueError("THREAD pitch muss groesser als 0 sein.")
+    if float(f"{pitch:.4f}") <= 0.0:
+        raise ValueError("THREAD pitch muss auch nach Ausgaberundung groesser als 0 sein.")
     length = float(op.params.get("length", 0.0))
+    start_z = float(op.params.get("thread_start_z", 0.0) or 0.0)
+    hand_raw = op.params.get("hand", 0)
+    hand_idx = 1 if is_left_hand(hand_raw) else 0
+    hand_label = gcode_comment(
+        "gcode.comment.thread.hand.left" if hand_idx == 1 else "gcode.comment.thread.hand.right", lang
+    )
+    z_dir = -1.0 if hand_idx == 0 else 1.0
+    end_z = start_z + (z_dir * abs(length))
 
-    raw_thread_depth = op.params.get("thread_depth")
-    if isinstance(raw_thread_depth, (int, float)) and raw_thread_depth > 0:
-        thread_depth = float(raw_thread_depth)
-    else:
-        thread_depth = pitch * 0.6134
+    def automatic_positive(key, default):
+        raw = op.params.get(key)
+        value = 0.0 if raw in (None, "") else finite_float(raw, key)
+        if value < 0:
+            raise ValueError(f"THREAD {key} darf nicht negativ sein.")
+        return value or default
 
-    raw_first_depth = op.params.get("first_depth")
-    if isinstance(raw_first_depth, (int, float)) and raw_first_depth > 0:
-        first_depth = float(raw_first_depth)
-    else:
-        first_depth = max(thread_depth * 0.1, pitch * 0.05)
-
+    thread_depth = automatic_positive("thread_depth", pitch * 0.6134)
+    first_depth = automatic_positive("first_depth", max(thread_depth * 0.1, pitch * 0.05))
     raw_peak_offset = op.params.get("peak_offset")
-    if isinstance(raw_peak_offset, (int, float)) and raw_peak_offset != 0:
-        peak_offset = float(raw_peak_offset)
-    else:
-        peak_offset = -max(thread_depth * 0.5, pitch * 0.25)
+    peak_offset = abs(finite_float(raw_peak_offset, "peak_offset")) if raw_peak_offset not in (None, "") else 0.0
+    # LES-028: ein explizit gesetzter, aber winziger peak_offset (z. B.
+    # 0.00001) war bisher weder exakt 0 (der bestehende "or"-Fallback
+    # greift nur bei EXAKT 0.0) noch gross genug, um im vierstellig
+    # gerundeten I-Wort sichtbar zu bleiben - er verschwand lautlos zu
+    # "I0.0000" statt entweder den Fallback zu bekommen oder abzulehnen.
+    # Behandelt das konsistent mit dem bestehenden Verhalten fuer einen
+    # nicht gesetzten/exakt-0 Wert (derselbe Fallback), statt eine neue,
+    # inkonsistente Fehlerablehnung nur fuer diesen einen Fall einzufuehren.
+    if float(f"{peak_offset:.4f}") <= 0.0:
+        peak_offset = 0.0
+    peak_offset = peak_offset or max(first_depth, pitch * 0.05)
+    retract_r = finite_float(op.params.get("retract_r", 1.5), "retract_r")
+    infeed_q = finite_float(op.params.get("infeed_q", 29.5), "infeed_q")
+    raw_spring = op.params.get("spring_passes")
+    spring_passes = whole_number(op.params.get("passes", 1) if raw_spring in (None, "") else raw_spring, "spring_passes")
+    e_val = finite_float(op.params.get("e", 0.0), "e")
+    l_val = whole_number(op.params.get("l", 0), "l")
+    lead_in = finite_float(op.params.get("lead_in", 0.0) or 0.0, "lead_in")
+    lead_out = finite_float(op.params.get("lead_out", 0.0) or 0.0, "lead_out")
+    if major_diameter <= 0 or length <= 0 or 2 * thread_depth >= major_diameter:
+        raise ValueError("THREAD Durchmesser, Laenge und Kerndurchmesser muessen positiv sein.")
+    if float(f"{2.0 * thread_depth:.4f}") <= 0.0:
+        raise ValueError("THREAD Gewindetiefe muss auch nach Ausgaberundung groesser als 0 sein.")
+    if first_depth > thread_depth:
+        raise ValueError("THREAD first_depth darf thread_depth nicht uebersteigen.")
+    if retract_r < 1 or spring_passes < 0 or l_val not in (0, 1, 2, 3):
+        raise ValueError("THREAD erfordert R >= 1, H >= 0 und L in 0..3.")
+    # Q ist der Zustellwinkel des G76-Kompoundschlittens: 0 Grad bedeutet
+    # radiale Zustellung (gueltig, z. B. fuer quadratische Gewinde), Werte
+    # nahe/ueber 90 Grad sind physikalisch keine Zustellung mehr entlang der
+    # Flanke. Bisher wurde ein negativer oder unplausibel grosser Wert
+    # ungeprueft direkt in die Q-Ausgabe uebernommen.
+    if not (0.0 <= infeed_q < 90.0) or float(f"{infeed_q:.4f}") >= 90.0:
+        raise ValueError("THREAD Zustellwinkel (infeed_q/Q) muss im Bereich 0 bis <90 Grad liegen.")
+    if min(e_val, lead_in, lead_out) < 0:
+        raise ValueError("THREAD Taperlaengen duerfen nicht negativ sein.")
+    if lead_in > 0.0 or lead_out > 0.0:
+        if lead_in > 0.0 and lead_out > 0.0 and abs(lead_in - lead_out) > 1e-6:
+            raise ValueError(
+                "G76 unterstuetzt nur eine gemeinsame Taperlaenge E. "
+                "Gewinde-Vorlauf und -Auslauf muessen deshalb gleich sein "
+                "oder es darf nur einer der beiden Werte gesetzt werden."
+            )
+        e_val = lead_in or lead_out
+        l_val = 3 if lead_in > 0.0 and lead_out > 0.0 else (1 if lead_in > 0.0 else 2)
 
-    retract_r = float(op.params.get("retract_r", 1.5))
-    infeed_q = float(op.params.get("infeed_q", 29.5))
-    spring_passes_raw = op.params.get("spring_passes")
-    if isinstance(spring_passes_raw, (int, float)) and spring_passes_raw > 0:
-        spring_passes = max(0, int(spring_passes_raw))
-    else:
-        spring_passes = max(0, int(op.params.get("passes", 1)))
-    e_val = float(op.params.get("e", 0.0))
-    l_val = int(float(op.params.get("l", 0)))
+    if e_val > length / 2:
+        raise ValueError("THREAD Taperlaenge E darf die halbe Gewindelaenge nicht uebersteigen.")
 
     orientation_raw = op.params.get("orientation", 0)
-    orientation_idx = 0
-    if isinstance(orientation_raw, (int, float)):
-        orientation_idx = max(0, min(int(orientation_raw), len(THREAD_ORIENTATION_LABELS) - 1))
-    internal = orientation_idx == 1
-    orientation_label = THREAD_ORIENTATION_LABELS[orientation_idx]
+    internal = is_internal_side(orientation_raw)
+    orientation_idx = 1 if internal else 0
+    orientation_label = gcode_comment(
+        "gcode.comment.thread.orientation.internal" if internal else "gcode.comment.thread.orientation.external", lang
+    )
     standard_data = op.params.get("standard")
     standard_label = ""
     if isinstance(standard_data, dict):
@@ -71,19 +117,60 @@ def generate_thread_gcode(
         if isinstance(std_label_tmp, str):
             standard_label = std_label_tmp
 
+    minor_diameter = major_diameter - 2.0 * thread_depth
+    full_thread_depth = abs(major_diameter - minor_diameter)
+    first_cut_depth = max(first_depth * 2.0, 0.0001)
+
     if internal:
         peak_offset = abs(peak_offset)
-        approach_x = major_diameter - 2.0 * thread_depth
+        approach_x = minor_diameter - peak_offset
+        safe_x = validate_internal_x_limit(
+            settings,
+            [major_diameter, minor_diameter, approach_x],
+            op_label="Innengewinde",
+        )
     else:
         peak_offset = -abs(peak_offset)
-        approach_x = major_diameter
+        approach_x = major_diameter - peak_offset
 
     comments: List[str] = []
     if standard_label and standard_label != "Benutzerdefiniert":
-        comments.append(f"(Normgewinde: {sanitize_comment_text(standard_label)})")
-    comments.append(f"(Gewindetyp: {orientation_label})")
-    if pitch_warning:
-        comments.append(pitch_warning)
+        comments.append(f"({gcode_comment('gcode.comment.thread.standard', lang, label=sanitize_comment_text(standard_label))})")
+    comments.append(f"({gcode_comment('gcode.comment.thread.type', lang, orientation=orientation_label)})")
+    comments.append(f"({gcode_comment('gcode.comment.thread.hand_label', lang, hand=hand_label)})")
+    comments.append(f"({gcode_comment('gcode.comment.thread.start_end', lang, start_z=f'{start_z:.3f}', end_z=f'{end_z:.3f}')})")
+    if lead_in > 0.0 or lead_out > 0.0:
+        comments.append(
+            f"({gcode_comment('gcode.comment.thread.taper', lang, lead_in=f'{lead_in:.3f}', lead_out=f'{lead_out:.3f}', e_val=f'{e_val:.3f}', l_val=l_val)})"
+        )
+    relief_mode = str(op.params.get("relief_mode", "off") or "off").strip().lower()
+    relief_norm = str(op.params.get("relief_norm", "DIN 76-A") or "DIN 76-A").strip()
+    if relief_mode in ("suggest", "suggest_din_relief"):
+        relief_data = op.params.get("_derived_relief")
+        if not isinstance(relief_data, dict):
+            relief_data = thread_relief_spec(op.params)
+        if relief_data:
+            relief_size = str(relief_data["thread_size"])
+            relief_width = float(relief_data["width"])
+            relief_depth = float(relief_data["depth"])
+            variant_suffix = (
+                " " + gcode_comment("gcode.comment.thread.din_relief_short", lang)
+                if relief_data.get("variant") == "short"
+                else ""
+            )
+            comments.append(
+                "("
+                + gcode_comment(
+                    "gcode.comment.thread.din_relief", lang,
+                    norm=relief_norm, size=relief_size, orientation=orientation_label,
+                    width=relief_width, depth=relief_depth, variant=variant_suffix,
+                )
+                + ")"
+            )
+            overlap_value = float(relief_data["thread_overlap"])
+            comments.append(
+                f"({gcode_comment('gcode.comment.thread.end_overlap', lang, end_z=f'{end_z:.3f}', overlap=f'{overlap_value:.3f}')})"
+            )
 
     lines: List[str] = []
     append_tool_and_spindle(
@@ -91,25 +178,58 @@ def generate_thread_gcode(
         get_tool_number(op.params),
         op.params.get("spindle"),
         settings,
+        spindle_mode=op.params.get("spindle_mode"),
+        spindle_max_rpm=op.params.get("spindle_max_rpm"),
+        cutting_speed=op.params.get("cutting_speed"),
+        css_start_diameter=abs(approach_x),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     lines.extend(comments)
 
-    lines.append("(Anfahren vor Gewinde)")
-    emit_approach(lines, approach_x, safe_z, settings)
+    if bool(op.params.get("optional_stop_before", False)):
+        lines.append("M1")
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_thread', lang)})")
+    if internal:
+        safe_x = resolve_internal_safe_x(settings)
+        if safe_x is None:
+            raise ValueError("Innengewinde erfordert ein gueltiges XRI im Programmkopf.")
+        # Direkt auf (XRI, start_z) anfahren statt zusaetzlich ueber das
+        # eigene "Sicherheits-Z"-Feld des Gewinde-Steps zu routen: XRI ist per
+        # Definition bei JEDER Z-Position innerhalb der Bohrung sicher, ein
+        # zusaetzlicher Zwischenstopp bei einem ggf. abweichenden safe_z
+        # erzeugte sonst einen unnoetigen Rueckzug (Z wird zwischenzeitlich
+        # groesser/weiter vom Material weg, bevor wieder auf start_z
+        # zugefahren wird) - real beobachtet und gemeldet.
+        emit_approach(lines, safe_x, start_z, settings)
+        if abs(approach_x - safe_x) > 1e-9:
+            lines.append(f"G0 X{approach_x:.3f}")
+    else:
+        emit_approach(lines, approach_x, safe_z, settings)
+        if abs(start_z - safe_z) > 1e-9:
+            lines.append(f"G0 Z{start_z:.3f}")
+    activate_pending_css(lines, settings)
     lines.append(
         (
             "G76 "
             f"P{pitch:.4f} "
-            f"Z{-abs(length):.3f} "
+            f"Z{end_z:.3f} "
             f"I{peak_offset:.4f} "
-            f"J{first_depth:.4f} "
+            f"J{first_cut_depth:.4f} "
             f"R{retract_r:.4f} "
-            f"K{thread_depth:.4f} "
+            f"K{full_thread_depth:.4f} "
             f"Q{infeed_q:.4f} "
             f"H{spring_passes:d} "
             f"E{e_val:.4f} "
             f"L{l_val:d}"
         )
     )
+    # LES-022 (dritte Etappe): G76 endet nachweislich (rs274-Verifikation)
+    # exakt bei (approach_x, end_z) - der letzte Gewindeschnitt faehrt auf
+    # volle Tiefe bis zum Gewindeende und retraktiert NICHT automatisch.
+    # Vorher blieb der gemeinsame Bewegungszustand faelschlich auf der
+    # Anfahrposition VOR dem Gewindeschneiden stehen (insbesondere Z blieb
+    # auf start_z statt end_z) - ein Folgeschritt haette einen noetigen
+    # Rueckzug potenziell faelschlich als bereits erledigt angesehen.
+    if settings is not None:
+        _motion_state(settings).record(approach_x, end_z)
     return lines

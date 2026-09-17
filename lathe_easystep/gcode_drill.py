@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List
 
+from .gcode_safety import _motion_state
+from .gcode_utils import gcode_comment
 from .model import Operation
+from .numeric import finite_float, whole_number, validate_finite_data
 
 
 # Mapping: combo index (float from _collect_params) -> G-code mode string
@@ -31,19 +34,41 @@ def generate_drill_gcode(
     if not path:
         return []
     p = op.params
+    validate_finite_data(p, "DRILL")
+    validate_finite_data(path, "DRILL path")
     require_tool(p, "DRILL")
+    lang = settings.get("lang")
 
     mode_raw_value = p.get("mode", "G81")
-    try:
-        mode_idx = int(float(mode_raw_value))
-        mode = DRILL_MODE_MAP.get(mode_idx, "G81")
-    except (TypeError, ValueError):
-        mode = str(mode_raw_value) if str(mode_raw_value) in DRILL_MODE_MAP.values() else "G81"
+    if isinstance(mode_raw_value, str) and mode_raw_value.strip().upper() in DRILL_MODE_MAP.values():
+        # ID-only-Combo liefert die G-Code-ID direkt (z. B. 'g83'), unabhaengig von Gross-/Kleinschreibung.
+        mode = mode_raw_value.strip().upper()
+    else:
+        mode_idx = whole_number(mode_raw_value, "DRILL mode")
+        if mode_idx not in DRILL_MODE_MAP:
+            raise ValueError("DRILL: unbekannter Bohrmodus.")
+        mode = DRILL_MODE_MAP[mode_idx]
 
     if mode == "G82":
         require(p, ["dwell"], "DRILL G82")
     elif mode in ["G83", "G73"]:
         require(p, ["peck_depth"], "DRILL " + mode)
+
+    safe_z = finite_float(p.get("safe_z", 2.0), "DRILL safe_z")
+    feed = finite_float(p.get("feed", 0.12), "DRILL feed")
+    depth_z = finite_float(path[-1][1], "DRILL depth_z")
+    x_start = finite_float(path[0][0], "DRILL x_start")
+    retract = finite_float(p.get("retract", safe_z), "DRILL retract")
+    if feed <= 0 or float(f"{feed:.3f}") <= 0:
+        raise ValueError("DRILL: Vorschub muss in der Ausgabe groesser als null sein.")
+    if mode == "G82":
+        dwell = finite_float(p["dwell"], "DRILL dwell")
+        if dwell < 0:
+            raise ValueError("DRILL: Verweilzeit darf nicht negativ sein.")
+    if mode in ("G83", "G73"):
+        peck_depth = finite_float(p["peck_depth"], "DRILL peck_depth")
+        if peck_depth <= 0 or float(f"{peck_depth:.3f}") <= 0:
+            raise ValueError("DRILL: Zustelltiefe muss in der Ausgabe groesser als null sein.")
 
     lines: List[str] = []
     append_tool_and_spindle(
@@ -51,38 +76,53 @@ def generate_drill_gcode(
         get_tool_number(op.params),
         op.params.get("spindle"),
         settings,
+        spindle_mode="fixed",
+        spindle_max_rpm=op.params.get("spindle_max_rpm"),
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
-    safe_z = float(op.params.get("safe_z", 2.0))
-    feed = float(op.params.get("feed", 0.12))
-    depth_z = path[-1][1]
-    x_start = path[0][0]
-    retract = float(op.params.get("retract", safe_z))
     if retract < safe_z:
         lines.append(f"(WARN: retract ({retract:.3f}) < safe_z ({safe_z:.3f}); verwende safe_z)")
         retract = safe_z
 
-    lines.append("(Anfahren vor Zyklus)")
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_cycle', lang)})")
+    # Nutzte zuvor eine eigene, dupliziert-und-abweichende Anfahrlogik (generische
+    # sichere Position ueber Z/X, danach nochmal separat auf x_start/safe_z -
+    # teils redundante Bewegungen). Verwendet jetzt denselben Sicherheits-Helfer
+    # wie jede andere Operation (Abspanen, Einstich), damit Anfahrt und die
+    # bereits als korrekt bestaetigte Rueckzugssequenz (emit_safe_retract_for_op)
+    # strukturell zueinander passen.
     emit_approach(lines, x_start, safe_z, settings)
-    lines.append("(G17 nur fuer Bohrzyklus - LinuxCNC Besonderheit)")
+    lines.append(f"({gcode_comment('gcode.comment.drill_g17_note', lang)})")
     lines.append("G17")
     lines.append(f"F{feed:.3f}")
     if mode == "G81":
         lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
     elif mode == "G82":
-        dwell = float(p.get("dwell", 0.0))
         lines.append(f"G82 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} P{dwell:.3f} F{feed:.3f}")
     elif mode == "G83":
-        peck_depth = float(p.get("peck_depth", 1.0))
         lines.append(f"G83 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
     elif mode == "G73":
-        peck_depth = float(p.get("peck_depth", 1.0))
         lines.append(f"G73 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} Q{peck_depth:.3f} F{feed:.3f}")
     elif mode == "G84":
         lines.append(f"G84 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
     else:
         lines.append(f"G81 X{x_start:.3f} Z{depth_z:.3f} R{retract:.3f} F{feed:.3f}")
     lines.append("G80")
-    lines.append(f"G0 Z{safe_z:.3f}")
+    # LinuxCNC kehrt nach dem Zyklus (G80) auf die Rueckzugsebene R zurueck
+    # (Default-Modus G99, real gegen rs274 verifiziert: nach STRAIGHT_FEED
+    # zur Bohrtiefe folgt STRAIGHT_TRAVERSE zurueck auf R, nicht auf die vor
+    # dem Zyklus aktive Z-Position). Steht R (retract) bereits auf safe_z -
+    # der Standardfall, da retract ohne Angabe auf safe_z faellt - ist ein
+    # zusaetzlicher G0 auf denselben Wert eine bedeutungslose Nullbewegung.
+    # Nur wenn retract > safe_z explizit gesetzt wurde, ist die Freifahrt
+    # auf safe_z eine echte Bewegung.
+    if retract > safe_z:
+        lines.append(f"G0 Z{safe_z:.3f}")
     lines.append("G18")
+    # LES-022 (dritte Etappe): der Bohrzyklus endet nachweislich (siehe
+    # Kommentar oben, per rs274 verifiziert) immer auf X{x_start}
+    # Z{safe_z} - X bewegt sich in keinem Bohrmodus, Z kehrt ueber G80
+    # zuverlaessig auf die Ruecklaufebene zurueck. Reale Endposition ist
+    # damit bekannt und kann direkt vermerkt werden.
+    _motion_state(settings).record(x_start, safe_z)
     return lines

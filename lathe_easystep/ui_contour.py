@@ -5,6 +5,46 @@ from qtpy import QtCore, QtGui, QtWidgets
 from .contour_logic import validate_contour_segments_for_profile
 from .model import OpType
 from .preview_geometry import build_contour_path
+from .presets import RELIEF_NORMS, relief_thread_sizes
+from .translations import TRANSLATIONS
+from .ui_helpers import current_language as _lang, populate_combo as _populate_combo
+
+
+RELIEF_THREAD_SIZES = relief_thread_sizes()
+
+CONTOUR_EDGE_OPTIONS = [
+    ("none", "combo.contour_edge_type.none"),
+    ("chamfer", "combo.contour_edge_type.chamfer"),
+    ("radius", "combo.contour_edge_type.radius"),
+]
+CONTOUR_ARC_OPTIONS = [
+    ("auto", "runtime.contour.arc.auto"),
+    ("outer", "runtime.contour.arc.outer"),
+    ("inner", "runtime.contour.arc.inner"),
+]
+CONTOUR_FEATURE_OPTIONS = [
+    ("none", "runtime.contour.feature.none"),
+    ("din_relief", "runtime.contour.feature.din_relief"),
+]
+CONTOUR_SIDE_OPTIONS = [
+    ("external", "runtime.contour.side.external"),
+    ("internal", "runtime.contour.side.internal"),
+]
+CONTOUR_ORIENTATION_OPTIONS = [
+    ("end", "runtime.contour.orientation.end"),
+    ("start", "runtime.contour.orientation.start"),
+]
+
+
+def _combo_data_or_default(combo, default: str = "") -> str:
+    if combo is None:
+        return default
+    try:
+        data = combo.currentData()
+    except Exception:
+        data = None
+    text = str(data or "").strip().lower()
+    return text if text else default
 
 
 def available_contour_names(handler):
@@ -36,6 +76,12 @@ def current_parting_contour_name(handler) -> str:
         handler.parting_contour = handler._get_widget_by_name("parting_contour")
     if getattr(handler, "parting_contour", None) is None:
         return ""
+    try:
+        data = handler.parting_contour.currentData()
+    except Exception:
+        data = None
+    if isinstance(data, str) and data.strip():
+        return data.strip()
     return handler.parting_contour.currentText().strip()
 
 
@@ -110,7 +156,7 @@ def update_parting_contour_choices(handler) -> None:
         handler._log("[LatheEasyStep][debug] parting_contour widget not found -> skip refresh", level="debug")
         return
     names = handler._available_contour_names()
-    current = handler.parting_contour.currentText().strip()
+    current = handler._current_parting_contour_name()
     existing = [handler.parting_contour.itemText(i).strip() for i in range(handler.parting_contour.count())]
     if getattr(handler, "_startup_in_progress", False) and getattr(handler, "_parting_choices_initialized", False):
         if existing == names:
@@ -123,9 +169,13 @@ def update_parting_contour_choices(handler) -> None:
     handler.parting_contour.blockSignals(True)
     handler.parting_contour.clear()
     for name in names:
-        handler.parting_contour.addItem(name)
+        handler.parting_contour.addItem(name, name)
     if current:
-        handler.parting_contour.setCurrentText(current)
+        idx = handler.parting_contour.findData(current, QtCore.Qt.UserRole)
+        if idx >= 0:
+            handler.parting_contour.setCurrentIndex(idx)
+        else:
+            handler.parting_contour.setCurrentText(current)
     elif names:
         handler.parting_contour.setCurrentIndex(0)
     handler.parting_contour.blockSignals(False)
@@ -152,8 +202,13 @@ def update_parting_ready_state(handler, *args, **kwargs) -> None:
 
 
 def update_parting_mode_visibility(handler) -> None:
-    mode_idx = handler.parting_mode.currentIndex() if handler.parting_mode else 0
-    show_roughing = mode_idx == 0
+    mode_value = _combo_data_or_default(getattr(handler, "parting_mode", None), default="rough")
+    if str(mode_value or "").strip() == "":
+        mode_idx = handler.parting_mode.currentIndex() if handler.parting_mode else 0
+        mode_value = {0: "rough", 1: "finish", 2: "rough_finish"}.get(mode_idx, "rough")
+    show_roughing = str(mode_value).strip().lower() in {"rough", "rough_finish"}
+    undercut_mode = _combo_data_or_default(getattr(handler, "parting_undercut_mode", None), default="")
+    show_separate_relief = undercut_mode == "separate"
     for widget in (
         handler.label_parting_depth,
         handler.parting_depth_per_pass,
@@ -169,9 +224,25 @@ def update_parting_mode_visibility(handler) -> None:
         getattr(handler, "parting_finish_allow_x", None),
         getattr(handler, "label_parting_finish_allow_z", None),
         getattr(handler, "parting_finish_allow_z", None),
+        getattr(handler, "label_parting_undercut_mode", None),
+        getattr(handler, "parting_undercut_mode", None),
+        getattr(handler, "label_parting_output_preference", None),
+        getattr(handler, "parting_output_preference", None),
     ):
         if widget is not None:
             widget.setVisible(show_roughing)
+    for widget in (
+        getattr(handler, "label_parting_undercut_tool", None),
+        getattr(handler, "parting_undercut_tool", None),
+        getattr(handler, "label_parting_undercut_spindle", None),
+        getattr(handler, "parting_undercut_spindle", None),
+        getattr(handler, "label_parting_undercut_feed", None),
+        getattr(handler, "parting_undercut_feed", None),
+        getattr(handler, "label_parting_optional_stop_before_undercut", None),
+        getattr(handler, "parting_optional_stop_before_undercut", None),
+    ):
+        if widget is not None:
+            widget.setVisible(show_roughing and show_separate_relief)
     for hidden_widget in (getattr(handler, "label_parting_slice_step", None), getattr(handler, "parting_slice_step", None)):
         if hidden_widget is not None:
             hidden_widget.setVisible(False)
@@ -181,8 +252,23 @@ def init_contour_table(handler) -> None:
     table = handler.contour_segments
     if table is None:
         return
-    table.setColumnCount(6)
-    table.setHorizontalHeaderLabels(["Typ", "X", "Z", "Kante", "Maß", "Bogen"])
+    lang = _lang(handler)
+    table.setColumnCount(11)
+    table.setHorizontalHeaderLabels(
+        [
+            TRANSLATIONS.tr("runtime.contour.header.type", lang),
+            "X",
+            "Z",
+            TRANSLATIONS.tr("runtime.contour.header.edge", lang),
+            TRANSLATIONS.tr("runtime.contour.header.size", lang),
+            TRANSLATIONS.tr("runtime.contour.header.arc", lang),
+            TRANSLATIONS.tr("runtime.contour.header.feature", lang),
+            TRANSLATIONS.tr("runtime.contour.header.thread", lang),
+            TRANSLATIONS.tr("runtime.contour.header.standard", lang),
+            TRANSLATIONS.tr("runtime.contour.header.side", lang),
+            TRANSLATIONS.tr("runtime.contour.header.location", lang),
+        ]
+    )
     try:
         table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
@@ -204,7 +290,7 @@ def init_contour_table(handler) -> None:
     except Exception:
         pass
     try:
-        widths = [60, 80, 80, 80, 80, 80]
+        widths = [60, 80, 80, 80, 80, 80, 110, 90, 90, 80, 70]
         for i, w in enumerate(widths):
             table.setColumnWidth(i, w)
     except Exception:
@@ -243,23 +329,43 @@ def handle_contour_add_segment(handler) -> None:
     table.setItem(row, 0, _mk_item("XZ"))
     table.setItem(row, 1, _mk_item(f"{default_x:.3f}"))
     table.setItem(row, 2, _mk_item(f"{default_z:.3f}"))
-    edge_text = handler._contour_edge_template_text
-    edge_size = handler._contour_edge_template_size if edge_text.lower().startswith(("f", "r")) else 0.0
+    edge_data = str(getattr(handler, "_contour_edge_template_data", "none") or "none").strip().lower()
+    edge_size = handler._contour_edge_template_size if edge_data in {"chamfer", "radius"} else 0.0
     edge_combo = QtWidgets.QComboBox()
-    edge_combo.addItems(["Keine", "Fase", "Radius"])
-    idx = edge_combo.findText(edge_text, QtCore.Qt.MatchContains)
-    edge_combo.setCurrentIndex(idx if idx >= 0 else 0)
+    _populate_combo(edge_combo, CONTOUR_EDGE_OPTIONS, _lang(handler), current_value=edge_data)
     edge_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
     table.setCellWidget(row, 3, edge_combo)
     table.setItem(row, 4, _mk_item(f"{edge_size:.3f}"))
-    arc_text = getattr(handler, "_contour_arc_template_text", "Auto")
+    arc_data = str(getattr(handler, "_contour_arc_template_data", "auto") or "auto").strip().lower()
     arc_combo = QtWidgets.QComboBox()
-    arc_combo.addItems(["Auto", "Außen", "Innen"])
-    idx = arc_combo.findText(arc_text, QtCore.Qt.MatchFixedString)
-    arc_combo.setCurrentIndex(idx if idx >= 0 else 0)
-    arc_combo.setEnabled("Radius" in (edge_combo.currentText() if edge_combo else edge_text))
+    _populate_combo(arc_combo, CONTOUR_ARC_OPTIONS, _lang(handler), current_value=arc_data)
+    arc_combo.setEnabled(_combo_data_or_default(edge_combo, "none") == "radius")
     arc_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
     table.setCellWidget(row, 5, arc_combo)
+    feature_combo = QtWidgets.QComboBox()
+    _populate_combo(feature_combo, CONTOUR_FEATURE_OPTIONS, _lang(handler), current_value="none")
+    feature_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+    table.setCellWidget(row, 6, feature_combo)
+    thread_combo = QtWidgets.QComboBox()
+    thread_combo.addItem("", "")
+    for value in RELIEF_THREAD_SIZES:
+        thread_combo.addItem(value, value)
+    thread_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+    table.setCellWidget(row, 7, thread_combo)
+    norm_combo = QtWidgets.QComboBox()
+    norm_combo.addItem("", "")
+    for value in RELIEF_NORMS:
+        norm_combo.addItem(value, value)
+    norm_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+    table.setCellWidget(row, 8, norm_combo)
+    side_combo = QtWidgets.QComboBox()
+    _populate_combo(side_combo, CONTOUR_SIDE_OPTIONS, _lang(handler), current_value="external")
+    side_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+    table.setCellWidget(row, 9, side_combo)
+    orient_combo = QtWidgets.QComboBox()
+    _populate_combo(orient_combo, CONTOUR_ORIENTATION_OPTIONS, _lang(handler), current_value="end")
+    orient_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+    table.setCellWidget(row, 10, orient_combo)
     table.setCurrentCell(row, 0)
     try:
         table.setRowHeight(row, 22)
@@ -354,13 +460,13 @@ def handle_contour_row_select(handler, *args, **kwargs) -> None:
 
 
 def handle_contour_edge_change(handler, *args, **kwargs) -> None:
-    edge_text = handler.contour_edge_type.currentText() if handler.contour_edge_type else ""
+    edge_data = _combo_data_or_default(handler.contour_edge_type, default="none")
     edge_size = handler.contour_edge_size.value() if handler.contour_edge_size else 0.0
-    handler._contour_edge_template_text = edge_text
+    handler._contour_edge_template_data = edge_data
     handler._contour_edge_template_size = edge_size
     table = handler.contour_segments
     if table is not None and table.currentRow() >= 0:
-        handler._write_contour_row(table.currentRow(), edge_text=edge_text, edge_size=edge_size)
+        handler._write_contour_row(table.currentRow(), edge_text=edge_data, edge_size=edge_size)
         handler._update_selected_operation()
         handler._update_contour_preview_temp()
     handler._sync_contour_edge_controls()
@@ -386,6 +492,7 @@ def update_contour_preview_temp(handler) -> None:
             handler._set_preview_paths([])
             return
         primitives = build_contour_path(params)
+        handler._log(f"[LatheEasyStep][debug] contour preview OK: {len(segs)} segments, {len(primitives)} primitives", level="debug")
         handler._set_preview_paths([primitives])
     except Exception as exc:
         handler._log("[LatheEasyStep] _update_contour_preview_temp ERROR:", exc, level="error")
@@ -397,27 +504,30 @@ def sync_contour_edge_controls(handler) -> None:
     if table is None:
         return
     row = table.currentRow()
-    edge_txt = handler._contour_edge_template_text
+    edge_data = str(getattr(handler, "_contour_edge_template_data", "none") or "none")
     size_val = handler._contour_edge_template_size
     if row >= 0:
         edge_item = table.item(row, 3)
+        edge_widget = table.cellWidget(row, 3)
         size_item = table.item(row, 4)
-        if edge_item and edge_item.text():
-            edge_txt = edge_item.text().strip()
+        if edge_widget is not None and hasattr(edge_widget, "currentData"):
+            edge_data = str(edge_widget.currentData() or "none").strip().lower()
+        elif edge_item and edge_item.text():
+            edge_data = edge_item.text().strip().lower()
         if size_item and size_item.text():
             try:
                 size_val = float(size_item.text())
             except Exception:
                 size_val = 0.0
     if handler.contour_edge_type:
-        idx = handler.contour_edge_type.findText(edge_txt, QtCore.Qt.MatchFixedString)
+        idx = handler.contour_edge_type.findData(edge_data, QtCore.Qt.UserRole)
         if idx < 0:
             idx = 0
         handler.contour_edge_type.blockSignals(True)
         handler.contour_edge_type.setCurrentIndex(idx)
         handler.contour_edge_type.blockSignals(False)
-    edge_txt_ctrl = handler.contour_edge_type.currentText() if handler.contour_edge_type else edge_txt
-    enable_size = edge_txt_ctrl.lower().startswith("f") or edge_txt_ctrl.lower().startswith("r")
+    edge_data_ctrl = _combo_data_or_default(handler.contour_edge_type, default=edge_data)
+    enable_size = edge_data_ctrl in {"chamfer", "radius"}
     if handler.label_contour_edge_size:
         handler.label_contour_edge_size.setVisible(True)
         handler.label_contour_edge_size.setEnabled(True)

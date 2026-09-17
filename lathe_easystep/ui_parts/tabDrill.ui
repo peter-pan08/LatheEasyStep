@@ -1,0 +1,233 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>tabDrill</class>
+ <widget class="QWidget" name="tabDrill">
+  <attribute name="title">
+   <string>Bohren</string>
+  </attribute>
+  <layout class="QFormLayout" name="formLayoutDrill">
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_drill_tool">
+     <property name="text">
+      <string>Werkzeug</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <layout class="QHBoxLayout" name="layout_drill_tool_row">
+     <item>
+      <widget class="QComboBox" name="drill_tool">
+                   </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="drill_tool_img">
+       <property name="minimumSize">
+        <size>
+         <width>96</width>
+         <height>96</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Tool Preview</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_drill_spindle">
+     <property name="text">
+      <string>Drehzahl</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QSpinBox" name="drill_spindle">
+     <property name="suffix">
+      <string> U/min</string>
+     </property>
+     <property name="maximum">
+      <number>20000</number>
+     </property>
+     <property name="value">
+      <number>0</number>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_drill_coolant">
+     <property name="text">
+      <string>Kühlung</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QComboBox" name="drill_coolant">
+     <item>
+      <property name="text">
+       <string>Aus</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Ein</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_drill_mode">
+     <property name="text">
+      <string>Bohren Art</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QComboBox" name="drill_mode">
+     <item>
+      <property name="text">
+       <string>G81 Bohren</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G82 Bohren mit Verweilzeit</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G83 Peck drilling</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G73 Chip breaking drilling</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>G84 Gewindebohren</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_26">
+     <property name="text">
+      <string>Lochdurchmesser</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QDoubleSpinBox" name="drill_diameter">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>8.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_27">
+     <property name="text">
+      <string>Tiefe</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="QDoubleSpinBox" name="drill_depth">
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="label_28">
+     <property name="text">
+      <string>Vorschub</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QDoubleSpinBox" name="drill_feed">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.120000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_29">
+     <property name="text">
+      <string>Sicherheits-Z</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QDoubleSpinBox" name="drill_safe_z">
+     <property name="minimum">
+      <double>-1000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>2.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="QLabel" name="label_drill_dwell">
+     <property name="text">
+      <string>Verweilzeit (G82)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QDoubleSpinBox" name="drill_dwell">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.500000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="0">
+    <widget class="QLabel" name="label_drill_peck_depth">
+     <property name="text">
+      <string>Peck-Tiefe (G83/G73)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="QDoubleSpinBox" name="drill_peck_depth">
+     <property name="maximum">
+      <double>1000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>5.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LathePreviewWidget</class>
+   <extends>QWidget</extends>
+   <header>lathe_easystep_handler</header>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
+</ui>

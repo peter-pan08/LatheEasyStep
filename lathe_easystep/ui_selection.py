@@ -1,10 +1,51 @@
 from __future__ import annotations
 
 from .model import OpType
+from .ui_step_list_view import StepListView
+
+
+def update_operation_action_button_states(handler) -> None:
+    """Enable delete/reorder actions only when the selected step permits them."""
+    buttons = {
+        "delete": getattr(handler, "btn_delete", None),
+        "up": getattr(handler, "btn_move_up", None),
+        "down": getattr(handler, "btn_move_down", None),
+    }
+    states = {"delete": False, "up": False, "down": False}
+    try:
+        operations = handler.model.operations
+        index = handler._selected_operation_index()
+        if 0 <= index < len(operations):
+            operation = operations[index]
+            movable = getattr(operation, "op_type", None) != OpType.PROGRAM_HEADER
+            states["delete"] = movable
+            states["up"] = (
+                movable
+                and index > 0
+                and getattr(operations[index - 1], "op_type", None) != OpType.PROGRAM_HEADER
+            )
+            states["down"] = movable and index < len(operations) - 1
+    except Exception:
+        pass
+    for name, button in buttons.items():
+        if button is not None:
+            try:
+                button.setEnabled(states[name])
+            except Exception:
+                pass
 
 
 def handle_tab_changed(handler, *_args, **_kwargs) -> None:
     """Keep list selection and tab-specific helpers in sync."""
+    if (
+        not getattr(handler, "_ui_loading", False)
+        and not getattr(handler, "_dirty_warning_suppressed", False)
+        and getattr(handler, "_startup_complete", False)
+    ):
+        try:
+            handler._warn_if_dirty("Tabwechsel")
+        except Exception:
+            pass
     current_type = handler._current_op_type()
     if current_type != OpType.PROGRAM_HEADER:
         try:
@@ -30,9 +71,10 @@ def handle_tab_changed(handler, *_args, **_kwargs) -> None:
 def on_step_double_clicked(handler, item) -> None:
     """Flush current form values, select the clicked step, then load its tab/form."""
     try:
-        if handler.list_ops is None:
+        step_list = StepListView(handler)
+        if not step_list.is_bound():
             return
-        index = handler.list_ops.row(item)
+        index = step_list.row_of(item)
         if index < 0 or index >= len(handler.model.operations):
             return
 
@@ -42,14 +84,12 @@ def on_step_double_clicked(handler, item) -> None:
             level="info",
         )
 
-        prev_idx = handler.list_ops.currentRow()
+        prev_idx = step_list.selected_row()
         if 0 <= prev_idx < len(handler.model.operations) and prev_idx != index:
             handler._op_row_user_selected = True
             handler._update_selected_operation(force=True)
 
-        handler.list_ops.blockSignals(True)
-        handler.list_ops.setCurrentRow(index)
-        handler.list_ops.blockSignals(False)
+        step_list.select_row(index, block_signals=True)
 
         handler._op_row_user_selected = True
         handler._handle_selection_change(index)
@@ -63,6 +103,17 @@ def handle_selection_change(handler, row: int) -> None:
         not getattr(handler, "_ui_loading", False)
         and previous_row != row
         and 0 <= previous_row < len(handler.model.operations)
+        and not getattr(handler, "_dirty_warning_suppressed", False)
+        and getattr(handler, "_startup_complete", False)
+    ):
+        try:
+            handler._warn_if_dirty("Stepwechsel", row=previous_row)
+        except Exception:
+            pass
+    if (
+        not getattr(handler, "_ui_loading", False)
+        and previous_row != row
+        and 0 <= previous_row < len(handler.model.operations)
     ):
         try:
             handler._sync_form_to_operation(previous_row)
@@ -71,10 +122,19 @@ def handle_selection_change(handler, row: int) -> None:
 
     handler._ui_loading = True
     try:
+        step_list = StepListView(handler)
         handler._op_row_user_selected = bool(
-            handler.list_ops
-            and (handler.list_ops.hasFocus() or handler._op_row_user_selected)
+            step_list.is_bound()
+            and (step_list.has_focus() or handler._op_row_user_selected)
         )
+        try:
+            handler._update_save_step_button_state()
+        except Exception:
+            pass
+        try:
+            handler._update_operation_action_button_states()
+        except Exception:
+            pass
         if row < 0 or row >= len(handler.model.operations):
             return
         op = handler.model.operations[row]
@@ -89,7 +149,11 @@ def handle_selection_change(handler, row: int) -> None:
                 OpType.DRILL: 6,
                 OpType.KEYWAY: 7,
             }
-            handler.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
+            handler._dirty_warning_suppressed = True
+            try:
+                handler.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
+            finally:
+                handler._dirty_warning_suppressed = False
         handler._load_params_to_form(op)
         try:
             if op.op_type == OpType.FACE:
@@ -98,6 +162,10 @@ def handle_selection_change(handler, row: int) -> None:
             pass
         try:
             handler._update_retract_visibility()
+        except Exception:
+            pass
+        try:
+            handler._update_spindle_mode_visibility()
         except Exception:
             pass
         handler._refresh_preview()

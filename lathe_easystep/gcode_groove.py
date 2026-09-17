@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Callable, Dict, List
 
 from .model import Operation
+from .gcode_utils import gcode_comment, get_param_float, get_param_int, validate_internal_x_limit
+from .gcode_safety import _motion_state, activate_pending_css, get_safe_position
+from .numeric import finite_float, validate_finite_data
 
 
 def groove_sub_definition() -> List[str]:
@@ -120,18 +123,22 @@ def groove_sub_definition() -> List[str]:
         "  #<cn>     = [ABS[#14]]",
         "  #<cn>     = [FIX[#<cn>]]",
         "",
-        "  (Checks)",
+        "  (Checks: ungueltige Parameter brechen den Zyklus sofort ab)",
         "  o221 if [#<wtool> LE 0]",
-        "    (ABORT, wtool le 0)",
+        "    (ABBRUCH: Werkzeugbreite <= 0)",
+        "    M99",
         "  o221 endif",
         "  o222 if [#<wnut> LE 0]",
-        "    (ABORT, wnut le 0)",
+        "    (ABBRUCH: Nutbreite <= 0)",
+        "    M99",
         "  o222 endif",
         "  o223 if [#<stepA> LE 0]",
-        "    (ABORT, stepA le 0)",
+        "    (ABBRUCH: Zustellung <= 0)",
+        "    M99",
         "  o223 endif",
         "  o224 if [#<wtool> GT #<wnut> + 0.0001]",
-        "    (ABORT, tool wider than groove)",
+        "    (ABBRUCH: Werkzeug breiter als Nut)",
+        "    M99",
         "  o224 endif",
         "",
         "  (Width stepping)",
@@ -140,7 +147,8 @@ def groove_sub_definition() -> List[str]:
         "    #<stepW> = [0.8 * #<wtool>]",
         "  o225 endif",
         "  o226 if [#<stepW> LE 0.001]",
-        "    (ABORT, overlap too large)",
+        "    (ABBRUCH: Ueberdeckung zu gross)",
+        "    M99",
         "  o226 endif",
         "",
         "  #<extra> = [#<wnut> - #<wtool>]",
@@ -161,6 +169,7 @@ def groove_sub_definition() -> List[str]:
         "",
         "  (Roughing passes up to Arough)",
         "  #<Acur> = [#<Astart>]",
+        "  #<rcnt> = [0]",
         "  o228 if [#<sgn> * [#<Arough> - #<Astart>] GT 0]",
         "    o229 while [#<sgn> * [#<Acur> - #<Arough>] LT 0]",
         "      #<Anext> = [#<Acur> + #<sgn> * #<stepA>]",
@@ -169,6 +178,11 @@ def groove_sub_definition() -> List[str]:
         "      o230 endif",
         "      o210 call [#<Anext>] [#<mode>] [#<C>] [#<Astart>] [#<retr>] [#<sgn>] [#<Fpl>] [#<stepW>] [#<omin>] [#<omax>] [#<camp>] [#<Fsw>] [#<cn>]",
         "      #<Acur> = [#<Anext>]",
+        "      #<rcnt> = [#<rcnt> + 1]",
+        "      (Sicherheitsabbruch gegen Endlosschleife bei Nullbewegung)",
+        "      o233 if [#<rcnt> GT 500]",
+        "        o229 break",
+        "      o233 endif",
         "    o229 endwhile",
         "  o228 endif",
         "",
@@ -181,26 +195,6 @@ def groove_sub_definition() -> List[str]:
         "o220 endsub",
         "(=== END GROOVE CYCLE LIBRARY ===)",
     ]
-
-
-def get_param_float(params: Dict[str, object], keys: List[str], default: float | None = None) -> float | None:
-    for key in keys:
-        if key in params and params.get(key) not in (None, ""):
-            try:
-                return float(params.get(key))
-            except (TypeError, ValueError):
-                continue
-    return default
-
-
-def get_param_int(params: Dict[str, object], keys: List[str], default: int | None = None) -> int | None:
-    for key in keys:
-        if key in params and params.get(key) not in (None, ""):
-            try:
-                return int(float(params.get(key)))
-            except (TypeError, ValueError):
-                continue
-    return default
 
 
 def groove_center_from_ref(base: float, width: float, ref: int) -> float:
@@ -221,24 +215,34 @@ def generate_groove_gcode(
     emit_coolant: Callable[[List[str], object], None],
 ) -> List[str]:
     settings = settings or {}
+    validate_finite_data(op.params, "GROOVE")
+    validate_finite_data(settings, "Programmkopf")
     require_tool(op.params, "GROOVE")
     lines: List[str] = []
-    append_tool_and_spindle(
-        lines,
-        get_tool_number(op.params),
-        op.params.get("spindle"),
-        settings,
-    )
-    emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     p = op.params
-    safe_z = float(p.get("safe_z", 2.0))
+    for aliases, label in (
+        (("wnut", "W_nut", "width", "groove_width"), "Nutbreite"),
+        (("wtool", "W_tool", "tool_width", "cutting_width", "groove_cutting_width"), "Werkzeugbreite"),
+        (("depth",), "Tiefe"),
+        (("stepA", "step_a", "depth_per_pass", "step"), "Zustellung"),
+        (("overlap", "over"), "Ueberdeckung"),
+        (("retract", "retr"), "Rueckzug"),
+        (("F_plunge", "f_plunge", "plunge_feed", "feed"), "Eintauchvorschub"),
+        (("F_sweep", "f_sweep", "sweep_feed"), "Seitvorschub"),
+        (("finish", "fin"), "Aufmass"),
+        (("chip_amp", "camp"), "Spanbruchamplitude"),
+    ):
+        explicit = get_param_float(p, list(aliases), None)
+        if explicit is not None and explicit < 0.0:
+            raise ValueError(f"GROOVE: {label} darf nicht negativ sein.")
+    safe_z = finite_float(p.get("safe_z", 2.0), "GROOVE safe_z")
     lage = get_param_int(p, ["lage"], 0) or 0
 
     mode = get_param_int(p, ["mode", "groove_mode"])
     if mode not in (0, 1):
         mode = 0 if lage in (0, 1) else 1
 
-    wnut = abs(get_param_float(p, ["wnut", "W_nut", "width", "groove_width"], 0.0) or 0.0)
+    wnut = get_param_float(p, ["wnut", "W_nut", "width", "groove_width"], 0.0) or 0.0
     use_tool_width = bool(p.get("use_tool_width", False))
     wtool = get_param_float(
         p,
@@ -246,29 +250,32 @@ def generate_groove_gcode(
         None,
     )
     if use_tool_width and wtool is not None:
-        wtool = abs(wtool)
+        if wtool < 0.0:
+            raise ValueError("GROOVE: Werkzeugbreite darf nicht negativ sein.")
     if wtool is None:
         wtool = wnut
-    wtool = abs(float(wtool))
+    wtool = finite_float(wtool, "GROOVE Werkzeugbreite")
 
     c_val = get_param_float(p, ["C", "c", "center"], None)
     ref = get_param_int(p, ["ref"], 0) or 0
     if c_val is None:
         if mode == 0:
-            c_val = groove_center_from_ref(float(p.get("z", 0.0) or 0.0), wnut, ref)
+            c_val = groove_center_from_ref(finite_float(p.get("z", 0.0) or 0.0, "GROOVE z"), wnut, ref)
         else:
-            c_val = groove_center_from_ref(float(p.get("diameter", 0.0) or 0.0), wnut, ref)
+            c_val = groove_center_from_ref(finite_float(p.get("diameter", 0.0) or 0.0, "GROOVE diameter"), wnut, ref)
 
     a_start = get_param_float(p, ["A_start", "Astart", "start"], None)
     if a_start is None:
         if mode == 0:
-            a_start = float(p.get("diameter", 0.0) or 0.0)
+            a_start = finite_float(p.get("diameter", 0.0) or 0.0, "GROOVE diameter")
         else:
-            a_start = float(p.get("z", 0.0) or 0.0)
+            a_start = finite_float(p.get("z", 0.0) or 0.0, "GROOVE z")
 
     a_end = get_param_float(p, ["A_end", "Aend", "end"], None)
     if a_end is None:
-        depth = abs(float(p.get("depth", 0.0) or 0.0))
+        depth = finite_float(p.get("depth", 0.0) or 0.0, "GROOVE depth")
+        if depth < 0.0:
+            raise ValueError("GROOVE: Tiefe darf nicht negativ sein.")
         if mode == 0:
             dia_depth = 2.0 * depth
             if lage == 1:
@@ -281,17 +288,21 @@ def generate_groove_gcode(
             else:
                 a_end = a_start - depth
 
-    step_a = abs(get_param_float(p, ["stepA", "step_a", "depth_per_pass", "step"], 0.0) or 0.0)
+    step_a = get_param_float(p, ["stepA", "step_a", "depth_per_pass", "step"], 0.0) or 0.0
     if step_a <= 0.0:
-        step_a = abs(float(p.get("depth", 0.0) or 0.0))
+        step_a = finite_float(p.get("depth", 0.0) or 0.0, "GROOVE depth")
 
-    overlap = abs(get_param_float(p, ["overlap", "over"], 0.0) or 0.0)
-    retr = abs(get_param_float(p, ["retract", "retr"], 0.0) or 0.0)
-    f_plunge = abs(get_param_float(p, ["F_plunge", "f_plunge", "plunge_feed", "feed"], 0.0) or 0.0)
-    f_sweep = abs(get_param_float(p, ["F_sweep", "f_sweep", "sweep_feed"], f_plunge) or 0.0)
-    finish = abs(get_param_float(p, ["finish", "fin"], 0.0) or 0.0)
-    chip_amp = abs(get_param_float(p, ["chip_amp", "camp"], 0.0) or 0.0)
-    chip_n = int(round(get_param_float(p, ["chip_n", "cn"], 0.0) or 0.0))
+    overlap = get_param_float(p, ["overlap", "over"], 0.0) or 0.0
+    retr = get_param_float(p, ["retract", "retr"], 0.0) or 0.0
+    f_plunge = get_param_float(p, ["F_plunge", "f_plunge", "plunge_feed", "feed"], 0.0) or 0.0
+    f_sweep = get_param_float(p, ["F_sweep", "f_sweep", "sweep_feed"], f_plunge) or 0.0
+    finish = get_param_float(p, ["finish", "fin"], 0.0) or 0.0
+    chip_amp = get_param_float(p, ["chip_amp", "camp"], 0.0) or 0.0
+    if min(wnut, wtool, step_a, overlap, retr, f_plunge, f_sweep, finish, chip_amp) < 0.0:
+        raise ValueError("GROOVE: Breiten, Zustellung, Ueberdeckung, Rueckzug, Vorschuebe, Aufmass und Spanbruch duerfen nicht negativ sein.")
+    chip_n = get_param_int(p, ["chip_n", "cn"], 0)
+    if chip_n < 0:
+        raise ValueError("GROOVE: Spanbruchanzahl darf nicht negativ sein.")
 
     if mode == 0:
         step_a *= 2.0
@@ -302,11 +313,66 @@ def generate_groove_gcode(
             raise ValueError("GROOVE innen: Aend muss groesser als Astart sein (ID + 2*Tiefe).")
         if lage != 1 and not (a_end < a_start):
             raise ValueError("GROOVE aussen: Aend muss kleiner als Astart sein (OD - 2*Tiefe).")
+        if lage == 1:
+            validate_internal_x_limit(settings, [a_start, a_end], op_label="Inneneinstich")
+
+    # Validate the values actually passed to o220, after diameter conversion
+    # and three-decimal formatting. Positive inputs can otherwise become zero.
+    wtool, wnut, step_a, overlap, f_plunge, f_sweep = (
+        float(f"{value:.3f}") for value in
+        (wtool, wnut, step_a, overlap, f_plunge, f_sweep)
+    )
+    if min(f_plunge, f_sweep) <= 0:
+        raise ValueError("GROOVE: Vorschuebe muessen auch nach Ausgaberundung positiv sein.")
+
+    # Diese Pruefungen verhindern degenerierte Zyklusparameter, die im o220-Zyklus
+    # sonst zu einer Nullbewegung und damit zu einer Endlosschleife fuehren wuerden.
+    if wtool <= 0.0:
+        raise ValueError("GROOVE: Werkzeugbreite muss groesser als 0 sein.")
+    if wnut <= 0.0:
+        raise ValueError("GROOVE: Nutbreite muss groesser als 0 sein.")
+    if step_a <= 0.0:
+        raise ValueError("GROOVE: Zustellung pro Schnitt muss groesser als 0 sein.")
+    if float(f"{a_start:.3f}") == float(f"{a_end:.3f}"):
+        raise ValueError("GROOVE: Start und Ende fallen nach Ausgaberundung zusammen.")
+    if wtool > wnut + 0.0001:
+        raise ValueError("GROOVE: Werkzeug ist breiter als die Nut.")
+    step_w = wtool - overlap
+    if step_w > 0.8 * wtool:
+        step_w = 0.8 * wtool
+    if step_w <= 0.001:
+        raise ValueError("GROOVE: Ueberdeckung ist im Verhaeltnis zur Werkzeugbreite zu gross.")
 
     start_x = a_start if mode == 0 else c_val
-    lines.append("(Anfahren vor Groove)")
-    lines.append(f"G0 Z{safe_z:.3f}")
-    lines.append(f"G0 X{start_x:.3f}")
+    append_tool_and_spindle(
+        lines,
+        get_tool_number(op.params),
+        op.params.get("spindle"),
+        settings,
+        spindle_mode=op.params.get("spindle_mode"),
+        spindle_max_rpm=op.params.get("spindle_max_rpm"),
+        cutting_speed=op.params.get("cutting_speed"),
+        css_start_diameter=abs(start_x),
+    )
+    emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
+    lines.append(f"({gcode_comment('gcode.comment.approach_before_groove', settings.get('lang'))})")
+    safe_pos = get_safe_position(settings)
+    if safe_pos:
+        x_safe, z_safe = safe_pos
+        lines.append(f"G0 Z{z_safe:.3f}")
+        lines.append(f"G0 X{x_safe:.3f}")
+        if mode == 0:
+            lines.append(f"G0 Z{c_val:.3f}")
+            lines.append(f"G0 X{start_x:.3f}")
+            _motion_state(settings).record(start_x, c_val)
+        else:
+            lines.append(f"G0 X{c_val:.3f}")
+            lines.append(f"G0 Z{a_start:.3f}")
+            _motion_state(settings).record(c_val, a_start)
+    else:
+        lines.append(f"G0 Z{safe_z:.3f}")
+        lines.append(f"G0 X{start_x:.3f}")
+    activate_pending_css(lines, settings)
 
     def macro_arg(value: float, digits: int = 3) -> str:
         if value < 0:
@@ -335,4 +401,16 @@ def generate_groove_gcode(
         f"{macro_arg(chip_amp, 3)} "
         f"{macro_arg_int(chip_n)}"
     )
+    # LES-022 (dritte Etappe): der o220-Zyklus stuft die Nutbreite in einer
+    # datenabhaengigen Reihenfolge (0, +stepW, -stepW, +2*stepW, ...) bis zum
+    # Ueberschreiten von omin/omax - die real erreichte Endposition auf der
+    # Breitenachse (Z bei mode 0, X sonst) haengt vom genauen Verhaeltnis aus
+    # Werkzeugbreite/Nutbreite/Ueberdeckung ab und ist ohne Duplizieren dieser
+    # Makro-Logik in Python nicht zuverlaessig vorherzusagen (die Plunge-Achse
+    # kehrt zwar nachweislich immer auf Astart zurueck, die Breitenachse aber
+    # nicht). Bisher blieb der gemeinsame Bewegungszustand hier stillschweigend
+    # auf der Anfahrposition VOR dem Zyklus stehen - jetzt explizit als
+    # unbekannt markiert, statt eine falsche Position anzunehmen.
+    if settings is not None:
+        _motion_state(settings).clear()
     return lines

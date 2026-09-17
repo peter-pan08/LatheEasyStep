@@ -1,9 +1,9 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.7.0`
-Status Date: `2026-07-08`
-Primary Test Branch: `DEV`
+Current Version: `0.8.0`
+Status Date: `2026-09-16`
+Primary Test Branch: `dev`
 
 Deutsch
 -------
@@ -26,7 +26,13 @@ CAM-Ersatz.
 
 ## Projektstatus
 
-Stand: Version 0.7.0, 8. Juli 2026
+Der Stand wurde auch auf dem nativen LinuxCNC-Rechner nachgeprueft:
+877 Stub-Qt- und 108 Real-Qt-Tests sowie alle 55 Interpreterfaelle
+(zwoelf Referenzen, 43 Matrixfaelle) bestanden. Alle zwoelf Referenzen
+wurden in der QtDragon-SIM bis `M30` ausgefuehrt. Details im
+[Pruefbericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
+
+Stand: Version 0.8.0, 16. September 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -36,18 +42,53 @@ weiter als ein reiner Prototyp:
 - Save/Load fuer einzelne Steps und komplette Programme ist vorhanden
 - Embedded-Betrieb in LinuxCNC wurde gezielt stabilisiert
 - Spannfutter-, No-Go- und Sicherheitslogik sind erweitert worden
-- Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.7.0 deutlich weiter modularisiert
-- die aktuelle Refactor-Basis ist mit `171 passed` validiert
+- Handler-, G-Code-, Kontur- und Vorschau-Logik wurden fuer Version 0.8.0 deutlich weiter modularisiert
+- gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
+- generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
+- das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped` validiert
+- `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter, die Step-Liste/Programmverwaltung und die Aktionsleiste liegen als eigene `.ui`-Fragmente unter `lathe_easystep/ui_parts/`
+- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
+- zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.7.0`.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.8.0`.
+
+Beim inneren Schlichten bleibt das Werkzeug fuer die axiale Anfahrt bis zur
+Z-Lage des Konturstarts auf der im Programmkopf festgelegten XRI-Ebene. Erst
+dort erfolgt die radiale Zustellung auf den ersten Profildurchmesser im
+Bearbeitungsvorschub. Bei aktiver Werkzeugradiuskorrektur muss dieser
+Einfahrweg groesser als der Werkzeugdurchmesser sein.
+
+Beim Innen-Schruppen wird die Materialreichweite je Zustellung jetzt entlang
+des wahren Bogens berechnet statt entlang seiner Sehne - an kleinen
+Rundungen zwischen Bohrung und Schulter konnte die Sehnen-Naeherung das
+konfigurierte Schlichtaufmass unterschreiten und real ins Fertigteil
+schneiden.
 
 ## Branch-Status
 
 `main` gilt als lauffaehige Basis des Projekts.
 
-Neue Aenderungen sollen zuerst auf dem Branch `DEV` getestet werden. Erst wenn
+Neue Aenderungen sollen zuerst auf dem Branch `dev` getestet werden. Erst wenn
 die Anpassungen dort fachlich und technisch verifiziert wurden, werden sie in
 den Hauptbranch migriert.
+
+## Strikte UI-/Spracharchitektur (ID-only)
+
+Fuer die UI gilt jetzt verbindlich eine strikte Trennung von Anzeige und Logik:
+
+- sichtbare Texte kommen ausschliesslich aus Sprachdateien (`.lng`)
+- Programmlogik arbeitet nur mit technischen IDs/Werten (`currentData`)
+- es gibt keinen Fallback auf Python- oder `.ui`-Texte
+- fehlt ein Sprachschluessel, wird absichtlich der Schluessel/ID angezeigt
+
+Das macht unvollstaendige Sprachdateien sofort sichtbar und verhindert, dass
+Logik von lokalisierten Anzeige-Texten abhaengt.
+
+Der Umbau ist noch nicht vollstaendig abgeschlossen. Verbleibende direkte
+Textquellen aus Python oder der `.ui` werden nicht mehr stillschweigend als
+"ok" behandelt, sondern explizit als offene Architekturarbeit in `TODO.md`
+gefuehrt.
 
 ## Wichtiger Hinweis
 
@@ -68,6 +109,7 @@ Lathe EasyStep ist als QTVCP-Panel aufgebaut. Die zugehoerigen Dateien in
 diesem Verzeichnis sind:
 
 - `lathe_easystep.ui`
+- `lathe_easystep/ui_parts/`
 - `lathe_easystep_handler.py`
 
 ### Einbau als eingebettetes Panel in die LinuxCNC-INI
@@ -107,6 +149,15 @@ qtvcp -d -c easystep -u ./lathe_easystep_handler.py ./lathe_easystep.ui
 Voraussetzung ist eine LinuxCNC-/QTVCP-Installation, in der `qtvcp` im `PATH`
 liegt.
 
+Zur UI-Struktur:
+
+- `lathe_easystep.ui` ist die Start-Shell des Panels.
+- Die einzelnen Reiterinhalte sowie die Step-Liste/Programmverwaltung und
+  die Aktionsleiste (hinzufuegen/loeschen/verschieben/erzeugen/speichern)
+  liegen getrennt in `lathe_easystep/ui_parts/*.ui`.
+- Der Handler laedt diese Teil-UIs beim Start in die vorhandenen, im
+  Geruest leeren Container nach.
+
 ## Grundsaetzlicher Workflow
 
 Die Bedienung folgt einem festen Ablauf ueber die Reiter. Alle Eingaben wirken
@@ -117,11 +168,18 @@ sich direkt auf Vorschau und Step-Verwaltung aus.
 Hier werden die globalen Programmeinstellungen festgelegt:
 
 - Sicherheitsabstaende und Rueckzugsebenen
+- Sicherheitsabstand / Rueckzugsebene Z als Pflichtwert fuer sichere Anfahrten und Generatorvalidierung
+- `XRI` als Pflichtwert fuer Innen-Gewinde und Innen-Abspanen; unplausible Innen-Rueckzugswerte werden generatorseitig abgewiesen
+- `XRI` ist fuer Innenbearbeitung eine harte Sicherheitsgrenze: wenn ein
+  Innengewinde, Inneneinstich oder Innen-Abspanen einen kleineren X-Wert als
+  `XRI` anfahren muesste, wird kein G-Code erzeugt
 - Rohteilgeometrie
 - Nullpunkt und Bezug
 - maximale Drehzahlen
 - Werkzeugdatenbank
 - Maschinenprofil, Spannfutter und Spannart
+- explizite Koordinatensystemwahl fuer Werkzeugwechsel- und Parkpositionen (`Werkstueckkoordinaten` oder `Maschinenkoordinaten / G53`)
+- vor jedem expliziten `T.. M6` wird derselbe definierte Werkzeugwechselpunkt angefahren
 
 ## Reiter "Planen"
 
@@ -149,6 +207,10 @@ Wichtig fuer den aktuellen Workflow:
 - beim Programmspeichern werden die verknuepften Step-Dateien im Programm mit abgelegt
 - bestehende Programme koennen dadurch spaeter geladen und gezielt in ihre Einzel-Steps zurueckgeschrieben werden
 - Dateidialoge starten immer im zuletzt verwendeten Ordner
+- offene Aenderungen werden im UI sichtbar markiert; Reiter- und Stepwechsel warnen, speichern aber weiterhin nichts automatisch
+- `Aenderungen speichern` warnt jetzt explizit, wenn ein geaenderter Step
+  keine verknuepfte Step-Datei hat - die Aenderung landet dann nur im
+  Programm, nicht in einer eigenen Datei (LES-047)
 
 ## Reiter "Kontur"
 
@@ -161,6 +223,14 @@ Unterstuetzt werden:
 - X und Z kombiniert
 - Kanten als Fase oder Radius
 - Innen-/Aussenseite pro Radius
+- manuelle Konturfeatures fuer DIN-Freistich / Hinterschnitt am Konturanfang oder -ende
+
+Aktueller Generatorstand fuer Konturfeatures:
+
+- eine Kontur kann intern als Fertigkontur, Schruppkontur ohne Hinterschnitt und reine Feature-Teilkontur ausgewertet werden
+- dieselbe Geometrie wird fuer Vorschau und G-Code wiederverwendet
+- fuer DIN-Freistiche sind Standarddaten von `M3` bis `M30` hinterlegt
+- die Segmentbearbeitung im Panel fuehrt jetzt auch Feature-Felder fuer `DIN-Freistich`, `Gewindegroesse`, `Norm`, `Innen/Aussen` und `Start/Ende`
 
 ## Reiter "Abspanen"
 
@@ -168,9 +238,40 @@ Hier wird eine zuvor definierte Kontur bearbeitet:
 
 - Auswahl der Kontur ueber ihren Namen
 - innen oder aussen
-- Schruppen oder Schlichten
+- Schruppen, Schlichten oder Schruppen + Schlichten
 - Werkzeug
 - Zustellung, Vorschub und Drehzahl
+
+Der aktuelle Stand unterstuetzt fuer Hinterschnitt/Freistich vier Bearbeitungsarten:
+
+- ignorieren
+- nur beim Schlichten fahren
+- separat schruppen
+- voll in der Kontur mitschruppen
+
+Die Generatorausgabe dokumentiert zusaetzlich:
+
+- verwendete Strategie (`G71`, `G72`, move-based)
+- Ausgabe-Praeferenz (`auto`, Zyklus bevorzugt, ausgeschrieben bevorzugt)
+- Aufmass X/Z
+- Fallback-Gruende bei nicht zyklustauglicher Kontur oder Expertenoptionen
+
+Sicherheitsstand fuer Innen-Abspanen:
+
+- `XRI` ist fuer Innen-Abspanen verpflichtend
+- `XRI` ist nicht nur Rueckzugsebene, sondern eine harte Untergrenze fuer alle
+  intern angeforderten X-Werte
+- interne `G71`-Starts werden nicht mehr aus `X0/Z0` abgeleitet
+- Anfahrt und Rueckzug verwenden fuer Innenkonturen `XRI/ZRI`
+- der Schlicht-Einfahrweg fuer aktive Schneidenradiuskorrektur wird so erzeugt, dass LinuxCNC die Kompensation sauber annehmen kann
+
+Die UI bietet dafuer jetzt auch direkte Bedienfelder fuer:
+
+- Hinterschnitt-Modus
+- Ausgabe-Praeferenz
+- separates Hinterschnitt-Werkzeug samt Vorschub und Drehzahl
+- Optionalstop vor separatem Hinterschnitt
+- alle sicherheitsrelevanten Expertenfelder sind ueber zentrale Tooltips dokumentiert
 
 ## Reiter "Gewinde"
 
@@ -181,13 +282,44 @@ Dieser Reiter dient zum Gewindeschneiden:
 - vollstaendige G76-Parameter
 - Presets fuer metrische Gewinde und Trapezgewinde
 
+Der Generator prueft zusaetzlich auf fachlich unplausible `G76`-Parameter.
+Bei aktivem automatischem DIN-Freistich wird die Geometrie aus Gewindeende,
+Hand, Durchmesser und DIN-Datensatz abgeleitet: Das G76-Ende liegt um die
+normierte Ueberdeckung `f` innerhalb des Freistichs. Der Freistich wird in
+eine passende zylindrische Aussen- bzw. Innenkontur eingespleisst und damit
+identisch in Vorschau, Schruppen, Schlichten und Kontur-Subroutine verwendet.
+Ist keine Konturstrecke ueber den gesamten Freistichbereich vorhanden, bricht
+die G-Code-Erzeugung ab; ein Konturende wird niemals als Ersatz verwendet.
+
+Preset-Stand:
+
+- metrische Gewinde-Presets zentral verfuegbar bis `M30`
+- Trapezgewinde-Presets zentral verfuegbar
+- DIN-Freistich-/Hinterschnitt-Daten zentral verfuegbar bis `M30`
+
+Gewinde-Stand:
+
+- separates Feld `Gewindestart Z`
+- separate Auswahl fuer Rechts- und Linksgewinde
+- `XRI`-Pflicht und Plausibilitaetspruefung fuer Innengewinde
+- Innengewinde werden abgewiesen, sobald der benoetigte X-Wert die harte
+  Sicherheitsgrenze `XRI` unterschreiten wuerde
+- Vorschau und Generator fuer:
+  - Aussengewinde rechts
+  - Aussengewinde links
+  - Innengewinde rechts
+  - Innengewinde links
+
 ## Reiter "Einstich / Abstich"
 
 Hier werden Einstiche und Abstiche definiert:
 
+- klare Betriebsart `Einstich` oder `Abstich`
 - innen oder aussen
-- reduzierter Vorschub
+- partingspezifische Reduktionswerte nur im Abstich-Modus sichtbar
 - reduzierte Drehzahl ab definierter Position
+
+Der Groove-/Abstich-Zyklus wird generatorseitig jetzt so ausgegeben, dass LinuxCNC erst das Hauptprogramm ausfuehrt und die O-Subroutinen erst spaeter definiert werden. Damit laeuft der Zyklus nicht mehr versehentlich in die Makrobibliothek hinein.
 
 ## Reiter "Bohren"
 
@@ -202,6 +334,22 @@ Der Bohr-Reiter ist bewusst einfach gehalten:
 
 Dieser Reiter ist fuer Nutenstossen und spaetere Verzahnungsfunktionen
 vorgesehen.
+
+## Werkzeugwechsel und LinuxCNC
+
+Lathe EasyStep trennt jetzt sauber zwischen Generatorverhalten und Maschinenlogik:
+
+- `Werkstueckkoordinaten` erzeugen normale `G0 X.. Z..`-Bewegungen
+- `Maschinenkoordinaten` erzeugen explizit `G53 G0 X.. Z..`
+- der Generator fuegt nach `T.. M6` kein zusaetzliches `G0 X0 Z0` ein
+
+Der mit dem realen Testprogramm gepruefte Stand (`/home/adm1n/linuxcnc/nc_files/Test.ngc`) zeigt:
+
+- der definierte Werkzeugwechselpunkt wird korrekt generiert
+- die beobachtete Zusatzbewegung zum manuellen Wechsel kommt aus der LinuxCNC-Konfiguration
+- in der getesteten Konfiguration ist `TOOL_CHANGE_MODE = MANUAL` aktiv und `iocontrol.0.tool-change` ist auf `hal_manualtoolchange` verdrahtet
+
+Vor dem Einsatz an einer realen Maschine muss deshalb immer sowohl der erzeugte G-Code als auch die konkrete `M6`-/Toolchange-Konfiguration der LinuxCNC-Installation geprueft werden.
 
 Aktueller Stand:
 
@@ -221,11 +369,15 @@ zusaetzlichen Vorderansicht fuer einen frei waehlbaren Z-Schnitt.
 Aktueller Stand:
 
 - die Seitenansicht bleibt sichtbar
+- die Vorschau ist aus dem Scrollbereich geloest und bleibt beim Bearbeiten dauerhaft im unteren Panel-Bereich sichtbar
 - die Schnittlage wird in der Seitenansicht farblich markiert
 - die Schnittlage kann direkt in der Seitenansicht verschoben werden
 - die Vorderansicht wird aus dem gesamten Programm berechnet
 - die Vorderansicht nutzt den groessten Werkstueckdurchmesser als feste Referenz
 - die aktuelle Endgeometrie wird in der Vorderansicht zusaetzlich flaechig hervorgehoben
+- Start-, Rueckzug- und Futter-Sperrzonenwarnungen werden im erzeugten G-Code dokumentiert; die Vorschau bleibt weiterhin auf Geometrie und Sicherheitsflaechen fokussiert
+- fuer Abspanoperationen koennen Schruppkontur und Freistichbereich jetzt getrennt in der Vorschau hervorgehoben werden
+- Sicherheitswarnungen lassen sich optional direkt in der Vorschau einblenden
 
 ## Werkzeugtabelle
 
@@ -244,20 +396,26 @@ editiert werden koennen.
 
 ## Aktuelle Prioritaeten
 
-Die naechsten sinnvollen Arbeiten im Projekt sind:
+Die vollstaendige, priorisierte Aufgabenliste steht in der
+[TODO.md](TODO.md), die Release-Zuordnung in der [ROADMAP.md](ROADMAP.md).
 
-1. Handler-Logik weiter modularisieren
-2. Preview robuster machen
-3. Embedded- und Standalone-Verhalten weiter angleichen
-4. Dokumentation und Statusdokumente konsistent halten
-5. reale Werkstattablaeufe und Maschinenprofile weiter verifizieren
+Aktuelle Reihenfolge:
+
+1. sichere Anfahrt zwischen aufeinanderfolgenden Operationen
+2. Innen-Schruppen und Innen-Schlichten an weiteren Konturformen verifizieren
+   (Innenbearbeitung verwendet ausgeschriebene Bewegungen; Backplot-/Realverifikation offen)
+3. lokale DIN-Freistichgeometrie und gemeinsame Vorschau-/G-Code-Primitive
+4. G96/G97 pro Operation ist umgesetzt (Planen/Abspanen/Einstich/Gewinde);
+   G97-Anfahrt und verzoegertes G96 sind implementiert; offen bleiben
+   vollstaendige Modalsequenz und LinuxCNC-Abnahme
+5. anschliessend Handler-, UI-, Sprach- und Modalarchitektur konsolidieren
 
 ## Regressionstests und Smoke-Test
 
 Der aktuelle Refactor-Stand wird nicht nur mit Unit-Tests, sondern auch mit
 Referenzprogrammen abgesichert.
 
-- `pytest -q`
+- `python run_tests.py`
 - `python3 regenerate_all_ngc.py`
 
 Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
@@ -273,43 +431,25 @@ Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
 
 Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
-- `slicer.py` dient jetzt weitgehend als Kompatibilitaetsschicht, enthaelt aber noch Altbestand und sollte langfristig weiter ausgeduennt werden
-- die neue Modulstruktur ist funktional, aber noch nicht in allen Bereichen in kleinere, fachlich scharf getrennte Teilmodule zerlegt
-- die Schnittansicht ist funktional, aber die visuelle Darstellung komplexer Endgeometrien ist noch nicht in allen Faellen endgueltig abgestimmt
-- reale Maschinen- und Kollisionsfaelle muessen weiterhin an Beispielteilen und Trockenlaeufen verifiziert werden
+- Gemeinsame Anfahrt ist achsweise; vollstaendige Rohteil-/Werkzeughuellenpruefung und erste Freifahrt bleiben offen
+- Innen-Schruppen, Innenstufen, Innenkonen, Innenradien und Innenfreistiche brauchen weitere Realtests
+- Lokale DIN-Freistiche funktionieren an beliebigen Segmenten; Normwerte und neue Fahrwege brauchen weitere Verifikation
+- reale Maschinen- und Kollisionsfaelle muessen weiterhin per Backplot und Trockenlauf verifiziert werden
 
-## Geplante Modulaufteilung
+## Aktuelle Modulstruktur
 
-Fuer den Stand `0.7.0` ist bereits ein grosser Teil der Logik aus
-`lathe_easystep_handler.py` und `slicer.py` in eigene Module ausgelagert
-worden. Die sinnvolle Zielstruktur ist:
+Die acht Bearbeitungsreiter, Step-Liste/Programmverwaltung, Aktionsleiste
+und Vorschau/Schnittansicht sind bereits aus der Shell geloest:
 
-```text
-lathe_easystep/
-  model.py
-  tools.py
-  persistence.py
-  storage.py
-  ui_program.py
-  ui_operations.py
-  ui_preview.py
-  gcode/
-    program.py
-    safety.py
-    face.py
-    contour.py
-    roughing.py
-    drill.py
-    thread.py
-    groove.py
-    keyway.py
-  preview/
-    widget.py
-    geometry.py
-  ui/
-    handler.py
-    translations.py
-```
+- `lathe_easystep.ui`: Shell mit ausschliesslich leeren Containern
+  (Tab-Container, `stepListPanel`, `stepActionsPanel`, `previewPanel`)
+- `lathe_easystep/ui_parts/*.ui`: Program, Face, Contour, Parting, Thread,
+  Groove, Drill, Keyway, `stepListPanel`, `stepActionsPanel`, `previewPanel`
+- `lathe_easystep/ui_split.py`: Laufzeit-Lader der Teil-UIs
+- `lathe_easystep/*.py`: Fach-, UI-, Persistenz-, Vorschau- und Generatorlogik
+
+Offen bleiben die weitere Trennung von Vorschau und Step-Verwaltung, klare
+Controllergrenzen sowie der weitere Abbau von `lathe_easystep_handler.py`.
 
 English
 -------
@@ -329,7 +469,17 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.7.0, July 8, 2026.
+Current documented state: Version 0.8.0, September 16, 2026.
+
+For internal finishing, the tool stays on the XRI clearance diameter while
+moving axially to the contour start Z position. It then feeds radially to the
+first profile diameter. With active tool nose compensation, this lead-in must
+be longer than the tool diameter.
+
+Internal roughing now computes each pass's material reach along the true
+arc instead of its chord - at small fillets between a bore and a shoulder,
+the chord approximation could undercut the configured finish allowance and
+actually cut into the finished part.
 
 The project is still under active development, but it is no longer just an
 early prototype:
@@ -338,14 +488,16 @@ early prototype:
 - save/load for single steps and complete programs is available
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
-- handler, generator, contour and preview logic have been modularized substantially further for version 0.7.0
-- the current refactor baseline is validated with `171 passed`
+- handler, generator, contour and preview logic have been modularized substantially further for version 0.8.0
+- the current development baseline is validated with `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`
+- `lathe_easystep.ui` is now the shell; eight operation tabs, the step list/program management area and the action button bar live as separate `.ui` fragments under `lathe_easystep/ui_parts/`
+- the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 
 ## Branch Status
 
 `main` is the stable runnable base.
 
-New work is expected to be tested on `DEV` first. Only verified changes should
+New work is expected to be tested on `dev` first. Only verified changes should
 be merged back into `main`.
 
 ## Important Notice
@@ -482,20 +634,27 @@ Current behaviour:
 
 ## Current Priorities
 
-The next meaningful work areas are:
+The complete prioritized backlog is maintained in [TODO.md](TODO.md), with
+release milestones in [ROADMAP.md](ROADMAP.md).
 
-1. continue splitting handler logic into dedicated modules
-2. make preview handling more robust
-3. keep embedded and standalone behaviour aligned
-4. keep documentation and status files in sync
-5. verify real machine workflows further
+Current order:
+
+1. make operation-to-operation approach moves safe
+2. verify internal roughing and finishing on additional contour forms
+   (internal machining uses explicit moves; backplot/real-machine
+   verification still open)
+3. complete local DIN-relief geometry and shared preview/G-code primitives
+4. per-operation G96/G97 is implemented (facing/turning/parting/threading);
+   G97 approach and deferred G96 are implemented; the complete modal
+   sequence and LinuxCNC acceptance remain open
+5. then consolidate handler, UI, translation and modal-state architecture
 
 ## Regression and Smoke Test
 
 The current refactor state is protected by both unit tests and reference
 program snapshots.
 
-- `pytest -q`
+- `python run_tests.py`
 - `python3 regenerate_all_ngc.py`
 
 The checked-in reference programs under `ngc/` currently cover:
@@ -509,9 +668,82 @@ The checked-in reference programs under `ngc/` currently cover:
 
 ## Known Limitations
 
-The current state is usable, but not yet the final technical structure.
+The current state is usable, but not yet technically complete.
 
-- `slicer.py` now acts largely as a compatibility layer, but it still contains legacy code and should be reduced further over time
-- the new module structure is functional, but not every area has been split into the smallest clean domain modules yet
-- the section view works, but the visual representation of complex final geometry is not yet fully finalized in every case
-- real machine clearance and collision behaviour still need verification on practical dry runs
+- Shared approaches use separate axis moves; full stock/tool-envelope checks and initial clearance remain open
+- internal steps, tapers, radii and reliefs need additional real-machine verification
+- Local DIN reliefs work at arbitrary segments; norm data and new toolpaths still require verification
+- real-machine clearance and collision behaviour still require backplot and dry-run verification
+
+
+Entwicklungsstand 2026-09-08: Snapshot-Generierung, atomare Programmdateien,
+getrennte Qt-Testlaeufe, normierte Step-Kommentare und Freistich-Koordinaten-
+regressionen sind umgesetzt. Planradius, Innenaufmass, Eingabevalidierung
+und gemeinsame Anfahrt wurden erweitert. Die neuen Fahrwege sind noch
+nicht mit LinuxCNC-Parser, Backplot und Maschine abgenommen; offene P0-
+Punkte bleiben Releaseblocker. [Details und Grenzen](doc/VERIFICATION_2026-09-08.md).
+
+Aktueller Pruefstand 2026-09-09: 524 Stub- und 44 Real-Qt-Tests bestanden;
+elf NGC-Referenzen mit 88 statischen Checks. Neu: CSS-Wechsel und Innenradius.
+Bohrparameter und Zahlenleser strenger validiert. LinuxCNC-Parser: elf
+Referenzen und 30 Matrixfaelle bestanden; Backplot/Maschinenabnahme offen.
+[Umfang und verbleibende Grenzen](doc/VERIFICATION_2026-09-09.md).
+
+WSL-Fortsetzung 2026-09-09: LinuxCNC-Interpreterpruefung erfolgreich fuer
+elf Referenzen und 30 Matrixprogramme. Nichtmonotone Boegen vor G71/G72
+abweisen; primitive Konturboegen auch beim expliziten Schlichten erhalten.
+[Interpreterbericht und Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+LES-005 Teilabschluss: Innen-Schlichtrueckzug radial vor axial, G40-Abwahl
+mit geprueftem Freiraum. 524 Stub-/44 Qt-Tests und 11 Referenzen/30 Matrixfaelle
+im Interpreter bestanden. [Details und Grenzen](doc/LES005_INNEN_RUECKZUG_2026-09-09.md).
+
+Review nach Unterbrechung 2026-09-09: Zwischenzeitliche Erweiterungen
+beibehalten; explizite Schlichtpraeferenz und CSS-/G76-Ausgaberundung
+korrigiert. Aktuell 563 Stub-/44 Qt-Tests und elf Referenzen/37 Matrixfaelle
+im Interpreter bestanden. LES-013 bleibt fuer Durchmesserbewertung,
+zyklusinterne Bewegungen und reale Abnahmen offen; fruehere pauschale
+Abschlussaussagen sind damit ersetzt.
+[Details und Nachweise](doc/linuxcnc_2026-09-09/README.md).
+
+Fortsetzung LES-037/001/006: vier Gewindefreistichfaelle (innen/aussen,
+rechts/links) und zwei Schruppen-/Schlichten-Folgen mit identischem Werkzeug
+unter rs274 bestanden. Zu wenig Konturstrecke blockiert in allen vier
+Freistichvarianten den Export; Konturverlaengerung verschiebt den Freistich
+nicht. Aktuell 573 Stub-/44 Qt-Tests, elf Referenzen und 43 Matrixfaelle.
+WSLg/AXIS sind erreichbar; grafischer Backplot und reale Abnahme bleiben offen.
+[Pruefbericht](doc/linuxcnc_2026-09-09/README.md).
+
+
+LES-040/028, Einstichvalidierung 2026-09-09: Vorschuebe, Zustellung,
+Werkzeug-/Nutbreite und Ueberdeckung werden mit den tatsaechlich an o220
+uebergebenen drei Nachkommastellen geprueft. Start/Ende duerfen nach
+Rundung nicht zusammenfallen. Spanbruchanzahl muss ganzzahlig und
+nichtnegativ sein. Fuenf zuvor fehlschlagende Regressionen bestanden.
+Aktuell 578 Stub-/44 Qt-Tests, keine Skips; elf Referenzen und 43
+Matrixfaelle unter rs274 sowie 88 statische Checks bestanden.
+Referenzausgabe unveraendert. Dies ist keine vollstaendige Abnahme aller
+Einstich-/Abstichvarianten. Keilnut erzeugt derzeit wegen der expliziten
+Makro-Sperre in gcode_keyway.py keinen G-Code; eine eigenstaendige
+Implementierung und LinuxCNC-Abnahme bleiben offen.
+
+LES-027 Teilstand 2026-09-09: isolierter Qt-Startbenchmark mit frischen
+Prozessen vorhanden. UI-Ausschnitt im Median 0.368 s unter Windows und
+1.362 s unter WSL, keine Reproduktion der gemeldeten >20 s. Neun
+nachgelagerte Panel-Startaufgaben erhalten eigene Zeitmarken. Reale
+Ursache, Bedienbereitschaft und Embedded-/Standalone-Vergleich bleiben offen.
+[Messumfang, Rohdaten und naechster Nachweis](doc/STARTUP_2026-09-09.md).
+
+
+LES-028/032 Teilstand 2026-09-09: Radiuskorrektur lehnt negative Radien,
+nicht darstellbare Schneidendurchmesser sowie explizit ungueltige
+Werkzeugorientierungen ab. Q/L wird ganzzahlig in 0..9 validiert, statt
+Dezimalwerte abzuschneiden oder bei defekten Angaben still ohne Korrektur
+weiterzulaufen. G41.1/G42.1 darf keinen auf null gerundeten D-Wert ausgeben.
+Gueltige Zahlenstrings bleiben kompatibel. Fehlende Werkzeugdaten bzw.
+fehlendes Q und Radius null behalten das bisherige Verhalten ohne Korrektur;
+eine allgemeine Pflicht fuer vollstaendige Werkzeugtabellen ist nicht umgesetzt.
+Neun Fehlerfaelle vorher reproduziert, elf neue Regressionen bestanden.
+Aktuell 589 Stub-/44 Qt-Tests, 88 statische Checks sowie elf Referenzen und
+43 Matrixfaelle unter rs274 bestanden; Referenzausgabe unveraendert.
+Werkzeughuellen, Schneidenlaenge, physische Eignung und reale Abnahme bleiben offen.

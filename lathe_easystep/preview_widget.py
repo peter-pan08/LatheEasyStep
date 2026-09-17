@@ -1,0 +1,852 @@
+"""2D-Vorschau-Widget fuer die Drehbank-Kontur (Front-/Slice-Ansicht).
+
+Rein darstellungsbezogen (Qt-Paint-Code, Koordinatentransformation); enthaelt
+keine Programmlogik und ist daher unabhaengig vom Handler nutzbar. Als
+promoted Widget in lathe_easystep.ui referenziert (siehe <customwidget>
+<header>lathe_easystep_handler</header></customwidget> - der Handler
+re-exportiert diese Klasse, damit uic.loadUi sie weiterhin ueber den
+bestehenden Header findet).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Dict, List, Tuple
+
+from qtpy import QtCore, QtGui, QtWidgets
+
+from .model import Operation, OpType
+from .preview_scene import (
+    build_front_view_draw_plan,
+    build_front_view_screen_plan,
+    build_preview_draw_plan,
+    primitive_strokes,
+    stroke_bounding_rectangle,
+)
+from .preview_geometry import (
+    build_keyway_front_polygons,
+    apply_side_navigation,
+    compute_side_viewport,
+    circular_view_layout,
+    front_operation_side,
+    front_reference_diameter,
+    front_slice_profile,
+    FRONT_VIEW_FILL_COLORS,
+    FRONT_VIEW_RING_STYLES,
+    interp_x_at_z,
+    interp_x_hits_at_z,
+    legend_layout,
+    LEGEND_ENTRIES,
+    offset_polygons_to_screen,
+    point_cross_lines,
+    path_hits_at_slice,
+    preview_primitives_to_points,
+    PREVIEW_CHROME_FILLS,
+    PREVIEW_CHROME_STYLES,
+    sample_preview_arc,
+    PREVIEW_DRAW_STYLES,
+    side_view_grid_layout,
+    side_points_to_screen,
+    side_strokes_to_screen,
+    STATUS_BOX_STYLE,
+    status_message_layout,
+    zoom_navigation_state,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class LathePreviewWidget(QtWidgets.QWidget):
+    sliceChanged = QtCore.Signal(float)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.x_is_diameter = True  # X values are treated as radius for drawing but labeled as diameter
+        self.paths: List[List[Tuple[float, float]]] = []
+        self.primitives: List[List[dict]] = []
+        self.active_index: int | None = None
+        self.preview_scene = None
+        # Legend visibility & collision indication
+        self.show_legend = True
+        self._legend_collapsed = False
+        self._legend_click_rect = None
+
+        self._collision_active = False
+        self._blink_state = False
+        self._blink_timer = QtCore.QTimer(self)
+        self._blink_timer.setInterval(350)
+        # Slice view support (side view + draggable Z-slice)
+        self.view_mode = "side"  # "side" or "slice"
+        self.slice_enabled = False
+        self.slice_z = 0.0
+        self._slice_drag = False
+        self._view_rect = None
+        self._view_min_z = None
+        self._view_max_z = None
+        self._view_scale = None
+        self._view_zoom = 1.0
+        self._view_pan = QtCore.QPointF(0.0, 0.0)
+        self._pan_drag = False
+        self._pan_last_pos = None
+        self.front_program: Dict[str, object] = {}
+        self.front_operation: Operation | None = None
+        self.status_messages: List[str] = []
+        self._blink_timer.timeout.connect(self._on_blink_timer)
+        self.setMinimumHeight(200)
+        self._base_span = 10.0  # Default 10x10 mm viewport
+        self.setCursor(QtCore.Qt.OpenHandCursor)
+
+    def reset_view(self) -> None:
+        """Fit the model again without changing any machining geometry."""
+        self._view_zoom = 1.0
+        self._view_pan = QtCore.QPointF(0.0, 0.0)
+        self.update()
+
+    def _apply_side_navigation(self, viewport: Dict[str, float], rect: QtCore.QRect) -> Dict[str, float]:
+        zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        center = rect.center()
+        return apply_side_navigation(
+            viewport,
+            left=rect.left(),
+            bottom=rect.bottom(),
+            center=(center.x(), center.y()),
+            zoom=zoom,
+            pan=(pan.x(), pan.y()),
+        )
+
+    def _debug_slice(self, message: str) -> None:
+        value = str(os.environ.get("LATHEEASYSTEP_DEBUG", "")).strip().lower()
+        if value not in {"1", "true", "yes", "on", "debug"}:
+            return
+        try:
+            print(f"[LatheEasyStep][debug] {message}")
+        except (OSError, UnicodeError) as exc:
+            # LES-044: nur Ausgabefehler abfangen (z. B. geschlossene Pipe/
+            # Terminal, nicht kodierbare Zeichen) - ein reiner Debug-Print
+            # ohne fachliche Logik, andere Ausnahmen sollen sichtbar bleiben.
+            _LOGGER.debug("[LatheEasyStep] %s: print failed: %s", "_debug_slice", exc)
+
+    def _x_to_display(self, x_val: float) -> float:
+        """Map stored X values (diameter programming) to displayed X values (radius)."""
+        try:
+            x_num = float(x_val)
+        except (TypeError, ValueError, OverflowError) as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "_x_to_display", exc)
+            return 0.0
+        return x_num * 0.5 if getattr(self, "x_is_diameter", False) else x_num
+
+    def _display_x_to_label(self, x_display: float) -> float:
+        """Map display-space X back to the user-facing axis label value."""
+        try:
+            x_num = float(x_display)
+        except (TypeError, ValueError, OverflowError) as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "_display_x_to_label", exc)
+            return 0.0
+        return x_num * 2.0 if getattr(self, "x_is_diameter", False) else x_num
+
+
+    def _on_blink_timer(self):
+        # Blink when collision is active
+        if not self._collision_active:
+            if self._blink_state:
+                self._blink_state = False
+                self.update()
+            return
+        self._blink_state = not self._blink_state
+        self.update()
+
+    def set_collision(self, active: bool):
+        self._collision_active = bool(active)
+        if self._collision_active:
+            if not self._blink_timer.isActive():
+                self._blink_timer.start()
+        else:
+            if self._blink_timer.isActive():
+                self._blink_timer.stop()
+            self._blink_state = False
+            self.update()
+
+    def set_status_messages(self, messages):
+        self.status_messages = [str(msg) for msg in (messages or []) if str(msg).strip()]
+        self.update()
+
+    def toggle_legend(self):
+        # keep a small header visible, toggle between collapsed/expanded
+        self._legend_collapsed = not getattr(self, "_legend_collapsed", False)
+        self.update()
+
+    def set_view_mode(self, mode: str):
+        self.view_mode = mode
+        self.update()
+
+    def set_slice_enabled(self, enabled: bool):
+        self.slice_enabled = bool(enabled)
+        self._slice_drag = False
+        self.update()
+
+    def set_slice_z(self, z_val: float, emit: bool = False):
+        try:
+            z_val = float(z_val)
+        except (TypeError, ValueError, OverflowError) as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "set_slice_z", exc)
+            return
+        old_z = float(getattr(self, "slice_z", 0.0) or 0.0)
+        self.slice_z = z_val
+        if abs(old_z - z_val) > 1e-9:
+            self._debug_slice(
+                f"preview slice_z updated: view_mode={getattr(self, 'view_mode', None)} "
+                f"emit={emit} from={old_z:.6f} to={z_val:.6f}"
+            )
+        if emit:
+            try:
+                # LES-044: bewusst breit - emit() ruft synchron beliebigen
+                # verbundenen Empfaengercode auf (Handler-Slots); dessen
+                # Ausnahmeklassen liegen ausserhalb der Kontrolle dieser
+                # Methode.
+                self.sliceChanged.emit(self.slice_z)
+            except Exception as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
+                pass
+            callback = getattr(self, "_slice_change_callback", None)
+            if callable(callback):
+                try:
+                    # LES-044: bewusst breit - Fallback-Callback fuer
+                    # denselben Zweck wie sliceChanged.emit() oben, ebenso
+                    # beliebiger Fremdcode.
+                    callback(self.slice_z)
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "set_slice_z", exc)
+                    pass
+        self.update()
+
+    def _pixel_to_z(self, px: float):
+        rect = getattr(self, "_view_rect", None)
+        min_z = getattr(self, "_view_min_z", None)
+        scale = getattr(self, "_view_scale", None)
+        if rect is None or min_z is None or scale in (None, 0):
+            return None
+        z = float(min_z) + (px - rect.left()) / float(scale)
+        max_z = getattr(self, "_view_max_z", None)
+        if max_z is not None:
+            z = max(float(min_z), min(float(max_z), z))
+        return z
+
+    def _set_slice_from_pos(self, pos: QtCore.QPoint):
+        z = self._pixel_to_z(pos.x())
+        if z is None:
+            self._debug_slice("preview slice drag ignored: pixel position outside active view")
+            return
+        self.set_slice_z(z, emit=True)
+
+    def _interp_x_at_z(self, path, z: float):
+        return interp_x_at_z(path, z)
+
+    def _interp_x_hits_at_z(self, path, z: float):
+        return interp_x_hits_at_z(path, z)
+
+    def _chrome_pen(self, key: str) -> QtGui.QPen:
+        """LES-044: Qt-Adaption fuer PREVIEW_CHROME_STYLES (preview_geometry.py)
+        - Stil-Mapping bewusst lokal im Methodenkoerper (nicht Modulebene): der
+        Stub-Qt-Testmodus faket QtCore.Qt als leeres Namespace-Objekt ohne
+        SolidLine/DashLine/DashDotLine, siehe Begruendung bei den anderen
+        lokalen Stil-Mappings in dieser Datei."""
+        entry = PREVIEW_CHROME_STYLES[key]
+        line_styles = {
+            "solid": QtCore.Qt.SolidLine,
+            "dash": QtCore.Qt.DashLine,
+            "dashdot": QtCore.Qt.DashDotLine,
+        }
+        pen = QtGui.QPen(QtGui.QColor(*entry["color"]), entry["width"])
+        pen.setStyle(line_styles[entry["style"]])
+        return pen
+
+    def _chrome_fill(self, key: str) -> QtGui.QColor:
+        return QtGui.QColor(*PREVIEW_CHROME_FILLS[key])
+
+    def _paint_slice_view(self, painter: QtGui.QPainter):
+        painter.fillRect(self.rect(), QtCore.Qt.black)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        diam = None
+        if self.paths:
+            idx = self.active_index if self.active_index is not None else 0
+            idx = max(0, min(idx, len(self.paths) - 1))
+            path = self.paths[idx]
+            if path and isinstance(path[0], (list, tuple)):
+                diam = self._interp_x_at_z(path, self.slice_z)
+
+        if diam is None:
+            diam = 10.0
+
+        r = self.rect().adjusted(20, 20, -20, -40)
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        layout = circular_view_layout(
+            float(diam), (r.left(), r.top(), r.right(), r.bottom()),
+            zoom=float(getattr(self, "_view_zoom", 1.0) or 1.0),
+            pan=(pan.x(), pan.y()), fit_factor=1.1,
+        )
+        cx, cy = layout["center"]
+        pix_rad = layout["radius"]
+
+        painter.setPen(self._chrome_pen("slice_view_circle"))
+        painter.drawEllipse(QtCore.QPointF(cx, cy), pix_rad, pix_rad)
+
+        painter.setPen(self._chrome_pen("slice_view_text"))
+        painter.drawText(10, self.height() - 10, f"Schnitt bei Z = {self.slice_z:.3f} mm")
+
+    def set_front_context(self, program: Dict[str, object] | None = None, operation: Operation | None = None):
+        self.front_program = dict(program or {})
+        self.front_operation = operation
+        self.update()
+
+    def _path_hits_at_slice(self, path) -> List[float]:
+        return path_hits_at_slice(path, self.slice_z, self.primitives_to_points)
+
+    def _front_program_operations(self) -> List[Operation]:
+        ops = getattr(self, "front_program", {}).get("__operations")
+        if isinstance(ops, list):
+            return [op for op in ops if isinstance(op, Operation)]
+        op = getattr(self, "front_operation", None)
+        return [op] if isinstance(op, Operation) else []
+
+    def _front_operation_side(self, op: Operation) -> str | None:
+        return front_operation_side(op)
+
+    def _front_slice_profile(self) -> Dict[str, List[float] | float | None]:
+        return front_slice_profile(
+            front_program=getattr(self, "front_program", {}) or {},
+            front_operations=self._front_program_operations(),
+            paths=self.paths,
+            active_index=self.active_index,
+            slice_z=self.slice_z,
+            to_points=self.primitives_to_points,
+        )
+
+    def _front_active_diameters(self) -> List[float]:
+        profile = self._front_slice_profile()
+        hits = profile.get("all_hits", [])
+        return list(hits) if isinstance(hits, list) else []
+
+    def _front_reference_diameter(self) -> float:
+        return front_reference_diameter(
+            front_program=getattr(self, "front_program", {}) or {},
+            front_operations=self._front_program_operations(),
+            to_points=self.primitives_to_points,
+        )
+
+    def _draw_front_keyway_overlay(self, painter: QtGui.QPainter, center: QtCore.QPointF, scale: float):
+        painter.save()
+        painter.setPen(self._chrome_pen("front_keyway_line"))
+        painter.setBrush(QtGui.QBrush(self._chrome_fill("front_keyway_fill")))
+        polygons = []
+        for op in self._front_program_operations():
+            if op is None or getattr(op, "op_type", None) != OpType.KEYWAY:
+                continue
+            params = getattr(op, "params", {}) or {}
+            polygons.extend(build_keyway_front_polygons(params, self.slice_z))
+        for points in offset_polygons_to_screen(
+            polygons, (center.x(), center.y()), scale
+        ):
+            painter.drawPolygon(QtGui.QPolygonF([QtCore.QPointF(*point) for point in points]))
+        painter.restore()
+
+    def _paint_front_view(self, painter: QtGui.QPainter):
+        painter.fillRect(self.rect(), QtCore.Qt.black)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        def _float(value: object, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                return float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                _LOGGER.debug("[LatheEasyStep] %s: invalid numeric input: %s", "_float", exc)
+                return default
+
+        prog = getattr(self, "front_program", {}) or {}
+        stock_od = abs(_float(prog.get("xa"), 0.0))
+        stock_id = abs(_float(prog.get("xi"), 0.0))
+        profile = self._front_slice_profile()
+        active_diams = [abs(d) for d in (profile.get("all_hits", []) if isinstance(profile.get("all_hits", []), list) else []) if abs(d) > 1e-6]
+        outer_hits = [abs(d) for d in (profile.get("outer_hits", []) if isinstance(profile.get("outer_hits", []), list) else []) if abs(d) > 1e-6]
+        inner_hits = [abs(d) for d in (profile.get("inner_hits", []) if isinstance(profile.get("inner_hits", []), list) else []) if abs(d) > 1e-6]
+        outer_dia = abs(_float(profile.get("outer_fill"), 0.0))
+        inner_dia = abs(_float(profile.get("inner_fill"), 0.0))
+
+        max_diameter = max(self._front_reference_diameter(), 10.0)
+        r = self.rect().adjusted(20, 20, -20, -36)
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        layout = circular_view_layout(
+            max_diameter, (r.left(), r.top(), r.right(), r.bottom()),
+            zoom=float(getattr(self, "_view_zoom", 1.0) or 1.0),
+            pan=(pan.x(), pan.y()),
+        )
+        center = QtCore.QPointF(*layout["center"])
+        scale = float(layout["scale"])
+
+        painter.setPen(self._chrome_pen("front_axes"))
+        painter.drawLine(*(QtCore.QPointF(*point) for point in layout["horizontal_axis"]))
+        painter.drawLine(*(QtCore.QPointF(*point) for point in layout["vertical_axis"]))
+
+        draw_plan = build_front_view_draw_plan(
+            stock_od=stock_od,
+            stock_id=stock_id,
+            outer_fill_diameter=outer_dia,
+            inner_fill_diameter=inner_dia,
+            outer_hits=outer_hits,
+            inner_hits=inner_hits,
+            active_diameters=active_diams,
+        )
+        # LES-044/LES-051: Farben/Breiten/Stile kommen aus dem reinen
+        # Datenvertrag FRONT_VIEW_RING_STYLES (preview_geometry.py). Stil-
+        # Mapping bewusst lokal (nicht Modulebene) - siehe Begruendung beim
+        # Legende-Stil-Mapping weiter unten in dieser Datei.
+        front_ring_line_styles = {
+            "solid": QtCore.Qt.SolidLine,
+            "dash": QtCore.Qt.DashLine,
+            "dashdot": QtCore.Qt.DashDotLine,
+        }
+        ring_styles = {
+            key: (
+                QtGui.QColor(*entry["color"]),
+                entry["width"],
+                front_ring_line_styles[entry["style"]],
+            )
+            for key, entry in FRONT_VIEW_RING_STYLES.items()
+        }
+
+        screen_plan = build_front_view_screen_plan(
+            draw_plan, center=(center.x(), center.y()), scale=scale
+        )
+
+        def draw_ring(circle) -> None:
+            color, width, style = ring_styles[circle.style_key]
+            painter.setPen(QtGui.QPen(color, width, style))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawEllipse(QtCore.QPointF(*circle.center), circle.radius, circle.radius)
+
+        for circle in screen_plan["stock"]:
+            draw_ring(circle)
+
+        end_contour = screen_plan["filled"]
+        if end_contour:
+            painter.save()
+            painter.setPen(QtCore.Qt.NoPen)
+            for circle in end_contour:
+                painter.setBrush(
+                    QtGui.QBrush(QtGui.QColor(*FRONT_VIEW_FILL_COLORS[circle.style_key]))
+                )
+                painter.drawEllipse(QtCore.QPointF(*circle.center), circle.radius, circle.radius)
+            painter.restore()
+
+        self._draw_front_keyway_overlay(painter, center, scale)
+
+        for circle in screen_plan["rings"]:
+            draw_ring(circle)
+
+        painter.setPen(self._chrome_pen("front_info_text"))
+        painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")
+        if active_diams:
+            painter.drawText(10, 16, "D final: " + ", ".join(f"{d:.3f}" for d in active_diams[:3]))
+        painter.drawText(10, 32, f"D max: {max_diameter:.3f}")
+
+    def mousePressEvent(self, event):  # type: ignore[override]
+        # Click on legend to toggle
+        rect = getattr(self, "_legend_click_rect", None)
+        if rect and rect.contains(event.pos()):
+            self.toggle_legend()
+            event.accept()
+            return
+
+        # Drag slice line in side view
+        if getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
+            vrect = getattr(self, "_view_rect", None)
+            if vrect is not None and vrect.contains(event.pos()) and event.button() == QtCore.Qt.LeftButton:
+                self._slice_drag = True
+                self._set_slice_from_pos(event.pos())
+                event.accept()
+                return
+
+        if event.button() in (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton, QtCore.Qt.RightButton):
+            self._pan_drag = True
+            self._pan_last_pos = event.pos()
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+
+    def mouseMoveEvent(self, event):  # type: ignore[override]
+        if getattr(self, "_slice_drag", False) and getattr(self, "slice_enabled", False) and getattr(self, "view_mode", "side") == "side":
+            self._set_slice_from_pos(event.pos())
+            event.accept()
+            return
+        if getattr(self, "_pan_drag", False) and self._pan_last_pos is not None:
+            delta = event.pos() - self._pan_last_pos
+            self._view_pan = self._view_pan + QtCore.QPointF(float(delta.x()), float(delta.y()))
+            self._pan_last_pos = event.pos()
+            self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # type: ignore[override]
+        if getattr(self, "_slice_drag", False):
+            self._slice_drag = False
+            event.accept()
+            return
+        if getattr(self, "_pan_drag", False):
+            self._pan_drag = False
+            self._pan_last_pos = None
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event):  # type: ignore[override]
+        delta = event.angleDelta().y()
+        if not delta:
+            super().wheelEvent(event)
+            return
+        old_zoom = float(getattr(self, "_view_zoom", 1.0) or 1.0)
+        pos = event.pos()
+        center = self.rect().center()
+        pan = getattr(self, "_view_pan", QtCore.QPointF())
+        new_zoom, new_pan = zoom_navigation_state(
+            old_zoom,
+            (pan.x(), pan.y()),
+            (pos.x(), pos.y()),
+            (center.x(), center.y()),
+            float(delta) / 120.0,
+        )
+        self._view_pan = QtCore.QPointF(*new_pan)
+        self._view_zoom = new_zoom
+        self.update()
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):  # type: ignore[override]
+        if event.button() == QtCore.Qt.LeftButton:
+            self.reset_view()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _sample_arc(self, p1, p2, c, ccw):
+        return sample_preview_arc(p1, p2, c, ccw)
+
+    def primitives_to_points(self, prims):
+        return preview_primitives_to_points(prims)
+
+    def set_paths(self, paths, active_index: int | None = None):
+        # paths can be:
+        #   - list of list-of-(x,z) points (legacy)
+        #   - list of primitives [{type:line/arc,...}, ...] for a single path
+        #   - list of list-of-primitives for multiple paths
+        self.active_index = active_index
+
+        # IMPORTANT:
+        # We keep "primitive" paths (list of dicts) as-is so the paintEvent
+        # can style them by role (e.g. stock / retract) and still draw them.
+        norm_paths = []
+        for entry in paths or []:
+            if isinstance(entry, dict) and "type" in entry:
+                # single primitive dict
+                norm_paths.append([entry])
+                continue
+
+            if isinstance(entry, (list, tuple)):
+                # list of primitives (dict) or list of points
+                if entry and isinstance(entry[0], dict) and "type" in entry[0]:
+                    norm_paths.append(list(entry))
+                    continue
+
+                pts = []
+                for pt in entry:
+                    if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                        try:
+                            pts.append((float(pt[0]), float(pt[1])))
+                        except (TypeError, ValueError, OverflowError) as exc:
+                            _LOGGER.debug("[LatheEasyStep] %s: invalid point ignored: %s", "set_paths", exc)
+                            continue
+                if pts:
+                    norm_paths.append(pts)
+
+        self.paths = norm_paths
+        self.update()
+
+    def set_preview_scene(self, scene) -> None:
+        """Retain semantic layers; path transfer remains separately compatible."""
+        self.preview_scene = scene
+
+    def set_primitives(self, primitives):
+        """
+        Kompatibilität: Einige Teile des Codes arbeiten mit 'primitives'
+        (Linien/Arcs/Polylines). Dieses Widget zeichnet aber über 'paths'.
+        Daher: primitives -> points -> set_paths().
+        """
+        self.primitives = primitives or []
+        try:
+            paths = self.primitives_to_points(self.primitives)
+        except (TypeError, ValueError, IndexError) as exc:
+            # LES-044: preview_primitives_to_points() liest p1/p2/c aus
+            # primitive-Dicts per tuple()/Indexzugriff und rechnet damit
+            # (math.hypot) - fehlerhafte Primitives (falsche Laenge/Typ)
+            # loesen TypeError/IndexError/ValueError aus, keine anderen
+            # Ausnahmeklassen.
+            _LOGGER.debug("[LatheEasyStep] %s: malformed primitives ignored: %s", "set_primitives", exc)
+            paths = []
+        self.set_paths(paths)
+
+    def paintEvent(self, event):  # type: ignore[override]
+        painter = QtGui.QPainter(self)
+        if getattr(self, "view_mode", "side") == "slice":
+            try:
+                self._paint_slice_view(painter)
+            except Exception as exc:
+                # LES-044: bewusst breit, wie beim Seitenansicht-Zweig weiter
+                # unten - ohne dieses Netz beendet PyQt5 den ganzen Prozess,
+                # sobald _paint_slice_view() eine unbehandelte Ausnahme
+                # wirft (empirisch bestaetigt), statt nur diesen einen Frame
+                # auszulassen.
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent/slice", exc)
+            finally:
+                painter.end()
+            return
+        if getattr(self, "view_mode", "side") == "front":
+            try:
+                self._paint_front_view(painter)
+            except Exception as exc:
+                # LES-044: siehe Begruendung beim Schnittansicht-Zweig oben.
+                _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent/front", exc)
+            finally:
+                painter.end()
+            return
+        self._legend_click_rect = None
+        try:
+            painter.fillRect(self.rect(), QtCore.Qt.black)
+            margin = 30
+            rect = self.rect().adjusted(margin, margin, -margin, -margin)
+            viewport = compute_side_viewport(
+                self.paths,
+                rect.width(),
+                rect.height(),
+                x_is_diameter=self.x_is_diameter,
+                base_span=self._base_span,
+            )
+            viewport = self._apply_side_navigation(viewport, rect)
+            min_x, max_x = viewport["min_x"], viewport["max_x"]
+            min_z, max_z = viewport["min_z"], viewport["max_z"]
+            scale = viewport["scale"]
+
+            # store mapping for interactive slice
+            self._view_rect = rect
+            self._view_min_z = min_z
+            self._view_max_z = max_z
+            self._view_scale = scale
+
+            grid = side_view_grid_layout(
+                viewport,
+                left=rect.left(), top=rect.top(), right=rect.right(), bottom=rect.bottom(),
+                x_is_diameter=self.x_is_diameter,
+                slice_z=(
+                    float(getattr(self, "slice_z", 0.0))
+                    if getattr(self, "slice_enabled", False)
+                    and getattr(self, "view_mode", "side") == "side"
+                    else None
+                ),
+            )
+
+            # optional slice indicator (selected Z)
+            if grid["slice"] is not None:
+                try:
+                    zline = float(getattr(self, "slice_z", 0.0))
+                    line = grid["slice"]["line"]
+                    p1, p2 = QtCore.QPointF(*line[0]), QtCore.QPointF(*line[1])
+                    painter.setPen(self._chrome_pen("side_slice_line"))
+                    painter.drawLine(p1, p2)
+                    label = f"Schnitt Z {zline:.3f}"
+                    text_pos = QtCore.QPointF(*grid["slice"]["label_pos"])
+                    painter.setPen(self._chrome_pen("side_slice_label"))
+                    painter.drawText(text_pos, label)
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
+                    pass
+
+            # Achsen und Skala (außen: links/unten)
+            painter.setPen(self._chrome_pen("side_axes"))
+            axes = grid["axes"]
+            x_axis, x_axis_end = (QtCore.QPointF(*point) for point in axes["x_line"])
+            z_axis, z_axis_end = (QtCore.QPointF(*point) for point in axes["z_line"])
+            painter.drawLine(z_axis, z_axis_end)  # Z-Achse horizontal
+            painter.drawLine(x_axis, x_axis_end)  # X-Achse vertikal
+
+            tick_pen = self._chrome_pen("side_tick")
+            font_pen = self._chrome_pen("side_axis_label")
+            painter.setFont(QtGui.QFont("Sans", 8))
+
+            # Z-Ticks (horizontal unten/oben)
+            for tick in grid["z_ticks"]:
+                painter.setPen(tick_pen)
+                painter.drawLine(QtCore.QLineF(*(coordinate for point in tick["mark_line"] for coordinate in point)))
+                painter.setPen(font_pen)
+                painter.drawText(QtCore.QPointF(*tick["label_pos"]), f"{tick['label']:.0f}")
+
+            # X-Ticks (vertikal links/rechts)
+            for tick in grid["x_ticks"]:
+                painter.setPen(tick_pen)
+                painter.drawLine(QtCore.QLineF(*(coordinate for point in tick["mark_line"] for coordinate in point)))
+                painter.setPen(font_pen)
+                painter.drawText(QtCore.QPointF(*tick["label_pos"]), f"{tick['label']:.0f}")
+
+            # Achsbeschriftungen
+            painter.setPen(font_pen)
+            painter.drawText(QtCore.QPointF(*grid["z_label_pos"]), "Z")
+            painter.drawText(QtCore.QPointF(*grid["x_label_pos"]), "X")
+            # LES-051: Farben/Breiten/Stile kommen jetzt aus dem reinen
+            # Datenvertrag PREVIEW_DRAW_STYLES (preview_geometry.py).
+            preview_line_styles = {
+                "solid": QtCore.Qt.SolidLine,
+                "dash": QtCore.Qt.DashLine,
+                "dashdot": QtCore.Qt.DashDotLine,
+            }
+            styles = {
+                key: (
+                    QtGui.QColor(*entry["color"]),
+                    entry["width"],
+                    preview_line_styles[entry["style"]],
+                )
+                for key, entry in PREVIEW_DRAW_STYLES.items()
+            }
+            draw_plan = build_preview_draw_plan(
+                self.paths, self.active_index, self.preview_scene
+            )
+            for item in draw_plan:
+                idx, role = item.index, item.role
+                path = self.paths[idx]
+                color, width, style = styles[item.style_key]
+
+                pen = QtGui.QPen(color, width)
+                pen.setStyle(style)
+                painter.setPen(pen)
+
+                # Primitive mode (dict primitives from build_*_outline helpers)
+                if isinstance(path[0], dict):
+                    # Every primitive is a separate stroke. Joining the sampled
+                    # points of disconnected primitives would invent diagonal
+                    # machine moves that neither model nor G-code contains.
+                    strokes = primitive_strokes(path, self._sample_arc)
+                    if role == "chuck_nogo":
+                        region = stroke_bounding_rectangle(strokes)
+                        if region:
+                            fill_poly = QtGui.QPolygonF([
+                                QtCore.QPointF(*point) for point in side_points_to_screen(
+                                    region, viewport, left=rect.left(), bottom=rect.bottom(),
+                                    x_is_diameter=self.x_is_diameter,
+                                )
+                            ])
+                            painter.save()
+                            painter.setPen(QtCore.Qt.NoPen)
+                            painter.setBrush(QtGui.QBrush(self._chrome_fill("side_chuck_nogo_fill")))
+                            painter.drawPolygon(fill_poly)
+                            painter.restore()
+                    screen_strokes = side_strokes_to_screen(
+                        strokes, viewport, left=rect.left(), bottom=rect.bottom(),
+                        x_is_diameter=self.x_is_diameter,
+                    )
+                    for stroke in screen_strokes:
+                        if len(stroke) >= 2:
+                            painter.drawPolyline(QtGui.QPolygonF([QtCore.QPointF(*point) for point in stroke]))
+                        elif len(stroke) == 1:
+                            for p1, p2 in point_cross_lines(stroke[0]):
+                                painter.drawLine(QtCore.QLineF(QtCore.QPointF(*p1), QtCore.QPointF(*p2)))
+                    continue
+                points = side_points_to_screen(
+                    path, viewport, left=rect.left(), bottom=rect.bottom(),
+                    x_is_diameter=self.x_is_diameter,
+                )
+                painter.drawPolyline(QtGui.QPolygonF([QtCore.QPointF(*point) for point in points]))
+
+            legend_enabled = getattr(self, "show_legend", True)
+            collapsed = getattr(self, "_legend_collapsed", False)
+
+            if legend_enabled:
+                # --- Legend: "Legende" header is always visible, click toggles details ---
+                try:
+                    # LES-051: Label/Farbe/Stil kommen jetzt aus dem reinen
+                    # Datenvertrag LEGEND_ENTRIES (preview_geometry.py) - hier
+                    # nur noch die Qt-Adaption (QPen/QColor-Konstruktion).
+                    # Line-Style-Mapping bewusst lokal (nicht Modulebene): der
+                    # Stub-Qt-Testmodus faket QtCore.Qt als leeres Namespace-
+                    # Objekt ohne SolidLine/DashLine/DashDotLine - ein
+                    # Modulebenen-Dict wuerde den Import schon fuer Tests
+                    # brechen, die `LathePreviewWidget` nur referenzieren,
+                    # ohne paintEvent() je aufzurufen.
+                    line_styles = {
+                        "solid": QtCore.Qt.SolidLine,
+                        "dash": QtCore.Qt.DashLine,
+                        "dashdot": QtCore.Qt.DashDotLine,
+                    }
+                    legend_items = [
+                        (
+                            entry["label"],
+                            QtGui.QPen(
+                                QtGui.QColor(*entry["color"]),
+                                entry["width"],
+                                line_styles[entry["style"]],
+                            ),
+                        )
+                        for entry in LEGEND_ENTRIES
+                    ]
+
+                    layout = legend_layout(len(legend_items), collapsed=collapsed)
+
+                    painter.setPen(self._chrome_pen("legend_border"))
+                    painter.setBrush(QtGui.QBrush(self._chrome_fill("legend_background")))
+                    painter.drawRoundedRect(QtCore.QRectF(*layout["box_rect"]), 6, 6)
+
+                    # Click target = header area (always present)
+                    self._legend_click_rect = QtCore.QRectF(*layout["click_rect"])
+
+                    painter.setPen(self._chrome_pen("legend_header_text"))
+                    painter.setFont(QtGui.QFont("Sans", 8))
+                    painter.drawText(
+                        QtCore.QRectF(*layout["header_text_rect"]),
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                        "Legende"
+                    )
+
+                    for (label, pen), row in zip(legend_items, layout["rows"]):
+                        painter.setPen(pen)
+                        painter.drawLine(QtCore.QPointF(*row["line"][0]), QtCore.QPointF(*row["line"][1]))
+                        painter.setPen(self._chrome_pen("legend_row_text"))
+                        painter.drawText(QtCore.QPointF(*row["label_pos"]), label)
+
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
+                    self._legend_click_rect = None
+
+            status_layout = status_message_layout(
+                getattr(self, "status_messages", None), widget_width=self.width()
+            )
+            if status_layout is not None:
+                try:
+                    # LES-051: Farben/Kopfzeile kommen aus dem reinen
+                    # Datenvertrag STATUS_BOX_STYLE (preview_geometry.py).
+                    painter.setPen(QtGui.QPen(QtGui.QColor(*STATUS_BOX_STYLE["border_color"]), 1))
+                    painter.setBrush(QtGui.QBrush(QtGui.QColor(*STATUS_BOX_STYLE["fill_color"])))
+                    painter.drawRoundedRect(QtCore.QRectF(*status_layout["box_rect"]), 6, 6)
+                    painter.setPen(QtGui.QPen(QtGui.QColor(*STATUS_BOX_STYLE["text_color"]), 1))
+                    painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), STATUS_BOX_STYLE["header"])
+                    for msg, pos in zip(status_layout["messages"], status_layout["line_positions"]):
+                        painter.drawText(QtCore.QPointF(*pos), f"- {msg}")
+                except Exception as exc:
+                    _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
+                    pass
+
+        except Exception as exc:
+            _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "paintEvent", exc)
+            self._legend_click_rect = None
+        finally:
+            painter.end()

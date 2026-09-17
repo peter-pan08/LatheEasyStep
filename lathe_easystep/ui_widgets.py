@@ -18,7 +18,7 @@ def ensure_core_widgets(handler) -> None:
 
     def find(name: str, cls):
         current = getattr(handler, name, None)
-        if current:
+        if current is not None:
             return current
         obj_name = (
             "listOperations" if name == "list_ops" else
@@ -37,7 +37,9 @@ def ensure_core_widgets(handler) -> None:
             obj = root.findChild(QtCore.QObject, obj_name, QtCore.Qt.FindChildrenRecursively)
         if obj is None:
             obj = root.findChild(QtWidgets.QWidget, obj_name, QtCore.Qt.FindChildrenRecursively)
-        if obj:
+        # Some Qt item views (notably an empty QListWidget) are falsy even
+        # though the QObject exists and is fully usable.
+        if obj is not None:
             setattr(handler, name, obj)
         return getattr(handler, name, None)
 
@@ -72,7 +74,7 @@ def ensure_core_widgets(handler) -> None:
 
     if handler.list_ops is None:
         explicit = root.findChild(QtWidgets.QListWidget, "list_ops", QtCore.Qt.FindChildrenRecursively)
-        if explicit:
+        if explicit is not None:
             handler.list_ops = explicit
     handler._ensure_list_ops_type()
     if handler.tab_params is None:
@@ -89,5 +91,13 @@ def ensure_core_widgets(handler) -> None:
     handler._connect_button_once(handler.btn_generate, handler._handle_generate_gcode, "_btn_generate_connected")
     handler._connect_button_once(handler.btn_save_changes, handler._handle_save_changes, "_btn_save_changes_connected")
     handler._connect_button_once(handler.btn_save_step, handler._handle_save_step, "_btn_save_step_connected")
+    try:
+        handler._update_save_step_button_state()
+    except Exception:
+        pass
+    try:
+        handler._update_operation_action_button_states()
+    except Exception:
+        pass
     handler._connect_button_once(handler.btn_load_step, handler._handle_load_step, "_btn_load_step_connected")
     handler._connect_button_once(handler.btn_thread_preset, handler._apply_thread_preset_force, "_thread_preset_connected")

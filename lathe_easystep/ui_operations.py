@@ -2,7 +2,34 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtWidgets
 
+from .ui_contour import RELIEF_NORMS, RELIEF_THREAD_SIZES
 from .model import OpType, Operation
+from .ui_visibility import update_thread_relief_visibility
+from .ui_helpers import current_language as _lang, populate_combo as _populate_combo
+
+
+CONTOUR_EDGE_OPTIONS = [
+    ("none", "combo.contour_edge_type.none"),
+    ("chamfer", "combo.contour_edge_type.chamfer"),
+    ("radius", "combo.contour_edge_type.radius"),
+]
+CONTOUR_ARC_OPTIONS = [
+    ("auto", "runtime.contour.arc.auto"),
+    ("outer", "runtime.contour.arc.outer"),
+    ("inner", "runtime.contour.arc.inner"),
+]
+CONTOUR_FEATURE_OPTIONS = [
+    ("none", "runtime.contour.feature.none"),
+    ("din_relief", "runtime.contour.feature.din_relief"),
+]
+CONTOUR_SIDE_OPTIONS = [
+    ("external", "runtime.contour.side.external"),
+    ("internal", "runtime.contour.side.internal"),
+]
+CONTOUR_ORIENTATION_OPTIONS = [
+    ("end", "runtime.contour.orientation.end"),
+    ("start", "runtime.contour.orientation.start"),
+]
 
 
 def load_operation_params_to_form(handler, op: Operation) -> None:
@@ -13,22 +40,66 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
 
     widgets = handler.param_widgets.get(op.op_type, {})
     for key, widget in widgets.items():
-        if widget is None or key not in op.params:
+        if widget is None:
+            continue
+        if key == "spindle_mode" and key not in op.params:
+            # Aeltere/geladene Operationen ohne gespeicherten spindle_mode
+            # (Parameter existiert erst seit LES-013) duerfen die Combo NICHT
+            # auf dem Wert der zuvor angezeigten Operation stehen lassen -
+            # sonst zeigt z. B. ein Wechsel von einer CSS- zu einer
+            # Festdrehzahl-Operation weiterhin "CSS" und damit das falsche
+            # Feld (Drehzahl/Schnittgeschwindigkeit) an (realer Bugreport:
+            # "die Umschaltung der Anzeige funktioniert nicht zuverlaessig").
+            # Fehlender Wert faellt explizit auf "fixed" (G97) zurueck -
+            # rueckwaertskompatibel zum bisherigen alleinigen Verhalten.
+            widget.blockSignals(True)
+            idx = widget.findData("fixed")
+            widget.setCurrentIndex(idx if idx >= 0 else 0)
+            widget.blockSignals(False)
+            continue
+        if key not in op.params:
             continue
         widget.blockSignals(True)
         val = op.params[key]
+        if op.op_type == OpType.THREAD and key == "relief_mode":
+            val = {"suggest": "suggest_din_relief", "auto": "suggest_din_relief",
+                   "automatic": "suggest_din_relief"}.get(val, val)
+        if op.op_type == OpType.THREAD and key == "relief_norm":
+            val = {"DIN 76-A": "din76_a", "DIN 76-B": "din76_b", "DIN 76-C": "din76_c"}.get(val, val)
         if isinstance(widget, QtWidgets.QComboBox):
-            handled = False
             if key == "slice_strategy":
-                handled = handler._select_slice_strategy_index(widget, val)
-            if not handled:
+                # slice_strategy has domain-specific codes (1=parallel_x,
+                # 2=parallel_z); a value that doesn't map to one of those must
+                # show as "no selection", not fall through to the generic
+                # int-as-index guess below, which would silently display an
+                # unrelated (or entirely fabricated) strategy as if chosen.
+                if not handler._select_slice_strategy_index(widget, val):
+                    widget.setCurrentIndex(-1)
+                widget.blockSignals(False)
+                continue
+            if key == "tool":
+                # Werkzeug-Combos werden aus der geladenen Werkzeugtabelle neu
+                # aufgebaut (siehe populate_tool_combos()); ihre Item-Reihenfolge
+                # ist die Werkzeugnummer-Sortierung, kein stabiler Index. Wurde
+                # die Combo noch nicht (oder mit einer anderen Tabelle) befuellt,
+                # darf int(val) NICHT als Positions-Index missverstanden werden -
+                # das wuerde ein falsches Werkzeug zeigen, ohne dass es auffaellt.
+                # Ohne Treffer bleibt die Combo auf dem "bitte waehlen"-Platzhalter.
                 try:
                     data_idx = widget.findData(val)
                 except Exception:
                     data_idx = -1
-                if data_idx >= 0:
-                    widget.setCurrentIndex(data_idx)
-                    handled = True
+                widget.setCurrentIndex(data_idx if data_idx >= 0 else 0)
+                widget.blockSignals(False)
+                continue
+            handled = False
+            try:
+                data_idx = widget.findData(val)
+            except Exception:
+                data_idx = -1
+            if data_idx >= 0:
+                widget.setCurrentIndex(data_idx)
+                handled = True
             if not handled:
                 try:
                     widget.setCurrentIndex(int(val))
@@ -57,6 +128,8 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
                     pass
         widget.blockSignals(False)
 
+    if op.op_type == OpType.THREAD:
+        update_thread_relief_visibility(handler)
     if op.op_type == OpType.CONTOUR:
         _load_contour_operation_to_form(handler, op)
         return
@@ -64,10 +137,19 @@ def load_operation_params_to_form(handler, op: Operation) -> None:
     if op.op_type == OpType.ABSPANEN and getattr(handler, "parting_contour", None):
         name = str(op.params.get("contour_name") or "")
         handler.parting_contour.blockSignals(True)
-        handler.parting_contour.setCurrentText(name)
+        idx = handler.parting_contour.findData(name, QtCore.Qt.UserRole)
+        if idx >= 0:
+            handler.parting_contour.setCurrentIndex(idx)
+        else:
+            handler.parting_contour.setCurrentText(name)
         handler.parting_contour.blockSignals(False)
         handler._update_parting_ready_state()
         handler._update_parting_mode_visibility()
+    if op.op_type == OpType.GROOVE:
+        try:
+            handler._update_groove_tab_ui()
+        except Exception:
+            pass
 
 
 def _load_contour_operation_to_form(handler, op: Operation) -> None:
@@ -95,13 +177,13 @@ def _load_contour_operation_to_form(handler, op: Operation) -> None:
                 return "Z"
             return "XZ"
 
-        def edge_to_text(edge: str) -> str:
+        def edge_to_data(edge: str) -> str:
             edge = (edge or "none").lower()
             if edge in ("chamfer", "fase"):
-                return "Fase"
+                return "chamfer"
             if edge == "radius":
-                return "Radius"
-            return "Keine"
+                return "radius"
+            return "none"
 
         def make_item(text: str) -> QtWidgets.QTableWidgetItem:
             item = QtWidgets.QTableWidgetItem(text)
@@ -122,30 +204,72 @@ def _load_contour_operation_to_form(handler, op: Operation) -> None:
             z_empty = bool(seg.get("z_empty", False))
             x_val = "" if x_empty else f"{float(seg.get('x', 0.0)):.3f}"
             z_val = "" if z_empty else f"{float(seg.get('z', 0.0)):.3f}"
-            edge_txt = edge_to_text(seg.get("edge"))
+            edge_data = edge_to_data(seg.get("edge"))
             size_val = f"{float(seg.get('edge_size', 0.0) or 0.0):.3f}"
             arc_txt = seg.get("arc_side", "auto")
+            feature = seg.get("feature") if isinstance(seg.get("feature"), dict) else {}
+            feature_type = str(feature.get("feature_type") or "none").strip().lower()
+            thread_size_txt = str(feature.get("thread_size") or "").strip().upper()
+            norm_txt = str(feature.get("norm") or "").strip()
+            side_data = "internal" if bool(feature.get("internal")) or str(feature.get("side") or "").strip().lower() in ("internal", "inner") else "external"
+            orient_data = "start" if str(feature.get("orientation") or "end").strip().lower() == "start" else "end"
+            lang = _lang(handler)
 
             table.setItem(row, 0, make_item(mode_txt))
             table.setItem(row, 1, make_item(x_val))
             table.setItem(row, 2, make_item(z_val))
 
             edge_combo = QtWidgets.QComboBox()
-            edge_combo.addItems(["Keine", "Fase", "Radius"])
-            edge_idx = edge_combo.findText(edge_txt, QtCore.Qt.MatchFixedString)
-            edge_combo.setCurrentIndex(edge_idx if edge_idx >= 0 else 0)
+            _populate_combo(edge_combo, CONTOUR_EDGE_OPTIONS, lang, current_value=edge_data)
             edge_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 3, edge_combo)
 
             table.setItem(row, 4, make_item(size_val))
 
             arc_combo = QtWidgets.QComboBox()
-            arc_combo.addItems(["Auto", "Außen", "Innen"])
-            arc_idx = arc_combo.findText(str(arc_txt).capitalize(), QtCore.Qt.MatchFixedString)
-            arc_combo.setCurrentIndex(arc_idx if arc_idx >= 0 else 0)
-            arc_combo.setEnabled(edge_txt == "Radius")
+            _populate_combo(arc_combo, CONTOUR_ARC_OPTIONS, lang, current_value=arc_txt)
+            arc_combo.setEnabled(edge_data == "radius")
             arc_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
             table.setCellWidget(row, 5, arc_combo)
+
+            feature_combo = QtWidgets.QComboBox()
+            _populate_combo(feature_combo, CONTOUR_FEATURE_OPTIONS, lang, current_value=feature_type)
+            feature_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+            table.setCellWidget(row, 6, feature_combo)
+
+            thread_combo = QtWidgets.QComboBox()
+            thread_combo.addItem("", "")
+            for value in RELIEF_THREAD_SIZES:
+                thread_combo.addItem(value, value)
+            if thread_size_txt:
+                idx = thread_combo.findData(thread_size_txt, QtCore.Qt.UserRole)
+                thread_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            thread_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+            table.setCellWidget(row, 7, thread_combo)
+
+            norm_combo = QtWidgets.QComboBox()
+            norm_combo.addItem("", "")
+            for value in RELIEF_NORMS:
+                norm_combo.addItem(value, value)
+            if norm_txt:
+                idx = norm_combo.findData(norm_txt, QtCore.Qt.UserRole)
+                norm_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            norm_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+            table.setCellWidget(row, 8, norm_combo)
+
+            side_combo = QtWidgets.QComboBox()
+            _populate_combo(side_combo, CONTOUR_SIDE_OPTIONS, lang, current_value=side_data)
+            idx = side_combo.findData(side_data, QtCore.Qt.UserRole)
+            side_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            side_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+            table.setCellWidget(row, 9, side_combo)
+
+            orient_combo = QtWidgets.QComboBox()
+            _populate_combo(orient_combo, CONTOUR_ORIENTATION_OPTIONS, lang, current_value=orient_data)
+            idx = orient_combo.findData(orient_data, QtCore.Qt.UserRole)
+            orient_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            orient_combo.currentIndexChanged.connect(handler._handle_contour_table_change)
+            table.setCellWidget(row, 10, orient_combo)
 
         table.blockSignals(False)
         if table.rowCount() > 0:

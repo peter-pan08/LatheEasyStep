@@ -1,11 +1,85 @@
 from __future__ import annotations
 
 import os
+import re
+import time
 
 from qtvcp.core import Action
 from qtpy import QtCore, QtWidgets
 
+from .gcode_utils import is_internal_side, is_left_hand
 from .model import OpType
+from .comments import is_generated_comment, update_auto_comment
+from .ui_helpers import translate as _tr
+from .ui_messages import format_user_error, parse_error_location
+from .ui_step_list_view import StepListView
+
+_ERROR_HIGHLIGHT_STYLE = "border: 2px solid #d9534f; background-color: #fff3f3;"
+
+_looks_like_generated_step_comment = is_generated_comment
+_ERROR_HIGHLIGHT_DURATION_MS = 4000
+
+
+def _flash_error_highlight(widget) -> None:
+    try:
+        original = widget.styleSheet()
+    except Exception:
+        return
+    try:
+        widget.setStyleSheet(_ERROR_HIGHLIGHT_STYLE)
+        QtCore.QTimer.singleShot(_ERROR_HIGHLIGHT_DURATION_MS, lambda: widget.setStyleSheet(original))
+    except Exception:
+        pass
+
+
+def jump_to_error_location(handler, exc: Exception) -> None:
+    """Springt beim Fehlschlagen der G-Code-Erzeugung automatisch zum
+    betroffenen Step und Reiter und hebt das fehlerhafte Feld kurz hervor,
+    damit der Nutzer genau sieht, was zu aendern ist."""
+    location = parse_error_location(exc)
+    op_number = location.get("op_number")
+    op_type = location.get("op_type")
+    field_key = location.get("field_key")
+    try:
+        handler._log(f"[LatheEasyStep][debug] jump_to_error_location: {location}", level="debug")
+    except Exception:
+        pass
+    if not op_number:
+        return
+    list_ops = getattr(handler, "list_ops", None)
+    if list_ops is None:
+        return
+    row = op_number - 1
+    try:
+        count = list_ops.count()
+    except Exception:
+        return
+    if row < 0 or row >= count:
+        return
+    try:
+        list_ops.setCurrentRow(row)
+        handler._handle_selection_change(row)
+    except Exception:
+        return
+    if not field_key or not op_type:
+        return
+    widgets = getattr(handler, "param_widgets", None) or {}
+    widget = widgets.get(op_type, {}).get(field_key)
+    if widget is None:
+        return
+    try:
+        widget.setFocus()
+    except Exception:
+        pass
+    _flash_error_highlight(widget)
+
+
+def _translate_value(handler, prefix: str, value) -> str:
+    normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if not normalized:
+        return ""
+    text = _tr(handler, f"{prefix}.{normalized}")
+    return value if text == f"{prefix}.{normalized}" else text
 
 
 def build_gcode_lines(handler):
@@ -29,11 +103,11 @@ def build_gcode_lines(handler):
             tool_val = 0
         if tool_val > 0:
             unique_tools.add(tool_val)
-    if len(unique_tools) >= 2:
+    if unique_tools:
         xt = header.get("xt")
         zt = header.get("zt")
         if xt is None or zt is None:
-            raise ValueError("Bitte XT und ZT im Programm-Tab eintragen, da mehrere Werkzeuge verwendet werden.")
+            raise ValueError("Bitte XT und ZT im Programm-Tab eintragen, da ein Werkzeugwechsel ausgegeben wird.")
     header_lines = handler._tool_change_position_lines(header)
     footer_lines = handler._tool_change_position_lines(header)
     handler.model.program_settings["header_lines"] = header_lines
@@ -46,13 +120,30 @@ def handle_move_up(handler):
         return
     handler._moving_up = True
     try:
-        if handler.list_ops is None:
+        step_list = StepListView(handler)
+        if not step_list.is_bound():
             return
-        idx = handler.list_ops.currentRow()
+        idx = step_list.selected_row()
         if idx <= 0:
             return
+        operations = getattr(handler.model, "operations", None)
+        if operations is not None:
+            if idx >= len(operations) or (
+                getattr(operations[idx], "op_type", None) == OpType.PROGRAM_HEADER
+                or getattr(operations[idx - 1], "op_type", None) == OpType.PROGRAM_HEADER
+            ):
+                return
         handler.model.move_up(idx)
+        try:
+            handler._swap_dirty_operation_indices(idx - 1, idx)
+        except Exception:
+            pass
+        try:
+            handler._mark_program_structure_dirty()
+        except Exception:
+            pass
         handler._refresh_operation_list(select_index=idx - 1)
+        handler._renumber_operations()
         handler._refresh_preview()
     finally:
         handler._moving_up = False
@@ -63,13 +154,27 @@ def handle_move_down(handler):
         return
     handler._moving_down = True
     try:
-        if handler.list_ops is None:
+        step_list = StepListView(handler)
+        if not step_list.is_bound():
             return
-        idx = handler.list_ops.currentRow()
-        if idx < 0 or idx >= handler.list_ops.count() - 1:
+        idx = step_list.selected_row()
+        if idx < 0 or idx >= step_list.count() - 1:
             return
+        operations = getattr(handler.model, "operations", None)
+        if operations is not None:
+            if idx >= len(operations) or getattr(operations[idx], "op_type", None) == OpType.PROGRAM_HEADER:
+                return
         handler.model.move_down(idx)
+        try:
+            handler._swap_dirty_operation_indices(idx, idx + 1)
+        except Exception:
+            pass
+        try:
+            handler._mark_program_structure_dirty()
+        except Exception:
+            pass
         handler._refresh_operation_list(select_index=idx + 1)
+        handler._renumber_operations()
         handler._refresh_preview()
     finally:
         handler._moving_down = False
@@ -84,6 +189,18 @@ def handle_new_program(handler):
         handler._current_program_path = None
         handler._current_gcode_path = None
         handler._op_row_user_selected = False
+        try:
+            handler._clear_dirty_state()
+        except Exception:
+            pass
+        try:
+            # Werkzeugtabelle bleibt ueber "Neues Programm" hinweg geladen;
+            # Combos ggf. erst jetzt verfuegbarer Reiter-Widgets werden mit
+            # der bereits geladenen Tabelle aufgefrischt.
+            if handler.tools:
+                handler._populate_tool_combos(handler.tools)
+        except Exception:
+            pass
         handler._refresh_operation_list(select_index=-1)
         handler._refresh_preview()
     finally:
@@ -108,14 +225,17 @@ def handle_generate_gcode(handler):
         os.makedirs(os.path.dirname(default_filepath), exist_ok=True)
         filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
             handler.root_widget,
-            "G-Code speichern",
+            _tr(handler, "dialog.gcode.save.title"),
             default_filepath,
-            "G-Code Dateien (*.ngc);;Alle Dateien (*)",
+            _tr(handler, "dialog.gcode.filter"),
         )
         if not filepath:
             return
+        handler._log(f"[LatheEasyStep][debug] generate gcode: {len(handler.model.operations)} operations -> {filepath}", level="debug")
+        t0 = time.monotonic()
         handler._update_selected_operation(force=True)
         handler._write_gcode_file(filepath)
+        handler._log(f"[LatheEasyStep][debug] generate gcode finished in {time.monotonic() - t0:.3f}s", level="debug")
         handler._current_gcode_path = handler._normalized_file_path(filepath)
         handler._remember_dialog_path(
             settings,
@@ -129,15 +249,19 @@ def handle_generate_gcode(handler):
         else:
             QtWidgets.QMessageBox.information(
                 handler.root_widget or None,
-                "LatheEasyStep",
-                f"Programm gespeichert unter:\n{filepath}\nAutomatisches Öffnen ist nicht verfügbar.",
+                _tr(handler, "dialog.app.title"),
+                _tr(handler, "message.gcode.saved_no_auto_open", path=filepath),
             )
             handler._log(f"[LatheEasyStep] Hinweis: Programm geschrieben nach {filepath}, automatisches Öffnen nicht verfügbar", level="info")
     except Exception as exc:
+        try:
+            jump_to_error_location(handler, exc)
+        except Exception:
+            pass
         QtWidgets.QMessageBox.critical(
             handler.root_widget or None,
-            "LatheEasyStep",
-            f"Fehler beim Erzeugen des Programms:\n{exc}",
+            _tr(handler, "dialog.app.title"),
+            format_user_error(handler, exc, fallback_title=_tr(handler, "message.gcode.generate_failed")),
         )
     finally:
         handler._generating_gcode = False
@@ -160,37 +284,90 @@ def describe_operation(handler, op, number=None):
 
     if t == OpType.PROGRAM_HEADER:
         wcs = str(p.get("wcs", "G54")).upper()
-        return wrap(f"Programmkopf ({wcs})")
+        return wrap(_tr(handler, "operation.program_header", wcs=wcs))
     if t == OpType.FACE:
         mode = p.get("mode", "schruppen")
         if isinstance(mode, (int, float)):
-            mode = {0: "schruppen", 1: "schlichten", 2: "schruppen + schlichten"}.get(int(mode), "schruppen")
-        mode = "schruppen" if mode is None else str(mode)
+            mode = {0: "rough", 1: "finish", 2: "rough_finish"}.get(int(mode), "rough")
+        mode = "rough" if mode is None else str(mode)
+        mode = {
+            "schruppen": "rough",
+            "schlichten": "finish",
+            "schruppen + schlichten": "rough_finish",
+        }.get(mode.strip().lower(), mode)
         z_start = p.get("z_start", 0.0)
         z_end = p.get("z_end", 0.0)
-        coolant = " mit Kühlung" if p.get("coolant") else ""
+        coolant = _tr(handler, "operation.face.coolant_suffix") if p.get("coolant") else ""
         tool = p.get("tool", "T01")
-        return wrap(f"Planen {mode.title()} (Z {fnum(z_start)}→{fnum(z_end)}){coolant} ({tool})")
+        mode_label = _tr(handler, f"operation.face.mode.{str(mode).replace(' ', '_').replace('+', '_')}")
+        return wrap(_tr(handler, "operation.face", mode=mode_label, z_start=fnum(z_start), z_end=fnum(z_end), coolant=coolant, tool=tool))
     if t == OpType.CONTOUR:
-        return wrap(f"Kontur {p.get('mode', 'schruppen')} ({p.get('side', 'außen')}) ({p.get('tool', 'T01')})")
+        name = str(p.get("name") or "unbenannt").strip()
+        return wrap(_tr(handler, "operation.contour", name=name))
     if t == OpType.DRILL:
-        return wrap(f"Bohren {p.get('mode', 'normal')} (Z {fnum(p.get('z0', 0.0))}→{fnum(p.get('depth', 0.0))}) ({p.get('tool', 'T01')})")
+        return wrap(
+            _tr(
+                handler,
+                "operation.drill",
+                mode=_translate_value(handler, "operation.drill.mode", p.get("mode", "normal")),
+                z_start=fnum(p.get("z0", 0.0)),
+                depth=fnum(p.get("depth", 0.0)),
+                tool=p.get("tool", "T01"),
+            )
+        )
     if t == OpType.GROOVE:
-        return wrap(f"Einstechen (Z {fnum(p.get('z', 0.0))}; B {fnum(p.get('width', 0.0))}) ({p.get('tool', 'T01')})")
+        process_key = "operation.groove.parting" if str(p.get("process_type", "groove")).strip().lower() == "parting" else "operation.groove.groove"
+        return wrap(_tr(handler, process_key, z=fnum(p.get("z", 0.0)), width=fnum(p.get("width", 0.0)), tool=p.get("tool", "T01")))
     if t == OpType.THREAD:
-        return wrap(f"Gewinde {p.get('orientation', 'aussengewinde')} (P {fnum(p.get('pitch', 0.0),2)}; Z {fnum(p.get('z0', 0.0))}→{fnum(p.get('z1', 0.0))}) ({p.get('tool', 'T01')})")
+        relief = ""
+        if str(p.get("relief_mode", "off")).strip().lower() in ("suggest", "suggest_din_relief"):
+            relief = _tr(handler, "operation.thread.relief_suffix")
+        thread_internal = is_internal_side(p.get("orientation", 0))
+        thread_left_hand = is_left_hand(p.get("hand", 0))
+        thread_type = _tr(handler, "operation.thread.type.internal") if thread_internal else _tr(handler, "operation.thread.type.external")
+        hand = _tr(handler, "operation.thread.hand.left") if thread_left_hand else _tr(handler, "operation.thread.hand.right")
+        start_z = float(p.get("thread_start_z", 0.0) or 0.0)
+        length = abs(float(p.get("length", 0.0) or 0.0))
+        end_z = start_z + ((1.0 if thread_left_hand else -1.0) * length)
+        return wrap(
+            _tr(
+                handler,
+                "operation.thread",
+                thread_type=thread_type,
+                hand=hand,
+                pitch=fnum(p.get("pitch", 0.0), 2),
+                z_start=fnum(start_z),
+                z_end=fnum(end_z),
+                relief=relief,
+                tool=p.get("tool", "T01"),
+            )
+        )
     if t == OpType.ABSPANEN:
-        return wrap(f"Abspanen ({p.get('contour_name', 'unbekannt')}, {p.get('slice_strategy', 'parallel_z')}) ({p.get('tool', 'T01')})")
+        relief = str(p.get("undercut_mode", "finish_only"))
+        return wrap(
+            _tr(
+                handler,
+                "operation.parting",
+                contour=p.get("contour_name", "unknown"),
+                strategy=_translate_value(handler, "operation.parting.strategy", p.get("slice_strategy", "parallel_z")),
+                relief=_translate_value(handler, "operation.parting.relief", relief),
+                tool=p.get("tool", "T01"),
+            )
+        )
     if t == OpType.KEYWAY:
         slot_count = int(float(p.get("slot_count", 1) or 1))
-        return wrap(f"Keilnut ({slot_count}x ab Z {fnum(p.get('start_z', 0.0))}) ({p.get('tool', 'T01')})")
+        return wrap(_tr(handler, "operation.keyway", slots=slot_count, start_z=fnum(p.get("start_z", 0.0)), tool=p.get("tool", "T01")))
     return wrap(f"{t}: {p}")
 
 
 def renumber_operations(handler):
-    if handler.list_ops is None:
+    """Refresh list numbers and generated descriptions, preserving user comments."""
+    step_list = StepListView(handler)
+    if not step_list.is_bound():
         return
-    for i in range(handler.list_ops.count()):
-        item = handler.list_ops.item(i)
+    for i in range(step_list.count()):
         op = handler.model.operations[i]
-        item.setText(handler._describe_operation(op, i + 1))
+        description = handler._describe_operation(op, i + 1)
+        step_list.set_item_text(i, description)
+        if op.op_type != OpType.PROGRAM_HEADER:
+            update_auto_comment(op, description)

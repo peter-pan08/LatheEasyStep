@@ -6,6 +6,9 @@ import re
 
 from qtpy import QtCore, QtGui
 
+from .gcode_utils import is_internal_side
+from .tool_visuals import ToolVisualProvider, ToolVisualRequest
+
 
 def tool_combo_label(_handler, tool, max_comment: int = 32) -> str:
     comment = (tool.comment or "").strip() or "kein Kommentar"
@@ -19,10 +22,14 @@ def tool_combo_label(_handler, tool, max_comment: int = 32) -> str:
 def operation_side_hint(_handler, op):
     params = op.params or {}
     if op.op_type == _handler.OpType.FACE:
-        try:
-            idx = int(float(params.get("finish_direction", 0)))
-        except Exception:
-            idx = 0
+        raw = params.get("finish_direction", 0)
+        if isinstance(raw, str):
+            idx = 1 if raw.strip().lower() == "inside_out" else 0
+        else:
+            try:
+                idx = int(float(raw))
+            except Exception:
+                idx = 0
         return "outside" if idx == 0 else "inside"
     if op.op_type == _handler.OpType.GROOVE:
         try:
@@ -34,17 +41,9 @@ def operation_side_hint(_handler, op):
         if idx == 1:
             return "inside"
     if op.op_type == _handler.OpType.ABSPANEN:
-        try:
-            idx = int(float(params.get("side", 0)))
-        except Exception:
-            idx = 0
-        return "outside" if idx == 0 else "inside"
+        return "inside" if is_internal_side(params.get("side", 0)) else "outside"
     if op.op_type == _handler.OpType.THREAD:
-        try:
-            idx = int(float(params.get("orientation", 0)))
-        except Exception:
-            idx = 0
-        return "outside" if idx == 0 else "inside"
+        return "inside" if is_internal_side(params.get("orientation", 0)) else "outside"
     return None
 
 
@@ -158,12 +157,10 @@ def infer_insert_profile(handler, tool):
             handed = "internal"
         elif "AUSSEN" in text or "AUßEN" in text:
             handed = "external"
-        match = re.search(r"\b(?:MGMN|MRMN)(\d{3})\b", text)
-        if match:
-            try:
-                groove_width_mm = int(match.group(1)) / 100.0
-            except Exception:
-                groove_width_mm = 0.0
+        # LES-032: dieselbe, jetzt gemeinsame Quelle wie die Pruefung in
+        # checks.py (Tool.insert_width_mm, tools.py) statt einer zweiten,
+        # unabhaengigen Regex-Kopie hier.
+        groove_width_mm = tool.insert_width_mm or 0.0
         if not shape_key:
             shape_key = "S"
     elif "ER" in text and ("AUFNAHME" in text or "COLLET" in text or "SPAN" in text):
@@ -247,23 +244,16 @@ def tool_holder_angle(handler, orientation, family, handed):
     return snapped
 
 
-def render_tool_preview(handler, tool):
+def compute_tool_preview_layout(handler, tool):
+    """Reine Geometrieberechnung fuer render_tool_preview() - keine
+    QPainter-Aufrufe, keine Seiteneffekte. LES-044: erster konkreter
+    Umbau "Darstellungselement austauschbar, Geometrie von Zeichen-
+    aufruf getrennt". Gibt alle fuer die Darstellung noetigen Werte als
+    Dict zurueck; render_tool_preview() liest sie nur noch aus."""
     size = 140
-    pixmap = QtGui.QPixmap(size, size)
-    pixmap.fill(QtGui.QColor("#f4f7fb"))
-    painter = QtGui.QPainter(pixmap)
-    painter.setRenderHint(QtGui.QPainter.Antialiasing)
     center_x = size / 2
     center_y = size / 2 - 6
     margin = 12
-    axis_pen = QtGui.QPen(QtGui.QColor("#63707c"))
-    axis_pen.setWidth(1)
-    painter.setPen(axis_pen)
-    painter.drawLine(QtCore.QLineF(float(margin), float(center_y), float(size - margin), float(center_y)))
-    painter.drawLine(QtCore.QLineF(float(center_x), float(margin), float(center_x), float(size - margin)))
-    painter.setFont(QtGui.QFont("Arial", 8))
-    painter.drawText(QtCore.QPointF(float(size - margin + 4), float(center_y - 2)), "Z")
-    painter.drawText(QtCore.QPointF(float(center_x + 2), float(margin - 2)), "X")
     profile = handler._infer_insert_profile(tool)
     shape_key = profile.get("shape_key", "")
     family = profile.get("family", "turning")
@@ -275,53 +265,148 @@ def render_tool_preview(handler, tool):
     scale = min(scale, 12.0)
     insert_size = max(2.0, min(tool_span * 0.65, 5.5))
     polygon, circle_radius = handler._build_insert_geometry(shape_key, insert_size, family, handed, groove_width_mm)
-    painter.save()
-    painter.translate(center_x, center_y)
-    painter.scale(scale, scale)
     insert_angle = handler._tool_orientation_angle(tool.orientation)
     holder_angle = handler._tool_holder_angle(tool.orientation, family, handed)
+    shank_on_positive_x = handed == "internal"
+    if family == "holder":
+        shank_rect = QtCore.QRectF(-insert_size * 2.1, -insert_size * 0.42, insert_size * 4.2, insert_size * 0.84)
+    elif shank_on_positive_x:
+        shank_rect = QtCore.QRectF(insert_size * 0.6, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
+    else:
+        shank_rect = QtCore.QRectF(-insert_size * 2.0, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
+    nose_pt = None
+    nose_radius = None
+    if tool.radius_mm and tool.radius_mm > 0:
+        nose_radius = max(tool.radius_mm, insert_size * 0.06)
+        nose_radius = min(nose_radius, insert_size * 0.24)
+        if polygon is not None and len(polygon) > 0:
+            nose_pt = min((polygon[i] for i in range(len(polygon))), key=lambda p: p.x()) if handed == "internal" else max((polygon[i] for i in range(len(polygon))), key=lambda p: p.x())
+        else:
+            tip_x = -circle_radius if handed == "internal" else circle_radius
+            nose_pt = QtCore.QPointF(tip_x, 0.0)
+    info_text = f"T{tool.t:02d}"
+    if tool.iso_code:
+        info_text += f" · {tool.iso_code}"
+    orientation_text = f"Q{tool.orientation}" if tool.orientation is not None else None
+    return {
+        "size": size,
+        "center_x": center_x,
+        "center_y": center_y,
+        "margin": margin,
+        "family": family,
+        "handed": handed,
+        "scale": scale,
+        "insert_size": insert_size,
+        "polygon": polygon,
+        "circle_radius": circle_radius,
+        "insert_angle": insert_angle,
+        "holder_angle": holder_angle,
+        "shank_rect": shank_rect,
+        "nose_pt": nose_pt,
+        "nose_radius": nose_radius,
+        "info_text": info_text,
+        "orientation_text": orientation_text,
+    }
+
+
+def resolve_tool_visual(handler, tool):
+    """Resolve an optional external visual without storing it on ``Tool``."""
+    profile = handler._infer_insert_profile(tool)
+    request = ToolVisualRequest(
+        family=profile.get("family", "turning"),
+        handed=profile.get("handed", "neutral"),
+        shape_key=profile.get("shape_key", ""),
+        iso_code=tool.iso_code or "",
+    )
+    provider = getattr(handler, "_tool_visual_provider", None)
+    if not isinstance(provider, ToolVisualProvider):
+        provider = ToolVisualProvider()
+    return provider.resolve(request)
+
+
+def _render_resource_pixmap(path, size: int):
+    source = QtGui.QPixmap(str(path))
+    if source.isNull():
+        return None
+    target = QtGui.QPixmap(size, size)
+    target.fill(QtGui.QColor("#f4f7fb"))
+    scaled = source.scaled(
+        size, size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+    )
+    painter = QtGui.QPainter(target)
+    painter.drawPixmap((size - scaled.width()) // 2, (size - scaled.height()) // 2, scaled)
+    painter.end()
+    return target
+
+
+def render_tool_preview(handler, tool):
+    layout = handler._compute_tool_preview_layout(tool)
+    size = layout["size"]
+    visual = resolve_tool_visual(handler, tool)
+    diagnostic = visual.diagnostic
+    if visual.uses_resource:
+        pixmap = _render_resource_pixmap(visual.resource_path, size)
+        if pixmap is not None:
+            return pixmap
+        diagnostic = (
+            f"Tool visual '{visual.matched_key}': resource cannot be decoded; "
+            "using procedural fallback."
+        )
+    if diagnostic:
+        logger = getattr(handler, "_log", None)
+        if callable(logger):
+            logger(f"[LatheEasyStep] {diagnostic}", level="warning")
+    center_x = layout["center_x"]
+    center_y = layout["center_y"]
+    margin = layout["margin"]
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtGui.QColor("#f4f7fb"))
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    axis_pen = QtGui.QPen(QtGui.QColor("#63707c"))
+    axis_pen.setWidth(1)
+    painter.setPen(axis_pen)
+    painter.drawLine(QtCore.QLineF(float(margin), float(center_y), float(size - margin), float(center_y)))
+    painter.drawLine(QtCore.QLineF(float(center_x), float(margin), float(center_x), float(size - margin)))
+    painter.setFont(QtGui.QFont("Arial", 8))
+    painter.drawText(QtCore.QPointF(float(size - margin + 4), float(center_y - 2)), "Z")
+    painter.drawText(QtCore.QPointF(float(center_x + 2), float(margin - 2)), "X")
     painter.save()
-    painter.rotate(holder_angle)
+    painter.translate(center_x, center_y)
+    painter.scale(layout["scale"], layout["scale"])
+    painter.save()
+    painter.rotate(layout["holder_angle"])
     shank_pen = QtGui.QPen(QtGui.QColor("#6b7280"), 0)
     painter.setPen(shank_pen)
     painter.setBrush(QtGui.QColor("#d1d5db"))
-    shank_on_positive_x = handed == "internal"
-    if family == "holder":
-        shank = QtCore.QRectF(-insert_size * 2.1, -insert_size * 0.42, insert_size * 4.2, insert_size * 0.84)
-    elif shank_on_positive_x:
-        shank = QtCore.QRectF(insert_size * 0.6, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
-    else:
-        shank = QtCore.QRectF(-insert_size * 2.0, -insert_size * 0.28, insert_size * 1.4, insert_size * 0.56)
-    painter.drawRect(shank)
+    painter.drawRect(layout["shank_rect"])
     painter.restore()
     painter.save()
-    painter.rotate(insert_angle)
+    painter.rotate(layout["insert_angle"])
     painter.setPen(QtGui.QPen(QtGui.QColor("#2c3e50"), 0))
     painter.setBrush(QtGui.QColor("#e76f51"))
+    polygon = layout["polygon"]
+    circle_radius = layout["circle_radius"]
     if polygon is not None:
         painter.drawPolygon(polygon)
     elif circle_radius > 0:
         painter.drawEllipse(QtCore.QPointF(0.0, 0.0), circle_radius, circle_radius)
-    if tool.radius_mm and tool.radius_mm > 0:
-        nose_radius = max(tool.radius_mm, insert_size * 0.06)
-        nose_radius = min(nose_radius, insert_size * 0.24)
+    if layout["nose_pt"] is not None:
         circle_pen = QtGui.QPen(QtGui.QColor(29, 53, 87, 140))
         circle_pen.setWidthF(0.18)
         painter.setPen(circle_pen)
         painter.setBrush(QtGui.QColor(244, 162, 97, 90))
-        if polygon is not None and len(polygon) > 0:
-            nose_pt = min((polygon[i] for i in range(len(polygon))), key=lambda p: p.x()) if handed == "internal" else max((polygon[i] for i in range(len(polygon))), key=lambda p: p.x())
-            painter.drawEllipse(nose_pt, nose_radius, nose_radius)
-        else:
-            tip_x = -circle_radius if handed == "internal" else circle_radius
-            painter.drawEllipse(QtCore.QPointF(tip_x, 0.0), nose_radius, nose_radius)
+        painter.drawEllipse(layout["nose_pt"], layout["nose_radius"], layout["nose_radius"])
+    painter.restore()
     painter.restore()
     painter.setPen(QtGui.QColor("#1c1e26"))
-    info_text = f"T{tool.t:02d}"
-    if tool.iso_code:
-        info_text += f" · {tool.iso_code}"
-    painter.drawText(margin, size - margin + 6, info_text)
-    if tool.orientation is not None:
-        painter.drawText(size - margin - 32, size - margin + 6, f"Q{tool.orientation}")
+    painter.drawText(margin, size - margin + 6, layout["info_text"])
+    if layout["orientation_text"] is not None:
+        painter.drawText(size - margin - 32, size - margin + 6, layout["orientation_text"])
+    if diagnostic:
+        painter.setPen(QtGui.QPen(QtGui.QColor("#7c2d12"), 1))
+        painter.setBrush(QtGui.QColor("#fb923c"))
+        painter.drawEllipse(QtCore.QPointF(float(size - 13), 13.0), 9.0, 9.0)
+        painter.drawText(QtCore.QRectF(float(size - 18), 5.0, 10.0, 16.0), QtCore.Qt.AlignCenter, "!")
     painter.end()
     return pixmap

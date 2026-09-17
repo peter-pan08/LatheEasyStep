@@ -4,17 +4,58 @@ import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from .gcode_safety import append_tool_and_spindle, emit_approach, nose_compensation_command
+from .contour_features import normalize_relief_mode, primitive_to_points
+from .numeric import finite_float, validate_finite_data
+from .contour_logic import build_contour_variants
+from .gcode_safety import _motion_state, activate_pending_css, append_tool_and_spindle, emit_approach, get_safe_position, nose_compensation_command, validate_chuck_segment, suspend_css
 from .gcode_utils import (
     Point,
+    float_or_none,
+    gcode_comment,
     get_tool_number,
+    is_internal_side,
     is_monotonic_x,
     is_monotonic_x_decreasing,
-    is_monotonic_z_decreasing,
+    is_monotonic_z,
     require,
     require_positive,
     require_tool,
+    resolve_enum_index,
+    resolve_internal_safe_x,
+    validate_internal_material_clearance,
+    validate_internal_x_limit,
 )
+
+PARTING_MODE_INDEX = {"rough": 0, "finish": 1, "rough_finish": 2}
+
+
+def _cycle_extrema_points(primitives):
+    """Include analytic arc extrema; endpoint-only checks miss reversals.
+
+    G18 G3 runs clockwise in the (radius X, Z) coordinate plane.
+    """
+    points = []
+    for primitive in primitives or []:
+        p1, p2 = primitive["p1"], primitive["p2"]
+        points.append(tuple(p1))
+        if primitive.get("type") == "arc":
+            cx, cz = primitive["c"]
+            start = math.atan2(p1[1] - cz, (p1[0] - cx) / 2)
+            end = math.atan2(p2[1] - cz, (p2[0] - cx) / 2)
+            direction = -1 if primitive.get("ccw") else 1
+            sweep = ((end - start) * direction) % math.tau
+            if sweep < 1e-12:
+                sweep = math.tau
+            radius = math.hypot((p1[0] - cx) / 2, p1[1] - cz)
+            extrema = []
+            for angle in (0, math.pi / 2, math.pi, 3 * math.pi / 2):
+                distance = ((angle - start) * direction) % math.tau
+                if 1e-10 < distance < sweep - 1e-10:
+                    extrema.append((distance, (cx + 2 * radius * math.cos(angle),
+                                               cz + radius * math.sin(angle))))
+            points.extend(point for _, point in sorted(extrema))
+        points.append(tuple(p2))
+    return points
 
 
 @dataclass(frozen=True)
@@ -34,6 +75,148 @@ class Segment:
 
 
 LEADOUT_LENGTH_DEFAULT = 2.0
+
+
+def _normalize_output_preference(value: object | None) -> str:
+    text = str(value or "").strip().lower()
+    if text in ("cycle", "prefer_cycle", "standardzyklus", "1"):
+        return "prefer_cycle"
+    if text in ("explicit", "prefer_explicit", "ausgeschrieben", "2"):
+        return "prefer_explicit"
+    return "auto"
+
+
+def _resolve_roughing_stock_x(
+    settings: Dict[str, object],
+    rough_path: List[Point],
+    *,
+    external: bool,
+) -> float:
+    contour_max_x = max(point[0] for point in rough_path)
+    contour_min_x = min(point[0] for point in rough_path)
+    stock_key = "xa" if external else "xi"
+    fallback = contour_max_x
+    try:
+        stock_x = float(settings.get(stock_key))
+    except Exception:
+        return fallback
+    if external:
+        return max(stock_x, contour_max_x)
+    if stock_x <= 0.0:
+        # Kein (plausibles) XI im Programmkopf gesetzt - z. B. Rohteil startet
+        # als Vollzylinder und die Bohrung entsteht erst durch einen
+        # vorangehenden Bohren-Step. Ohne echten Freiraum wuerde G71 hier
+        # praktisch nur die Fertigkontur selbst nachfahren (kein Schnitt),
+        # weil kein Materialabstand zum Abtragen bekannt ist. Der zuletzt
+        # gebohrte Durchmesser (siehe gcode_program.py) ist die naechst-
+        # bessere reale Materialgrenze, wenn er kleiner als die Zielkontur ist.
+        drilled = float_or_none(settings.get("_last_drill_diameter"))
+        if drilled is not None and 0.0 < drilled < contour_min_x - 1e-9:
+            return drilled
+        return contour_min_x
+    # A positive XI is the existing bore, including XI below every target
+    # diameter. Replacing it by the target removes the entire stock to cut.
+    return stock_x
+
+
+def _finish_entry_point(
+    finish_points: List[Point],
+    safe_z: float,
+    *,
+    lead_length: float = LEADOUT_LENGTH_DEFAULT,
+) -> Point:
+    start_x, start_z = finish_points[0]
+    if safe_z > start_z + 1e-9:
+        return (start_x, safe_z)
+    return (start_x, start_z + max(lead_length, 0.5))
+
+
+def _emit_finish_primitives(
+    lines: List[str],
+    primitives: List[Dict[str, object]],
+    *,
+    feed: float,
+    initial_pos: Optional[Point] = None,
+) -> None:
+    cur_x: Optional[float] = initial_pos[0] if initial_pos is not None else None
+    cur_z: Optional[float] = initial_pos[1] if initial_pos is not None else None
+
+    def _ensure_linear_at(x: float, z: float) -> None:
+        nonlocal cur_x, cur_z
+        if cur_x is None or cur_z is None or abs(cur_x - x) > 1e-9 or abs(cur_z - z) > 1e-9:
+            lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+            cur_x, cur_z = x, z
+
+    for pr in primitives or []:
+        typ = pr.get("type")
+        if typ == "line":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            if p1 is None or p2 is None:
+                continue
+            x1, z1 = float(p1[0]), float(p1[1])
+            x2, z2 = float(p2[0]), float(p2[1])
+            _ensure_linear_at(x1, z1)
+            _ensure_linear_at(x2, z2)
+        elif typ == "arc":
+            p1 = pr.get("p1")
+            p2 = pr.get("p2")
+            c = pr.get("c") or pr.get("center")
+            if p1 is None or p2 is None or c is None:
+                continue
+            x1, z1 = float(p1[0]), float(p1[1])
+            x2, z2 = float(p2[0]), float(p2[1])
+            cx, cz = float(c[0]), float(c[1])
+            _ensure_linear_at(x1, z1)
+            # I ist in LinuxCNC/Fanuc-Lathe-Dialekten IMMER ein Radiuswert,
+            # auch im Durchmessermodus (G7), in dem X/Z-Koordinaten selbst
+            # Durchmesser sind. Die Kontur-Primitive speichern ihr Zentrum
+            # aber konsistent im Durchmessermass (wie alle anderen X-Werte
+            # auch) - die X-Differenz zum Zentrum muss daher fuer I halbiert
+            # werden, K (Z, nicht durchmesserskaliert) bleibt unveraendert.
+            # Ohne diese Umrechnung lehnt LinuxCNC den Bogen mit "Radius to
+            # end of arc differs from radius to start" ab (real bestaetigt).
+            i = (cx - (cur_x if cur_x is not None else x1)) / 2.0
+            k = cz - (cur_z if cur_z is not None else z1)
+            g = "G3" if pr.get("ccw") else "G2"
+            lines.append(f"{g} X{x2:.3f} Z{z2:.3f} I{i:.3f} K{k:.3f} F{feed:.3f}")
+            cur_x, cur_z = x2, z2
+
+
+def _emit_relief_pass(
+    lines: List[str],
+    feature_points: List[Point],
+    feed: float,
+    safe_z: float,
+    settings: Dict[str, object],
+    tool_num: int,
+    spindle: float,
+    op_params: Dict[str, object],
+) -> None:
+    if len(feature_points) < 2:
+        return
+    relief_tool = get_tool_number({"tool": op_params.get("undercut_tool", tool_num) or tool_num})
+    relief_spindle = float(op_params.get("undercut_spindle", spindle) or spindle)
+    relief_feed = float(op_params.get("undercut_feed", feed) or feed)
+    if bool(op_params.get("optional_stop_before_undercut", settings.get("optional_stop_before_undercut", False))):
+        lines.append("M1")
+    append_tool_and_spindle(
+        lines, relief_tool, relief_spindle, settings,
+        spindle_mode=op_params.get("spindle_mode"), spindle_max_rpm=op_params.get("spindle_max_rpm"),
+        cutting_speed=op_params.get("cutting_speed"),
+        css_start_diameter=abs(feature_points[0][0]),
+    )
+    lines.append(f"({gcode_comment('gcode.comment.relief_separate', settings.get('lang'))})")
+    emit_approach(lines, feature_points[0][0], safe_z, settings)
+    activate_pending_css(lines, settings)
+    for idx, (x, z) in enumerate(feature_points):
+        code = "G1"
+        if idx == 0:
+            lines.append(f"{code} X{x:.3f} Z{z:.3f} F{relief_feed:.3f}")
+        else:
+            lines.append(f"{code} X{x:.3f} Z{z:.3f} F{relief_feed:.3f}")
+    suspend_css(lines, settings)
+    lines.append(f"G0 Z{safe_z:.3f}")
 
 
 def segments_from_polyline(path: List[Point]) -> List[Segment]:
@@ -180,7 +363,10 @@ def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: in
             x2, z2 = float(p2[0]), float(p2[1])
             cx, cz = float(c[0]), float(c[1])
             _ensure_at(x1, z1)
-            i = cx - (cur_x if cur_x is not None else x1)
+            # Siehe Kommentar in _emit_finish_primitives(): I ist immer ein
+            # Radiuswert, auch im Durchmessermodus - die X-Differenz zum
+            # (im Durchmessermass gespeicherten) Zentrum muss halbiert werden.
+            i = (cx - (cur_x if cur_x is not None else x1)) / 2.0
             k = cz - (cur_z if cur_z is not None else z1)
             g = "G3" if pr.get("ccw") else "G2"
             lines.append(f"{g} X{x2:.3f} Z{z2:.3f} I{i:.3f} K{k:.3f}")
@@ -190,50 +376,106 @@ def contour_sub_from_primitives(primitives: List[Dict[str, object]], sub_num: in
     return lines
 
 
-def _emit_segment_with_pauses(lines: List[str], start: Point, end: Point, feed: float, pause_enabled: bool, pause_distance: float, pause_duration: float, state: Dict[str, object] | None = None):
+def _emit_segment_with_pauses(lines: List[str], start: Point, end: Point, feed: float, pause_enabled: bool, pause_distance: float, pause_duration: float):
+    # Spanbruch/Vorschub-Unterbrechung: SICHERHEITSFUND 2026-09-13 - die
+    # vorherige Ausgabe rief "o<step_line_pause> call [...]" auf, dessen
+    # Subroutine-Definition (`step_line_pause_sub_definition()`, inzwischen
+    # entfernt) NUR ein `G4 P[#7]` (Verweilzeit) enthielt - KEINE Bewegung.
+    # Die gesamte Strecke von `start` nach `end` wurde dadurch NIE
+    # tatsaechlich geschnitten, obwohl das Programm anschliessend so
+    # weiterlief, als sei das Material entfernt worden (realer Fund per
+    # rs274-Bewegungsspur bestaetigt: STRAIGHT_FEED nur fuer die kurze
+    # Einfahrt, dann DWELL, dann direkter Eilgang-Rueckzug). Alle
+    # bestehenden Tests pruefen nur die TEXTLICHEN Call-Parameter, nie die
+    # tatsaechliche Bewegung - das hat den Fehler seit Einfuehrung der
+    # Funktion (Commit e82d47c) unentdeckt gelassen. Jetzt: echte,
+    # explizite G1/G4-Folge statt einer Laufzeit-Subroutine, damit die
+    # gefahrene Strecke direkt aus dem G-Code ablesbar und von Hand
+    # nachvollziehbar bleibt (siehe LES-022 "robuste explizite Ausgabe").
     x0, z0 = start
     x1, z1 = end
     single_axis_segment = abs(x1 - x0) < 1e-9 or abs(z1 - z0) < 1e-9
     long_enough = max(abs(x1 - x0), abs(z1 - z0)) > pause_distance
     if pause_enabled and pause_distance > 0 and single_axis_segment and long_enough:
-        if state is not None:
-            state["needs_step_line_pause_sub"] = True
-        lines.append(
-            "o<step_line_pause> call "
-            f"[{x0:.3f}] [{z0:.3f}] [{x1:.3f}] [{z1:.3f}] "
-            f"[{pause_distance:.3f}] [{feed:.3f}] [{pause_duration:.3f}]"
-        )
+        length = max(abs(x1 - x0), abs(z1 - z0))
+        steps = max(1, math.ceil(length / pause_distance - 1e-9))
+        for i in range(1, steps + 1):
+            t = i / steps
+            xi = x0 + (x1 - x0) * t
+            zi = z0 + (z1 - z0) * t
+            lines.append(f"G1 X{xi:.3f} Z{zi:.3f} F{feed:.3f}")
+            if i < steps:
+                lines.append(f"G4 P{pause_duration:.3f}")
         return
     lines.append(f"G1 X{x1:.3f} Z{z1:.3f} F{feed:.3f}")
 
 
-def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_target: float, step_x: float, safe_z: float, feed: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, retract_cfg: Optional[RetractCfg] = None, leadout_length: float = LEADOUT_LENGTH_DEFAULT, pause_state: Dict[str, object] | None = None) -> List[str]:
+def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_target: float, step_x: float, safe_z: float, feed: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, retract_cfg: Optional[RetractCfg] = None, leadout_length: float = LEADOUT_LENGTH_DEFAULT, pause_state: Dict[str, object] | None = None, lang: str | None = None) -> List[str]:
     segs = segments_from_polyline(path)
     passes = compute_pass_x_levels(x_stock, x_target, step_x, external)
-    lines: List[str] = ["(ABSPANEN Rough - parallel Z)"]
+    lines: List[str] = [f"({gcode_comment('gcode.comment.abspanen_rough_parallel_z', lang)})"]
     xs = [p[0] for p in path] if path else []
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
     cfg = retract_cfg or RetractCfg(None, None, True, True)
     start_rx, start_rz = resolve_retract_targets(cfg, external=external, current_x=x_stock, current_z=safe_z, safe_z=safe_z)
-    if start_rz is not None:
-        lines.append(f"G0 Z{start_rz:.3f}")
-    if start_rx is not None:
-        lines.append(f"G0 X{start_rx:.3f}")
+    already_safe = (
+        start_rx is not None
+        and start_rz is not None
+        and _motion_state(pause_state).at(start_rx, start_rz)
+    )
+    if not already_safe:
+        if start_rz is not None:
+            lines.append(f"G0 Z{start_rz:.3f}")
+        if start_rx is not None:
+            lines.append(f"G0 X{start_rx:.3f}")
+    # LES-022 (vierte Etappe): reale Endposition durch die Baender
+    # mitfuehren, statt sie dem Aufrufer unbekannt zu lassen. Startwert ist
+    # (start_rx, start_rz) - dahin fuehrt entweder der obige Rueckzug
+    # deterministisch hin, oder die Position war laut `already_safe`
+    # bereits nachweislich dort. `resolve_retract_targets` ist eine reine
+    # Funktion von cfg/x_stock/safe_z, liefert also in beiden Faellen
+    # denselben Wert wie die tatsaechlich emittierte Bewegung.
+    last_x, last_z = start_rx, start_rz
     z_dir = -1 if (min([p[1] for p in path]) if path else 0) < 0 else 1
     for pass_i, (x_hi, x_lo) in enumerate(passes, 1):
         band_lo, band_hi = (x_lo, x_hi) if x_lo <= x_hi else (x_hi, x_lo)
         x_cut = x_lo if external else x_hi
-        z_intervals: List[Tuple[float, float, Segment]] = []
+        # Materialreichweite bei DIESER Zustelltiefe, nicht nur ein
+        # hauchduennes Fenster direkt an x_cut: bei x_cut ist noch ueberall
+        # dort Material zu entfernen, wo die ZIELKONTUR ueber x_cut
+        # hinausgeht (extern: Kontur-X <= x_cut, intern: Kontur-X >= x_cut).
+        # Ein schmales Fenster fand fuer die meisten Segmente keinen Treffer
+        # ("no cut region") und wies eine lange, parallel zu X verlaufende
+        # Wand (z. B. eine Bohrungswand) komplett EINEM einzelnen Pass zu,
+        # statt sie ueber mehrere Zustellungen zu verteilen (realer
+        # Bugreport: "keine wirkliche Abspanaufgabe generiert").
+        if external:
+            reach_lo = min_x if min_x is not None else x_cut
+            reach_hi = x_cut
+        else:
+            reach_lo = x_cut
+            reach_hi = max_x if max_x is not None else x_cut
+        z_intervals_raw: List[Tuple[float, float]] = []
         for s in segs:
-            hit = intersect_segment_with_x_band(s, x_cut - 1e-3, x_cut + 1e-3)
+            hit = intersect_segment_with_x_band(s, reach_lo, reach_hi)
             if hit:
-                z_intervals.append((hit[0], hit[1], s))
-        if not z_intervals:
-            lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
-            continue
-        lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
-        for (za, zb, _seg) in z_intervals:
+                z_intervals_raw.append(hit)
+        # Ohne Merge lieferten sich beruehrende/ueberlappende Segmente (z. B. eine
+        # senkrechte Bohrungswand, die exakt am selben X endet, an dem eine
+        # angrenzende Fase/Radius-Uebergangskontur startet) mehrere, sich
+        # ueberschneidende Z-Intervalle fuer dasselbe X-Band - das Werkzeug fuhr
+        # denselben Tiefenbereich mehrfach an (real reproduziert: Innenkontur mit
+        # Fase am Bohrungsgrund erzeugte doppelte/near-zero Schnittbewegungen).
+        z_intervals = merge_intervals(z_intervals_raw)
+        # Ein nicht-leeres z_intervals kann trotzdem KEINEN einzigen echten
+        # Schnitt ergeben (jedes Intervall zu flach/entartet, oder durch die
+        # allow_undercut-Grenze ausgeschlossen). In dem Fall darf keine
+        # "X-band"-Kopfzeile stehen bleiben, die einen Schnitt suggeriert, wo
+        # in Wirklichkeit keine Bewegung folgt - stattdessen dieselbe
+        # "no cut region"-Meldung wie bei von vornherein leerem z_intervals.
+        pass_lines: List[str] = []
+        for (za, zb) in z_intervals:
             if abs(zb - za) < 1e-9:
                 continue
             if not allow_undercut and min_x is not None and max_x is not None:
@@ -241,24 +483,57 @@ def rough_turn_parallel_x(path: List[Point], external: bool, x_stock: float, x_t
                     continue
                 if (not external) and x_cut > max_x + 1e-6:
                     continue
-            lines.append(f"G0 X{x_cut:.3f} Z{safe_z:.3f}")
+            # Innenbearbeitung folgt derselben sicheren Achsreihenfolge wie
+            # der Inventor/LinuxCNC-Post: auf XRI axial vorfahren und erst am
+            # Ziel-Z radial in die Bohrung zustellen. Ein diagonaler X/Z-G0
+            # von der tiefen Bohrungsposition zur naechsten Zustellung kann
+            # sonst durch Material laufen.
+            if external:
+                pass_lines.append(f"G0 X{x_cut:.3f} Z{safe_z:.3f}")
+            else:
+                pass_lines.append(f"G0 Z{safe_z:.3f}")
+                pass_lines.append(f"G0 X{x_cut:.3f}")
+            last_x, last_z = x_cut, safe_z
             z_low = min(za, zb)
             z_high = max(za, zb)
             z_entry, z_exit = (z_high, z_low) if z_dir < 0 else (z_low, z_high)
-            lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
-            _emit_segment_with_pauses(lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
+            activate_pending_css(pass_lines, pause_state)
+            if abs(z_entry - safe_z) > 1e-9:
+                pass_lines.append(f"G1 Z{z_entry:.3f} F{feed:.3f}")
+                last_z = z_entry
+            _emit_segment_with_pauses(pass_lines, (x_cut, z_entry), (x_cut, z_exit), feed, pause_enabled, pause_distance, pause_duration)
+            last_x, last_z = x_cut, z_exit
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=x_cut, current_z=z_exit, safe_z=safe_z)
-            cmd = ["G0"]
-            if rx_eff is not None:
-                cmd.append(f"X{rx_eff:.3f}")
-            if rz_eff is not None:
-                cmd.append(f"Z{rz_eff:.3f}")
-            if len(cmd) > 1:
-                lines.append(" ".join(cmd))
+            suspend_css(pass_lines, pause_state, resume=True)
+            if external:
+                cmd = ["G0"]
+                if rx_eff is not None:
+                    cmd.append(f"X{rx_eff:.3f}")
+                    last_x = rx_eff
+                if rz_eff is not None:
+                    cmd.append(f"Z{rz_eff:.3f}")
+                    last_z = rz_eff
+                if len(cmd) > 1:
+                    pass_lines.append(" ".join(cmd))
+            elif rx_eff is not None:
+                # XRI ist die harte Freigrenze. Z wird zu Beginn des naechsten
+                # Passes ausschliesslich auf dieser freien X-Position bewegt.
+                pass_lines.append(f"G0 X{rx_eff:.3f}")
+                last_x = rx_eff
+        if not pass_lines:
+            lines.append(f"(Pass {pass_i}: no cut region in band X[{band_lo:.3f},{band_hi:.3f}])")
+            continue
+        lines.append(f"(Pass {pass_i}: X-band [{band_lo:.3f},{band_hi:.3f}])")
+        lines.extend(pass_lines)
+    if pause_state is not None:
+        if last_x is not None and last_z is not None:
+            _motion_state(pause_state).record(last_x, last_z)
+        else:
+            _motion_state(pause_state).clear()
     return lines
 
 
-def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_target: float, step_z: float, safe_z: float, feed: float, start_x: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, leadout_length: float = LEADOUT_LENGTH_DEFAULT, retract_cfg: Optional[RetractCfg] = None, pause_state: Dict[str, object] | None = None) -> List[str]:
+def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_target: float, step_z: float, safe_z: float, feed: float, start_x: float, allow_undercut: bool = False, pause_enabled: bool = False, pause_distance: float = 0.0, pause_duration: float = 0.5, leadout_length: float = LEADOUT_LENGTH_DEFAULT, retract_cfg: Optional[RetractCfg] = None, pause_state: Dict[str, object] | None = None, lang: str | None = None) -> List[str]:
     segs = segments_from_polyline(path)
     passes: List[Tuple[float, float]] = []
     if step_z <= 0:
@@ -280,12 +555,16 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
     xs = [p[0] for p in path] if path else []
     min_x = min(xs) if xs else None
     max_x = max(xs) if xs else None
-    lines: List[str] = ["(ABSPANEN Rough - parallel X)"]
+    lines: List[str] = [f"({gcode_comment('gcode.comment.abspanen_rough_parallel_x', lang)})"]
     if not passes:
         return lines
     cfg = retract_cfg or RetractCfg(None, None, True, True)
     lines.append(f"G0 Z{safe_z:.3f}")
     lines.append(f"G0 X{start_x:.3f}")
+    # LES-022 (vierte Etappe): siehe Kommentar in rough_turn_parallel_x -
+    # die beiden vorangehenden G0-Zeilen fuehren deterministisch immer auf
+    # (start_x, safe_z), unbedingt (kein already_safe-Kurzschluss hier).
+    last_x, last_z = start_x, safe_z
     for pass_i, (z_hi, z_lo) in enumerate(passes, 1):
         band_lo, band_hi = (z_lo, z_hi) if z_lo <= z_hi else (z_hi, z_lo)
         x_intervals: List[Tuple[float, float]] = []
@@ -303,57 +582,138 @@ def rough_turn_parallel_z(path: List[Point], external: bool, z_stock: float, z_t
             if not allow_undercut and min_x is not None and max_x is not None:
                 if xb < min_x - 1e-6 or xa > max_x + 1e-6:
                     continue
+            activate_pending_css(lines, pause_state)
             lines.append(f"G1 Z{band_lo:.3f} F{feed:.3f}")
+            last_z = band_lo
             cut_target = min(xa, xb) if external else max(xa, xb)
-            _emit_segment_with_pauses(lines, (start_x, band_lo), (cut_target, band_lo), feed, pause_enabled, pause_distance, pause_duration, state=pause_state)
+            _emit_segment_with_pauses(lines, (start_x, band_lo), (cut_target, band_lo), feed, pause_enabled, pause_distance, pause_duration)
+            last_x, last_z = cut_target, band_lo
             rx_eff, rz_eff = resolve_retract_targets(cfg, external=external, current_x=cut_target, current_z=band_lo, safe_z=safe_z)
+            suspend_css(lines, pause_state, resume=True)
             cmd = ["G0"]
             if rx_eff is not None:
                 cmd.append(f"X{rx_eff:.3f}")
+                last_x = rx_eff
             if rz_eff is not None:
                 cmd.append(f"Z{rz_eff:.3f}")
+                last_z = rz_eff
             if len(cmd) > 1:
                 lines.append(" ".join(cmd))
+    if pause_state is not None:
+        if last_x is not None and last_z is not None:
+            _motion_state(pause_state).record(last_x, last_z)
+        else:
+            _motion_state(pause_state).clear()
     return lines
 
 
 def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: Dict[str, object]) -> List[str]:
-    lines: List[str] = ["(ABSPANEN)"]
-    if not path:
-        return lines
+    lang = settings.get("lang")
+    lines: List[str] = [f"({gcode_comment('gcode.comment.abspanen', lang)})"]
+    validate_finite_data(p, "ABSPANEN")
+    validate_finite_data(path, "ABSPANEN path")
+    validate_finite_data(settings, "Programmkopf")
     require(p, ["depth_per_pass"], "ABSPANEN")
     require_positive(p, ["depth_per_pass"], "ABSPANEN")
-    side_idx = int(p.get("side", 0))
-    feed = float(p.get("feed", 0.15))
-    depth_per_pass = float(p["depth_per_pass"])
+    side_idx = 1 if is_internal_side(p.get("side", 0)) else 0
+    feed = finite_float(p.get("feed", 0.15), "ABSPANEN feed")
+    depth_per_pass = finite_float(p["depth_per_pass"], "ABSPANEN depth_per_pass")
     pause_enabled = bool(p.get("pause_enabled", False))
-    pause_distance = max(float(p.get("pause_distance", 0.0)), 0.0)
+    pause_distance = finite_float(p.get("pause_distance", 0.0), "ABSPANEN pause_distance")
     pause_duration = 0.5
-    mode_idx = int(p.get("mode", 0))
-    if pause_enabled and pause_distance > 0.0 and mode_idx in (0, 2):
-        settings["needs_step_line_pause_sub"] = True
-    finish_allow_x = max(float(p.get("finish_allow_x", 0.0)), 0.0)
-    finish_allow_z = max(float(p.get("finish_allow_z", 0.0)), 0.0)
+    mode_idx = resolve_enum_index(p.get("mode", 0), PARTING_MODE_INDEX, default=0)
+    finish_allow_x = finite_float(p.get("finish_allow_x", 0.0), "ABSPANEN finish_allow_x")
+    finish_allow_z = finite_float(p.get("finish_allow_z", 0.0), "ABSPANEN finish_allow_z")
+    if float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("ABSPANEN: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
+    if float(f"{depth_per_pass:.3f}") <= 0.0:
+        raise ValueError("ABSPANEN: Zustelltiefe muss auch nach Ausgaberundung groesser als null sein.")
+    if min(pause_distance, finish_allow_x, finish_allow_z) < 0.0:
+        raise ValueError("ABSPANEN: Spanbruchdistanz und Schlichtaufmasse duerfen nicht negativ sein.")
     if finish_allow_x > 0.0 or finish_allow_z > 0.0:
-        lines.append(f"(Schlichtaufmaß X/Z: {finish_allow_x:.3f}/{finish_allow_z:.3f} mm)")
+        lines.append(f"({gcode_comment('gcode.comment.finish_allowance', lang, x=f'{finish_allow_x:.3f}', z=f'{finish_allow_z:.3f}')})")
     tool_num = require_tool(p, "ABSPANEN")
-    spindle = float(p.get("spindle", 0.0))
-    append_tool_and_spindle(lines, tool_num, spindle, settings)
+    spindle = finite_float(p.get("spindle", 0.0), "ABSPANEN spindle")
+    contour_variants = None
+    contour_params = p.get("_contour_params")
+    if isinstance(contour_params, dict) and contour_params.get("segments"):
+        contour_variants = build_contour_variants(contour_params)
+    finish_path = path
+    rough_path = path
+    feature_path: List[Point] = []
+    relief_mode = normalize_relief_mode(p.get("undercut_mode"))
+    if contour_variants:
+        finish_path = contour_variants["finish_points"] or finish_path
+        rough_path = contour_variants["rough_points"] or finish_path
+        feature_path = contour_variants["feature_points"] or []
+    elif path and isinstance(path[0], dict):
+        finish_path = primitive_to_points(path) or []
+        rough_path = finish_path
+    if not finish_path and not rough_path:
+        return lines
+    if not rough_path:
+        rough_path = finish_path
+    if not finish_path:
+        finish_path = rough_path
+
+    path = finish_path
+    stock_x = _resolve_roughing_stock_x(settings, rough_path, external=side_idx == 0)
+    append_tool_and_spindle(
+        lines, tool_num, spindle, settings,
+        spindle_mode=p.get("spindle_mode"), spindle_max_rpm=p.get("spindle_max_rpm"),
+        cutting_speed=p.get("cutting_speed"), css_start_diameter=abs(stock_x),
+    )
     lines.append(f"F{feed:.3f}")
-    stock_hint = settings.get("xa") if side_idx == 0 else settings.get("xi")
-    try:
-        stock_x = float(stock_hint) if stock_hint is not None else max(point[0] for point in path)
-    except Exception:
-        stock_x = max(point[0] for point in path)
+    if mode_idx in (0, 2):
+        # Stock allowance keeps move-based roughing (parallel_z/parallel_x
+        # "ISO"-Fallback, siehe can_use_cycles unten) von der Fertigkontur
+        # entfernt - GENAU wie der G71/G72-Zyklus fuer Aussenbearbeitung
+        # ueber sein eigenes stock_x_adj bereits eine Reserve haelt (siehe
+        # G72-Zweig). Bis 2026-09-10 galt das nur fuer Innenbearbeitung
+        # (kleinere Bohrung, flacheres Ende); Aussenbearbeitung liess dabei
+        # explizite/"ISO"-Schruppdurchgaenge bis exakt auf das Fertigmass
+        # laufen (0.000mm statt des konfigurierten Aufmasses) - reproduziert
+        # und in gleicher Sitzung behoben, nachdem ein Vergleich Zyklus- vs.
+        # expliziter Ausgabe fuer dieselbe Kontur das aufgedeckt hat.
+        if side_idx == 1:
+            # Interior stock allowance leaves a smaller bore and a shallower end.
+            # X is a diameter coordinate, matching the UI's X allowance value.
+            rough_path = [(x - finish_allow_x, z + finish_allow_z) for x, z in rough_path]
+        else:
+            # Exterior stock allowance leaves a larger diameter and a
+            # shallower end (finish removes the outer allowance ring).
+            rough_path = [(x + finish_allow_x, z + finish_allow_z) for x, z in rough_path]
     cfg = get_retract_cfg(settings, side_idx)
     if cfg.z_value is None:
         raise ValueError("ZRA/ZRI ist nicht gesetzt (oder 0). Bitte im Programm-Tab eintragen.")
     safe_z = float(cfg.z_value)
     external = side_idx == 0
+    if not external:
+        safe_x = validate_internal_x_limit(
+            settings,
+            [pt[0] for pt in finish_path] + [pt[0] for pt in rough_path],
+            op_label="Innenbearbeitung",
+        )
+        validate_internal_material_clearance(
+            settings,
+            safe_x,
+            [pt[1] for pt in finish_path] + [pt[1] for pt in rough_path],
+            op_label="Innenbearbeitung",
+        )
     tool_info = (settings.get("tools", {}) or {}).get(tool_num)
     compensation_command = nose_compensation_command(tool_info, external)
     nose_disabled = bool(p.get("nose_comp_disabled", False))
+    if not external and feature_path and compensation_command and not nose_disabled:
+        # LinuxCNC rejects dynamic compensation on the concave inside corner
+        # of a DIN thread relief ("Straight feed in concave corner ...").
+        # It aborts program loading before the following G76, making the
+        # internal thread appear to be absent.  The generated contour itself
+        # already contains the finished DIN geometry, so suppress only the
+        # incompatible compensation mode for this case.
+        nose_disabled = True
+        lines.append(f"({gcode_comment('gcode.comment.internal_relief_no_radius_comp', lang)})")
     slice_strategy = p.get("slice_strategy")
+    output_preference = _normalize_output_preference(p.get("output_preference", settings.get("output_preference")))
     strategy_code = None
     if isinstance(slice_strategy, (int, float)):
         strategy_code = "parallel_x" if int(slice_strategy) == 1 else "parallel_z" if int(slice_strategy) == 2 else None
@@ -363,75 +723,368 @@ def generate_abspanen_gcode(p: Dict[str, object], path: List[Point], settings: D
     contour_subs = settings.get("contour_subs", {}) if settings else {}
     contour_sub_num = contour_subs.get(contour_name) if contour_name else None
     primitives = p.get("_primitives")
+    if contour_variants:
+        primitives = contour_variants["finish_primitives"]
+        # Die global vorab allokierte Kontur-Subroutine enthaelt immer die
+        # Fertigkontur. Fuer ignore/finish_only/separate muss ein G71/G72 aber
+        # die relief-freie Schruppkontur bekommen; bei full ist ein Zyklus mit
+        # dem U-foermigen Freistich nicht LinuxCNC-monoton. Deshalb wird die
+        # passende lokale Subroutine erzeugt bzw. der Zyklus unten verworfen.
+        if feature_path:
+            contour_sub_num = None
+
+    lines.append(f"({gcode_comment('gcode.comment.strategy', lang, strategy=strategy_code or gcode_comment('gcode.comment.strategy_manual', lang))})")
+    lines.append(f"({gcode_comment('gcode.comment.output_preference', lang, preference=output_preference)})")
+    lines.append(f"({gcode_comment('gcode.comment.relief_mode', lang, mode=relief_mode)})")
+    if finish_allow_x > 0.0 or finish_allow_z > 0.0:
+        lines.append(f"({gcode_comment('gcode.comment.allowance', lang, x=f'{finish_allow_x:.3f}', z=f'{finish_allow_z:.3f}')})")
 
     def _build_cycle_sub(sub_num: int) -> List[str]:
-        return contour_sub_from_primitives(primitives, sub_num) if primitives else contour_sub_from_points(path, sub_num)
+        active_primitives = primitives
+        active_points = finish_path
+        if relief_mode in ("ignore", "finish_only", "separate") and contour_variants:
+            active_primitives = contour_variants["rough_primitives"]
+            active_points = rough_path
+        return contour_sub_from_primitives(active_primitives, sub_num) if active_primitives else contour_sub_from_points(active_points, sub_num)
 
-    if strategy_code == "parallel_x":
-        if is_monotonic_x_decreasing(path):
+    rough_cycle_path = finish_path if relief_mode == "full" else rough_path
+    # Ein in die Kontur eingespleisster Freistich kehrt axial um und ist damit
+    # fuer LinuxCNC G71/G72 nicht monoton. Explizites Move-based-Schruppen
+    # verarbeitet diese Geometrie dagegen ohne einen ungueltigen Zyklus.
+    # Realer Bugreport 2026-09-10: das eigene Spanbruch-/Pausen-Feature
+    # (`pause_enabled`/`pause_distance`, ein an einen Siemens-Zyklus
+    # angelehnter Vorschub-Unterbrecher, den LinuxCNC nicht kennt) wurde
+    # bisher STILLSCHWEIGEND ignoriert, sobald die Kontur sonst
+    # zyklustauglich war - G71/G72 gewann, ohne jede Pause auszugeben,
+    # obwohl die (ungenutzte) Pause-Subroutine trotzdem definiert wurde.
+    # Nutzerhinweis: dieses Feature wird in der Praxis haeufig genutzt und
+    # gilt ausschliesslich fuers Schruppen (nie Schlichten) - genau der
+    # Fall, den `can_use_cycles` hier steuert.
+    # Realer Bugreport 2026-09-10 (D/I-Parametersemantik): der reale
+    # LinuxCNC-G7x-Zyklus (Quelle interp_g7x.cc, Version 2.10.0~pre1,
+    # empirisch per rs274-Trace bestaetigt) versteht D als "Final distance
+    # to profile" (senkrechtes Aufmass, RADIUS-Einheiten) und I als
+    # "Increment of cutting" (Zustelltiefe pro Schnitt, ebenfalls RADIUS).
+    # U/W (getrennter X/Z-Versatz) werden vom installierten Interpreter gar
+    # nicht als gueltige Adressbuchstaben akzeptiert ("Bad character 'u'
+    # used", per rs274-Test verifiziert). Der Zyklus kann daher NUR EIN
+    # einzelnes, isotropes Aufmass abbilden (`D`) - eine Kontur mit
+    # unterschiedlichem X-/Z-Schlichtaufmass (finish_allow_z groesser als
+    # finish_allow_x) kann ueber D allein nicht sicher garantiert werden
+    # (an einem Plansegment wirkt D vollstaendig als Z-Aufmass; ist das
+    # geforderte Z-Aufmass groesser als das aus X abgeleitete D, entstuende
+    # dort zu wenig Reserve). Deshalb erzwingt genau dieser Fall weiterhin
+    # den bewegungsbasierten Pfad, der beide Achsen unabhaengig versetzt
+    # (siehe Aufmass-Versatz oben).
+    can_use_cycles = (
+        output_preference != "prefer_explicit"
+        and not (feature_path and relief_mode == "full")
+        and not (pause_enabled and pause_distance > 0.0)
+        and finish_allow_z <= finish_allow_x
+    )
+    cycle_primitives = primitives
+    if contour_variants and relief_mode in ("ignore", "finish_only", "separate"):
+        cycle_primitives = contour_variants["rough_primitives"]
+    if can_use_cycles and external and mode_idx in (0, 2) and cycle_primitives:
+        extrema = _cycle_extrema_points(cycle_primitives)
+        axis_monotonic = (is_monotonic_z(extrema) if strategy_code == "parallel_z"
+                          else is_monotonic_x(extrema) if strategy_code == "parallel_x" else True)
+        if not axis_monotonic and any(pr.get("type") == "arc" for pr in cycle_primitives):
+            raise ValueError("Kontur-Bogen ist fuer G71/G72 nicht monoton; Kontur oder Strategie pruefen.")
+    rough_done = False
+    cycle_finish_done = False
+    roughing_section_start = len(lines)
+
+    # mode_idx == 1 (reiner Schlichtstep) darf NIE einen G71/G72-Schruppzyklus
+    # erzeugen - ein separater Schruppstep (typischerweise mit eigenem
+    # Werkzeug) hat das Material bereits abgetragen. Ohne diese Schranke
+    # wiederholte ein dedizierter Schlichtstep mit gueltiger Strategie
+    # unbemerkt die komplette Schruppbearbeitung.
+    # G71/G72 duerfen NUR fuer Aussenbearbeitung verwendet werden: real gegen
+    # den LinuxCNC-Interpreter (rs274, Quelle interp_g7x.cc, Version
+    # 2.10.0~pre1) getestet - der Schruppzyklus erzeugt bei Innenkonturen
+    # (gleiche Kontur wie aussen, nur gespiegelt) NUR EINEN durchgehenden
+    # Schnitt statt der erwarteten Treppenstufen-Passes, waehrend derselbe
+    # Zyklus bei Aussenkonturen korrekt mehrfach zustellt. Kein Fehler in
+    # diesem Generator, sondern eine bestaetigte Einschraenkung der
+    # G7x-Taschenausraeumlogik dieser LinuxCNC-Version fuer Innenbearbeitung.
+    if strategy_code == "parallel_x" and mode_idx in (0, 2):
+        if can_use_cycles and external and is_monotonic_x_decreasing(rough_cycle_path):
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
-            lines.append("(ABSPANEN Rough - parallel X)")
+            lines.append(f"({gcode_comment('gcode.comment.abspanen_rough_parallel_x', lang)})")
             if contour_sub_num is None:
                 lines.extend(_build_cycle_sub(sub_num))
-            lines.append("(Anfahren vor Zyklus)")
-            stock_x_adj = stock_x - finish_allow_x if mode_idx == 0 and finish_allow_x > 0.0 else stock_x
-            stock_x_adj = max(stock_x_adj, 0.0)
-            emit_approach(lines, stock_x_adj, safe_z, settings)
-            lines.append(f"G72 Q{sub_num} X{stock_x_adj:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
-            if mode_idx in (1, 2):
+            lines.append(f"({gcode_comment('gcode.comment.approach_before_cycle', lang)})")
+            emit_approach(lines, stock_x, safe_z, settings)
+            activate_pending_css(lines, settings)
+            # D = Aufmass (radial!), I = Zustelltiefe (radial!) - siehe
+            # Kommentar bei can_use_cycles oben. finish_allow_x/depth_per_pass
+            # sind Durchmesserwerte (UI-Konvention, wie der bewegungsbasierte
+            # Pfad sie auch verwendet) und werden deshalb halbiert. R ist der
+            # diagonale Ruecklaufabstand zwischen den Schruppgaengen (per
+            # rs274 empirisch bestaetigt: ein reiner Radius-/Z-Abstand, keine
+            # Umrechnung noetig) - Default waere nur 0.5mm; LEADOUT_LENGTH_DEFAULT
+            # matcht die im bewegungsbasierten Pfad bereits etablierte Freifahrt.
+            lines.append(f"G72 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{finish_allow_x / 2.0:.3f} I{depth_per_pass / 2.0:.3f} R{LEADOUT_LENGTH_DEFAULT:.3f}")
+            if settings is not None:
+                settings.setdefault("_cycle_defined_subs", set()).add((sub_num, external))
+            if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
-            return lines
-        z_vals = [pp[1] for pp in path] if path else [0.0]
-        rough_lines = rough_turn_parallel_z(path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
-        if rough_lines:
-            rough_lines[0] = "(ABSPANEN Rough - parallel X - Move-based)"
-        lines.extend(rough_lines)
-    elif strategy_code == "parallel_z":
-        can_use_g71 = is_monotonic_z_decreasing(path) and is_monotonic_x(path)
-        if can_use_g71:
+            rough_done = True
+            cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
+        if not rough_done:
+            if not external:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_internal_unreliable', lang)})")
+            elif output_preference == "prefer_cycle":
+                lines.append(f"({gcode_comment('gcode.comment.fallback_contour_not_g72', lang)})")
+            elif pause_enabled and pause_distance > 0.0:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_pauses_active', lang)})")
+            elif finish_allow_z > finish_allow_x:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_z_allowance_larger', lang)})")
+            elif output_preference == "prefer_explicit":
+                lines.append(f"({gcode_comment('gcode.comment.fallback_explicit_code_preferred', lang)})")
+            z_vals = [pp[1] for pp in rough_path] if rough_path else [0.0]
+            rough_lines = rough_turn_parallel_z(rough_path, external=external, z_stock=max(z_vals), z_target=min(z_vals), step_z=depth_per_pass, safe_z=safe_z, feed=feed, start_x=stock_x, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings, lang=lang)
+            if rough_lines:
+                rough_lines[0] = f"({gcode_comment('gcode.comment.abspanen_rough_parallel_x_movebased', lang)})"
+            lines.extend(rough_lines)
+    elif strategy_code == "parallel_z" and mode_idx in (0, 2):
+        # is_monotonic_z() (nicht nur "fallend") laesst auch Innenkonturen zu,
+        # die vom tiefsten Punkt zur Bohrungsoeffnung definiert sind (Z steigt
+        # monoton) - eine geometrisch gueltige, bei Innenbearbeitung uebliche
+        # Richtung, die zuvor faelschlich als "nicht G71-tauglich" verworfen
+        # wurde (siehe TODO LES-003).
+        can_use_g71 = is_monotonic_z(rough_cycle_path) and is_monotonic_x(rough_cycle_path)
+        if can_use_cycles and external and can_use_g71:
             allocator = settings.get("sub_allocator")
             sub_num = contour_sub_num if contour_sub_num is not None else (allocator.allocate() if allocator else 100)
-            lines.append("(ABSPANEN Rough - parallel Z)")
+            lines.append(f"({gcode_comment('gcode.comment.abspanen_rough_parallel_z', lang)})")
             if contour_sub_num is None:
                 lines.extend(_build_cycle_sub(sub_num))
             emit_approach(lines, stock_x, safe_z, settings)
-            lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{depth_per_pass:.3f}")
-            if mode_idx in (1, 2):
+            activate_pending_css(lines, settings)
+            # D = Aufmass (radial!), I = Zustelltiefe (radial!) - siehe
+            # Kommentar bei can_use_cycles oben. finish_allow_x/depth_per_pass
+            # sind Durchmesserwerte (UI-Konvention, wie der bewegungsbasierte
+            # Pfad sie auch verwendet) und werden deshalb halbiert. R ist der
+            # diagonale Ruecklaufabstand zwischen den Schruppgaengen (per
+            # rs274 empirisch bestaetigt: ein reiner Radius-/Z-Abstand, keine
+            # Umrechnung noetig) - Default waere nur 0.5mm; LEADOUT_LENGTH_DEFAULT
+            # matcht die im bewegungsbasierten Pfad bereits etablierte Freifahrt.
+            lines.append(f"G71 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f} D{finish_allow_x / 2.0:.3f} I{depth_per_pass / 2.0:.3f} R{LEADOUT_LENGTH_DEFAULT:.3f}")
+            if settings is not None:
+                settings.setdefault("_cycle_defined_subs", set()).add((sub_num, external))
+            if mode_idx in (1, 2) and relief_mode == "full":
                 lines.append(f"G70 Q{sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
-            return lines
-        lines.append("(Info: G71 deaktiviert - Kontur nicht zyklustauglich, nutze Move-based Roughing)")
-        xs = [pp[0] for pp in path] if path else [stock_x]
-        rough_lines = rough_turn_parallel_x(path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings)
-        if rough_lines:
-            rough_lines[0] = "(ABSPANEN Rough - parallel Z - Move-based)"
-        lines.extend(rough_lines)
-    if mode_idx in (1, 2):
-        lines.append("(Schlichtschnitt Kontur)")
-        lines.append(f"G0 X{path[0][0]:.3f} Z{safe_z:.3f}")
+            rough_done = True
+            cycle_finish_done = mode_idx in (1, 2) and relief_mode == "full"
+        if not rough_done:
+            if not external:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_internal_unreliable', lang)})")
+            elif output_preference == "prefer_cycle":
+                lines.append(f"({gcode_comment('gcode.comment.fallback_contour_not_g71', lang)})")
+            elif relief_mode == "separate":
+                lines.append(f"({gcode_comment('gcode.comment.fallback_relief_separate', lang)})")
+            elif feature_path and relief_mode == "full":
+                lines.append(f"({gcode_comment('gcode.comment.fallback_relief_not_monotonic', lang)})")
+            elif pause_enabled and pause_distance > 0.0:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_pauses_active', lang)})")
+            elif finish_allow_z > finish_allow_x:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_z_allowance_larger', lang)})")
+            elif output_preference == "prefer_explicit":
+                lines.append(f"({gcode_comment('gcode.comment.fallback_explicit_code_preferred', lang)})")
+            else:
+                lines.append(f"({gcode_comment('gcode.comment.fallback_automatic_movebased', lang)})")
+            xs = [pp[0] for pp in rough_path] if rough_path else [stock_x]
+            rough_lines = rough_turn_parallel_x(rough_path, external=external, x_stock=stock_x, x_target=min(xs) if external else max(xs), step_x=depth_per_pass, safe_z=safe_z, feed=feed, pause_enabled=pause_enabled, pause_distance=pause_distance, pause_duration=pause_duration, retract_cfg=cfg, pause_state=settings, lang=lang)
+            if rough_lines:
+                rough_lines[0] = f"({gcode_comment('gcode.comment.abspanen_rough_parallel_z_movebased', lang)})"
+            lines.extend(rough_lines)
+    if mode_idx in (0, 2):
+        # LES-002: ein Schruppstep (oder der Schrupp-Anteil von "Schruppen +
+        # Schlichten"), der keinen einzigen echten Schnittbefehl erzeugt (egal
+        # ob wegen fehlender Bearbeitungsrichtung, einer nicht zyklustauglichen
+        # Kontur ohne Schnittbereich in jedem Band, oder aus anderen Gruenden),
+        # darf nicht als scheinbar gueltiges, aber leeres Programm durchgehen -
+        # das war zuvor bestenfalls ein Kommentar/eine Warnung im G-Code, die
+        # beim realen Abfahren leicht uebersehen wird.
+        roughing_lines = lines[roughing_section_start:]
+        has_cut = any(ln.startswith(("G1 ", "G71", "G72")) for ln in roughing_lines)
+        if not has_cut:
+            raise ValueError(
+                "Abspanen-Schruppen erzeugt keinen einzigen Schnitt - Programmerzeugung "
+                "abgebrochen. Bitte Bearbeitungsrichtung (Parallel X/Z), Kontur und "
+                "Aufmass fuer diesen Step pruefen."
+            )
+        # LES-022: weder der G71/G72-Zyklus noch die Move-based Zustellungen
+        # in rough_turn_parallel_x/z fuehren die reale Position laufend mit -
+        # ein direkt anschliessender emit_approach()-Aufruf fuer den
+        # Schlichtschritt (siehe unten) darf sich deshalb NICHT auf eine
+        # Position von VOR dem Schruppen verlassen. Ohne diese Invalidierung
+        # konnte ein veraltetes "bereits sicher"-Flag den noetigen Rueckzug
+        # auf die sichere Ebene unterdruecken und stattdessen einen Eilgang
+        # direkt durch das gerade stehengebliebene Restmaterial ausloesen
+        # (reproduziert: Aussen-Operation vor einer kombinierten Innen-
+        # rough_finish-Bohrung mit Move-based Fallback).
+        # LES-022 (dritte Etappe): Ausnahme, wenn der kombinierte Zyklus
+        # bereits ein abschliessendes G70 emittiert hat (`cycle_finish_done`)
+        # - per rs274 empirisch bestaetigt, dass G70 IMMER exakt am letzten
+        # Punkt der referenzierten Kontur endet, unabhaengig von den X/Z-
+        # Parametern des vorangehenden G71/G72. Bei relief_mode=="full"
+        # (die einzige Bedingung fuer cycle_finish_done) ist das genau
+        # `finish_path[-1]`.
+        if settings is not None:
+            if cycle_finish_done:
+                fx, fz = finish_path[-1]
+                _motion_state(settings).record(fx, fz)
+            elif rough_done:
+                # G71/G72-Zyklus ohne abschliessendes G70 (reines Schruppen):
+                # der Zyklus fuehrt alle Passes intern selbst aus, seine
+                # tatsaechliche Endposition ist von aussen nicht bekannt.
+                _motion_state(settings).clear()
+            # else: der bewegungsbasierte Pfad (rough_turn_parallel_x/z) hat
+            # seine tatsaechlich erreichte Endposition bereits selbst
+            # eingetragen (LES-022, vierte Etappe, 2026-09-13) - hier NICHT
+            # erneut ueberschreiben.
+    if relief_mode == "separate" and feature_path:
+        _emit_relief_pass(lines, feature_path, feed, safe_z, settings, tool_num, spindle, p)
+    # LES-018: ein REINER Schlichtstep (eigene Operation, typischerweise eigenes
+    # Werkzeug) darf den Kontur-Sub eines FRUEHEREN, separaten Schruppschritts
+    # per G70 wiederverwenden, statt die Fertigkontur nochmal explizit als G1/
+    # G2/G3-Liste auszugeben - aber NUR, wenn dieser exakte Sub (dieselbe
+    # Kontur, dieselbe Aussen-/Innenseite) bereits nachweislich per G71/G72
+    # zyklisch definiert wurde (_cycle_defined_subs; bei Innenbearbeitung, die
+    # G71/G72 nie nutzt, bleibt die Menge fuer diese Seite leer - der Fallback
+    # greift automatisch) und keine Werkzeugradiuskorrektur noetig ist (der
+    # bestehende G70-Pfad der kombinierten Schruppen+Schlichten-Ausgabe
+    # unterstuetzt diese ebenfalls nicht, siehe oben). mode_idx == 2
+    # (kombiniert) bleibt bewusst aussen vor: das ist bereits der bestehende,
+    # separat abgesicherte Pfad ueber cycle_finish_done.
+    can_reuse_cycle_sub = (
+        mode_idx == 1
+        and output_preference != "prefer_explicit"
+        and contour_sub_num is not None
+        and (not compensation_command or nose_disabled)
+        and settings is not None
+        and (contour_sub_num, external) in settings.get("_cycle_defined_subs", set())
+    )
+    if can_reuse_cycle_sub:
+        lines.append(f"({gcode_comment('gcode.comment.finish_contour_g70_reuse', lang)})")
+        emit_approach(lines, stock_x, safe_z, settings)
+        activate_pending_css(lines, settings)
+        lines.append(f"G70 Q{contour_sub_num} X{stock_x:.3f} Z{safe_z:.3f}")
+        suspend_css(lines, settings)
+        # LES-022 (dritte Etappe): G70 endet nachweislich (rs274-Verifikation,
+        # siehe oben) exakt am letzten Punkt der referenzierten Kontur -
+        # hier immer die eigene Fertigkontur dieses (reinen) Schlichtschritts.
+        if settings is not None:
+            finish_points = rough_path if relief_mode == "ignore" else finish_path
+            if finish_points:
+                fx, fz = finish_points[-1]
+                _motion_state(settings).record(fx, fz)
+    elif mode_idx in (1, 2) and not cycle_finish_done:
+        lines.append(f"({gcode_comment('gcode.comment.finish_contour', lang)})")
+        finish_points = rough_path if relief_mode == "ignore" else finish_path
+        profile_start_x, profile_start_z = finish_points[0]
+        if external:
+            entry_x, entry_z = _finish_entry_point(finish_points, safe_z)
+        else:
+            # Innen immer zuerst auf XRI axial bis zur Z-Lage des
+            # Konturstarts fahren. Erst dort wird radial auf den
+            # Schnittdurchmesser zugestellt. Damit bleibt die Schneide beim
+            # tiefen axialen Eilgang auf der konfigurierten XRI-Ebene.
+            entry_x = resolve_internal_safe_x(settings)
+            entry_z = profile_start_z
+            if entry_x is None:
+                raise ValueError("Innen-Schlichtanfahrt erfordert ein gueltiges XRI.")
+            if compensation_command and not nose_disabled:
+                emitted_entry_x = float(f"{entry_x:.3f}")
+                emitted_start_x = float(f"{profile_start_x:.3f}")
+                lead_distance = (emitted_start_x - emitted_entry_x) / 2.0
+                tool_diameter = float(f"{float(tool_info['radius_mm']) * 2:.4f}")
+                if lead_distance <= tool_diameter:
+                    raise ValueError(
+                        "Einfahrweg der Werkzeugradiuskorrektur: radialer Weg "
+                        "von XRI bis zum Konturstart muss laenger als der "
+                        "Werkzeugdurchmesser sein."
+                    )
+        # War zuvor ein einzelner diagonaler G0 (X und Z gleichzeitig) direkt aus der
+        # jeweils vorherigen Position - potenziell noch im/am Rohteil bzw. in der
+        # Futter-Sperrzone. emit_approach() prueft das (WARN-Zeilen) und faehrt bei
+        # Bedarf erst Z, dann X auf die sichere Ebene, bevor der eigentliche
+        # Kontur-Einfahrpunkt angefahren wird - dieselbe Absicherung, die die
+        # Schrupp-Zustellung oben bereits nutzt.
+        emit_approach(lines, entry_x, entry_z, settings)
+        activate_pending_css(lines, settings)
         if compensation_command and not nose_disabled:
             lines.append(compensation_command)
-        prev_point = None
-        for (x, z) in path:
-            current_point = (x, z)
-            if current_point != prev_point:
-                lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
-                prev_point = current_point
-        lines.append(f"G0 Z{safe_z:.3f}")
-        if compensation_command and not nose_disabled:
-            lines.append("G40")
-    elif mode_idx == 0 and strategy_code is None:
-        lines.append("(WARN: Abspanen-Schruppen ohne Bearbeitungsrichtung ist deaktiviert)")
-        lines.append("(      Bitte in 'Abspanen -> Bearbeitungsrichtung' Parallel X oder Parallel Z wählen.)")
+        compensated = bool(compensation_command and not nose_disabled)
+        # Innen beginnt auch ohne Kompensation am XRI-Punkt: die erste
+        # Profilbewegung stellt radial im Bearbeitungsvorschub zu. Ein G0
+        # von der vorhandenen Bohrung bis auf Fertigdurchmesser koennte bei
+        # einem separaten Schlichtstep noch vorhandenes Aufmass treffen.
+        prev_point = (entry_x, entry_z) if compensated or not external else None
+        if contour_variants and relief_mode != "ignore":
+            finish_primitives = contour_variants["finish_primitives"] or []
+            _emit_finish_primitives(lines, finish_primitives, feed=feed, initial_pos=prev_point)
+            if finish_points:
+                prev_point = finish_points[-1]
+        elif primitives and not contour_variants:
+            _emit_finish_primitives(lines, primitives, feed=feed, initial_pos=prev_point)
+            prev_point = tuple(primitives[-1]["p2"])
+        else:
+            for idx, (x, z) in enumerate(finish_points):
+                current_point = (x, z)
+                if idx == 0 and compensation_command and not nose_disabled and abs(entry_z - z) <= 1e-9 and abs(entry_x - x) <= 1e-9:
+                    continue
+                if current_point != prev_point:
+                    lines.append(f"G1 X{x:.3f} Z{z:.3f} F{feed:.3f}")
+                    prev_point = current_point
+        # Nullbewegung vermeiden: wenn der letzte Konturpunkt bereits auf
+        # safe_z liegt (z. B. Kontur endet an der Stirnflaeche bei Z0, safe_z
+        # ebenfalls 0), ist der Rueckzug bereits erreicht - ein zusaetzliches
+        # G0 auf dieselbe Position ist eine bedeutungslose Nullbewegung.
+        suspend_css(lines, settings)
+        if not external:
+            # X is a diameter. Validate the emitted coordinates, including
+            # the physical length required after cancelling compensation.
+            retract_x = float(f"{resolve_internal_safe_x(settings):.3f}")
+            end_x, end_z = (float(f"{value:.3f}") for value in prev_point)
+            radial_distance = (end_x - retract_x) / 2
+            if radial_distance < 0:
+                raise ValueError("Innen-Schlichtrueckzug muss radial nach innen erfolgen.")
+            compensated = bool(compensation_command and not nose_disabled)
+            if compensated:
+                tool_diameter = float(f"{float(tool_info['radius_mm']) * 2:.4f}")
+                if radial_distance <= tool_diameter:
+                    raise ValueError("Abwahl der Werkzeugradiuskorrektur: radialer Weg bis XRI "
+                                     "muss laenger als der Werkzeugdurchmesser sein.")
+            validate_chuck_segment(settings, (end_x, end_z), (retract_x, end_z))
+            validate_chuck_segment(settings, (retract_x, end_z), (retract_x, safe_z))
+            if compensated:
+                lines.append("G40")
+                lines.append(f"G1 X{retract_x:.3f} F{feed:.3f}")
+            elif radial_distance > 0:
+                lines.append(f"G0 X{retract_x:.3f}")
+            if abs(end_z - safe_z) > 1e-6:
+                lines.append(f"G0 Z{safe_z:.3f}")
+            # LES-022 (dritte Etappe): Innen-Schlichtrueckzug endet immer auf
+            # XRI/safe_z (siehe obige Retract-Logik - X faehrt immer auf
+            # retract_x, Z immer auf safe_z, unabhaengig davon, ob die
+            # jeweilige Einzelbewegung als Nullbewegung uebersprungen wurde).
+            if settings is not None:
+                _motion_state(settings).record(retract_x, safe_z)
+        else:
+            if not (prev_point is not None and abs(prev_point[1] - safe_z) <= 1e-6):
+                lines.append(f"G0 Z{safe_z:.3f}")
+            if compensation_command and not nose_disabled:
+                lines.append("G40")
+            # LES-022 (dritte Etappe): Aussen-Schlichtrueckzug bewegt nur Z
+            # auf safe_z (siehe oben) - X bleibt auf dem letzten Konturpunkt.
+            if settings is not None and prev_point is not None:
+                _motion_state(settings).record(prev_point[0], safe_z)
     return lines
-
-
-def step_line_pause_sub_definition() -> List[str]:
-    return ["o<step_line_pause> sub", "(Step line pause helper)", "G4 P[#7]", "o<step_line_pause> endsub"]
-
-
-def step_x_pause_sub_definition() -> List[str]:
-    return ["o<step_x_pause> sub", "(Step X pause helper)", "G4 P0.1", "o<step_x_pause> endsub"]
 
 
 __all__ = [
@@ -448,6 +1101,4 @@ __all__ = [
     "rough_turn_parallel_x",
     "rough_turn_parallel_z",
     "segments_from_polyline",
-    "step_line_pause_sub_definition",
-    "step_x_pause_sub_definition",
 ]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from .numeric import validate_finite_data
 from typing import Callable, Dict, List
 
 
@@ -77,6 +78,8 @@ class ProgramModel:
                 self.operations[index], self.operations[index + 1]
 
     def update_geometry(self, op: Operation):
+        validate_finite_data(op.params, op.op_type)
+        validate_finite_data(self.program_settings, "Programmkopf")
         builders = self._geometry_builders or _default_geometry_builders()
         builder = builders.get(op.op_type)
         if not builder:
@@ -91,21 +94,24 @@ class ProgramModel:
         if argc >= 2:
             op.path = builder(op.params, self.program_settings)
         else:
-            if hasattr(op, "path") and op.path and "path" not in op.params:
-                if op.path and isinstance(op.path[0], (list, tuple)) and len(op.path[0]) == 2:
-                    op.params["path"] = [{"x": x, "z": z} for x, z in op.path]
+            # Frueher wurde hier der bisherige op.path als Snapshot in
+            # op.params["path"] eingefroren (write-once: nur wenn der Key noch
+            # fehlte). Da dieser Snapshot nie wieder aktualisiert wurde,
+            # driftete er bei jeder spaeteren Parameteraenderung von der
+            # tatsaechlichen Geometrie weg und wurde als solcher mitgespeichert
+            # (siehe reale Step-Datei mit widerspruechlichem Aussen-/Innen-Pfad
+            # in params vs. Operation.path). Geometrie wird jetzt ausschliesslich
+            # ueber op.path gefuehrt; params["path"] wird nicht mehr geschrieben.
             op.path = builder(op.params)
 
     def generate_gcode(self) -> List[str]:
         generator = self._gcode_generator
         if generator is None:
-            try:
-                from .gcode_program import generate_program_gcode
-            except Exception:
-                generate_program_gcode = None
+            from .gcode_program import generate_program_gcode
             generator = generate_program_gcode
-
-        if generator:
-            return generator(self.operations, self.program_settings or {})
-
-        return ["%", "(G-Code generation failed - slicer module not found)", "M30", "%"]
+        if not callable(generator):
+            raise RuntimeError("G-Code-Generator ist nicht verfuegbar.")
+        lines = generator(self.operations, self.program_settings or {})
+        if not isinstance(lines, list) or len(lines) < 4:
+            raise RuntimeError("G-Code-Generator lieferte kein vollstaendiges Programm.")
+        return lines

@@ -18,6 +18,7 @@ _TOOL_KIND_BY_ORIENTATION: Dict[int, str] = {
     9: "threading",
 }
 _ISO_PATTERN = re.compile(r"\b([A-Z]{2,}[A-Z0-9]*?)(\d{2})\b")
+_INSERT_WIDTH_PATTERN = re.compile(r"\b(?:MGMN|MRMN)(\d{3})\b")
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,15 @@ class Tool:
     @property
     def orientation(self) -> int | None:
         return self.q
+
+    @property
+    def insert_width_mm(self) -> float | None:
+        """LES-032: aus dem ISO-Einstich-Einsatzcode im Kommentar abgeleitete
+        Schneidenbreite (z. B. "MGMN200" -> 2,00 mm), sofern erkennbar - siehe
+        `extract_insert_width_from_comment()`. `None`, wenn kein passender
+        Code im Kommentar gefunden wurde (kein Einstichwerkzeug oder anderes
+        Bezeichnungsschema)."""
+        return extract_insert_width_from_comment(self.comment)
 
     def __getitem__(self, key):
         if key == "toolno":
@@ -77,6 +87,29 @@ def extract_iso_from_comment(comment: str) -> tuple[str | None, str | None, floa
             radius = None
         return iso_candidate, size_code, radius
     return None, None, None
+
+
+def extract_insert_width_from_comment(comment: str) -> float | None:
+    """LES-032: der Standard-LinuxCNC-Tooltable-Aufbau (T P X Y Z A B C U V W
+    D I J Q) hat keine eigene Spalte fuer die Stech-/Abstechbreite eines
+    Einstichwerkzeugs - D ist bereits fuer Radius (Dreh-/Gewindewerkzeuge)
+    bzw. Durchmesser (Bohrer) belegt, I/J sind in der real genutzten Tabelle
+    (`Drehbank/tool.tbl`) durchgehend 0 und ungenutzt. Die tatsaechlich
+    vorhandene Quelle ist der ISO-Einstich-Einsatzcode im Kommentar (z. B.
+    "MGMN200" -> 2,00 mm Schneidenbreite, Ziffern 4-6 der Bezeichnung nach
+    ISO 5608). Dieselbe Regel wurde bisher nur redundant in
+    `tool_logic.py::infer_insert_profile()` fuer die Werkzeugvorschau
+    verwendet, hier als gemeinsame, Qt-freie Quelle fuer Vorschau UND
+    Pruefung (`checks.py`)."""
+    if not comment:
+        return None
+    match = _INSERT_WIDTH_PATTERN.search(comment.upper())
+    if not match:
+        return None
+    try:
+        return int(match.group(1)) / 100.0
+    except Exception:
+        return None
 
 
 def tool_kind_from_orientation(orientation: int | None) -> str:

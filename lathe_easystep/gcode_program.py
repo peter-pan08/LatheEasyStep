@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
+
+from .numeric import validate_finite_data
 from typing import Dict, List, Optional, Tuple
 
+from .checks import validate_program_setup, validate_tool_table_completeness
+from .comments import unnumbered_comment
+from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_drill import generate_drill_gcode
 from .gcode_face import generate_face_gcode
 from .gcode_groove import generate_groove_gcode, groove_sub_definition
@@ -11,17 +17,26 @@ from .gcode_roughing import (
     contour_sub_from_points,
     contour_sub_from_primitives,
     generate_abspanen_gcode,
-    step_line_pause_sub_definition,
-    step_x_pause_sub_definition,
 )
-from .gcode_safety import append_tool_and_spindle, emit_approach, emit_safe_retract_for_op, estimate_operation_end_pos
+from .gcode_safety import (
+    append_initial_tool_check,
+    append_tool_and_spindle,
+    emit_approach,
+    emit_safe_retract_for_op,
+    estimate_operation_end_pos,
+    get_end_park_lines,
+    get_machine_limit_warnings,
+    validate_external_retract_clearance,
+)
 from .gcode_thread import generate_thread_gcode
 from .gcode_utils import (
     REQUIRED_KEYS,
     clean_path,
     emit_coolant,
     float_or_none,
+    gcode_comment,
     get_tool_number,
+    is_internal_side,
     primitives_to_points,
     require,
     require_positive,
@@ -29,6 +44,20 @@ from .gcode_utils import (
     sanitize_comment_text,
 )
 from .model import OpType, Operation
+
+
+def _active_retract_mode_for_op(op: Operation) -> str:
+    params = op.params or {}
+    if op.op_type == OpType.THREAD and is_internal_side(params.get("orientation", 0)):
+        return "internal"
+    if op.op_type == OpType.ABSPANEN and is_internal_side(params.get("side", 0)):
+        return "internal"
+    if op.op_type == OpType.GROOVE and int(float(params.get("lage", 0) or 0)) == 1:
+        # Mantel - Innen (ID): Werkzeug arbeitet in der Bohrung, Rueckzug ueber
+        # XRI/ZRI statt der aussenbezogenen XRA/ZRA (mit automatischem Fallback,
+        # falls XRI/ZRI nicht gesetzt sind, siehe gcode_safety.get_safe_position).
+        return "internal"
+    return "external"
 
 
 def gcode_from_path(path, feed: float, safe_z: float) -> List[str]:
@@ -51,12 +80,20 @@ def gcode_for_turn(op: Operation, settings: Dict[str, object] | None = None) -> 
     path = op.path or []
     if not path:
         return []
+    validate_finite_data(p, "TURN")
+    validate_finite_data(path, "TURN path")
     feed = float(p.get("feed", 0.2))
     safe_z = float(p.get("safe_z", 2.0))
+    if float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("TURN: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
     lines: List[str] = []
     append_tool_and_spindle(lines, get_tool_number(p), p.get("spindle"), settings)
-    if bool(p.get("coolant", False)):
-        lines.append("M8")
+    # SICHERHEITSFUND 2026-09-13 (LES-042): direktes "M8" ohne zugehoeriges
+    # "M9" - Kuehlmittel blieb nach dieser (heute nur noch ueber alte
+    # gespeicherte Programme erreichbaren, siehe TODO.md) Operation dauerhaft
+    # an. `emit_coolant()` gibt immer explizit den aktuellen Sollzustand aus
+    # (M7/M8/M9), wie alle anderen Operationstypen es bereits tun.
+    emit_coolant(lines, p.get("coolant_mode", p.get("coolant", False)))
     lines.extend(gcode_from_path(path, feed, safe_z))
     return lines
 
@@ -68,12 +105,16 @@ def gcode_for_bore(op: Operation, settings: Dict[str, object] | None = None) -> 
     path = op.path or []
     if not path:
         return []
+    validate_finite_data(p, "BORE")
+    validate_finite_data(path, "BORE path")
     feed = float(p.get("feed", 0.15))
     safe_z = float(p.get("safe_z", 2.0))
+    if float(f"{feed:.3f}") <= 0.0:
+        raise ValueError("BORE: Vorschub muss auch nach Ausgaberundung groesser als null sein.")
     lines: List[str] = []
     append_tool_and_spindle(lines, get_tool_number(p), p.get("spindle"), settings)
-    if bool(p.get("coolant", False)):
-        lines.append("M8")
+    # SICHERHEITSFUND 2026-09-13 (LES-042): siehe gcode_for_turn oben.
+    emit_coolant(lines, p.get("coolant_mode", p.get("coolant", False)))
     lines.extend(gcode_from_path(path, feed, safe_z))
     return lines
 
@@ -154,24 +195,95 @@ def gcode_for_operation(op: Operation, settings: Dict[str, object] | None = None
     elif op.op_type == OpType.KEYWAY:
         result = gcode_for_keyway(op, settings)
     else:
-        result = []
-    comment = sanitize_comment_text(op.params.get("comment") or "").strip()
+        raise ValueError(f"Unbekannter Operationstyp: {op.op_type!r}")
+    comment = sanitize_comment_text(unnumbered_comment(op.params.get("comment"))).strip()
     if comment:
         result.insert(0, f"(STEP: {comment})")
     return result
 
 
 def generate_program_gcode(operations: List[Operation], program_settings: Dict[str, object]) -> List[str]:
-    settings = dict(program_settings or {})
+    # All derived geometry and state belong to this invocation, never the editor.
+    operations = deepcopy(operations)
+    settings = deepcopy(program_settings or {})
+    for key in list(settings):
+        if key.startswith("_") or key.startswith("needs_step_") or key in ("sub_allocator", "contour_subs"):
+            settings.pop(key)
+    validate_finite_data(settings, "Programmkopf")
+    validate_external_retract_clearance(settings)
     for i, op in enumerate(operations):
-        if op.op_type in REQUIRED_KEYS:
-            require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
-            if op.op_type in [OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL]:
-                require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
         try:
-            gcode_for_operation(op, settings)
-        except ValueError as e:
-            raise ValueError(f"Operation {i+1} ({op.op_type}): {str(e)}") from e
+            validate_finite_data(op.params, f"Operation {i+1}")
+            validate_finite_data(op.path, f"Operation {i+1}.path")
+            op.params.pop("_derived_relief", None)
+            if op.op_type == OpType.ABSPANEN and op.params.get("contour_name"):
+                for key in ("_primitives", "_contour_params"):
+                    op.params.pop(key, None)
+            if op.op_type == OpType.CONTOUR and "segments" in op.params:
+                op.path = build_contour_variants(op.params)["finish_primitives"]
+            if op.op_type in REQUIRED_KEYS:
+                require(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
+                if op.op_type in (OpType.FACE, OpType.ABSPANEN, OpType.KEYWAY, OpType.DRILL):
+                    require_positive(op.params, REQUIRED_KEYS[op.op_type], op.op_type)
+        except ValueError as exc:
+            raise ValueError(f"Operation {i+1} ({op.op_type}): {exc}") from exc
+    validate_tool_table_completeness(operations, settings.get("tools", {}))
+    validation_warnings = validate_program_setup(operations, settings)
+
+    # A DIN-76 relief belongs to the thread endpoint, not to the final point
+    # of a contour.  Prepare an immutable per-generation contour variant here
+    # so the contour subroutine and every linked rough/finish operation share
+    # exactly the same derived geometry.
+    contour_by_name = {}
+    for op in operations:
+        if op.op_type != OpType.CONTOUR:
+            continue
+        name = str(op.params.get("name") or "").strip()
+        if not name:
+            continue
+        if name in contour_by_name:
+            raise ValueError(f"Konturname ist nicht eindeutig: {name!r}")
+        contour_by_name[name] = op
+    automatic_reliefs = []
+    relief_threads: Dict[int, Operation] = {}
+    for thread_op in operations:
+        if thread_op.op_type != OpType.THREAD:
+            continue
+        feature = thread_relief_spec(thread_op.params)
+        if feature is not None:
+            feature["_thread_op_id"] = id(thread_op)
+            relief_threads[id(thread_op)] = thread_op
+            automatic_reliefs.append(feature)
+
+    derived_contours: Dict[str, Tuple[Dict[str, object], Dict[str, List[Dict[str, object]]]]] = {}
+    assigned_reliefs: set[int] = set()
+    for abspanen_op in (op for op in operations if op.op_type == OpType.ABSPANEN):
+        contour_name = str(abspanen_op.params.get("contour_name") or "").strip()
+        contour_op = contour_by_name.get(contour_name)
+        if contour_op is None or not contour_op.params.get("segments"):
+            continue
+        side_internal = is_internal_side(abspanen_op.params.get("side", 0))
+        candidates = [feature for feature in automatic_reliefs if bool(feature.get("internal")) == side_internal]
+        applicable = [selected for feature in candidates if (selected := select_thread_relief_for_contour(contour_op.params, feature)) is not None]
+        if not applicable:
+            continue
+        params = dict(contour_op.params)
+        params["auto_thread_reliefs"] = [dict(feature) for feature in applicable]
+        variants = build_contour_variants(params)
+        derived_contours[contour_name] = (params, variants)
+        for feature in applicable:
+            assigned_reliefs.add(int(feature.get("_source_feature_id", id(feature)) or id(feature)))
+            thread_op = relief_threads.get(int(feature.get("_thread_op_id", 0) or 0))
+            if thread_op is not None:
+                thread_op.params["_derived_relief"] = dict(feature)
+
+    for feature in automatic_reliefs:
+        if id(feature) not in assigned_reliefs:
+            raise ValueError(
+                f"Automatischer DIN-Freistich {feature['thread_size']} konnte keiner passenden "
+                "Aussen-/Innenkontur zugeordnet werden. Die Kontur muss den Gewindedurchmesser "
+                "ueber den vollstaendigen Freistichbereich enthalten."
+            )
 
     class SubAllocator:
         def __init__(self, start: int = 100):
@@ -183,45 +295,74 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             return result
 
     settings["sub_allocator"] = SubAllocator()
+    lang = settings.get("lang")
     program_name = sanitize_comment_text(settings.get("program_name", "Program"))
     unit = sanitize_comment_text(settings.get("unit", "mm"))
-    header_lines: List[str] = ["%", "(Programm automatisch erzeugt)", f"(Programmname: {program_name})", f"(Masseinheit: {unit})"]
+    header_lines: List[str] = [
+        "%",
+        f"({gcode_comment('gcode.comment.program_generated', lang)})",
+        f"({gcode_comment('gcode.comment.program_name', lang, program_name=program_name)})",
+        f"({gcode_comment('gcode.comment.unit', lang, unit=unit)})",
+    ]
     handler_header_lines = [str(x) for x in settings.get("header_lines", []) or []]
     footer_lines_from_settings = [str(x) for x in settings.get("footer_lines", []) or []]
-    if handler_header_lines:
-        settings["_skip_tool_move"] = True
-    header_lines.extend(["G18 G7 G90 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
-    header_lines.append("(=== SICHERHEITSPARAMETER ===)")
+    header_lines.extend(["G18 G7 G90 G91.1 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
+    header_lines.append(f"({gcode_comment('gcode.comment.safety_params_begin', lang)})")
     xt = settings.get("xt")
     zt = settings.get("zt")
-    xt_abs = settings.get("xt_absolute", True)
-    zt_abs = settings.get("zt_absolute", True)
+    toolchange_coords = str(settings.get("toolchange_coords", "") or "").strip().lower()
+    if toolchange_coords not in ("work", "machine"):
+        xt_abs = settings.get("xt_absolute", True)
+        zt_abs = settings.get("zt_absolute", True)
+        if bool(xt_abs) != bool(zt_abs):
+            toolchange_coords = "mixed"
+        else:
+            toolchange_coords = "work" if xt_abs and zt_abs else "machine"
     if xt is not None and zt is not None:
         try:
-            coord_note = " Maschinenkoordinaten G53" if (not xt_abs or not zt_abs) else ""
-            header_lines.append(f"(Werkzeugwechselpunkt: X{float(xt):.3f} Z{float(zt):.3f}{coord_note})")
+            if toolchange_coords == "machine":
+                coord_note = " " + gcode_comment("gcode.comment.coord_note_machine", lang)
+            elif toolchange_coords == "mixed":
+                coord_note = " " + gcode_comment("gcode.comment.coord_note_mixed", lang)
+            else:
+                coord_note = " " + gcode_comment("gcode.comment.coord_note_work", lang)
+            header_lines.append(
+                f"({gcode_comment('gcode.comment.toolchange_point', lang, xt=f'{float(xt):.3f}', zt=f'{float(zt):.3f}', coord_note=coord_note)})"
+            )
         except (TypeError, ValueError):
             pass
     xra = settings.get("xra")
     xri = settings.get("xri")
     zra = settings.get("zra")
     zri = settings.get("zri")
-    header_lines.append(f"(Rueckzugsebenen: XRA={float(xra):.3f} XRI={float(xri):.3f})" if xra is not None and xri is not None else "(Rueckzugsebenen: XRA=n.def. XRI=n.def.)")
-    header_lines.append(f"(               ZRA={float(zra):.3f} ZRI={float(zri):.3f})" if zra is not None and zri is not None else "(               ZRA=n.def. ZRI=n.def.)")
+    if xra is not None and xri is not None:
+        header_lines.append(f"({gcode_comment('gcode.comment.retract_planes_xr', lang, xra=f'{float(xra):.3f}', xri=f'{float(xri):.3f}')})")
+    else:
+        header_lines.append(f"({gcode_comment('gcode.comment.retract_planes_xr_undefined', lang)})")
+    zr_indent = " " * 15  # rein kosmetische Spaltenausrichtung unter XRA/XRI, sprachunabhaengig fix
+    if zra is not None and zri is not None:
+        header_lines.append(f"({zr_indent}{gcode_comment('gcode.comment.retract_planes_zr', lang, zra=f'{float(zra):.3f}', zri=f'{float(zri):.3f}')})")
+    else:
+        header_lines.append(f"({zr_indent}{gcode_comment('gcode.comment.retract_planes_zr_undefined', lang)})")
     xa = settings.get("xa")
     za = settings.get("za")
     zi = settings.get("zi")
     if xa is not None:
         try:
-            header_lines.append(f"(Rohteil Aussendurchmesser: {float(xa):.3f} mm)")
+            header_lines.append(f"({gcode_comment('gcode.comment.stock_outer_diameter', lang, xa=f'{float(xa):.3f}')})")
         except (TypeError, ValueError):
             pass
     if za is not None and zi is not None:
         try:
-            header_lines.append(f"(Rohteil Z-Bereich: {float(za):.3f} bis {float(zi):.3f} mm)")
+            header_lines.append(f"({gcode_comment('gcode.comment.stock_z_range', lang, za=f'{float(za):.3f}', zi=f'{float(zi):.3f}')})")
         except (TypeError, ValueError):
             pass
-    header_lines.extend(["(=== END SICHERHEITSPARAMETER ===)", ""])
+    header_lines.extend([f"({gcode_comment('gcode.comment.safety_params_end', lang)})", ""])
+    for warning in get_machine_limit_warnings(settings):
+        header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
+    for warning in validation_warnings:
+        header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
+    header_lines.append("")
 
     all_subs: List[List[str]] = []
 
@@ -273,23 +414,35 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     def _contour_key_from_points(points: List[Tuple[float, float]]) -> tuple:
         return tuple((_round6(x), _round6(z)) for x, z in points)
 
+    # Kontur-Subroutinen werden hier fuer JEDE Kontur mit Namen vorab allokiert,
+    # weil generate_abspanen_gcode() die zugewiesene Nummer schon kennen muss,
+    # falls es einen G71/G72-Zyklus (Q<num>) darauf aufbaut. Ob das tatsaechlich
+    # passiert, steht aber erst nach der Haupt-Ablaufgenerierung fest (z. B.
+    # faellt Innenbearbeitung ohne zyklustaugliche Kontur auf Move-based-Code
+    # zurueck und referenziert die Subroutine nie). Der Rumpf wird deshalb erst
+    # NACH main_flow_lines eingehaengt (siehe unten), gefiltert auf tatsaechlich
+    # per "Q<num>" referenzierte Nummern - sonst bliebe eine "o<n> sub ... endsub"
+    # -Definition im Programm stehen, die nie aufgerufen wird.
+    contour_sub_blocks: Dict[int, List[str]] = {}
     for op in operations:
         if op.op_type != OpType.CONTOUR:
             continue
         name = str(op.params.get("name") or "").strip()
         if not name or not op.path:
             continue
-        if isinstance(op.path[0], dict):
-            key = ("prims", _contour_key_from_primitives(op.path))
+        derived = derived_contours.get(name)
+        path_for_sub = derived[1]["finish_primitives"] if derived else op.path
+        if isinstance(path_for_sub[0], dict):
+            key = ("prims", _contour_key_from_primitives(path_for_sub))
             if key not in contour_geom_map:
                 contour_geom_map[key] = settings["sub_allocator"].allocate()
-                all_subs.append(contour_sub_from_primitives(op.path, contour_geom_map[key]))
+                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_primitives(path_for_sub, contour_geom_map[key])
             contour_subs[name] = contour_geom_map[key]
         else:
-            key = ("pts", _contour_key_from_points(op.path))
+            key = ("pts", _contour_key_from_points(path_for_sub))
             if key not in contour_geom_map:
                 contour_geom_map[key] = settings["sub_allocator"].allocate()
-                all_subs.append(contour_sub_from_points(op.path, contour_geom_map[key]))
+                contour_sub_blocks[contour_geom_map[key]] = contour_sub_from_points(path_for_sub, contour_geom_map[key])
             contour_subs[name] = contour_geom_map[key]
 
     settings["contour_subs"] = contour_subs
@@ -297,10 +450,6 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     if helper_subs:
         for sb in helper_subs:
             all_subs.append([str(x) for x in sb])
-    if settings.get("needs_step_line_pause_sub"):
-        all_subs.append(step_line_pause_sub_definition())
-    if settings.get("needs_step_x_pause_sub"):
-        all_subs.append(step_x_pause_sub_definition())
     if any(op.op_type == OpType.GROOVE for op in operations):
         all_subs.append(groove_sub_definition())
 
@@ -319,7 +468,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             break
     if first_tool > 0 and int(float(settings.get("_current_tool", 0))) == 0:
         pre_tool_lines: List[str] = []
-        append_tool_and_spindle(pre_tool_lines, first_tool, None, settings)
+        # Der Bediener hat nach dem Einrichten bzw. Werkstueckwechsel manuell
+        # freigefahren. Das aktuell geladene Werkzeug prueft LinuxCNC erst zur
+        # Laufzeit; die Generatorposition bleibt danach bewusst unbekannt.
+        append_initial_tool_check(pre_tool_lines, first_tool, settings)
         main_flow_lines.extend(pre_tool_lines)
     main_flow_lines.append("")
 
@@ -328,24 +480,45 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         if op.op_type == OpType.PROGRAM_HEADER:
             continue
         step_num += 1
+        settings["_active_retract_mode"] = _active_retract_mode_for_op(op)
+        if op.op_type == OpType.DRILL:
+            drill_diameter = float_or_none(op.params.get("diameter"))
+            if drill_diameter is not None and drill_diameter > 0.0:
+                settings["_last_drill_diameter"] = drill_diameter
+            if op.path:
+                drill_depth = float_or_none(op.path[-1][1])
+                if drill_depth is not None:
+                    settings["_last_drill_depth"] = drill_depth
         op_tool = get_tool_number(op.params)
         if op_tool > 0:
             tool_lines: List[str] = []
-            append_tool_and_spindle(tool_lines, op_tool, None, settings)
+            # Reine Werkzeugwechsel-Positionierung vor dem Operationskoerper -
+            # die eigentliche, operationsspezifische Drehzahl (inkl. CSS-
+            # Parametern) wird gleich danach vom jeweiligen Operations-
+            # Generator selbst per append_tool_and_spindle() gesetzt.
+            append_tool_and_spindle(tool_lines, op_tool, None, settings, require_spindle=False)
             if tool_lines:
                 main_flow_lines.extend(tool_lines)
         if op.op_type == OpType.ABSPANEN:
             contour_name = op.params.get("contour_name")
             if contour_name:
-                contour_op = next((o for o in operations if o.op_type == OpType.CONTOUR and o.params.get("name") == contour_name), None)
+                contour_op = contour_by_name.get(str(contour_name).strip())
                 if contour_op and contour_op.path:
-                    if isinstance(contour_op.path[0], dict):
+                    derived = derived_contours.get(str(contour_name).strip())
+                    if derived:
+                        op.params["_contour_params"] = derived[0]
+                        op.params["_primitives"] = derived[1]["finish_primitives"]
+                        op.path = primitives_to_points(derived[1]["finish_primitives"])
+                    elif isinstance(contour_op.params, dict):
+                        op.params["_contour_params"] = dict(contour_op.params)
+                    if not derived and isinstance(contour_op.path[0], dict):
                         op.params["_primitives"] = contour_op.path
                         op.path = primitives_to_points(contour_op.path)
                     else:
-                        op.path = contour_op.path
+                        if not derived:
+                            op.path = contour_op.path
                 else:
-                    op.path = []
+                    raise ValueError(f"Operation {step_num} ({op.op_type}): Kontur {contour_name!r} fehlt oder ist leer.")
         main_flow_lines.append("")
         op_title = sanitize_comment_text(op.params.get("title", op.op_type))
         tool_val = get_tool_number(op.params)
@@ -353,7 +526,10 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
         tool_desc = ""
         if tool_val > 0 and tool_val in tools:
             tool_desc = f" | T{tool_val}: {sanitize_comment_text(tools[tool_val].get('comment', ''))}"
-        op_lines = _extract_sub_blocks(gcode_for_operation(op, settings))
+        try:
+            op_lines = _extract_sub_blocks(gcode_for_operation(op, settings))
+        except ValueError as exc:
+            raise ValueError(f"Operation {step_num} ({op.op_type}): {exc}") from exc
         if op_lines and any(not line.startswith("(") for line in op_lines):
             main_flow_lines.append(f"(Step {step_num}: {op_title}{tool_desc})")
             main_flow_lines.extend(op_lines)
@@ -362,6 +538,15 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
             main_flow_lines.extend(op_lines)
         if op_lines and any(not line.startswith("(") for line in op_lines) and op.op_type not in (OpType.CONTOUR, OpType.PROGRAM_HEADER):
             emit_safe_retract_for_op(main_flow_lines, settings, op.op_type, current_pos=estimate_operation_end_pos(op))
+
+    if contour_sub_blocks:
+        referenced_text = "\n".join(main_flow_lines)
+        referenced_blocks = [
+            contour_sub_blocks[sub_num]
+            for sub_num in sorted(contour_sub_blocks)
+            if re.search(rf"\bQ{sub_num}\b", referenced_text)
+        ]
+        all_subs[0:0] = referenced_blocks
 
     lines: List[str] = []
     lines.extend(header_lines)
@@ -373,14 +558,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     lines.extend(main_flow_lines)
     if not footer_lines_from_settings:
         lines.append("")
-        xt_end = float_or_none(settings.get("xt"))
-        zt_end = float_or_none(settings.get("zt"))
-        if xt_end is not None and zt_end is not None:
-            lines.append("(Werkzeugwechselpunkt am Ende)")
-            if not bool(settings.get("xt_absolute", True)) or not bool(settings.get("zt_absolute", True)):
-                lines.append(f"G53 G0 X{xt_end:.3f} Z{zt_end:.3f}")
-            else:
-                lines.append(f"G0 X{xt_end:.3f} Z{zt_end:.3f}")
+        lines.extend(get_end_park_lines(settings))
     lines.append("")
     lines.extend(footer_lines_from_settings)
     lines.extend(["M5", "M9", "M30", "%"])

@@ -159,8 +159,8 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
                 {"name": "radius_chamfer"},
                 path=[
                     {"type": "line", "p1": (40.0, 0.0), "p2": (32.0, -8.0)},
-                    {"type": "arc", "p1": (32.0, -8.0), "p2": (26.0, -16.0), "c": (26.0, -8.0), "ccw": False},
-                    {"type": "line", "p1": (26.0, -16.0), "p2": (20.0, -28.0)},
+                    {"type": "arc", "p1": (32.0, -8.0), "p2": (26.0, -11.0), "c": (26.0, -8.0), "ccw": True},
+                    {"type": "line", "p1": (26.0, -11.0), "p2": (20.0, -28.0)},
                 ],
             ),
             Operation(
@@ -178,4 +178,62 @@ def example_programs() -> Dict[str, Tuple[List[Operation], Dict[str, object]]]:
         ],
         dict(settings),
     )
+    settings = make_program_settings()
+    settings.update(program_name="Innen_Stufe", xi=10.0, xri=9.0, zri=2.0,
+                    xri_absolute=True, zri_absolute=True)
+    contour = Operation(OpType.CONTOUR, {"name": "innen_stufe", "start_x": 12.0,
+        "start_z": -30.0, "segments": [{"x": 12.0, "z": -15.0},
+        {"x": 18.0, "z": -15.0}, {"x": 18.0, "z": 0.0}]})
+    rough = Operation(OpType.ABSPANEN, {"contour_name": "innen_stufe", "side": "inside",
+        "mode": "rough_finish", "slice_strategy": "parallel_z", "tool": 11,
+        "spindle": 800.0, "feed": 0.15, "depth_per_pass": 0.5,
+        "finish_allow_x": 0.2, "finish_allow_z": 0.1})
+    examples["Innen_Stufe.ngc"] = ([contour, rough], settings)
+
+    settings = make_program_settings()
+    settings.update(program_name="Innen_Konus", xi=10.0, xri=9.0, zri=2.0,
+                    xri_absolute=True, zri_absolute=True)
+    contour = Operation(OpType.CONTOUR, {"name": "innen_konus", "start_x": 12.0,
+        "start_z": -30.0, "segments": [{"x": 18.0, "z": 0.0}]})
+    rough = Operation(OpType.ABSPANEN, {"contour_name": "innen_konus", "side": "inside",
+        "mode": "rough_finish", "slice_strategy": "parallel_z", "tool": 11,
+        "spindle": 800.0, "feed": 0.15, "depth_per_pass": 0.5,
+        "finish_allow_x": 0.2, "finish_allow_z": 0.1})
+    examples["Innen_Konus.ngc"] = ([contour, rough], settings)
+
+    settings = make_program_settings()
+    settings["program_name"] = "Freistich_Mitte"
+    contour = Operation(OpType.CONTOUR, {"name": "freistich_mitte", "start_x": 20.0,
+        "start_z": 0.0, "segments": [{"x": 20.0, "z": -10.0},
+        {"x": 20.0, "z": -20.0, "feature": {"feature_type": "din_relief",
+        "thread_size": "M10", "internal": False, "orientation": "end"}},
+        {"x": 20.0, "z": -35.0}]})
+    finish = Operation(OpType.ABSPANEN, {"contour_name": "freistich_mitte", "side": "outside",
+        "mode": "finish", "undercut_mode": "full", "tool": 4,
+        "spindle": 600.0, "feed": 0.1, "depth_per_pass": 0.5})
+    examples["Freistich_Mitte.ngc"] = ([contour, finish], settings)
+
+    from copy import deepcopy
+    operations, settings = deepcopy(examples["Planen.ngc"])
+    settings["program_name"] = "Planen_Radius"
+    operations[-1].params.update(edge_type="radius", edge_size=1.0, mode="rough_finish")
+    examples["Planen_Radius.ngc"] = (operations, settings)
+
+    operations, settings = deepcopy(examples["Planen.ngc"])
+    settings["program_name"] = "CSS_Wechsel"
+    operations[-1].params.update(spindle_mode="css", cutting_speed=120.0,
+                                 spindle_max_rpm=2500.0)
+    drill = deepcopy(examples["Bohren.ngc"][0][-1])
+    drill.params.update(tool=2, spindle=900.0, spindle_mode="fixed")
+    finish = deepcopy(operations[-1])
+    finish.params.update(cutting_speed=180.0)
+    operations.extend([drill, finish])
+    examples["CSS_Wechsel.ngc"] = (operations, settings)
+
+    operations, settings = deepcopy(examples["Innen_Stufe.ngc"])
+    settings["program_name"] = "Innen_Radius"
+    operations[0].params["segments"][0].update(edge="radius", edge_size=1.0)
+    operations[-1].params["undercut_mode"] = "full"
+    examples["Innen_Radius.ngc"] = (operations, settings)
+
     return examples
