@@ -132,17 +132,14 @@ bleiben soll; ihre eigentliche offene Aufgabe ist der Ladevertrag-Punkt
 unten. `ViewState` (Zoom/Pan/Slice/Ansichtsmodus, vormals lose Attribute
 auf `LathePreviewWidget`) ist jetzt ebenfalls gekapselt (`view_state.py`,
 fuenfte Zustandskategorie) - Details im Changelog und
-`doc/PANEL_ARCHITECTURE.md`.
+`doc/PANEL_ARCHITECTURE.md`. Der bei der `refresh_operation_list()`-
+Extraktion gefundene tote `select_index is None`-Zweig ist entfernt,
+`select_index` ist jetzt ein regulaerer Pflichtparameter (kein Aufrufer
+liess ihn je weg).
 
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
-- [ ] toten Code entfernen, der bei der Handler-Kleber-Extraktion auffiel:
-  in `refresh_operation_list()` (`ui_flow.py`) ist der `select_index is
-  None`-Zweig ("vorherige Auswahl beibehalten") unerreichbar, da jeder
-  Aufrufer im Projekt bereits einen expliziten `select_index` uebergibt.
-  Kein Verhaltens-Fix, nur Aufraeumen - separat von der reinen
-  Verschiebungs-Extraktion zu behandeln.
 - [ ] einen einheitlichen Ladevertrag fuer Grundgeruest, UI-Fragmente,
   Widget-Registrierung und Signalbindung fuer Standalone und Embedded
   definieren. Laden muss idempotent und in einer nachvollziehbaren Reihenfolge

@@ -2547,7 +2547,7 @@ class HandlerClass:
         )
         self._log(f"[LatheEasyStep][debug] preview refreshed in {time.monotonic() - t0:.3f}s", level="debug")
 
-    def _refresh_operation_list(self, select_index: int | None = None):
+    def _refresh_operation_list(self, select_index: int):
         refresh_operation_list(self, select_index)
 
     def _ensure_preview_widgets(self):

@@ -300,7 +300,7 @@ def handle_delete_operation(handler) -> None:
         handler._runtime.deleting = False
 
 
-def refresh_operation_list(handler, select_index: int | None = None) -> None:
+def refresh_operation_list(handler, select_index: int) -> None:
     """Synchronisiert die linke Operationsliste mit dem internen Modell."""
     if handler.list_ops is not None:
         try:
@@ -323,22 +323,14 @@ def refresh_operation_list(handler, select_index: int | None = None) -> None:
 
     # Nur die Operations-Liste updaten (nicht andere QListWidgets).
     for lst in [handler.list_ops]:
-        current = lst.currentRow()
         lst.blockSignals(True)
         handler._op_row_user_selected = False
         lst.clear()
         for i, op in enumerate(handler.model.operations):
             lst.addItem(handler._describe_operation(op, i + 1))
 
-        if select_index is None:
-            target_idx = current
-        else:
-            target_idx = select_index
-        if target_idx is None:
-            target_idx = -1
-
-        if 0 <= target_idx < lst.count():
-            lst.setCurrentRow(target_idx)
+        if 0 <= select_index < lst.count():
+            lst.setCurrentRow(select_index)
         elif lst.count() > 0:
             lst.setCurrentRow(lst.count() - 1)
         lst.blockSignals(False)

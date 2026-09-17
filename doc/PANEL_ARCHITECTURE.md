@@ -233,6 +233,14 @@ erkannt - das bestaetigt echte Regressionsabdeckung fuer den produktiv
 genutzten Pfad. 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel
 sauber gestartet.
 
+**Nachtrag (2026-09-17, nach der `ViewState`-Kapselung):** der oben als
+"moeglicher spaeterer Aufraeumpunkt" vermerkte tote Zweig ist jetzt
+entfernt - `select_index` ist ein regulaerer Pflichtparameter (keine
+`int | None = None`-Signatur mehr) auf der freien Funktion und dem
+Handler-Wrapper, die ebenfalls unbenutzt gewordene `current = lst.
+currentRow()`-Zeile mit entfernt. Reine Aufraeumarbeit ohne
+Verhaltensaenderung, volle Suite (912/109) bestaetigt das.
+
 **Dritte Handler-Kleber-Extraktion (2026-09-17):**
 `_handle_param_change()` (~73 Zeilen, generischer Signal-Handler fuer alle
 Parameter-Widgets: Spinbox/Combo/Checkbox/Lineedit) nach `handle_param_

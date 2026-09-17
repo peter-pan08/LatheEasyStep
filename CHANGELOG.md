@@ -17,6 +17,23 @@
 
 ## [Unreleased]
 
+### LES-052: toten Code in `refresh_operation_list()` entfernt 2026-09-17
+
+- Der bei der `refresh_operation_list()`-Handler-Kleber-Extraktion
+  gefundene tote `select_index is None`-Zweig ("vorherige Auswahl
+  beibehalten") entfernt - jeder Aufrufer im Projekt (neun Stueck, ueber
+  `ui_flow.py`/`ui_persistence.py`/`lathe_easystep_handler.py`) uebergibt
+  bereits einen expliziten `select_index`. `select_index` ist jetzt ein
+  regulaerer Pflichtparameter statt `int | None = None` - sowohl auf der
+  freien Funktion (`ui_flow.py`) als auch auf dem duennen Handler-Wrapper.
+  Die damit ebenfalls unbenutzt gewordene `current = lst.currentRow()`-
+  Zeile mit entfernt.
+- Reine Aufraeumarbeit ohne Verhaltensaenderung (der entfernte Zweig war
+  beweisbar unerreichbar); keine neuen Tests noetig, volle Suite bestaetigt
+  unveraendertes Verhalten.
+- 912 Stub-/109 Real-Qt-Tests weiterhin bestanden, Standalone-Panel sauber
+  gestartet.
+
 ### LES-052: `ViewState` gekapselt - fuenfte Zustandskategorie 2026-09-17
 
 - `view_state.py` neu: fasst die neun bisher losen Attribute auf
