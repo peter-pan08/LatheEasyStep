@@ -50,15 +50,25 @@ fahrwegrelevante Änderung als abgeschlossen gilt (siehe TODO.md →
 Interpreter verfügbar, das explizit vermerken (wie bisher in
 TODO.md/CHANGELOG.md dokumentiert) statt es stillschweigend auszulassen.
 
-## LinuxCNC-Konfigurationsdateien: nur lesen, niemals schreiben
+## LinuxCNC-Konfigurationsdateien: das Panel selbst darf nur lesen, niemals schreiben
 
-Das Panel darf LinuxCNC-Konfigurationsdateien - dazu zählt insbesondere
-die Werkzeugtabelle (`tool.tbl` oder wie auch immer der Anwender seine
-Datei nennt) - ausschließlich **lesen**, niemals schreiben oder
-verändern. Geschrieben wird ausschließlich, was zum Programm/G-Code
-selbst gehört (gespeicherte Step-/Programmdateien, erzeugtes NGC). Das
-ist eine feste, dauerhafte Grenze (nutzerbestätigt 2026-09-17), keine
-Scoping-Frage, die später neu bewertet werden darf - auch nicht, wenn ein
-"Zurückschreiben"-Feature architektonisch naheliegend erscheint (z. B. als
-Erweiterung von `parse_tool_table()`/`Tool.unknown_fields` in
-`lathe_easystep/tools.py`).
+Das **Panel-Programm** (`lathe_easystep_handler.py` und alle
+`lathe_easystep/`-Module - der Code, den ein Anwender bei sich auf dem
+Rechner laufen lässt) darf LinuxCNC-Konfigurationsdateien - dazu zählt
+insbesondere die Werkzeugtabelle (`tool.tbl` oder wie auch immer der
+Anwender seine Datei nennt) - ausschließlich **lesen**, niemals schreiben
+oder verändern. Die `tool.tbl` wird von LinuxCNC selbst erzeugt/verwaltet;
+ein Schreibzugriff durch das Panel kann zu Problemen mit LinuxCNC führen.
+Das Panel darf ausschließlich das schreiben, was zum Programm selbst
+gehört: `.lse`-Programmdateien, Step-Dateien und erzeugter G-Code (NGC).
+Das ist eine feste, dauerhafte Grenze für das Panel-Programm
+(nutzerbestätigt 2026-09-17), keine Scoping-Frage, die später neu bewertet
+werden darf - auch nicht, wenn ein "Zurückschreiben"-Feature
+architektonisch naheliegend erscheint (z. B. als Erweiterung von
+`parse_tool_table()`/`Tool.unknown_fields` in `lathe_easystep/tools.py`).
+
+**Davon zu unterscheiden:** Änderungen an der lokalen SIM-Konfiguration
+(`sim.qtdragon_lathe/...`) im Rahmen der Entwicklungsarbeit selbst (z. B.
+Testaufbau anpassen) sind erlaubt - diese Regel betrifft nur, was das
+fertige Panel-Programm zur Laufzeit auf dem Rechner eines Anwenders tut,
+nicht Entwicklungstätigkeiten an der SIM-Umgebung in diesem Repo.
