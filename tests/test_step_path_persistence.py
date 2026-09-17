@@ -7,6 +7,7 @@ import builtins
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType
 from lathe_easystep.dirty_state import DirtyState
+from lathe_easystep.runtime_state import RuntimeState
 
 
 class DummySettings:
@@ -27,6 +28,7 @@ def test_load_step_updates_settings(monkeypatch, tmp_path):
     handler = HandlerClass(None, None, None)
     # restore init for safety in same session
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     # create sample path before patching dialog
     sample = tmp_path / "example.step.json"
@@ -57,7 +59,7 @@ def test_load_step_updates_settings(monkeypatch, tmp_path):
     handler.model = _StubModel()
 
     # prepare handler internal state normally set during init
-    handler._loading_step = False
+    handler._runtime.loading_step = False
     handler._step_last_dir = ""
     handler.root_widget = None
     handler._find_root_widget = lambda: None
@@ -84,6 +86,7 @@ def test_save_step_updates_settings(monkeypatch, tmp_path):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     # monkeypatch selection index and give a dummy operation list
     handler.model = type("M", (), {})()
@@ -103,7 +106,7 @@ def test_save_step_updates_settings(monkeypatch, tmp_path):
     sys.modules["qtpy.QtCore"].QSettings = lambda: dummy
 
     # prepare handler internal state normally set during init
-    handler._saving_step = False
+    handler._runtime.saving_step = False
     handler._last_step_dir = ""
     handler._step_last_dir = ""
     handler.root_widget = None
@@ -126,6 +129,7 @@ def test_dialog_start_dir_prefers_global_last_dir(tmp_path):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     dummy = DummySettings()
     global_dir = tmp_path / "global"
@@ -143,6 +147,7 @@ def test_remember_dialog_path_updates_specific_and_global_keys(tmp_path):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     dummy = DummySettings()
     target = tmp_path / "programs" / "example.lse"
@@ -167,6 +172,7 @@ def test_update_selected_operation_preserves_internal_file_metadata(monkeypatch)
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     op = Operation(
         OpType.FACE,
@@ -195,6 +201,7 @@ def test_program_meta_contains_step_file_links(tmp_path):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     step_path = tmp_path / "01_face.step.json"
     program_path = tmp_path / "test_program.lse"
@@ -220,6 +227,7 @@ def test_write_program_file_prompts_for_missing_step_links(monkeypatch, tmp_path
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     op = Operation(OpType.FACE, params={"tool": 1}, path=[])
     handler.model = type("M", (), {"operations": [op]})()
@@ -245,6 +253,7 @@ def test_save_changes_writes_only_dirty_steps_and_dirty_program(tmp_path):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     step_a = tmp_path / "01.step.json"
     step_b = tmp_path / "02.step.json"
@@ -255,7 +264,7 @@ def test_save_changes_writes_only_dirty_steps_and_dirty_program(tmp_path):
     handler.model = type("M", (), {"operations": [op_a, op_b]})()
     handler.root_widget = None
     handler._find_root_widget = lambda: None
-    handler._saving_changes = False
+    handler._runtime.saving_changes = False
     handler._current_program_path = str(program_path)
     handler._current_gcode_path = str(gcode_path)
     handler._dirty = DirtyState(operation_indices={1})
@@ -290,6 +299,7 @@ def _save_changes_two_ops_handler(tmp_path, *, op_a_linked: bool):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     step_a = tmp_path / "01.step.json"
     step_b = tmp_path / "02.step.json"
@@ -303,7 +313,7 @@ def _save_changes_two_ops_handler(tmp_path, *, op_a_linked: bool):
     handler.model = type("M", (), {"operations": [op_a, op_b]})()
     handler.root_widget = None
     handler._find_root_widget = lambda: None
-    handler._saving_changes = False
+    handler._runtime.saving_changes = False
     handler._current_program_path = str(program_path)
     handler._current_gcode_path = str(gcode_path)
     handler._dirty = DirtyState(operation_indices={0, 1})
@@ -394,11 +404,12 @@ def test_save_step_clears_unlinked_structure_dirty_after_new_step_save(tmp_path)
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     dest = tmp_path / "saved.step.json"
     op = Operation(OpType.FACE, params={}, path=[])
     handler.model = type("M", (), {"operations": [op]})()
-    handler._saving_step = False
+    handler._runtime.saving_step = False
     handler.root_widget = None
     handler._find_root_widget = lambda: None
     handler._selected_operation_index = lambda: 0
@@ -446,6 +457,7 @@ def test_load_program_always_selects_program_header_row(tmp_path):
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
 
     sample = tmp_path / "example.lse"
     payload = {

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.ui_visibility import chuck_size_mm
 
 
@@ -463,7 +464,7 @@ def _make_global_change_handler(sender_name, *, ui_loading=False):
     marks = []
     return SimpleNamespace(
         sender=lambda: _Sender(sender_name),
-        _ui_loading=ui_loading,
+        _runtime=RuntimeState(ui_loading=ui_loading),
         _apply_unit_suffix=lambda: None,
         _apply_chuck_safety_preset=lambda: None,
         _update_program_visibility=lambda: None,

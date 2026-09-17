@@ -4,6 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.tool_table_state import ToolTableState
 
 
@@ -23,6 +24,7 @@ def _make_bare_handler():
     HandlerClass.__init__ = lambda self, halcomp, widgets, paths: None
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
+    handler._runtime = RuntimeState()
     return handler
 
 

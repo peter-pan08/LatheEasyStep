@@ -17,6 +17,45 @@
 
 ## [Unreleased]
 
+### LES-052: RuntimeState gekapselt - Zustandsmodell abgeschlossen 2026-09-17
+
+- Vierter und letzter LES-052-Baustein: neun lose Reentranz-/Ladezustands-
+  Flags (`_loading_step`, `_deleting`, `_saving_step`, `_saving_changes`,
+  `_moving_up`, `_moving_down`, `_generating_gcode`,
+  `_creating_new_program`, `_ui_loading`) durch eine einzelne Qt-freie
+  Klasse `RuntimeState` (`runtime_state.py`) ersetzt, jetzt als
+  `handler._runtime` gehalten. Damit sind alle sechs in LES-052 genannten
+  Zustandskategorien (`ProgramState`, `OperationState`, `ToolTableState`,
+  `ViewState`, `DirtyState`, `RuntimeState`) fachlich getrennte, Qt-freie
+  Verantwortungen mit dokumentierten Besitzverhaeltnissen.
+- Acht der neun Felder folgen an neun praktisch identischen Aufrufstellen
+  (`ui_flow.py`, `ui_persistence.py`, `lathe_easystep_handler.py`)
+  demselben Reentranz-Muster (`if state.x: return` / `state.x = True` /
+  im `finally` `state.x = False`) - bewusst NICHT zu einer
+  `guard()`-Kontextmanager-Abstraktion zusammengefasst, da das eine echte
+  Struktur-/Verhaltensaenderung an den Aufrufstellen gewesen waere, nicht
+  nur eine Verschiebung des Speicherorts.
+- `ui_loading` ist semantisch anders (unterdrueckt Signal-Reaktionen
+  waehrend programmatischen Zurueckschreibens ins Formular) und war zuvor
+  NIE explizit initialisiert - nur per `getattr(handler, "_ui_loading",
+  False)` defensiv gelesen. Jetzt wie die anderen acht ein regulaeres
+  `RuntimeState`-Feld mit Default `False`.
+- Groesste Testflaeche der vier LES-052-Bausteine: 12 Testdateien mit
+  minimalen/bare Test-Handlern (`object.__new__(HandlerClass)`,
+  `SimpleNamespace`) mussten um `handler._runtime = RuntimeState()`
+  ergaenzt werden - mehr als bei `DirtyState`/`ToolTableState`, weil
+  `_ui_loading` bisher ueberall defensiv gelesen wurde und dadurch auf
+  fehlenden Testattributen nie sichtbar auffiel.
+- 3 neue eigenstaendige Tests (`tests/test_runtime_state.py`) - anders als
+  bei `DirtyState`/`ToolTableState` ohne Regressionsverifikation per
+  absichtlich entfernter Logik, da die Klasse selbst keine Methoden
+  enthaelt (alles reentranz-relevante Verhalten blieb unveraendert an den
+  Aufrufstellen, durch den vollen Testlauf ueber alle betroffenen Module
+  abgedeckt).
+- 898 Stub-/108 Real-Qt-Tests bestanden (895 vorher + 3 neue). Standalone-
+  Panel offscreen sauber gestartet, kein `AttributeError` im Log. Details:
+  TODO.md/`doc/PANEL_ARCHITECTURE.md` (LES-052).
+
 ### LES-052: ToolTableState gekapselt 2026-09-17
 
 - Dritter LES-052-Baustein: `handler.tools` (ein rohes `Dict[int, Tool]`)

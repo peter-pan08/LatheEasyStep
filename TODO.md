@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, aktueller Entwicklungsstand fuer die naechste Version;
   `main` ist seit 2026-09-16 auf Version `0.8.0` (Tag `v0.8.0`).
-- 895 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
+- 898 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -242,7 +242,30 @@ Aenderung veraendern.
   absichtlich entferntem Leer-Dict-Schutz als echte Regression
   verifiziert. 895 Stub-/108 Real-Qt-Tests bestanden; Standalone-Panel-
   Log bestaetigt den echten Ladepfad (`tool.tbl` automatisch geladen,
-  Combos befuellt). `RuntimeState` (neun Flags) bleibt offen.
+  Combos befuellt).
+  Vierter und letzter Baustein (2026-09-17): `RuntimeState` gekapselt -
+  damit sind jetzt ALLE sechs Zustandskategorien fachlich getrennte,
+  Qt-freie Verantwortungen mit dokumentierten Besitzverhaeltnissen. Neun
+  lose Reentranz-/Ladezustands-Flags (`_loading_step`, `_deleting`,
+  `_saving_step`, `_saving_changes`, `_moving_up`, `_moving_down`,
+  `_generating_gcode`, `_creating_new_program`, `_ui_loading`) in
+  `RuntimeState` (`runtime_state.py`) gebuendelt, als `handler._runtime`
+  gehalten. Acht Felder folgen dem immer gleichen Reentranz-Muster an
+  neun Aufrufstellen - bewusst NICHT zu einer `guard()`-Kontextmanager-
+  Abstraktion zusammengefasst, das waere eine echte Struktur- statt nur
+  Speicherort-Aenderung gewesen. `_ui_loading` war zuvor NIE explizit
+  initialisiert (nur per `getattr(..., False)` defensiv gelesen) - jetzt
+  ein regulaeres Feld mit Default `False`. Groesste Testflaeche der
+  vier LES-052-Bausteine: 12 Testdateien mit minimalen/bare Test-Handlern
+  mussten um `handler._runtime = RuntimeState()` ergaenzt werden (mehr als
+  bei `DirtyState`/`ToolTableState`, weil `_ui_loading` bisher ueberall
+  defensiv gelesen wurde und dadurch auf fehlenden Testattributen nie
+  sichtbar auffiel). 3 neue eigenstaendige Tests
+  (`tests/test_runtime_state.py`) - ohne Regressionsverifikation per
+  entfernter Logik wie bei den anderen beiden, da die Klasse selbst keine
+  Methoden enthaelt (alles reentranz-relevante Verhalten blieb unveraendert
+  an den Aufrufstellen). 898 Stub-/108 Real-Qt-Tests bestanden, Standalone-
+  Panel sauber gestartet. Details: `doc/PANEL_ARCHITECTURE.md`.
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.

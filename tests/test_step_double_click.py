@@ -15,6 +15,7 @@ from weakref import WeakSet
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType, ProgramModel
 from lathe_easystep.dirty_state import DirtyState
+from lathe_easystep.runtime_state import RuntimeState
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +155,7 @@ def _make_handler():
     h.model = ProgramModel()
     h.root_widget = None
     h._find_root_widget = lambda: None
-    h._ui_loading = False
+    h._runtime = RuntimeState()
     h._dirty = DirtyState()
     h._op_row_user_selected = False
     h.list_ops = _ListWidget()
@@ -743,13 +744,13 @@ def test_reindex_dirty_operations_after_insert_shifts_existing_indices():
 def test_selection_change_resets_ui_loading_on_invalid_row():
     """_handle_selection_change must reset _ui_loading even for invalid rows."""
     h = _make_handler()
-    h._ui_loading = False
+    h._runtime.ui_loading = False
 
     # Call with invalid row
     h._handle_selection_change(-1)
 
     # _ui_loading must be False again (was True during execution)
-    assert h._ui_loading is False
+    assert h._runtime.ui_loading is False
 
 
 def test_selection_change_resets_ui_loading_on_valid_row():
@@ -759,8 +760,8 @@ def test_selection_change_resets_ui_loading_on_valid_row():
     h.model.add_operation(op)
     h.list_ops.addItem("1: Planen")
     h.list_ops.setCurrentRow(0)
-    h._ui_loading = False
+    h._runtime.ui_loading = False
 
     h._handle_selection_change(0)
 
-    assert h._ui_loading is False
+    assert h._runtime.ui_loading is False

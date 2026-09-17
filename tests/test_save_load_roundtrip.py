@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType, ProgramModel
+from lathe_easystep.runtime_state import RuntimeState
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +115,7 @@ def _make_handler():
     handler = HandlerClass(None, None, None)
     HandlerClass.__init__ = orig_init
     handler.model = ProgramModel()
+    handler._runtime = RuntimeState()
     return handler
 
 

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
+from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import Operation, OpType
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.ui_flow import handle_move_down, handle_move_up
 from lathe_easystep.ui_selection import (
     handle_selection_change,
@@ -23,6 +25,7 @@ def _handler(operations, selected):
         btn_move_up=_Button(),
         btn_move_down=_Button(),
         _selected_operation_index=lambda: selected,
+        _runtime=RuntimeState(),
     )
 
 
@@ -117,8 +120,7 @@ def _move_handler(operations, selected):
     return SimpleNamespace(
         model=model,
         list_ops=_StepList(selected, len(operations)),
-        _moving_up=False,
-        _moving_down=False,
+        _runtime=RuntimeState(),
         _swap_dirty_operation_indices=lambda *args: None,
         _mark_program_structure_dirty=lambda: None,
         _refresh_operation_list=lambda **kwargs: None,
@@ -144,8 +146,8 @@ def test_selection_change_updates_action_buttons_on_invalid_row():
         model=SimpleNamespace(operations=[]),
         list_ops=None,
         tab_params=None,
-        _ui_loading=False,
-        _dirty_warning_suppressed=False,
+        _runtime=RuntimeState(),
+        _dirty=DirtyState(),
         _startup_complete=False,
         _op_row_user_selected=False,
         _active_form_operation_index=-1,

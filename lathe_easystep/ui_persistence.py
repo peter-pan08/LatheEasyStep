@@ -106,9 +106,9 @@ def update_save_step_button_state(handler) -> None:
 
 
 def handle_save_step(handler, *, step_file_filter: str) -> None:
-    if handler._saving_step:
+    if handler._runtime.saving_step:
         return
-    handler._saving_step = True
+    handler._runtime.saving_step = True
     try:
         idx = handler._selected_operation_index()
         if idx < 0:
@@ -174,13 +174,13 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
         except Exception:
             pass
     finally:
-        handler._saving_step = False
+        handler._runtime.saving_step = False
 
 
 def handle_load_step(handler, *, step_file_filter: str) -> None:
-    if handler._loading_step:
+    if handler._runtime.loading_step:
         return
-    handler._loading_step = True
+    handler._runtime.loading_step = True
     try:
         parent = handler.root_widget or handler._find_root_widget()
         settings = QtCore.QSettings()
@@ -223,7 +223,7 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
         except Exception:
             pass
     finally:
-        handler._loading_step = False
+        handler._runtime.loading_step = False
 
 
 def handle_save_program(handler) -> None:
@@ -361,9 +361,9 @@ def handle_load_program(handler) -> None:
 
 
 def handle_save_changes(handler) -> None:
-    if handler._saving_changes:
+    if handler._runtime.saving_changes:
         return
-    handler._saving_changes = True
+    handler._runtime.saving_changes = True
     saved_steps = 0
     saved_program = False
     try:
@@ -493,4 +493,4 @@ def handle_save_changes(handler) -> None:
             + ("\n" + _tr(handler, "message.changes.program_updated") if saved_program else ""),
         )
     finally:
-        handler._saving_changes = False
+        handler._runtime.saving_changes = False

@@ -19,6 +19,7 @@ from lathe_easystep.gcode_utils import require_positive, get_tool_number
 from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.motion_state import MotionState
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.persistence import step_data_to_operation
 from lathe_easystep.storage import parse_program_payload
 from lathe_easystep.verification_cases import chuck_nogo_case
@@ -638,7 +639,7 @@ def test_save_changes_preserves_dirty_state_when_not_all_steps_saved(tmp_path, m
         ops[1].params.pop("__step_file_path")
     cleared, errors = [], []
     handler = SimpleNamespace(
-        _saving_changes=False, root_widget=None, _find_root_widget=lambda: None,
+        _runtime=RuntimeState(), root_widget=None, _find_root_widget=lambda: None,
         _update_selected_operation=lambda **k: None, _log=lambda *a, **k: None,
         model=SimpleNamespace(operations=ops), _dirty=DirtyState(operation_indices={0, 1}),
         _current_program_path=None, _current_gcode_path=None,
@@ -658,7 +659,7 @@ def test_save_changes_preserves_dirty_state_when_not_all_steps_saved(tmp_path, m
     ui_persistence.handle_save_changes(handler)
     assert a.exists() and b.read_text() == "old b"
     assert handler._dirty.operation_indices == {0, 1} and not cleared
-    assert not handler._saving_changes
+    assert not handler._runtime.saving_changes
     if case == "second_write_failure":
         assert len(errors) == 1 and "steps_updated" in errors[0] and "1" in errors[0]
     else:

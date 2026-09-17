@@ -38,7 +38,7 @@ def update_operation_action_button_states(handler) -> None:
 def handle_tab_changed(handler, *_args, **_kwargs) -> None:
     """Keep list selection and tab-specific helpers in sync."""
     if (
-        not getattr(handler, "_ui_loading", False)
+        not handler._runtime.ui_loading
         and not handler._dirty.warning_suppressed
         and getattr(handler, "_startup_complete", False)
     ):
@@ -100,7 +100,7 @@ def on_step_double_clicked(handler, item) -> None:
 def handle_selection_change(handler, row: int) -> None:
     previous_row = getattr(handler, "_active_form_operation_index", -1)
     if (
-        not getattr(handler, "_ui_loading", False)
+        not handler._runtime.ui_loading
         and previous_row != row
         and 0 <= previous_row < len(handler.model.operations)
         and not handler._dirty.warning_suppressed
@@ -111,7 +111,7 @@ def handle_selection_change(handler, row: int) -> None:
         except Exception:
             pass
     if (
-        not getattr(handler, "_ui_loading", False)
+        not handler._runtime.ui_loading
         and previous_row != row
         and 0 <= previous_row < len(handler.model.operations)
     ):
@@ -120,7 +120,7 @@ def handle_selection_change(handler, row: int) -> None:
         except Exception as exc:
             handler._log(f"[LatheEasyStep] sync previous operation failed: {exc}", level="warning")
 
-    handler._ui_loading = True
+    handler._runtime.ui_loading = True
     try:
         step_list = StepListView(handler)
         handler._op_row_user_selected = bool(
@@ -171,4 +171,4 @@ def handle_selection_change(handler, row: int) -> None:
         handler._refresh_preview()
         handler._active_form_operation_index = row
     finally:
-        handler._ui_loading = False
+        handler._runtime.ui_loading = False

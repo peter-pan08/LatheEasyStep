@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from lathe_easystep.dirty_state import DirtyState
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.ui_persistence import update_save_step_button_state
 from lathe_easystep.ui_selection import handle_selection_change
 
@@ -54,8 +56,8 @@ def _selection_handler(*, row, operations, selected_index):
         model=SimpleNamespace(operations=operations),
         list_ops=None,
         tab_params=None,
-        _ui_loading=False,
-        _dirty_warning_suppressed=False,
+        _runtime=RuntimeState(),
+        _dirty=DirtyState(),
         _startup_complete=False,
         _op_row_user_selected=False,
         _active_form_operation_index=-1,

@@ -23,6 +23,7 @@ from lathe_easystep.comments import update_auto_comment
 from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
 from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.tool_table_state import ToolTableState
 from lathe_easystep.gcode_utils import is_internal_side
 from lathe_easystep.tools import Tool, parse_tool_table
@@ -954,14 +955,7 @@ class HandlerClass:
         self._last_dialog_dir: str | None = None
         self._current_program_path: str | None = None
         self._current_gcode_path: str | None = None
-        self._loading_step = False
-        self._deleting = False
-        self._saving_step = False
-        self._saving_changes = False
-        self._moving_up = False
-        self._moving_down = False
-        self._generating_gcode = False
-        self._creating_new_program = False
+        self._runtime = RuntimeState()
         self._dirty = DirtyState()
 
         # zentrale Widgets
@@ -1951,7 +1945,7 @@ class HandlerClass:
 
     def _on_param_changed(self, *args):
         """Called whenever a parameter field changes; updates op + preview."""
-        if getattr(self, "_ui_loading", False):
+        if self._runtime.ui_loading:
             return
         row = -1
         try:
@@ -2822,9 +2816,9 @@ class HandlerClass:
             self._adding_operation = False
 
     def _handle_delete_operation(self):
-        if self._deleting:
+        if self._runtime.deleting:
             return
-        self._deleting = True
+        self._runtime.deleting = True
         try:
             if self.list_ops is None:
                 return
@@ -2871,7 +2865,7 @@ class HandlerClass:
             self._renumber_operations()
             self._refresh_preview()
         finally:
-            self._deleting = False
+            self._runtime.deleting = False
 
     def _selected_operation_index(self) -> int:
         if self.list_ops is None:

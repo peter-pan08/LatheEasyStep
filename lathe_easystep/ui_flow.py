@@ -116,9 +116,9 @@ def build_gcode_lines(handler):
 
 
 def handle_move_up(handler):
-    if handler._moving_up:
+    if handler._runtime.moving_up:
         return
-    handler._moving_up = True
+    handler._runtime.moving_up = True
     try:
         step_list = StepListView(handler)
         if not step_list.is_bound():
@@ -146,13 +146,13 @@ def handle_move_up(handler):
         handler._renumber_operations()
         handler._refresh_preview()
     finally:
-        handler._moving_up = False
+        handler._runtime.moving_up = False
 
 
 def handle_move_down(handler):
-    if handler._moving_down:
+    if handler._runtime.moving_down:
         return
-    handler._moving_down = True
+    handler._runtime.moving_down = True
     try:
         step_list = StepListView(handler)
         if not step_list.is_bound():
@@ -177,13 +177,13 @@ def handle_move_down(handler):
         handler._renumber_operations()
         handler._refresh_preview()
     finally:
-        handler._moving_down = False
+        handler._runtime.moving_down = False
 
 
 def handle_new_program(handler):
-    if handler._creating_new_program:
+    if handler._runtime.creating_new_program:
         return
-    handler._creating_new_program = True
+    handler._runtime.creating_new_program = True
     try:
         handler.model.operations.clear()
         handler._current_program_path = None
@@ -204,13 +204,13 @@ def handle_new_program(handler):
         handler._refresh_operation_list(select_index=-1)
         handler._refresh_preview()
     finally:
-        handler._creating_new_program = False
+        handler._runtime.creating_new_program = False
 
 
 def handle_generate_gcode(handler):
-    if handler._generating_gcode:
+    if handler._runtime.generating_gcode:
         return
-    handler._generating_gcode = True
+    handler._runtime.generating_gcode = True
     try:
         header = handler._collect_program_header()
         settings = QtCore.QSettings()
@@ -264,7 +264,7 @@ def handle_generate_gcode(handler):
             format_user_error(handler, exc, fallback_title=_tr(handler, "message.gcode.generate_failed")),
         )
     finally:
-        handler._generating_gcode = False
+        handler._runtime.generating_gcode = False
 
 
 def describe_operation(handler, op, number=None):

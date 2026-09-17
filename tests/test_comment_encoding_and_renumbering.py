@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lathe_easystep.gcode_utils import sanitize_gcode_text
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.ui_flow import handle_move_down, handle_move_up, renumber_operations
 from lathe_easystep.model import OpType, Operation
 
@@ -57,8 +58,7 @@ class _Handler:
         self.model = _Model(operations)
         self.list_ops = _Ops(row=1, count_val=len(operations))
         self.list_ops._items = [_ListItem() for _ in operations]
-        self._moving_up = False
-        self._moving_down = False
+        self._runtime = RuntimeState()
         self._mark_program_structure_dirty = lambda operation_indices=None: None
         self._refresh_preview = lambda: None
 

@@ -5,6 +5,7 @@ import types
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lathe_easystep.model import OpType, Operation, ProgramModel
+from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.ui_dirty import (
     clear_dirty_state,
     clear_program_dirty,
@@ -83,6 +84,7 @@ def _handler():
     handler._find_root_widget = lambda: None
     handler._current_language_code = lambda: "de"
     handler._update_dirty_status = lambda: None
+    handler._runtime = RuntimeState()
     return handler
 
 
