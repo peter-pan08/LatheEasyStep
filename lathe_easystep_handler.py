@@ -111,6 +111,7 @@ from lathe_easystep.ui_flow import (
     handle_param_change,
     refresh_operation_list,
     renumber_operations,
+    tool_change_position_lines,
 )
 from lathe_easystep.tool_logic import (
     build_insert_geometry,
@@ -2456,40 +2457,7 @@ class HandlerClass:
         return collect_program_header(self)
 
     def _tool_change_position_lines(self, header: Dict[str, object]) -> List[str]:
-        """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT)."""
-        xt = float(header.get("xt", 0.0))
-        zt = float(header.get("zt", 0.0))
-        coord_mode = str(header.get("toolchange_coords", "") or "").strip().lower()
-        if coord_mode not in ("work", "machine"):
-            xt_abs = bool(header.get("xt_absolute", True))
-            zt_abs = bool(header.get("zt_absolute", True))
-            if xt_abs != zt_abs:
-                coord_mode = "mixed"
-            else:
-                coord_mode = "work" if xt_abs and zt_abs else "machine"
-
-        lines: List[str] = []
-
-        if coord_mode == "work":
-            lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
-            return lines
-        if coord_mode == "mixed":
-            xt_abs = bool(header.get("xt_absolute", True))
-            zt_abs = bool(header.get("zt_absolute", True))
-            if not xt_abs:
-                lines.append(f"G53 G0 X{xt:.3f}")
-            if not zt_abs:
-                lines.append(f"G53 G0 Z{zt:.3f}")
-            work_parts = []
-            if xt_abs:
-                work_parts.append(f"X{xt:.3f}")
-            if zt_abs:
-                work_parts.append(f"Z{zt:.3f}")
-            if work_parts:
-                lines.append(f"G0 {' '.join(work_parts)}")
-            return lines
-        lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
-        return lines
+        return tool_change_position_lines(header)
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
         return collect_contour_segments(self)

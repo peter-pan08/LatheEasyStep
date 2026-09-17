@@ -17,6 +17,36 @@
 
 ## [Unreleased]
 
+### LES-052: fuenfte Handler-Kleber-Extraktion (`tool_change_position_lines`) 2026-09-17
+
+- `_tool_change_position_lines()` (~35 Zeilen, baut G-Code zum Anfahren der
+  Werkzeugwechselposition aus XT/ZT/Koordinatenmodus) griff ueberhaupt
+  nicht auf `self` zu - reine Funktion, die nur zufaellig als Handler-
+  Methode lebte. Nach `tool_change_position_lines(header)` in `ui_flow.py`
+  verschoben, ganz ohne Handler-Parameter. Einziger Aufrufer war bereits
+  `build_gcode_lines()` (selbst schon in `ui_flow.py`); dessen zwei
+  Aufrufstellen rufen die Funktion jetzt direkt auf.
+  `HandlerClass._tool_change_position_lines()` bleibt als duenner
+  Delegations-Wrapper bestehen, falls extern noch darauf zugegriffen wird.
+- Bestandsaufnahme deckte eine bemerkenswerte Luecke auf: diese G-Code-
+  Pfad-Logik (Werkzeugwechsel-Anfahrposition) hatte ueberhaupt keine Tests.
+  `generate_program_gcode()` (`gcode_program.py`) implementiert dieselbe
+  work/machine/mixed-Logik ein zweites Mal, unabhaengig, fuer die inline
+  `"(Toolchange move)"`-Zeilen im Hauptprogramm - deren vorhandene Tests
+  (`tests/test_regression_contracts.py`) deckten nur diese zweite,
+  separate Implementierung ab, nie `_tool_change_position_lines()` selbst.
+  Geschlossen durch drei neue Tests in derselben Datei.
+- Reine Verschiebung ohne Verhaltensaenderung, daher keine `rs274`-
+  Nachverifikation noetig (CLAUDE.md verlangt sie fuer Aenderungen an
+  G-Code-Ausgabe/Fahrwegen, nicht fuer reine Code-Bewegung); die neue
+  Testabdeckung schliesst trotzdem eine bisher unbeaufsichtigte Luecke in
+  diesem sicherheitsrelevanten Bereich.
+- Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung des
+  mixed-Zweigs (fehlendes `G53`-Praefix fuer die nicht-absolute X-Achse)
+  wurde korrekt erkannt.
+- 908 Stub-/108 Real-Qt-Tests bestanden (905 vorher + 3 neue), Standalone-
+  Panel sauber gestartet.
+
 ### LES-052: vierte Handler-Kleber-Extraktion (`populate_thread_standard_options`) 2026-09-17
 
 - `_populate_thread_standard_options()` (Handler-Methode, ~46 Zeilen) nach

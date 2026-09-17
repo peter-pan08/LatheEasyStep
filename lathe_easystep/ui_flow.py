@@ -82,6 +82,43 @@ def _translate_value(handler, prefix: str, value) -> str:
     return value if text == f"{prefix}.{normalized}" else text
 
 
+def tool_change_position_lines(header: dict[str, object]) -> list[str]:
+    """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT)."""
+    xt = float(header.get("xt", 0.0))
+    zt = float(header.get("zt", 0.0))
+    coord_mode = str(header.get("toolchange_coords", "") or "").strip().lower()
+    if coord_mode not in ("work", "machine"):
+        xt_abs = bool(header.get("xt_absolute", True))
+        zt_abs = bool(header.get("zt_absolute", True))
+        if xt_abs != zt_abs:
+            coord_mode = "mixed"
+        else:
+            coord_mode = "work" if xt_abs and zt_abs else "machine"
+
+    lines: list[str] = []
+
+    if coord_mode == "work":
+        lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
+        return lines
+    if coord_mode == "mixed":
+        xt_abs = bool(header.get("xt_absolute", True))
+        zt_abs = bool(header.get("zt_absolute", True))
+        if not xt_abs:
+            lines.append(f"G53 G0 X{xt:.3f}")
+        if not zt_abs:
+            lines.append(f"G53 G0 Z{zt:.3f}")
+        work_parts = []
+        if xt_abs:
+            work_parts.append(f"X{xt:.3f}")
+        if zt_abs:
+            work_parts.append(f"Z{zt:.3f}")
+        if work_parts:
+            lines.append(f"G0 {' '.join(work_parts)}")
+        return lines
+    lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
+    return lines
+
+
 def build_gcode_lines(handler):
     if not handler._tool_table.tools:
         try:
@@ -108,8 +145,8 @@ def build_gcode_lines(handler):
         zt = header.get("zt")
         if xt is None or zt is None:
             raise ValueError("Bitte XT und ZT im Programm-Tab eintragen, da ein Werkzeugwechsel ausgegeben wird.")
-    header_lines = handler._tool_change_position_lines(header)
-    footer_lines = handler._tool_change_position_lines(header)
+    header_lines = tool_change_position_lines(header)
+    footer_lines = tool_change_position_lines(header)
     handler.model.program_settings["header_lines"] = header_lines
     handler.model.program_settings["footer_lines"] = footer_lines
     return handler.model.generate_gcode()

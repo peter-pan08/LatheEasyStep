@@ -678,6 +678,42 @@ def test_toolchange_uses_work_or_machine_coords_explicitly():
     assert toolchange_line == "G53 G0 X70.000 Z200.000"
 
 
+def test_tool_change_position_lines_work_and_machine_modes():
+    """LES-052-Extraktion (tool_change_position_lines(), ui_flow.py): baut
+    header_lines/footer_lines fuer build_gcode_lines() - eine eigene,
+    bisher ungetestete Implementierung derselben work/machine/mixed-Logik,
+    die generate_program_gcode() oben unabhaengig fuer die inline
+    '(Toolchange move)'-Zeilen noch einmal implementiert."""
+    from lathe_easystep.ui_flow import tool_change_position_lines
+
+    header = {"xt": 70.0, "zt": 200.0, "toolchange_coords": "work"}
+    assert tool_change_position_lines(header) == ["G0 X70.000 Z200.000"]
+
+    header["toolchange_coords"] = "machine"
+    assert tool_change_position_lines(header) == ["G53 G0 X70.000 Z200.000"]
+
+
+def test_tool_change_position_lines_mixed_mode_moves_each_axis_separately():
+    from lathe_easystep.ui_flow import tool_change_position_lines
+
+    header = {"xt": 70.0, "zt": 200.0, "xt_absolute": False, "zt_absolute": True}
+    assert tool_change_position_lines(header) == ["G53 G0 X70.000", "G0 Z200.000"]
+
+    header = {"xt": 70.0, "zt": 200.0, "xt_absolute": True, "zt_absolute": False}
+    assert tool_change_position_lines(header) == ["G53 G0 Z200.000", "G0 X70.000"]
+
+
+def test_tool_change_position_lines_defaults_without_explicit_coord_mode():
+    """Ohne 'toolchange_coords' entscheiden xt_absolute/zt_absolute (beide
+    Default True): stimmen sie ueberein, faellt es auf work (beide True)
+    bzw. machine (beide False) zurueck."""
+    from lathe_easystep.ui_flow import tool_change_position_lines
+
+    assert tool_change_position_lines({"xt": 70.0, "zt": 200.0}) == ["G0 X70.000 Z200.000"]
+    header = {"xt": 70.0, "zt": 200.0, "xt_absolute": False, "zt_absolute": False}
+    assert tool_change_position_lines(header) == ["G53 G0 X70.000 Z200.000"]
+
+
 def test_generated_toolchange_does_not_inject_zero_machine_move():
     settings = make_program_settings()
     settings.update({"xt": 70.0, "zt": 200.0, "toolchange_coords": "machine"})

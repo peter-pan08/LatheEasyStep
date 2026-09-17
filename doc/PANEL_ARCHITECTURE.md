@@ -267,6 +267,43 @@ ohne erkennbaren Fehler/Traceback beim Timeout von 20s knapp vor der
 `DONE`-Zeile ab - reproduzierbar sauber bei 25s, keine Aenderung am Code
 noetig, als Umgebungs-/Lastschwankung eingeordnet).
 
+**Fuenfte Handler-Kleber-Extraktion (2026-09-17), kein Fall von "Kleber"
+mehr:** `_tool_change_position_lines()` (~35 Zeilen, baut G-Code zum
+Anfahren der Werkzeugwechselposition aus `header["xt"/"zt"/
+"toolchange_coords"/"xt_absolute"/"zt_absolute"]`) griff ueberhaupt nicht
+auf `self` zu - reine Funktion, die nur zufaellig als Handler-Methode
+lebte. Nach `tool_change_position_lines(header)` in `ui_flow.py`
+verschoben, ganz ohne Handler-Parameter. Einziger Aufrufer war bereits
+`build_gcode_lines()` (selbst schon in `ui_flow.py`) - dessen zwei
+Aufrufstellen rufen die Funktion jetzt direkt auf, nicht mehr ueber
+`handler._tool_change_position_lines(...)`. `HandlerClass.
+_tool_change_position_lines()` bleibt als duenner Delegations-Wrapper
+bestehen (gleiche Vorsicht wie bei den bisherigen vier Extraktionen, falls
+irgendwo ausserhalb dieses Moduls noch darauf zugegriffen wird - aktuell
+nirgends der Fall).
+Bestandsaufnahme deckte eine besonders bemerkenswerte Luecke auf: diese
+G-Code-Pfad-Logik (Werkzeugwechsel-Anfahrposition, sicherheitsrelevant im
+Sinne von CLAUDE.md) hatte ueberhaupt keine Tests - weder end-zu-end noch
+direkt. `generate_program_gcode()` (`gcode_program.py`) implementiert die
+gleiche work/machine/mixed-Logik ein zweites Mal, unabhaengig, fuer die
+inline `"(Toolchange move)"`-Zeilen im Hauptprogramm - dessen Tests
+(`test_toolchange_uses_work_or_machine_coords_explicitly` u. a.,
+`tests/test_regression_contracts.py`) deckten nur diese zweite, separate
+Implementierung ab, nie `_tool_change_position_lines()` selbst (das
+`header_lines`/`footer_lines` in `program_settings` fuellt). Geschlossen
+durch drei neue Tests in derselben Datei
+(`test_tool_change_position_lines_work_and_machine_modes`,
+`test_tool_change_position_lines_mixed_mode_moves_each_axis_separately`,
+`test_tool_change_position_lines_defaults_without_explicit_coord_mode`).
+Da es sich um eine reine Verschiebung ohne Verhaltensaenderung handelt, war
+keine `rs274`-Nachverifikation noetig (CLAUDE.md verlangt sie fuer
+Aenderungen an G-Code-Ausgabe/Fahrwegen, nicht fuer reine Code-Bewegung);
+die neue Testabdeckung selbst schliesst aber eine bisher unbeaufsichtigte
+Luecke in genau diesem Bereich. Regressionsverifikation bestaetigt: eine
+absichtliche Verstuemmelung des mixed-Zweigs (fehlendes `G53`-Praefix fuer
+die nicht-absolute X-Achse) wurde korrekt erkannt. 908 Stub-/108 Real-Qt-
+Tests bestanden, Standalone-Panel sauber gestartet.
+
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
 Stand 2026-09-17: Alle sechs Zustandskategorien sind jetzt gekapselt -
