@@ -37,6 +37,25 @@ Provider denselben Fallback plus strukturierte Diagnose. Der Qt-Adapter zeigt
 diese Diagnose als Warnmarkierung und im Log, ohne Operation, Werkzeug, G-Code
 oder Dirty-State zu veraendern. Die Wahl und Lebensdauer eines konkreten Themes
 bleibt ausserhalb des Fachmodells und wird in einem weiteren Paket ergaenzt.
+In der laufenden Anwendung setzt aktuell nichts `handler._tool_visual_provider`
+auf ein echtes Theme-Verzeichnis - es greift also immer der prozedurale
+Fallback (kein Bug, ein offener Produktentscheid, siehe `TODO.md`).
+
+**LES-052 Abschnitt 2 ("Darstellungs- und Ressourcenadapter") ist damit
+vollstaendig - Bestandsaufnahme 2026-09-17:** neben `ToolVisualProvider`
+sind auch Preview-Canvas, Legende und Status-/Warnungsbox bereits als reine,
+Qt-freie Datenvertraege ausgelagert (aus LES-044/LES-051, TODO.md war hier
+veraltet, analog zum `ToolVisualProvider`-Befund oben): `PREVIEW_DRAW_
+STYLES`/`FRONT_VIEW_RING_STYLES`/`FRONT_VIEW_FILL_COLORS`/`PREVIEW_CHROME_
+STYLES`/`PREVIEW_CHROME_FILLS` (Canvas-Stile), `LEGEND_ENTRIES`/
+`legend_layout()` (Legende), `STATUS_BOX_STYLE`/`status_message_layout()`
+(Status-/Warnungsbox) - alle in `preview_geometry.py`, plus `build_preview_
+draw_plan()`/`build_front_view_draw_plan()`/`build_front_view_screen_plan()`
+(`preview_scene.py`) fuer die Zeichenreihenfolge/-phasen. `paintEvent()`
+(`preview_widget.py`) liest nur noch aus diesen Vertraegen, konstruiert
+keine `QPen`/`QColor`-Werte mehr direkt. Jeder einzelne Datenvertrag hat
+einen eigenen "ist ein reiner Qt-freier Vertrag"-Test in
+`tests/test_preview_legend_and_status_layout.py`.
 
 ## Zustandsmodell (LES-052, Bestandsaufnahme)
 

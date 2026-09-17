@@ -163,26 +163,24 @@ nachweislich nie in G-Code zurueck (neuer Test).
 
 ### 2. Darstellungs- und Ressourcenadapter
 
-Teilweise bereits umgesetzt (aus LES-051, bei der Bestandsaufnahme oben
-entdeckt, TODO.md war hier veraltet): `ToolVisualProvider`/
-`ToolVisualRequest`/`ToolVisual` (`tool_visuals.py`) existieren, sind
-Qt-frei, getestet (`tests/test_tool_visual_provider.py`) und ueber
-`resolve_tool_visual()`/`handler._tool_visual_provider`
-(`tool_logic.py`) live verdrahtet - Pfade/Cache/Fallbacks landen nachweislich
-nie in `Tool`-Objekten oder Programmdaten (siehe Punkt 4 unten). In der
-laufenden Anwendung wird `handler._tool_visual_provider` aktuell nirgends
-auf ein echtes Theme-Verzeichnis gesetzt - es greift also immer nur der
-prozedurale Fallback (kein Bug, aber ein offener Produktentscheid: lohnt
-sich ein echtes grafisches Theme, oder ist der prozedurale Fallback
-bewusst ausreichend?).
-
-- [ ] Preview-Canvas, Werkzeugbild, Legende, Status-/Warnungsbox und optionale
-  UI-Bereiche ueber stabile Datenvertraege austauschbar machen - noch nicht
-  im Detail gegen den Code geprueft (anders als die anderen drei Punkte
-  dieses Abschnitts); `preview_scene.py` (`PreviewLayer`/`PreviewPath`/
-  `PreviewScene`) und `preview_geometry.py` (`legend_layout`/
-  `status_message_layout`) sehen nach genau solchen Datenvertraegen aus,
-  aber das ist noch nicht verifiziert.
+Vollstaendig bereits umgesetzt (aus LES-044/LES-051, bei der Bestandsaufnahme
+oben entdeckt - TODO.md war hier durchgehend veraltet, analog zum
+`ViewState`-Befund). `ToolVisualProvider`/`ToolVisualRequest`/`ToolVisual`
+(`tool_visuals.py`) existieren, sind Qt-frei, getestet
+(`tests/test_tool_visual_provider.py`) und ueber `resolve_tool_visual()`/
+`handler._tool_visual_provider` (`tool_logic.py`) live verdrahtet - Pfade/
+Cache/Fallbacks landen nachweislich nie in `Tool`-Objekten oder
+Programmdaten. Preview-Canvas, Legende und Status-/Warnungsbox sind
+ebenfalls bereits als reine Qt-freie Datenvertraege ausgelagert
+(`PREVIEW_DRAW_STYLES`/`LEGEND_ENTRIES`/`legend_layout()`/
+`STATUS_BOX_STYLE`/`status_message_layout()` u. a. in `preview_geometry.py`,
+Zeichenplaene in `preview_scene.py`), jeweils mit eigenem "ist ein reiner
+Vertrag"-Test in `tests/test_preview_legend_and_status_layout.py`. Details:
+`doc/PANEL_ARCHITECTURE.md` → "Werkzeugdarstellung". Offener Produktentscheid
+(keine Architekturfrage): `handler._tool_visual_provider` wird in der
+laufenden Anwendung nirgends auf ein echtes Theme-Verzeichnis gesetzt - es
+greift also immer nur der prozedurale Fallback; lohnt sich ein echtes
+grafisches Theme, oder ist das bewusst ausreichend?
 
 ### 3. Atomare Zustandsaenderungen und Fehlergrenzen
 

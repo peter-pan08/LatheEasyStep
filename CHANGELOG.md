@@ -17,6 +17,27 @@
 
 ## [Unreleased]
 
+### LES-052: Abschnitt 2 vollstaendig - vierter Punkt war ebenfalls schon erledigt 2026-09-17
+
+- Vierten und letzten offenen Punkt aus Abschnitt 2 ("Preview-Canvas,
+  Werkzeugbild, Legende, Status-/Warnungsbox ... ueber stabile
+  Datenvertraege austauschbar machen") gegen den Code geprueft: bereits
+  seit LES-044/LES-051 vollstaendig umgesetzt. `preview_geometry.py`
+  enthaelt fuer jeden dieser Bereiche einen dedizierten, Qt-freien
+  Datenvertrag (`PREVIEW_DRAW_STYLES`, `FRONT_VIEW_RING_STYLES`,
+  `FRONT_VIEW_FILL_COLORS`, `PREVIEW_CHROME_STYLES`, `PREVIEW_CHROME_
+  FILLS`, `LEGEND_ENTRIES`/`legend_layout()`, `STATUS_BOX_STYLE`/
+  `status_message_layout()`), `preview_scene.py` die zugehoerigen
+  Zeichenplaene (`build_preview_draw_plan()` u. a.) - `paintEvent()`
+  (`preview_widget.py`) liest nur noch daraus, konstruiert keine `QPen`/
+  `QColor`-Werte mehr direkt. Jeder Vertrag hat einen eigenen "ist ein
+  reiner Vertrag"-Test in `tests/test_preview_legend_and_status_layout.py`
+  (bereits vorhanden, nicht neu geschrieben).
+- Reine Dokumentationskorrektur, kein Code veraendert - TODO.md Abschnitt 2
+  ist damit komplett geschlossen (alle vier Punkte), `doc/PANEL_
+  ARCHITECTURE.md`s "Werkzeugdarstellung"-Abschnitt entsprechend ergaenzt.
+  916 Stub-/110 Real-Qt-Tests weiterhin bestanden (keine Aenderung).
+
 ### LES-052: Korrektur einer Testduplizierung + Section-2-Bestandsaufnahme 2026-09-17
 
 - Beim Umsetzen von TODO.md-Abschnitt 2 ("Darstellungs- und
