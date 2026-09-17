@@ -607,45 +607,60 @@ wurden einzeln geprueft:
   lebende Divergenz zwischen Tabelle und Modell als bei jedem Spinbox-Feld
   auch.
 
-### Befund: keine strukturelle Verletzung gefunden - aber keine Absicherung
+### Befund: keine strukturelle Verletzung gefunden - Absicherung teilweise da, aber uebersehen
 
 Die Stichprobe findet keine tatsaechliche "zweite Wahrheit" im Sinne von
-Code, der Programmdaten aus einer View zurueckliest. Der eigentliche Befund
-ist ein anderer: **keines** der beiden in LES-052s "Abnahme"-Abschnitt
-genannten Kriterien hat heute eine automatisierte Absicherung:
-
-- "gleicher Programmzustand und identischer G-Code bei mindestens zwei
-  Darstellungs-/Ressourcensaetzen" - keine Testdatei prueft das.
-- "fehlende optionale Ressource fuehrt zu sichtbarer Diagnose, aber nicht zu
-  geaendertem G-Code" - ebenfalls keine direkte Testabdeckung gefunden
-  (grep nach `resource_set`/vergleichbaren Mustern in `tests/` ohne
-  Treffer).
-
-Das Prinzip steht also schon in `doc/PANEL_ARCHITECTURE.md`, ist bislang
-aber unbewiesen statt durchgesetzt.
+Code, der Programmdaten aus einer View zurueckliest. Der urspruengliche
+Befund ("keines der beiden Abnahmekriterien hat eine automatisierte
+Absicherung") war **falsch** - die Grep-Suche nach `resource_set`-artigen
+Mustern hatte die bereits bestehende LES-051-Testabdeckung uebersehen, weil
+sie unter anderen Namen laeuft:
+`test_switching_tool_visual_resource_never_affects_generated_gcode` und
+`test_external_png_is_rendered_without_changing_tool_data`
+(`tests/test_tool_preview_layout.py`) deckten das erste Abnahmekriterium
+bereits vollstaendig ab (G-Code-Identitaet UND Werkzeugdaten-Identitaet
+per `asdict`-Vergleich, sogar mit echtem PyQt5-Rendering statt nur
+Modellvergleich), nur eben nicht fuer die urspruenglich gestellte Frage
+gedacht. Ein bei der Umsetzung (siehe unten) zunaechst neu geschriebener,
+redundanter Test wurde deshalb wieder entfernt und stattdessen der
+bestehende Test erweitert.
 
 ### Umsetzung (2026-09-17)
 
-1. Regressionstest ergaenzt:
-   `test_gcode_identical_across_different_tool_visual_resource_sets`
-   (`tests/test_regression_contracts.py`) - laeuft alle
-   `example_programs()` je zweimal durch `generate_program_gcode()`,
-   dazwischen wird ein voller (`ToolVisualProvider` mit echter SVG-Datei)
-   und ein leerer Ressourcensatz aufgeloest (mit Sanity-Check, dass die
-   beiden Provider tatsaechlich divergieren: `uses_resource is True` vs.
-   `source == "procedural"`). Erwartet byteidentisches G-Code-Ergebnis und
-   unveraenderte `Operation.params`/`.path` - schliesst die erste
-   Abnahme-Luecke.
-2. Zweiter Test ergaenzt: `test_gcode_unaffected_by_preview_widget_
-   rendering_cache` (`tests/test_regression_contracts.py`) - befuellt
+1. Zuerst ein neuer Regressionstest `test_gcode_identical_across_
+   different_tool_visual_resource_sets` geschrieben, dann beim
+   naeheren Hinsehen als **redundant** mit der bereits bestehenden
+   `test_switching_tool_visual_resource_never_affects_generated_gcode`
+   (`tests/test_tool_preview_layout.py`, aus LES-051) erkannt - wieder
+   entfernt. Stattdessen den bestehenden Test echt verbessert: er lief
+   bisher nur gegen ein einzelnes Beispielprogramm ("Bohren.ngc"), jetzt
+   gegen alle `example_programs()`. Lehre: vor einem neuen Test grep-
+   Suchen reicht nicht, wenn bestehende Tests anders benannt sind als man
+   erwartet - der Testname selbst ("Abnahmekriterium: ...") haette den
+   Treffer liefern muessen, die erste Suche war zu eng auf `resource_set`-
+   artige Substrings fokussiert.
+2. Fehlender Teil des Abnahmekriteriums ergaenzt: "Dirty-/Save-State"
+   war bisher tatsaechlich nirgends explizit geprueft (nur implizit
+   dadurch, dass die bestehenden Tests mit einem `_FakeHandler` ohne
+   `_mark_dirty()`-Methode liefen - ein echter Aufruf haette dort schon
+   AttributeError geworfen, aber unabsichtlich statt als Vertrag). Neuer
+   Test `test_render_tool_preview_never_marks_program_dirty`
+   (`tests/test_tool_preview_layout.py`) macht das explizit: ein Spion
+   auf `_mark_dirty` bleibt beim Rendern einer Werkzeugvorschau (auch mit
+   fehlender Ressource) ungenutzt. Regressionsbewiesen.
+3. Zweiter, echt neuer Test ergaenzt: `test_gcode_unaffected_by_preview_
+   widget_rendering_cache` (`tests/test_regression_contracts.py`) - befuellt
    `LathePreviewWidget.paths`/`primitives`/`front_program`/
    `front_operation`/`preview_scene` mit bewusst falschen Werten (u. a.
    Operationen mit anderen Werkzeugnummern) und prueft, dass der fuer ein
    unabhaengiges Programm erzeugte G-Code exakt gleich bleibt - macht die
    bisher nur "beobachtete" Eigenschaft dieser fuenf Rendering-Cache-Felder
-   genauso beweisbar wie bei `ViewState`. Beide Tests per absichtlicher
-   Mutation der verglichenen Werte sanity-geprueft (die Assertion schlaegt
-   nachweislich fehl, wenn die G-Code-Ausgaben tatsaechlich divergieren).
-3. Kein struktureller Umbau vorgenommen, wie vorgeschlagen - die
+   genauso beweisbar wie bei `ViewState`. Per absichtlicher Mutation der
+   verglichenen Werte sanity-geprueft.
+4. Kein struktureller Umbau vorgenommen, wie vorgeschlagen - die
    Architektur war bereits konform, der offene TODO-Punkt ist jetzt durch
-   die beiden neuen Tests geschlossen statt durch neue Abstraktionen.
+   erweiterte/neue Tests geschlossen statt durch neue Abstraktionen.
+   916 Stub-/110 Real-Qt-Tests bestanden (912 Stub-Tests vorher, netto +4:
+   +1 Stub fuer die Rendering-Cache-Regression, +1 Real-Qt fuer die neue
+   Dirty-State-Regression, der zunaechst hinzugefuegte und wieder entfernte
+   Stub-Test gleicht sich aus).

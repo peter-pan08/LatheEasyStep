@@ -201,6 +201,23 @@ def test_missing_external_visual_uses_marked_procedural_fallback(tmp_path):
     )
 
 
+def test_render_tool_preview_never_marks_program_dirty(tmp_path):
+    """LES-052-Abnahmekriterium (doc/PANEL_ARCHITECTURE.md, Abschnitt
+    "Darstellungs- und Ressourcenadapter"): fehlende optionale Ressource
+    fuehrt zu sichtbarer Diagnose, aber nicht zu geaendertem G-Code oder
+    Dirty-/Save-State. Rendern einer Werkzeugvorschau ist eine reine
+    Anzeigeaktion und darf _mark_dirty() nie aufrufen - weder mit
+    vorhandener noch mit fehlender externer Ressource."""
+    h = _FakeHandler()
+    h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": "missing.svg"})
+    dirty_calls = []
+    h._mark_dirty = lambda **kwargs: dirty_calls.append(kwargs)
+
+    h._render_tool_preview(_tool())
+
+    assert dirty_calls == []
+
+
 def test_unreadable_external_visual_falls_back_in_qt_adapter(tmp_path):
     image = tmp_path / "broken.png"
     image.write_bytes(b"not a png")
@@ -214,32 +231,35 @@ def test_unreadable_external_visual_falls_back_in_qt_adapter(tmp_path):
 
 
 def test_switching_tool_visual_resource_never_affects_generated_gcode(tmp_path):
-    """LES-051 Abnahmekriterium: das Austauschen einer Schneidplatten-Grafik
-    darf weder Operationen, Werkzeugdaten noch G-Code veraendern. Fuer
-    Werkzeugdaten bereits durch `test_external_png_is_rendered_without_
+    """LES-051/LES-052 Abnahmekriterium: das Austauschen einer Schneidplatten-
+    Grafik darf weder Operationen, Werkzeugdaten noch G-Code veraendern - fuer
+    mindestens zwei Darstellungs-/Ressourcensaetze (LES-052-Formulierung).
+    Fuer Werkzeugdaten bereits durch `test_external_png_is_rendered_without_
     changing_tool_data` (asdict-Vergleich) belegt; hier zusaetzlich end-to-
-    end fuer den tatsaechlichen G-Code-Generatorpfad nachgewiesen - kein
-    gcode_*.py-/checks.py-Modul importiert `tool_visuals`/`render_tool_
-    preview` ueberhaupt (rein architekturell entkoppelt), dieser Test macht
-    das als Regression konkret pruefbar statt nur als Codedurchsicht."""
+    end fuer den tatsaechlichen G-Code-Generatorpfad nachgewiesen, ueber ALLE
+    Beispielprogramme (nicht nur eines) - kein gcode_*.py-/checks.py-Modul
+    importiert `tool_visuals`/`render_tool_preview` ueberhaupt (rein
+    architekturell entkoppelt), dieser Test macht das als Regression konkret
+    pruefbar statt nur als Codedurchsicht."""
     from lathe_easystep.examples import example_programs
     from lathe_easystep.gcode_program import generate_program_gcode
 
-    ops_before, settings_before = example_programs()["Bohren.ngc"]
-    gcode_before = generate_program_gcode(ops_before, settings_before)
-
     # Werkzeugvorschau mit einer externen Ressource "benutzen" - voellig
     # unabhaengige Tool-/Handler-Instanzen, kein gemeinsamer Zustand mit den
-    # obigen Operationen/Settings.
+    # unten erzeugten Operationen/Settings.
     source = QtGui.QPixmap(20, 10)
     source.fill(QtGui.QColor("#123456"))
     image = tmp_path / "turning.png"
     assert source.save(str(image), "PNG")
-    h = _FakeHandler()
-    h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": image.name})
-    h._render_tool_preview(_tool(comment="DCMT Außendrehen", iso_code="DCMT110408"))
 
-    ops_after, settings_after = example_programs()["Bohren.ngc"]
-    gcode_after = generate_program_gcode(ops_after, settings_after)
+    for filename, (ops_before, settings_before) in example_programs().items():
+        gcode_before = generate_program_gcode(ops_before, settings_before)
 
-    assert gcode_after == gcode_before
+        h = _FakeHandler()
+        h._tool_visual_provider = ToolVisualProvider(tmp_path, {"turning": image.name})
+        h._render_tool_preview(_tool(comment="DCMT Außendrehen", iso_code="DCMT110408"))
+
+        ops_after, settings_after = example_programs()[filename]
+        gcode_after = generate_program_gcode(ops_after, settings_after)
+
+        assert gcode_after == gcode_before, filename

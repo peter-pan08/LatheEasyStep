@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 917 Stub-Qt-Tests und 109 Tests mit echtem PyQt5, keine Skips.
+- 916 Stub-Qt-Tests und 110 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -151,24 +151,38 @@ tote `_connect_signals()` wurde entfernt, aber `connect_resolver_fallbacks()`
 (bisher nur ueber diesen toten Pfad erreichbar, aber als einziger echter
 5s-Polling-Rueckfall fuer `listOperations` NICHT redundant) wurde stattdessen
 sauber in `finalize_ui_ready()` eingebunden. Fuer "Views ohne eigenen
-Fachzustand" fand die Stichprobe keine strukturelle Verletzung; zwei neue
-Regressionstests sichern die beiden LES-052-Abnahmekriterien dazu jetzt ab
-(identischer G-Code bei unterschiedlichen Ressourcensaetzen; `LathePreview
-Widget`s Rendering-Cache fliesst nie zurueck).
+Fachzustand" fand die Stichprobe keine strukturelle Verletzung. Das
+LES-052-Abnahmekriterium "identischer G-Code bei unterschiedlichen
+Ressourcensaetzen" war entgegen der ersten (zu eng gesuchten)
+Bestandsaufnahme bereits seit LES-051 abgedeckt
+(`test_switching_tool_visual_resource_never_affects_generated_gcode`,
+`tests/test_tool_preview_layout.py`) - jetzt auf alle Beispielprogramme
+erweitert statt nur eines; der zunaechst neu geschriebene, redundante Test
+wurde wieder entfernt. `LathePreviewWidget`s Rendering-Cache-Felder fliessen
+nachweislich nie in G-Code zurueck (neuer Test).
 
 ### 2. Darstellungs- und Ressourcenadapter
 
-- [ ] einen neutralen `ToolVisualProvider` fuer Werkzeug- und
-  Schneidplatten-Darstellungen einfuehren. Er liefert ein Render-/Bildmodell,
-  nicht Operationen oder G-Code.
-- [ ] SVG, PNG und spaetere Darstellungsformate ueber eine eigene
-  Ressourcen-/Theme-Schicht aufloesen; Pfade, Cache und Fallbacks duerfen nicht
-  in gespeicherten Programmdaten oder `Tool`-Fachobjekten landen.
+Teilweise bereits umgesetzt (aus LES-051, bei der Bestandsaufnahme oben
+entdeckt, TODO.md war hier veraltet): `ToolVisualProvider`/
+`ToolVisualRequest`/`ToolVisual` (`tool_visuals.py`) existieren, sind
+Qt-frei, getestet (`tests/test_tool_visual_provider.py`) und ueber
+`resolve_tool_visual()`/`handler._tool_visual_provider`
+(`tool_logic.py`) live verdrahtet - Pfade/Cache/Fallbacks landen nachweislich
+nie in `Tool`-Objekten oder Programmdaten (siehe Punkt 4 unten). In der
+laufenden Anwendung wird `handler._tool_visual_provider` aktuell nirgends
+auf ein echtes Theme-Verzeichnis gesetzt - es greift also immer nur der
+prozedurale Fallback (kein Bug, aber ein offener Produktentscheid: lohnt
+sich ein echtes grafisches Theme, oder ist der prozedurale Fallback
+bewusst ausreichend?).
+
 - [ ] Preview-Canvas, Werkzeugbild, Legende, Status-/Warnungsbox und optionale
-  UI-Bereiche ueber stabile Datenvertraege austauschbar machen.
-- [ ] nachweisen, dass alternative oder fehlende Grafiken weder
-  Operationsdaten, Werkzeugdaten, Preview-Geometrie, G-Code noch Dirty-/
-  Save-State veraendern.
+  UI-Bereiche ueber stabile Datenvertraege austauschbar machen - noch nicht
+  im Detail gegen den Code geprueft (anders als die anderen drei Punkte
+  dieses Abschnitts); `preview_scene.py` (`PreviewLayer`/`PreviewPath`/
+  `PreviewScene`) und `preview_geometry.py` (`legend_layout`/
+  `status_message_layout`) sehen nach genau solchen Datenvertraegen aus,
+  aber das ist noch nicht verifiziert.
 
 ### 3. Atomare Zustandsaenderungen und Fehlergrenzen
 

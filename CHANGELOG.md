@@ -17,6 +17,40 @@
 
 ## [Unreleased]
 
+### LES-052: Korrektur einer Testduplizierung + Section-2-Bestandsaufnahme 2026-09-17
+
+- Beim Umsetzen von TODO.md-Abschnitt 2 ("Darstellungs- und
+  Ressourcenadapter") festgestellt: `ToolVisualProvider`/
+  `ToolVisualRequest`/`ToolVisual` (`tool_visuals.py`) waren bereits aus
+  LES-051 vollstaendig implementiert, getestet und ueber
+  `resolve_tool_visual()`/`handler._tool_visual_provider`
+  (`tool_logic.py`) live verdrahtet - TODO.md war hier veraltet (drei der
+  vier Punkte in Abschnitt 2 waren faktisch schon erledigt), analog zum
+  frueheren `ViewState`-Befund.
+- **Eigener Fehler korrigiert:** der im vorigen Commit hinzugefuegte Test
+  `test_gcode_identical_across_different_tool_visual_resource_sets`
+  (`tests/test_regression_contracts.py`) erwies sich als redundant mit der
+  bereits bestehenden `test_switching_tool_visual_resource_never_affects_
+  generated_gcode` (`tests/test_tool_preview_layout.py`, LES-051) - die
+  urspruengliche Bestandsaufnahme hatte diese Abdeckung uebersehen (die
+  Grep-Suche war zu eng auf `resource_set`-artige Substrings fokussiert,
+  der bestehende Test heisst anders). Entfernt; stattdessen den
+  bestehenden Test echt verbessert (laeuft jetzt gegen alle
+  `example_programs()` statt nur "Bohren.ngc").
+- Fehlenden Teil des LES-052-Abnahmekriteriums ergaenzt: "Dirty-/Save-
+  State" war bisher nirgends explizit geprueft. Neuer Test
+  `test_render_tool_preview_never_marks_program_dirty`
+  (`tests/test_tool_preview_layout.py`) macht das explizit
+  (`_mark_dirty`-Spion bleibt beim Rendern ungenutzt). Regressionsbewiesen.
+- TODO.md Abschnitt 2 entsprechend aktualisiert: drei der vier Punkte als
+  erledigt markiert, der vierte (stabile Datenvertraege fuer Preview-
+  Canvas/Werkzeugbild/Legende/Status-Box) noch nicht im Detail geprueft -
+  bleibt offen. Ebenfalls festgehalten: `handler._tool_visual_provider`
+  wird in der laufenden Anwendung nirgends auf ein echtes Theme-Verzeichnis
+  gesetzt (nur prozeduraler Fallback) - kein Bug, aber ein offener
+  Produktentscheid.
+- 916 Stub-/110 Real-Qt-Tests bestanden.
+
 ### LES-052: Ladevertrag- und Views-Bestandsaufnahme umgesetzt 2026-09-17
 
 - Alle vier Punkte aus der vorangegangenen Ladevertrag-/Views-
