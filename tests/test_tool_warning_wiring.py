@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from lathe_easystep.model import Operation, OpType
 from lathe_easystep.tool_logic import radius_warning_details
+from lathe_easystep.tool_table_state import ToolTableState
 from lathe_easystep.tools import Tool
 from lathe_easystep.ui_preview import collect_preview_state
 
@@ -40,7 +41,7 @@ class _FakeHandler:
 
     def __init__(self, operations, tools):
         self.model = type("M", (), {"operations": operations})()
-        self.tools = tools
+        self._tool_table = ToolTableState(tools=tools)
 
     def _radius_warning_details(self):
         return radius_warning_details(self)

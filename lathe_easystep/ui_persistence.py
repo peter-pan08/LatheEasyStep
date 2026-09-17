@@ -325,8 +325,8 @@ def handle_load_program(handler) -> None:
             # Reiter-Widgets mit der bereits geladenen Werkzeugtabelle neu
             # befuellen - _auto_load_tool_table() ist nach dem ersten Aufruf
             # (Programmstart) dauerhaft gesperrt und wuerde hier nichts tun.
-            if handler.tools:
-                handler._populate_tool_combos(handler.tools)
+            if handler._tool_table.tools:
+                handler._populate_tool_combos(handler._tool_table.tools)
             else:
                 handler._auto_load_tool_table()
         except Exception:

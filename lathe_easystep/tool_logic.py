@@ -71,7 +71,7 @@ def tool_orientation_mismatch(handler, op):
         tool_num = 0
     if tool_num <= 0:
         return None
-    tool = handler.tools.get(tool_num)
+    tool = handler._tool_table.tools.get(tool_num)
     if not tool:
         return None
     comment_hint = handler._tool_comment_side_hint(tool.comment)
@@ -104,7 +104,7 @@ def radius_warning_details(handler):
             tool_num = 0
         if tool_num <= 0:
             continue
-        tool = handler.tools.get(tool_num)
+        tool = handler._tool_table.tools.get(tool_num)
         radius = tool.radius_mm if tool else 0.0
         if radius <= 0.0:
             comment = tool.comment if tool and tool.comment else "kein Kommentar"

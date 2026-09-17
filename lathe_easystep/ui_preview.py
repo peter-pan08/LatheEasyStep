@@ -343,7 +343,7 @@ def collect_preview_state(
     try:
         prog["__warnings"] = (
             get_machine_limit_warnings(prog)
-            + validate_program_setup(handler.model.operations, {**prog, "tools": getattr(handler, "tools", {})})
+            + validate_program_setup(handler.model.operations, {**prog, "tools": getattr(getattr(handler, "_tool_table", None), "tools", {})})
             + [detail["message"] for detail in handler._radius_warning_details()]
         )
     except Exception as exc:

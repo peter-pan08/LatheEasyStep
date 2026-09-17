@@ -17,6 +17,38 @@
 
 ## [Unreleased]
 
+### LES-052: ToolTableState gekapselt 2026-09-17
+
+- Dritter LES-052-Baustein: `handler.tools` (ein rohes `Dict[int, Tool]`)
+  plus zwei bei der ersten Bestandsaufnahme uebersehene lose Attribute
+  (`_loaded_tools`, `_missing_iso_tools`) durch eine einzelne Qt-freie
+  Klasse `ToolTableState` (`tool_table_state.py`) ersetzt, jetzt als
+  `handler._tool_table` gehalten.
+- `_loaded_tools` ist der Cache der zuletzt geladenen NICHT-leeren Tabelle
+  fuer das Nachbefuellen von erst spaeter (lazy) auftauchenden Werkzeug-
+  Combo-Widgets; `set_tools()` kapselt exakt die bisherige "leere Tabelle
+  ueberschreibt den Cache nicht"-Logik aus
+  `ui_tools.py::populate_tool_combos()`. `_missing_iso_tools` (die von
+  `parse_tool_table()` gelieferten ISO-Warnungen) war schon vor der
+  Kapselung ein reines Schreib-Attribut ohne Leser - hier bewusst nicht
+  "repariert", nur unveraendert mituebernommen.
+- `handler.tool_table_path` (der angezeigte Dateipfad-Text) bleibt bewusst
+  aussen vor - das ist Qt-View-Zustand, keine Fachdaten.
+- Alle neun betroffenen Aufrufstellen (`tool_logic.py`, `ui_flow.py`,
+  `ui_persistence.py`, `ui_preview.py`, `ui_tools.py`,
+  `lathe_easystep_handler.py`) mussten nur ihren direkten Attributzugriff
+  von `handler.tools`/`handler._loaded_tools` auf
+  `handler._tool_table.tools`/`handler._tool_table.loaded_tools`
+  umstellen, keine strukturellen Aenderungen.
+- 4 neue eigenstaendige Tests (`tests/test_tool_table_state.py`), per
+  absichtlich entferntem Leer-Dict-Schutz als echte Regression
+  verifiziert (die "leere Tabelle ueberschreibt den Cache nicht"-Logik
+  schlug korrekt fehl, als der Schutz entfernt wurde).
+- 895 Stub-/108 Real-Qt-Tests bestanden (891 vorher + 4 neue).
+  Standalone-Panel-Log bestaetigt den echten Ladepfad: `tool.tbl`
+  automatisch geladen, Combos befuellt, kein `AttributeError`. Details:
+  TODO.md (LES-052).
+
 ### LES-052: DirtyState gekapselt 2026-09-16
 
 - Zweiter LES-052-Baustein: die fuenf bisherigen Handler-Attribute

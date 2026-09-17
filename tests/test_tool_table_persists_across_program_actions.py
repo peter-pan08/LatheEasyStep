@@ -4,6 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass
+from lathe_easystep.tool_table_state import ToolTableState
 
 
 class DummySettings:
@@ -66,7 +67,7 @@ def test_load_program_repopulates_tool_combos_from_already_loaded_table(tmp_path
     handler._refresh_operation_list = lambda select_index=None: None
     handler._handle_selection_change = lambda idx: None
 
-    handler.tools = {1: object()}
+    handler._tool_table = ToolTableState(tools={1: object()})
     auto_load_calls = []
     handler._auto_load_tool_table = lambda: auto_load_calls.append(True)
     populate_calls = []
@@ -74,7 +75,7 @@ def test_load_program_repopulates_tool_combos_from_already_loaded_table(tmp_path
 
     handler._handle_load_program()
 
-    assert populate_calls == [handler.tools]
+    assert populate_calls == [handler._tool_table.tools]
     assert auto_load_calls == []
 
 
@@ -111,7 +112,7 @@ def test_load_program_falls_back_to_auto_load_when_no_tools_cached(tmp_path):
     handler._refresh_operation_list = lambda select_index=None: None
     handler._handle_selection_change = lambda idx: None
 
-    handler.tools = {}
+    handler._tool_table = ToolTableState()
     auto_load_calls = []
     handler._auto_load_tool_table = lambda: auto_load_calls.append(True)
     populate_calls = []
@@ -135,13 +136,13 @@ def test_new_program_repopulates_tool_combos_from_already_loaded_table():
     handler._refresh_operation_list = lambda select_index=None: None
     handler._refresh_preview = lambda: None
 
-    handler.tools = {1: object()}
+    handler._tool_table = ToolTableState(tools={1: object()})
     populate_calls = []
     handler._populate_tool_combos = lambda tools: populate_calls.append(tools)
 
     handler._handle_new_program()
 
-    assert populate_calls == [handler.tools]
+    assert populate_calls == [handler._tool_table.tools]
 
 
 def _sample_program(tmp_path):

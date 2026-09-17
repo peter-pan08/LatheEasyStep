@@ -83,14 +83,14 @@ def _translate_value(handler, prefix: str, value) -> str:
 
 
 def build_gcode_lines(handler):
-    if not handler.tools:
+    if not handler._tool_table.tools:
         try:
             handler._auto_load_tool_table()
         except Exception:
             pass
     header = handler._collect_program_header()
     handler.model.program_settings = header
-    handler.model.program_settings["tools"] = handler.tools
+    handler.model.program_settings["tools"] = handler._tool_table.tools
     handler.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
     unique_tools = set()
     for op in handler.model.operations:
@@ -197,8 +197,8 @@ def handle_new_program(handler):
             # Werkzeugtabelle bleibt ueber "Neues Programm" hinweg geladen;
             # Combos ggf. erst jetzt verfuegbarer Reiter-Widgets werden mit
             # der bereits geladenen Tabelle aufgefrischt.
-            if handler.tools:
-                handler._populate_tool_combos(handler.tools)
+            if handler._tool_table.tools:
+                handler._populate_tool_combos(handler._tool_table.tools)
         except Exception:
             pass
         handler._refresh_operation_list(select_index=-1)

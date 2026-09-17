@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, aktueller Entwicklungsstand fuer die naechste Version;
   `main` ist seit 2026-09-16 auf Version `0.8.0` (Tag `v0.8.0`).
-- 891 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
+- 895 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -226,8 +226,23 @@ Aenderung veraendern.
   `_moving_up`/`_moving_down`/`_generating_gcode`/`_creating_new_program`
   direkt auf `self`) - Bestandsaufnahme in `doc/PANEL_ARCHITECTURE.md`
   entsprechend korrigiert. 891 Stub-/108 Real-Qt-Tests bestanden,
-  Standalone-Panel sauber gestartet. `ToolTableState`/`RuntimeState`
-  bleiben offen.
+  Standalone-Panel sauber gestartet.
+  Dritter Baustein (2026-09-17): `ToolTableState` gekapselt - Qt-freie
+  Klasse `ToolTableState` (`tool_table_state.py`) buendelt `handler.tools`
+  sowie zwei bei der ersten Bestandsaufnahme uebersehene lose Attribute
+  (`_loaded_tools`: Cache der letzten nicht-leeren Tabelle fuer lazy
+  auftauchende Combo-Widgets; `_missing_iso_tools`: von
+  `parse_tool_table()` gelieferte ISO-Warnungen, geschrieben aber nirgends
+  gelesen - bewusst nicht repariert, nur mituebernommen) in
+  `handler._tool_table`. `set_tools()` kapselt exakt die bisherige
+  "leere Tabelle ueberschreibt den Cache nicht"-Logik aus
+  `ui_tools.py::populate_tool_combos()`. `handler.tool_table_path`
+  (Qt-Widget-Text, kein Fachdatum) bleibt bewusst aussen vor. 4 neue
+  eigenstaendige Tests (`tests/test_tool_table_state.py`), per
+  absichtlich entferntem Leer-Dict-Schutz als echte Regression
+  verifiziert. 895 Stub-/108 Real-Qt-Tests bestanden; Standalone-Panel-
+  Log bestaetigt den echten Ladepfad (`tool.tbl` automatisch geladen,
+  Combos befuellt). `RuntimeState` (neun Flags) bleibt offen.
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.

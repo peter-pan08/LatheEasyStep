@@ -58,16 +58,25 @@ Dateiformat-Versionierung (LES-053) relevant, aber kein Ownership-Problem.
 
 ### `ToolTableState`
 
-**Nicht gekapselt.** Der Zustand ist ein rohes `handler.tools: Dict[int,
-Tool]` (`Tool` selbst ist ein sauberes `frozen`-Dataclass in `tools.py`,
-nur der Container drumherum fehlt) plus der lose Widget-Text
-`handler.tool_table_path`. Beides wird direkt von freien Funktionen in
-`ui_tools.py` gesetzt (`handler.tools = tools` an mindestens drei Stellen).
-`parse_tool_table()` (`tools.py`) liefert Parse-Warnungen (fehlendes ISO,
-Duplikate) bereits zurueck, aber nichts haelt sie ueber den Ladevorgang
-hinaus fest - sie werden geloggt, nicht als Teil des Zustands gefuehrt.
-Deckt sich mit LES-052 Abschnitt 5 ("Werkzeugtabelle als eigene Domaene
-kapseln").
+**Gekapselt seit 2026-09-17 (dritter LES-052-Baustein).** War ein rohes
+`handler.tools: Dict[int, Tool]` (`Tool` selbst war schon ein sauberes
+`frozen`-Dataclass in `tools.py`, nur der Container drumherum fehlte) plus
+zwei WEITERE lose Attribute, die bei der Bestandsaufnahme zunaechst
+uebersehen wurden: `handler._loaded_tools` (Cache der zuletzt geladenen,
+NICHT-leeren Tabelle - fuer das Nachbefuellen von erst spaeter/lazy
+auftauchenden Werkzeug-Combo-Widgets) und `handler._missing_iso_tools`
+(die von `parse_tool_table()` gelieferten ISO-Warnungen, geschrieben, aber
+nirgends gelesen - schon vor der Kapselung totes Feld, hier bewusst nicht
+"repariert", nur mituebernommen). `ToolTableState` (`tool_table_state.py`,
+Qt-frei) buendelt alle drei in `handler._tool_table`; `set_tools()`
+kapselt exakt die bisherige "leere Tabelle ueberschreibt den Cache nicht"-
+Logik aus `ui_tools.py::populate_tool_combos()`. Der Widget-Text
+`handler.tool_table_path` bleibt bewusst aussen vor - das ist Qt-View-
+Zustand (der angezeigte Dateipfad), keine Fachdaten. 4 neue eigenstaendige
+Tests (`tests/test_tool_table_state.py`), per absichtlich entferntem
+Leer-Dict-Schutz als echte Regression verifiziert. 895 Stub-/108 Real-Qt-
+Tests bestanden; Standalone-Panel-Log bestaetigt den echten Ladepfad
+(`tool.tbl` automatisch geladen, Combos befuellt).
 
 ### `ViewState`
 
@@ -130,18 +139,19 @@ ein brauchbares Vorbild fuer sauber gekapselten Zustand.
 
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
-Stand 2026-09-16: Drei der sechs Kategorien lebten urspruenglich
+Stand 2026-09-17: Drei der sechs Kategorien lebten urspruenglich
 ausschliesslich als unbenannte Attribute auf dem Handler, direkt gelesen/
 geschrieben von freien Funktionen in mehreren Modulen - genau das "Handler
 als heimlicher Zustandsbesitzer"-Muster, das LES-052 Abschnitt 1 beenden
-soll. `DirtyState` ist davon jetzt gekapselt (siehe oben, zweiter
-LES-052-Baustein) - die dringendste der drei, wegen der real aufgetretenen
-Bugs durch Index-Drift. `ToolTableState` und `RuntimeState` (jetzt mit
-neun statt zwei bekannten Flags) sind es noch nicht. `ProgramState`/
-`OperationState` (bereits Klassen mit Methoden) und `MotionState`/
-`SpindleState` (bereits lokale, nicht handler-gebundene Werte) zeigen,
-dass das Projekt das Zielmuster an mehreren Stellen schon beherrscht - die
-Umsetzung fuer die beiden verbleibenden Kategorien kann sich daran
-orientieren, insbesondere am `DirtyState`-Muster: Qt-freie Klasse mit
+soll. `DirtyState` und `ToolTableState` sind davon jetzt gekapselt (zweiter
+und dritter LES-052-Baustein) - nach demselben Muster: Qt-freie Klasse mit
 Methoden statt loser Attribute, duenne `ui_*.py`-Adapter mit unveraenderter
-Signatur, damit bestehende Aufrufstellen nicht angefasst werden muessen.
+Signatur, damit bestehende Aufrufstellen nur den Attributzugriff, nicht
+ihre Struktur, aendern mussten. Bei beiden Umsetzungen kamen zusaetzliche,
+bei der ersten Bestandsaufnahme uebersehene lose Attribute zum Vorschein
+(`_loaded_tools`/`_missing_iso_tools` bei `ToolTableState`, die tatsaechliche
+Groesse von `RuntimeState` bei `DirtyState`) - ein Hinweis, dass die
+Bestandsaufnahme selbst nur der erste, nicht der letzte Blick auf den
+tatsaechlichen Code sein sollte. Nur `RuntimeState` (neun Flags) ist noch
+nicht gekapselt; `ProgramState`/`OperationState` und `MotionState`/
+`SpindleState` waren es schon vorher und dienen weiterhin als Vorbild.

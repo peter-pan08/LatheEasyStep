@@ -23,6 +23,7 @@ from lathe_easystep.comments import update_auto_comment
 from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
 from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
+from lathe_easystep.tool_table_state import ToolTableState
 from lathe_easystep.gcode_utils import is_internal_side
 from lathe_easystep.tools import Tool, parse_tool_table
 from lathe_easystep.persistence import (
@@ -936,9 +937,7 @@ class HandlerClass:
         self.paths = paths
         self.model = ProgramModel()
         # self.root_widget wurde oben gesetzt
-        self.tools: Dict[int, Tool] = {}  # loaded tool table
-        self._loaded_tools: Dict[int, Tool] | None = None  # cache for repopulating combos after deferred widgets
-        self._missing_iso_tools: List[int] = []
+        self._tool_table = ToolTableState()
         self.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {}
         self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
@@ -1239,11 +1238,11 @@ class HandlerClass:
                 self._update_program_visibility()
             elif name.endswith("_spindle_mode"):
                 self._update_spindle_mode_visibility()
-            if self._loaded_tools and name in {
+            if self._tool_table.loaded_tools and name in {
                 'face_tool', 'thread_tool', 'groove_tool', 'drill_tool', 'parting_tool', 'key_tool',
                 'contour_tool', 'taper_tool', 'boring_tool'
             }:
-                self._populate_tool_combos(self._loaded_tools)
+                self._populate_tool_combos(self._tool_table.loaded_tools)
                 self._update_tool_previews()
             if name in {
                 'face_tool_img', 'thread_tool_img', 'groove_tool_img', 'drill_tool_img', 'parting_tool_img'
@@ -2730,7 +2729,7 @@ class HandlerClass:
         # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
         self._ensure_core_widgets()
         self._force_attach_core_widgets()
-        if not self.tools:
+        if not self._tool_table.tools:
             try:
                 self._auto_load_tool_table()
             except Exception:
