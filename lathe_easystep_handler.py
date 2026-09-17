@@ -21,6 +21,7 @@ from lathe_easystep.ui_contour_input import collect_contour_segments
 from lathe_easystep.ui_thread import apply_thread_preset
 from lathe_easystep.comments import update_auto_comment
 from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
+from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.gcode_utils import is_internal_side
 from lathe_easystep.tools import Tool, parse_tool_table
@@ -962,9 +963,7 @@ class HandlerClass:
         self._moving_down = False
         self._generating_gcode = False
         self._creating_new_program = False
-        self._program_dirty = False
-        self._dirty_operation_indices = set()
-        self._dirty_warning_suppressed = False
+        self._dirty = DirtyState()
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)

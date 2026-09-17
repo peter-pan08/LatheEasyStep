@@ -146,8 +146,8 @@ def test_program_structure_dirty_marks_program_without_flagging_all_steps():
     handler = _handler()
     init_dirty_state(handler)
     mark_program_structure_dirty(handler, operation_indices={1})
-    assert handler._program_dirty is True
-    assert handler._dirty_operation_indices == {1}
+    assert handler._dirty.program_dirty is True
+    assert handler._dirty.operation_indices == {1}
     assert "Programm" in dirty_status_text(handler)
     assert "1 Step" in dirty_status_text(handler)
 
@@ -157,8 +157,8 @@ def test_clear_program_dirty_can_remove_structure_flag_only():
     init_dirty_state(handler)
     mark_program_structure_dirty(handler, operation_indices={1})
     clear_program_dirty(handler, structure=True)
-    assert handler._program_dirty is False
-    assert handler._dirty_program_structure is False
+    assert handler._dirty.program_dirty is False
+    assert handler._dirty.program_structure_dirty is False
 
 
 def test_move_up_marks_program_structure_but_not_all_steps():

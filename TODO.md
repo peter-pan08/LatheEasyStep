@@ -10,7 +10,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 
 - Branch `dev`, aktueller Entwicklungsstand fuer die naechste Version;
   `main` ist seit 2026-09-16 auf Version `0.8.0` (Tag `v0.8.0`).
-- 877 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
+- 891 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -208,6 +208,26 @@ Aenderung veraendern.
   Streuungsmuster. `ViewState` (Zoom/Pan/Slice/Ansichtsmodus) ist auf
   `LathePreviewWidget` immerhin lokal gebuendelt (kein Leck ins
   Fachmodell, mehrfach testbelegt), aber ungetypt.
+  Zweiter Baustein (2026-09-16): `DirtyState` gekapselt - Qt-freie Klasse
+  `DirtyState` (`dirty_state.py`) buendelt die fuenf Felder in einem
+  Objekt (`handler._dirty`); `ui_dirty.py`s freie Funktionen bleiben als
+  duenne Adapter mit unveraenderter Signatur bestehen (Koerper delegiert
+  an Methoden auf `DirtyState`), damit alle Aufrufstellen in
+  `ui_flow.py`/`ui_persistence.py`/`ui_selection.py`/
+  `lathe_easystep_handler.py` nicht umgebaut werden mussten - nur der
+  direkte Attributzugriff wurde auf `handler._dirty.<feld>` umgestellt.
+  14 neue eigenstaendige Tests (`tests/test_dirty_state.py`, Qt-frei).
+  Per absichtlich entfernter Nachzieh-Arithmetik zweimal als echte
+  Regression verifiziert (`reindex_after_removal()` und die abgeleitete
+  `program_dirty`-Logik in `clear_program()`). Dabei nebenbei entdeckt:
+  `RuntimeState` hat tatsaechlich neun statt der urspruenglich notierten
+  zwei Flags (`lathe_easystep_handler.py`s `__init__` setzt zusaetzlich
+  `_loading_step`/`_deleting`/`_saving_step`/`_saving_changes`/
+  `_moving_up`/`_moving_down`/`_generating_gcode`/`_creating_new_program`
+  direkt auf `self`) - Bestandsaufnahme in `doc/PANEL_ARCHITECTURE.md`
+  entsprechend korrigiert. 891 Stub-/108 Real-Qt-Tests bestanden,
+  Standalone-Panel sauber gestartet. `ToolTableState`/`RuntimeState`
+  bleiben offen.
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.

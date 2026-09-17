@@ -6,6 +6,7 @@ import builtins
 # ensure handler module is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType
+from lathe_easystep.dirty_state import DirtyState
 
 
 class DummySettings:
@@ -257,10 +258,7 @@ def test_save_changes_writes_only_dirty_steps_and_dirty_program(tmp_path):
     handler._saving_changes = False
     handler._current_program_path = str(program_path)
     handler._current_gcode_path = str(gcode_path)
-    handler._dirty_operation_indices = {1}
-    handler._program_dirty = False
-    handler._dirty_program_header = False
-    handler._dirty_program_structure = False
+    handler._dirty = DirtyState(operation_indices={1})
     handler._update_selected_operation = lambda force=False: None
     handler._step_file_path = lambda op: op.params.get("__step_file_path")
     handler._operation_to_step_data = lambda op: {"tool": op.params.get("tool")}
@@ -269,7 +267,7 @@ def test_save_changes_writes_only_dirty_steps_and_dirty_program(tmp_path):
     handler._write_program_file = lambda path: (_ for _ in ()).throw(AssertionError("program must not be rewritten"))
     gcode_calls = []
     handler._write_gcode_file = lambda path: gcode_calls.append(path)
-    handler._clear_dirty_state = lambda: (setattr(handler, "_dirty_operation_indices", set()), setattr(handler, "_program_dirty", False))
+    handler._clear_dirty_state = lambda: handler._dirty.clear()
     handler._log = lambda *args, **kwargs: None
 
     class _Settings:
@@ -308,10 +306,7 @@ def _save_changes_two_ops_handler(tmp_path, *, op_a_linked: bool):
     handler._saving_changes = False
     handler._current_program_path = str(program_path)
     handler._current_gcode_path = str(gcode_path)
-    handler._dirty_operation_indices = {0, 1}
-    handler._program_dirty = False
-    handler._dirty_program_header = False
-    handler._dirty_program_structure = False
+    handler._dirty = DirtyState(operation_indices={0, 1})
     handler._update_selected_operation = lambda force=False: None
     handler._step_file_path = lambda op: op.params.get("__step_file_path")
     handler._operation_to_step_data = lambda op: {"tool": op.params.get("tool")}
@@ -319,7 +314,7 @@ def _save_changes_two_ops_handler(tmp_path, *, op_a_linked: bool):
     handler._normalized_file_path = lambda path: str(path) if path else None
     handler._write_program_file = lambda path: (_ for _ in ()).throw(AssertionError("program must not be rewritten"))
     handler._write_gcode_file = lambda path: None
-    handler._clear_dirty_state = lambda: (setattr(handler, "_dirty_operation_indices", set()), setattr(handler, "_program_dirty", False))
+    handler._clear_dirty_state = lambda: handler._dirty.clear()
     handler._log = lambda *args, **kwargs: None
     return handler, op_a, step_a, step_b
 
@@ -412,15 +407,12 @@ def test_save_step_clears_unlinked_structure_dirty_after_new_step_save(tmp_path)
     handler._set_step_file_path = lambda op, file_path: op.params.__setitem__("__step_file_path", file_path)
     handler._operation_to_step_data = lambda op: {"tool": 1}
     handler._remember_dialog_path = lambda *args, **kwargs: None
-    handler._clear_dirty_operation = lambda idx: handler._dirty_operation_indices.discard(idx)
-    handler._clear_program_dirty = lambda **kwargs: (setattr(handler, "_dirty_program_structure", False), setattr(handler, "_program_dirty", False))
+    handler._clear_dirty_operation = lambda idx: handler._dirty.operation_indices.discard(idx)
+    handler._clear_program_dirty = lambda **kwargs: (setattr(handler._dirty, "program_structure_dirty", False), setattr(handler._dirty, "program_dirty", False))
     handler._normalized_file_path = lambda path: str(path) if path else None
     handler._current_program_path = None
     handler._current_gcode_path = None
-    handler._dirty_operation_indices = {0}
-    handler._program_dirty = True
-    handler._dirty_program_header = False
-    handler._dirty_program_structure = True
+    handler._dirty = DirtyState(operation_indices={0}, program_dirty=True, program_structure_dirty=True)
 
     class _StubFileDialog:
         @staticmethod
@@ -438,9 +430,9 @@ def test_save_step_clears_unlinked_structure_dirty_after_new_step_save(tmp_path)
 
     handler._handle_save_step()
 
-    assert handler._dirty_operation_indices == set()
-    assert handler._program_dirty is False
-    assert handler._dirty_program_structure is False
+    assert handler._dirty.operation_indices == set()
+    assert handler._dirty.program_dirty is False
+    assert handler._dirty.program_structure_dirty is False
 
 
 def test_load_program_always_selects_program_header_row(tmp_path):

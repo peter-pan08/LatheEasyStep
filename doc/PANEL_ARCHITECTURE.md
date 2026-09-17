@@ -88,34 +88,39 @@ fuehren.
 
 ### `DirtyState`
 
-**Nicht gekapselt - der komplexeste und riskanteste Fall.** Fuenf einzelne
-Attribute direkt auf dem Handler (`_dirty_operation_indices`,
-`_program_dirty`, `_dirty_program_header`, `_dirty_program_structure`,
-`_dirty_warning_suppressed`), gelesen und geschrieben von freien Funktionen
-in `ui_dirty.py` sowie zusaetzlich direkt aus `ui_advanced.py`,
-`ui_flow.py`, `ui_lifecycle.py`, `ui_persistence.py`, `ui_selection.py`,
-`ui_step_list_view.py`, `ui_visibility.py` und dem Handler selbst - neun
-Module insgesamt. `_dirty_operation_indices` sind reine Listenpositionen
-und muessen bei jeder Operation-Verschiebung/-Entfernung/-Einfuegung
-manuell nachgezogen werden (`reindex_dirty_operations_after_removal()`
-u. Ae. in `ui_dirty.py`); zwei der drei Nachzieh-Funktionen tragen den
-Kommentar "SICHERHEITSFUND 2026-09-13" - echte, bereits einmal aufgetretene
-Bugs durch genau dieses Streuungsmuster (ein dirty-Flag "wanderte" beim
-Verschieben auf den falschen Nachbar-Step). Groesster Nutzen einer
-Kapselung waere hier also nicht nur Architektur-Hygiene, sondern das
-Schliessen einer bereits einmal real aufgetretenen Fehlerklasse an der
-Wurzel (Index-Arithmetik lebt dann in einer Klasse mit Tests statt in neun
-Aufrufstellen).
+**Gekapselt seit 2026-09-16 (zweiter LES-052-Baustein).** War der
+komplexeste und riskanteste Fall: fuenf einzelne Attribute direkt auf dem
+Handler, gelesen und geschrieben von freien Funktionen in acht Modulen.
+`DirtyState` (`dirty_state.py`, Qt-frei) buendelt jetzt `operation_indices`,
+`program_dirty`, `program_header_dirty`, `program_structure_dirty` und
+`warning_suppressed` in einem Objekt (`handler._dirty`); `ui_dirty.py`s
+freie Funktionen bleiben als duenne Adapter bestehen (Signatur unveraendert,
+Koerper delegiert an Methoden auf `DirtyState`), damit alle Aufrufstellen
+in `ui_flow.py`/`ui_persistence.py`/`ui_selection.py`/`lathe_easystep_
+handler.py` unveraendert bleiben konnten - nur der direkte Attributzugriff
+wurde auf `handler._dirty.<feld>` umgestellt. Die Index-Nachzieh-Methoden
+(`reindex_after_removal()`/`reindex_after_insert()`/`swap_indices()`) tragen
+weiterhin den Hinweis auf den SICHERHEITSFUND 2026-09-13 (ein dirty-Flag
+"wanderte" beim Verschieben auf den falschen Nachbar-Step) - sie leben jetzt
+in einer eigenstaendig testbaren Klasse (`tests/test_dirty_state.py`, 14
+neue Tests) statt in acht Aufrufstellen. Per absichtlich entfernter
+Nachzieh-Arithmetik als echte Regression verifiziert (zweimal: einmal fuer
+`reindex_after_removal()`, einmal fuer die abgeleitete `program_dirty`-Logik
+in `clear_program()`). 891 Stub-/108 Real-Qt-Tests bestanden, Standalone-
+Panel sauber gestartet.
 
 ### `RuntimeState`
 
-**Nicht gekapselt.** Zwei Sorten Laufzeit-Flag, beide als lose
-Handler-Attribute: `_generating_gcode` (Reentranz-Sperre waehrend der
-G-Code-Erzeugung, gesetzt/gelesen in `ui_flow.py`) und `_ui_loading`
-(unterdrueckt Signal-Reaktionen waehrend ein Step/Programm in die Maske
-geschrieben wird, damit das Zurueckschreiben nicht selbst als
-Nutzeraenderung/Dirty-Markierung gewertet wird - gesetzt in
-`ui_selection.py`, gelesen zusaetzlich in `ui_visibility.py` und im
+**Nicht gekapselt - groesserer Umfang als zunaechst erfasst.** Bei der
+DirtyState-Kapselung faellt auf, dass `lathe_easystep_handler.py`s
+`__init__` allein acht weitere Reentranz-/Ladezustands-Flags direkt auf
+`self` setzt: `_loading_step`, `_deleting`, `_saving_step`,
+`_saving_changes`, `_moving_up`, `_moving_down`, `_generating_gcode`,
+`_creating_new_program` - zusaetzlich zu `_ui_loading` (unterdrueckt
+Signal-Reaktionen waehrend ein Step/Programm in die Maske geschrieben wird,
+damit das Zurueckschreiben nicht selbst als Nutzeraenderung/Dirty-
+Markierung gewertet wird - gesetzt in `ui_selection.py`, gelesen
+zusaetzlich in `ui_visibility.py` und im
 Handler). Bewusst NICHT in dieser Kategorie: `MotionState`/`SpindleState`
 (`motion_state.py`, LES-022) - das sind reine, lokale Parameter innerhalb
 eines einzelnen `generate_program_gcode()`-Laufs (Werkzeug-Rueckzugs-
@@ -125,14 +130,18 @@ ein brauchbares Vorbild fuer sauber gekapselten Zustand.
 
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
-Drei der sechs Kategorien (`ToolTableState`, `DirtyState`, `RuntimeState`)
-leben ausschliesslich als unbenannte Attribute auf dem Handler und werden
-von freien Funktionen in mehreren Modulen direkt gelesen/geschrieben -
-genau das "Handler als heimlicher Zustandsbesitzer"-Muster, das LES-052
-Abschnitt 1 beenden soll. `ProgramState`/`OperationState` (bereits
-Klassen mit Methoden) und `MotionState`/`SpindleState` (bereits lokale,
-nicht handler-gebundene Werte) zeigen, dass das Projekt das Zielmuster an
-zwei Stellen schon beherrscht - die Umsetzung fuer die drei offenen
-Kategorien kann sich daran orientieren. `DirtyState` hat dabei die
-groesste Dringlichkeit (real aufgetretene Bugs durch Index-Drift), nicht
-nur die groesste Flaeche (neun Aufrufstellen).
+Stand 2026-09-16: Drei der sechs Kategorien lebten urspruenglich
+ausschliesslich als unbenannte Attribute auf dem Handler, direkt gelesen/
+geschrieben von freien Funktionen in mehreren Modulen - genau das "Handler
+als heimlicher Zustandsbesitzer"-Muster, das LES-052 Abschnitt 1 beenden
+soll. `DirtyState` ist davon jetzt gekapselt (siehe oben, zweiter
+LES-052-Baustein) - die dringendste der drei, wegen der real aufgetretenen
+Bugs durch Index-Drift. `ToolTableState` und `RuntimeState` (jetzt mit
+neun statt zwei bekannten Flags) sind es noch nicht. `ProgramState`/
+`OperationState` (bereits Klassen mit Methoden) und `MotionState`/
+`SpindleState` (bereits lokale, nicht handler-gebundene Werte) zeigen,
+dass das Projekt das Zielmuster an mehreren Stellen schon beherrscht - die
+Umsetzung fuer die beiden verbleibenden Kategorien kann sich daran
+orientieren, insbesondere am `DirtyState`-Muster: Qt-freie Klasse mit
+Methoden statt loser Attribute, duenne `ui_*.py`-Adapter mit unveraenderter
+Signatur, damit bestehende Aufrufstellen nicht angefasst werden muessen.

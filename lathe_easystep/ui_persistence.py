@@ -153,9 +153,9 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
         try:
             handler._clear_dirty_operation(idx)
             if (
-                not handler._dirty_operation_indices
-                and not getattr(handler, "_dirty_program_header", False)
-                and getattr(handler, "_dirty_program_structure", False)
+                not handler._dirty.operation_indices
+                and not handler._dirty.program_header_dirty
+                and handler._dirty.program_structure_dirty
                 and not handler._normalized_file_path(getattr(handler, "_current_program_path", None))
             ):
                 handler._clear_program_dirty(structure=True)
@@ -259,7 +259,7 @@ def handle_save_program(handler) -> None:
             _tr(handler, "message.program.saved", path=file_path),
         )
         try:
-            handler._program_dirty = False
+            handler._dirty.program_dirty = False
             handler._update_dirty_status()
         except Exception:
             pass
@@ -392,7 +392,7 @@ def handle_save_changes(handler) -> None:
         # unverknuepft und wird weiterhin uebersprungen, aber explizit
         # gezaehlt/gewarnt statt still.
         unlinked_dirty_steps = 0
-        dirty_step_indices = sorted(int(idx) for idx in getattr(handler, "_dirty_operation_indices", set()) if int(idx) >= 0)
+        dirty_step_indices = sorted(int(idx) for idx in handler._dirty.operation_indices if int(idx) >= 0)
         for idx in dirty_step_indices:
             if idx >= len(handler.model.operations):
                 continue
@@ -423,7 +423,7 @@ def handle_save_changes(handler) -> None:
 
         saved_program = False
         program_path = handler._normalized_file_path(handler._current_program_path)
-        if program_path and handler._program_dirty:
+        if program_path and handler._dirty.program_dirty:
             handler._write_program_file(program_path)
             handler._remember_dialog_path(
                 settings,
@@ -437,7 +437,7 @@ def handle_save_changes(handler) -> None:
 
         saved_gcode = False
         gcode_path = handler._normalized_file_path(handler._current_gcode_path)
-        if gcode_path and (bool(dirty_step_indices) or handler._program_dirty):
+        if gcode_path and (bool(dirty_step_indices) or handler._dirty.program_dirty):
             handler._write_gcode_file(gcode_path)
             handler._remember_dialog_path(
                 settings,
@@ -480,7 +480,7 @@ def handle_save_changes(handler) -> None:
             "\n".join(messages),
         )
         try:
-            if saved_program or (linked_steps == len(dirty_step_indices) and not handler._program_dirty):
+            if saved_program or (linked_steps == len(dirty_step_indices) and not handler._dirty.program_dirty):
                 handler._clear_dirty_state()
         except Exception:
             pass

@@ -14,6 +14,7 @@ from weakref import WeakSet
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lathe_easystep_handler import HandlerClass, Operation, OpType, ProgramModel
+from lathe_easystep.dirty_state import DirtyState
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ def _make_handler():
     h.root_widget = None
     h._find_root_widget = lambda: None
     h._ui_loading = False
+    h._dirty = DirtyState()
     h._op_row_user_selected = False
     h.list_ops = _ListWidget()
     h.tab_params = _TabWidget()
@@ -643,12 +645,12 @@ def test_delete_before_dirty_step_reindexes_dirty_tracking():
     for i, op in enumerate(ops):
         h.model.add_operation(op)
         h.list_ops.addItem(f"{i+1}: {op.op_type}")
-    h._dirty_operation_indices = {2}
+    h._dirty.operation_indices = {2}
 
     h.list_ops.setCurrentRow(1)
     h._handle_delete_operation()
 
-    assert h._dirty_operation_indices == {1}
+    assert h._dirty.operation_indices == {1}
     assert h.model.operations[1].params["tool"] == 2
 
 
@@ -666,12 +668,12 @@ def test_delete_dirty_step_itself_drops_it_from_tracking():
     for i, op in enumerate(ops):
         h.model.add_operation(op)
         h.list_ops.addItem(f"{i+1}: {op.op_type}")
-    h._dirty_operation_indices = {2}
+    h._dirty.operation_indices = {2}
 
     h.list_ops.setCurrentRow(2)
     h._handle_delete_operation()
 
-    assert h._dirty_operation_indices == set()
+    assert h._dirty.operation_indices == set()
 
 
 def test_move_up_swaps_dirty_tracking_with_the_operation_it_passes():
@@ -688,14 +690,14 @@ def test_move_up_swaps_dirty_tracking_with_the_operation_it_passes():
     for i, op in enumerate(ops):
         h.model.add_operation(op)
         h.list_ops.addItem(f"{i+1}: {op.op_type}")
-    h._dirty_operation_indices = {2}
+    h._dirty.operation_indices = {2}
     h._moving_up = False
 
     h.list_ops.setCurrentRow(2)
     h._handle_move_up()
 
     assert h.model.operations[1].params["tool"] == 2
-    assert h._dirty_operation_indices == {1}
+    assert h._dirty.operation_indices == {1}
 
 
 def test_move_down_swaps_dirty_tracking_with_the_operation_it_passes():
@@ -710,14 +712,14 @@ def test_move_down_swaps_dirty_tracking_with_the_operation_it_passes():
     for i, op in enumerate(ops):
         h.model.add_operation(op)
         h.list_ops.addItem(f"{i+1}: {op.op_type}")
-    h._dirty_operation_indices = {1}
+    h._dirty.operation_indices = {1}
     h._moving_down = False
 
     h.list_ops.setCurrentRow(1)
     h._handle_move_down()
 
     assert h.model.operations[2].params["tool"] == 1
-    assert h._dirty_operation_indices == {2}
+    assert h._dirty.operation_indices == {2}
 
 
 def test_reindex_dirty_operations_after_insert_shifts_existing_indices():
@@ -729,9 +731,9 @@ def test_reindex_dirty_operations_after_insert_shifts_existing_indices():
     from types import SimpleNamespace
     from lathe_easystep.ui_dirty import reindex_dirty_operations_after_insert
 
-    handler = SimpleNamespace(_dirty_operation_indices={0, 2}, _update_dirty_status=lambda: None)
+    handler = SimpleNamespace(_dirty=DirtyState(operation_indices={0, 2}), _update_dirty_status=lambda: None)
     reindex_dirty_operations_after_insert(handler, 0)
-    assert handler._dirty_operation_indices == {1, 3}
+    assert handler._dirty.operation_indices == {1, 3}
 
 
 # ---------------------------------------------------------------------------

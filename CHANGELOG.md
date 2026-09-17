@@ -17,6 +17,36 @@
 
 ## [Unreleased]
 
+### LES-052: DirtyState gekapselt 2026-09-16
+
+- Zweiter LES-052-Baustein: die fuenf bisherigen Handler-Attribute
+  (`_dirty_operation_indices`, `_program_dirty`, `_dirty_program_header`,
+  `_dirty_program_structure`, `_dirty_warning_suppressed`) durch eine
+  einzelne Qt-freie Klasse `DirtyState` (`dirty_state.py`) ersetzt, jetzt
+  als `handler._dirty` gehalten.
+- `ui_dirty.py`s freie Funktionen bleiben mit unveraenderter Signatur als
+  duenne Adapter bestehen (Koerper delegiert an Methoden auf `DirtyState`)
+  - alle Aufrufstellen ausserhalb von `ui_dirty.py` (`ui_flow.py`,
+  `ui_persistence.py`, `ui_selection.py`, `lathe_easystep_handler.py`)
+  mussten deshalb nicht umgebaut werden; nur der direkte Attributzugriff
+  wurde von `handler._dirty_xxx` auf `handler._dirty.xxx` umgestellt.
+- 14 neue eigenstaendige Tests (`tests/test_dirty_state.py`) decken die
+  Klasse Qt-frei und unabhaengig von der Handler-Integration ab. Per
+  absichtlich entfernter Nachzieh-Arithmetik zweimal als echte Regression
+  verifiziert: einmal fuer `reindex_after_removal()` (die Methode hinter
+  dem SICHERHEITSFUND 2026-09-13), einmal fuer die abgeleitete
+  `program_dirty`-Logik in `clear_program()`.
+- Dabei nebenbei entdeckt: `RuntimeState` hat tatsaechlich neun statt der
+  in der ersten Bestandsaufnahme notierten zwei Flags -
+  `lathe_easystep_handler.py`s `__init__` setzt zusaetzlich zu
+  `_ui_loading` noch `_loading_step`, `_deleting`, `_saving_step`,
+  `_saving_changes`, `_moving_up`, `_moving_down`, `_generating_gcode`
+  und `_creating_new_program` direkt auf `self`. `doc/PANEL_ARCHITECTURE.md`
+  entsprechend korrigiert.
+- 891 Stub-/108 Real-Qt-Tests bestanden (877 vorher + 14 neue). Standalone-
+  Panel offscreen sauber gestartet, kein `AttributeError` im Log. Details:
+  TODO.md (LES-052).
+
 ### LES-052: Zustandsmodell-Bestandsaufnahme 2026-09-16
 
 - Erster LES-052-Baustein ("Architektur und Ladevertrag"): die sechs

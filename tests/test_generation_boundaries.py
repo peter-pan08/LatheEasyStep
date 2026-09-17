@@ -16,6 +16,7 @@ from lathe_easystep.gcode_safety import (
     validate_stock_segment,
 )
 from lathe_easystep.gcode_utils import require_positive, get_tool_number
+from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.motion_state import MotionState
 from lathe_easystep.persistence import step_data_to_operation
@@ -639,8 +640,8 @@ def test_save_changes_preserves_dirty_state_when_not_all_steps_saved(tmp_path, m
     handler = SimpleNamespace(
         _saving_changes=False, root_widget=None, _find_root_widget=lambda: None,
         _update_selected_operation=lambda **k: None, _log=lambda *a, **k: None,
-        model=SimpleNamespace(operations=ops), _dirty_operation_indices={0, 1},
-        _current_program_path=None, _current_gcode_path=None, _program_dirty=False,
+        model=SimpleNamespace(operations=ops), _dirty=DirtyState(operation_indices={0, 1}),
+        _current_program_path=None, _current_gcode_path=None,
         _step_file_path=lambda op: op.params.get("__step_file_path"),
         _operation_to_step_data=operation_to_step_data, _remember_dialog_path=lambda *a, **k: None,
         _normalized_file_path=lambda path: path, _clear_dirty_state=lambda: cleared.append(True),
@@ -656,7 +657,7 @@ def test_save_changes_preserves_dirty_state_when_not_all_steps_saved(tmp_path, m
     monkeypatch.setattr(ui_persistence.QtWidgets.QMessageBox, "critical", lambda *args: errors.append(args[-1]))
     ui_persistence.handle_save_changes(handler)
     assert a.exists() and b.read_text() == "old b"
-    assert handler._dirty_operation_indices == {0, 1} and not cleared
+    assert handler._dirty.operation_indices == {0, 1} and not cleared
     assert not handler._saving_changes
     if case == "second_write_failure":
         assert len(errors) == 1 and "steps_updated" in errors[0] and "1" in errors[0]

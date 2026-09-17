@@ -39,7 +39,7 @@ def handle_tab_changed(handler, *_args, **_kwargs) -> None:
     """Keep list selection and tab-specific helpers in sync."""
     if (
         not getattr(handler, "_ui_loading", False)
-        and not getattr(handler, "_dirty_warning_suppressed", False)
+        and not handler._dirty.warning_suppressed
         and getattr(handler, "_startup_complete", False)
     ):
         try:
@@ -103,7 +103,7 @@ def handle_selection_change(handler, row: int) -> None:
         not getattr(handler, "_ui_loading", False)
         and previous_row != row
         and 0 <= previous_row < len(handler.model.operations)
-        and not getattr(handler, "_dirty_warning_suppressed", False)
+        and not handler._dirty.warning_suppressed
         and getattr(handler, "_startup_complete", False)
     ):
         try:
@@ -149,11 +149,11 @@ def handle_selection_change(handler, row: int) -> None:
                 OpType.DRILL: 6,
                 OpType.KEYWAY: 7,
             }
-            handler._dirty_warning_suppressed = True
+            handler._dirty.warning_suppressed = True
             try:
                 handler.tab_params.setCurrentIndex(type_to_tab.get(op.op_type, 1))
             finally:
-                handler._dirty_warning_suppressed = False
+                handler._dirty.warning_suppressed = False
         handler._load_params_to_form(op)
         try:
             if op.op_type == OpType.FACE:
