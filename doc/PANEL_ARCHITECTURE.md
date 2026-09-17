@@ -236,6 +236,37 @@ index=idx)`) wurde vom neuen `test_handle_param_change_marks_program_dirty_
 for_header` korrekt erkannt. 903 Stub-/108 Real-Qt-Tests bestanden,
 Standalone-Panel sauber gestartet.
 
+**Vierte Handler-Kleber-Extraktion (2026-09-17), anderes Ziel als bisher:**
+`_populate_thread_standard_options()` (~46 Zeilen) nach
+`populate_thread_standard_options(self)` verschoben - diesmal nicht nach
+`ui_flow.py`, sondern in das bereits existierende `ui_thread.py`, das
+bereits `apply_thread_preset(self, ...)` nach demselben Delegations-Muster
+enthielt (Parametername dort bewusst `self` statt `handler`, um dem
+bestehenden Dateistil zu folgen statt `ui_flow.py`s Konvention zu
+uebernehmen). Die beiden ausschliesslich fuer diese Methode gebrauchten
+Imports (`metric_thread_presets`, `trapezoidal_thread_presets`) aus
+`lathe_easystep_handler.py` entfernt, da dort ungenutzt. Zur Einordnung:
+`_ensure_contour_widgets()`/`_ensure_thread_widgets()` (reine Widget-Lookup-
+Bootstrap-Methoden, aehnliche Groessenordnung) wurden bewusst NICHT
+extrahiert - sie sind genau die Art "Bootstrap, Controller-Verbindungen"-
+Code, die laut LES-052 Abschnitt 1 auf dem Handler bleiben soll; ihre
+eigentliche offene Aufgabe ist der separate "einheitlicher Ladevertrag"-
+Punkt, keine reine Verschiebung.
+Bestandsaufnahme ergab wieder eine echte Testluecke: der vorhandene Test
+`test_apply_thread_preset_applies_real_metric_preset`
+(`tests/test_preview_safety_and_language.py`) baut das erwartete Combo-
+itemData nur von Hand nach, ruft `_populate_thread_standard_options()`
+selbst nie auf. Geschlossen durch zwei neue Tests
+(`test_populate_thread_standard_options_builds_valid_preset_itemdata`,
+`test_populate_thread_standard_options_is_idempotent`). Regressions-
+verifikation reproduzierte gezielt den realen, im Nachbartest bereits
+dokumentierten historischen Bug (Metric-Presets ohne `"label"`-Schluessel im
+itemData) und wurde vom neuen Test korrekt erkannt. 905 Stub-/108 Real-Qt-
+Tests bestanden, Standalone-Panel sauber gestartet (ein erster Lauf brach
+ohne erkennbaren Fehler/Traceback beim Timeout von 20s knapp vor der
+`DONE`-Zeile ab - reproduzierbar sauber bei 25s, keine Aenderung am Code
+noetig, als Umgebungs-/Lastschwankung eingeordnet).
+
 ### Zusammenfassung fuer die eigentliche Umsetzung
 
 Stand 2026-09-17: Alle sechs Zustandskategorien sind jetzt gekapselt -

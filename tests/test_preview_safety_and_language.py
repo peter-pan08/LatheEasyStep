@@ -222,6 +222,64 @@ def test_apply_thread_preset_applies_real_metric_preset():
     assert not any("skipped" in msg for _level, msg in handler._log_messages)
 
 
+class _ThreadStandardCombo:
+    def __init__(self):
+        self.items = []
+        self.blocked = False
+        self.current_index = None
+
+    def blockSignals(self, value):
+        self.blocked = value
+
+    def clear(self):
+        self.items = []
+
+    def addItem(self, text, data=None):
+        self.items.append((text, data))
+
+    def setCurrentIndex(self, index):
+        self.current_index = index
+
+
+def test_populate_thread_standard_options_builds_valid_preset_itemdata():
+    """LES-052-Extraktion (populate_thread_standard_options(), ui_thread.py):
+    jedes Preset-itemData muss ein nicht-leeres 'label' enthalten - ohne
+    'label' schlaegt validate_thread_preset_data() fehl und der Preset-
+    Button macht nichts (siehe test_apply_thread_preset_applies_real_
+    metric_preset oben, derselbe reale Bug)."""
+    handler = object.__new__(HandlerClass)
+    handler.thread_standard = _ThreadStandardCombo()
+    handler._thread_standard_populated = False
+    handler._current_language_code = lambda: "de"
+
+    HandlerClass._populate_thread_standard_options(handler)
+
+    assert handler._thread_standard_populated is True
+    assert handler.thread_standard.current_index == 0
+    preset_items = [data for _text, data in handler.thread_standard.items if data and "profile" in data]
+    assert preset_items, "keine Presets gebaut"
+    for data in preset_items:
+        assert data.get("label"), f"itemData ohne 'label': {data}"
+
+    m10 = next(d for d in preset_items if d["label"] == "M10")
+    assert m10["major"] == 10.0
+    assert m10["pitch"] == 1.5
+    assert m10["profile"] == "metric"
+
+
+def test_populate_thread_standard_options_is_idempotent():
+    handler = object.__new__(HandlerClass)
+    handler.thread_standard = _ThreadStandardCombo()
+    handler._thread_standard_populated = False
+    handler._current_language_code = lambda: "de"
+
+    HandlerClass._populate_thread_standard_options(handler)
+    first_count = len(handler.thread_standard.items)
+    HandlerClass._populate_thread_standard_options(handler)
+
+    assert len(handler.thread_standard.items) == first_count
+
+
 def test_apply_combo_translations_preserves_item_data():
     class _Combo:
         def __init__(self):

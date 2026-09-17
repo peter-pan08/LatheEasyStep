@@ -1,6 +1,60 @@
 from __future__ import annotations
 
-from .presets import thread_preset_values, validate_thread_preset_data
+from .presets import (
+    metric_thread_presets,
+    thread_preset_values,
+    trapezoidal_thread_presets,
+    validate_thread_preset_data,
+)
+from .translations import TRANSLATIONS
+
+
+def populate_thread_standard_options(self):
+    combo = self.thread_standard
+    if combo is None or self._thread_standard_populated:
+        return
+
+    def _compact(value: float) -> str:
+        text = f"{value:.3f}".rstrip("0").rstrip(".")
+        return text if text else "0"
+
+    lang = self._current_language_code()
+    custom_key = "combo.thread_standard.custom"
+
+    combo.blockSignals(True)
+    combo.clear()
+    combo.addItem(TRANSLATIONS.tr(custom_key, lang), {"label_key": custom_key})
+    # Metric threads (ISO 60 deg) -> profile "metric"
+    for name, diameter, pitch in metric_thread_presets():
+        pitch_text = _compact(pitch)
+        technical_id = f"thread.standard.metric.{name.lower()}x{pitch_text.replace('.', '_')}"
+        combo.addItem(
+            TRANSLATIONS.tr(technical_id, lang),
+            {
+                "label": name,
+                "label_key": technical_id,
+                "major": diameter,
+                "pitch": pitch,
+                "profile": "metric",
+            },
+        )
+    # Trapezoidal threads -> profile "tr"
+    for name, diameter, pitch in trapezoidal_thread_presets():
+        pitch_text = _compact(pitch)
+        technical_id = f"thread.standard.tr.{name.lower()}x{pitch_text.replace('.', '_')}"
+        combo.addItem(
+            TRANSLATIONS.tr(technical_id, lang),
+            {
+                "label": name,
+                "label_key": technical_id,
+                "major": diameter,
+                "pitch": pitch,
+                "profile": "tr",
+            },
+        )
+    combo.setCurrentIndex(0)
+    combo.blockSignals(False)
+    self._thread_standard_populated = True
 
 
 def apply_thread_preset(self, force: bool = False):

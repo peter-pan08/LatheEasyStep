@@ -17,6 +17,36 @@
 
 ## [Unreleased]
 
+### LES-052: vierte Handler-Kleber-Extraktion (`populate_thread_standard_options`) 2026-09-17
+
+- `_populate_thread_standard_options()` (Handler-Methode, ~46 Zeilen) nach
+  `populate_thread_standard_options(self)` in `ui_thread.py` verschoben -
+  diesmal nicht nach `ui_flow.py`, sondern in das bereits existierende
+  `ui_thread.py`, das mit `apply_thread_preset(self, ...)` bereits dasselbe
+  Delegations-Muster fuer Gewinde-Logik enthielt. Die beiden nur dafuer
+  gebrauchten Imports (`metric_thread_presets`, `trapezoidal_thread_
+  presets`) aus `lathe_easystep_handler.py` entfernt (dort ungenutzt).
+- Bewusst NICHT extrahiert: `_ensure_contour_widgets()`/
+  `_ensure_thread_widgets()` (reine Widget-Lookup-Bootstrap-Methoden,
+  aehnliche Groessenordnung) - das ist Bootstrap-Code, der laut LES-052
+  Abschnitt 1 auf dem Handler bleiben soll; ihre eigentliche offene Aufgabe
+  ist der separate "einheitlicher Ladevertrag"-Punkt, keine reine
+  Verschiebung.
+- Bestandsaufnahme ergab wieder eine echte Testluecke:
+  `test_apply_thread_preset_applies_real_metric_preset`
+  (`tests/test_preview_safety_and_language.py`) baut das erwartete Combo-
+  itemData nur von Hand nach, ruft `_populate_thread_standard_options()`
+  selbst nie auf. Geschlossen durch zwei neue Tests
+  (`test_populate_thread_standard_options_builds_valid_preset_itemdata`,
+  `test_populate_thread_standard_options_is_idempotent`).
+- Regressionsverifikation reproduzierte gezielt den im Nachbartest bereits
+  dokumentierten historischen Bug (Metric-Presets ohne `"label"`-Schluessel
+  im itemData) und wurde vom neuen Test korrekt erkannt.
+- 905 Stub-/108 Real-Qt-Tests bestanden (903 vorher + 2 neue), Standalone-
+  Panel sauber gestartet (ein erster Lauf brach ohne Fehler/Traceback beim
+  20s-Timeout knapp vor der `DONE`-Zeile ab, bei 25s reproduzierbar sauber -
+  als Umgebungs-/Lastschwankung eingeordnet, keine Codeaenderung noetig).
+
 ### LES-052: dritte Handler-Kleber-Extraktion (`handle_param_change`) 2026-09-17
 
 - `_handle_param_change()` (Handler-Methode, ~73 Zeilen; generischer

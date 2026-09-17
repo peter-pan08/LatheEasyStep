@@ -18,7 +18,7 @@ from qtvcp.core import Action
 import logging
 from lathe_easystep.ui_header import collect_program_header
 from lathe_easystep.ui_contour_input import collect_contour_segments
-from lathe_easystep.ui_thread import apply_thread_preset
+from lathe_easystep.ui_thread import apply_thread_preset, populate_thread_standard_options
 from lathe_easystep.comments import update_auto_comment
 from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
 from lathe_easystep.dirty_state import DirtyState
@@ -182,8 +182,6 @@ from lathe_easystep.ui_signals import (
     prepare_signal_connection_context,
 )
 from lathe_easystep.presets import (
-    metric_thread_presets,
-    trapezoidal_thread_presets,
     validate_thread_preset_data,
 )
 from lathe_easystep.translations import TRANSLATIONS
@@ -1721,51 +1719,7 @@ class HandlerClass:
                 pass
 
     def _populate_thread_standard_options(self):
-        combo = self.thread_standard
-        if combo is None or self._thread_standard_populated:
-            return
-
-        def _compact(value: float) -> str:
-            text = f"{value:.3f}".rstrip("0").rstrip(".")
-            return text if text else "0"
-
-        lang = self._current_language_code()
-        custom_key = "combo.thread_standard.custom"
-
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem(TRANSLATIONS.tr(custom_key, lang), {"label_key": custom_key})
-        # Metric threads (ISO 60°) -> profile "metric"
-        for name, diameter, pitch in metric_thread_presets():
-            pitch_text = _compact(pitch)
-            technical_id = f"thread.standard.metric.{name.lower()}x{pitch_text.replace('.', '_')}"
-            combo.addItem(
-                TRANSLATIONS.tr(technical_id, lang),
-                {
-                    "label": name,
-                    "label_key": technical_id,
-                    "major": diameter,
-                    "pitch": pitch,
-                    "profile": "metric",
-                },
-            )
-        # Trapezoidal threads -> profile "tr"
-        for name, diameter, pitch in trapezoidal_thread_presets():
-            pitch_text = _compact(pitch)
-            technical_id = f"thread.standard.tr.{name.lower()}x{pitch_text.replace('.', '_')}"
-            combo.addItem(
-                TRANSLATIONS.tr(technical_id, lang),
-                {
-                    "label": name,
-                    "label_key": technical_id,
-                    "major": diameter,
-                    "pitch": pitch,
-                    "profile": "tr",
-                },
-            )
-        combo.setCurrentIndex(0)
-        combo.blockSignals(False)
-        self._thread_standard_populated = True
+        populate_thread_standard_options(self)
 
     def _setup_thread_helpers(self):
         self._ensure_thread_widgets()

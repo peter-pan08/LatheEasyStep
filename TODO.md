@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 903 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
+- 905 Stub-Qt-Tests und 108 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -122,8 +122,13 @@ Verantwortungen mit dokumentierten Besitzverhaeltnissen -
 _<name>`-Adapter ueber den bestehenden Aufrufstellen. Handler-Kleber-
 Extraktionen auf dieser Basis: `_handle_add_operation()`/
 `_handle_delete_operation()`, `_refresh_operation_list()` und
-`_handle_param_change()` nach `ui_flow.py` verschoben, Details im Changelog
-und `doc/PANEL_ARCHITECTURE.md`. `ViewState` (Zoom/Pan/Slice/
+`_handle_param_change()` nach `ui_flow.py`, `_populate_thread_standard_
+options()` nach `ui_thread.py` verschoben, Details im Changelog und
+`doc/PANEL_ARCHITECTURE.md`. Reine Widget-Lookup-Bootstrap-Methoden
+(`_ensure_contour_widgets()`, `_ensure_thread_widgets()`) bewusst NICHT
+extrahiert - das ist Bootstrap-Code, der laut diesem Punkt auf dem Handler
+bleiben soll; ihre eigentliche offene Aufgabe ist der Ladevertrag-Punkt
+unten. `ViewState` (Zoom/Pan/Slice/
 Ansichtsmodus, siehe zweiter Punkt unten) ist bewusst NICHT Teil dieser
 Liste: es ist nur lokal auf `LathePreviewWidget` gebuendelt, aber ungetypt -
 eine fruehere Formulierung hatte das faelschlich als abgeschlossen
