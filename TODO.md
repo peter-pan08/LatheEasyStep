@@ -111,10 +111,10 @@ Aenderung veraendern.
 
 ### 1. Architektur und Ladevertrag
 
-Umgesetzt (Details im Changelog und `doc/PANEL_ARCHITECTURE.md`): alle sechs
-Zustandskategorien (`ProgramState`, `OperationState`, `ToolTableState`,
-`ViewState`, `DirtyState`, `RuntimeState`) sind jetzt fachlich getrennte,
-Qt-freie Verantwortungen mit dokumentierten Besitzverhaeltnissen -
+Umgesetzt (Details im Changelog und `doc/PANEL_ARCHITECTURE.md`): fuenf der
+sechs Zustandskategorien (`ProgramState`, `OperationState`, `ToolTableState`,
+`DirtyState`, `RuntimeState`) sind fachlich getrennte, Qt-freie
+Verantwortungen mit dokumentierten Besitzverhaeltnissen -
 `ProgramState`/`OperationState` (`model.py`) und `MotionState`/`SpindleState`
 (`motion_state.py`) waren es schon vorher; `DirtyState` (`dirty_state.py`),
 `ToolTableState` (`tool_table_state.py`) und `RuntimeState`
@@ -122,11 +122,21 @@ Qt-freie Verantwortungen mit dokumentierten Besitzverhaeltnissen -
 _<name>`-Adapter ueber den bestehenden Aufrufstellen. Erste Handler-Kleber-
 Extraktion auf dieser Basis: `_handle_add_operation()`/
 `_handle_delete_operation()` nach `ui_flow.py` verschoben, Details im
-Changelog und `doc/PANEL_ARCHITECTURE.md`.
+Changelog und `doc/PANEL_ARCHITECTURE.md`. `ViewState` (Zoom/Pan/Slice/
+Ansichtsmodus, siehe zweiter Punkt unten) ist bewusst NICHT Teil dieser
+Liste: es ist nur lokal auf `LathePreviewWidget` gebuendelt, aber ungetypt -
+eine fruehere Formulierung hatte das faelschlich als abgeschlossen
+hingestellt (korrigiert, siehe Changelog).
 
 - [ ] den Handler auf Bootstrap, Controller-Verbindungen und Kompatibilitaets-
   Wrapper begrenzen; neue Fachlogik gehoert in testbare Module unter
   `lathe_easystep/`.
+- [ ] `ViewState` als benannten, Qt-freien Typ einfuehren, der
+  Zoom/Pan/Slice-Position/Ansichtsmodus/Legenden-Auf-Zu-Zustand aus
+  `LathePreviewWidget.__init__` (`_view_zoom`, `_view_pan`, `slice_z`,
+  `slice_enabled`, `view_mode`, `active_index`, `_legend_collapsed`,
+  `show_legend`, `status_messages`) buendelt, statt sie als lose
+  Attributliste auf einem Qt-Widget zu fuehren.
 - [ ] einen einheitlichen Ladevertrag fuer Grundgeruest, UI-Fragmente,
   Widget-Registrierung und Signalbindung fuer Standalone und Embedded
   definieren. Laden muss idempotent und in einer nachvollziehbaren Reihenfolge

@@ -17,6 +17,25 @@
 
 ## [Unreleased]
 
+### Korrektur: `ViewState` in LES-052 faelschlich als abgeschlossen gefuehrt 2026-09-17
+
+- Die Formulierung "alle sechs Zustandskategorien ... sind jetzt fachlich
+  getrennte, Qt-freie Verantwortungen" im Commit "LES-052: RuntimeState
+  gekapselt - Zustandsmodell abgeschlossen" (2026-09-17) und in der davon
+  abgeleiteten `TODO.md`-Zusammenfassung war fuer `ViewState` sachlich
+  falsch: der Baustein selbst hat nur `ProgramState`, `OperationState`,
+  `ToolTableState`, `DirtyState` und `RuntimeState` gekapselt.
+  `doc/PANEL_ARCHITECTURE.md`s eigener, detaillierterer `ViewState`-
+  Abschnitt hatte den tatsaechlichen Stand die ganze Zeit korrekt als
+  "teilweise gekapselt, aber ungetypt" beschrieben - dieser Widerspruch
+  wurde beim Schreiben nicht bemerkt.
+- `TODO.md` korrigiert: `ViewState` aus der "Umgesetzt"-Liste entfernt, ein
+  neuer offener Punkt fuer einen benannten `ViewState`-Typ (Zoom/Pan/Slice/
+  Ansichtsmodus/Legende, aktuell lose Attribute auf `LathePreviewWidget`)
+  ergaenzt. Reine Dokumentationskorrektur, kein Code betroffen - der
+  fehlerhafte Commit selbst wird nicht nachtraeglich umgeschrieben, da er
+  bereits nach `origin/dev` gepusht war.
+
 ### LES-052: erste Handler-Kleber-Extraktion (`handle_add_operation`/`handle_delete_operation`) 2026-09-17
 
 - `_handle_add_operation()`/`_handle_delete_operation()` (Handler-Methoden in
