@@ -50,6 +50,11 @@ fahrwegrelevante Änderung als abgeschlossen gilt (siehe TODO.md →
 Interpreter verfügbar, das explizit vermerken (wie bisher in
 TODO.md/CHANGELOG.md dokumentiert) statt es stillschweigend auszulassen.
 
+Commit attribution:
+Do not add Co-Authored-By, Signed-off-by, or any other AI/agent attribution
+to commits unless the user explicitly requests it.
+
+
 ## LinuxCNC-Konfigurationsdateien: das Panel selbst darf nur lesen, niemals schreiben
 
 Das **Panel-Programm** (`lathe_easystep_handler.py` und alle
