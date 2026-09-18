@@ -59,33 +59,19 @@ def test_arc_primitive_outputs_valid_G2_G3():
     arc_lines = [l for l in gcode if l.startswith("G2") or l.startswith("G3")]
     assert len(arc_lines) == 1
     line = arc_lines[0]
-    assert "I0" not in line or "K0" not in line
+    # LinuxCNC lehnt G2/G3 ab, wenn Radius-zu-Start != Radius-zu-Ende
+    # ("Radius to end of arc differs from radius to start") - das ist der
+    # eigentliche fachliche Vertrag hier, nicht nur ein Substring auf I/K.
+    # Der Bogen beginnt nicht am Konturstart, sondern am eigenen p1 (nach der
+    # geraden Anfahrt bis zum Rundungsbeginn).
+    arc_start_x, arc_start_z = arc["p1"]
+    _assert_arc_line_is_geometrically_valid(line, start_x_diam=arc_start_x, start_z=arc_start_z)
 
     # additionally, the gcode endpoint should match the primitive's p2 coordinate,
     # not collapse to the start point (which previously produced degenerate arcs).
     # our primitive p2 was roughly (9.995,-10.0), so ensure the gcode contains X9.995 or
     # Z-10.000 rather than X5.000 Z0.000.
     assert "X9.995" in line or "Z-10.000" in line
-
-
-def test_arc_geometry_from_error_case():
-    # reproduce geometry that earlier produced a LinuxCNC radius mismatch error
-    params = {
-        "start_x": 5.0,
-        "start_z": 0.0,
-        "segments": [
-            {"x": 5.0, "z": -10.0, "edge": "radius", "edge_size": 10.0, "arc_side": "auto"},
-            {"x": 10.0, "z": -10.0, "edge": "none", "edge_size": 0.0, "arc_side": "auto"},
-        ],
-    }
-    prims = build_contour_path(params)
-    gcode = _gcode_from_primitives(prims, feed=100)
-    # the arc line should not be degenerate (start != end)
-    arc_lines = [l for l in gcode if l.startswith("G2") or l.startswith("G3")]
-    assert len(arc_lines) == 1
-    line = arc_lines[0]
-    # ensure end coordinates differ from start
-    assert "X5.000 Z0.000" not in line
 
 
 def test_arc_I_is_radius_not_diameter_delta():

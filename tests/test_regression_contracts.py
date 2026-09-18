@@ -481,7 +481,7 @@ def test_string_valued_combo_params_do_not_crash_generation():
         ),
     ]
     thread_gcode = "\n".join(generate_program_gcode(thread_ops, dict(settings)))
-    assert "G76" in thread_gcode or "G33" in thread_gcode or thread_gcode
+    assert "G76" in thread_gcode or "G33" in thread_gcode
 
     abspanen_ops = [
         Operation(OpType.PROGRAM_HEADER, {"program_name": "StringAbspanen"}),

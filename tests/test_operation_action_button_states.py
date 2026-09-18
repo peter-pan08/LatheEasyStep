@@ -44,14 +44,23 @@ def test_no_selection_disables_all_operation_actions():
 
 
 def test_missing_action_buttons_are_supported_during_lazy_ui_loading():
+    """During lazy UI loading, some action buttons may not exist yet
+    (None) while others already do. Buttons that already exist must still
+    receive the correct real state; missing ones must be skipped without
+    raising - a mere "no crash" check would miss a bug where an existing
+    button is silently left at the wrong state."""
+    operations = [Operation(OpType.FACE, {}), Operation(OpType.FACE, {})]
     handler = SimpleNamespace(
-        model=SimpleNamespace(operations=[]),
-        btn_delete=None,
+        model=SimpleNamespace(operations=operations),
+        btn_delete=_Button(),
         btn_move_up=None,
-        btn_move_down=None,
-        _selected_operation_index=lambda: -1,
+        btn_move_down=_Button(),
+        _selected_operation_index=lambda: 0,
     )
     update_operation_action_button_states(handler)
+    assert handler.btn_delete.enabled is True
+    assert handler.btn_move_down.enabled is True
+    assert handler.btn_move_up is None
 
 
 def test_program_header_cannot_be_deleted_or_reordered():

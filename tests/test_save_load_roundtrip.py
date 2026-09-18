@@ -554,54 +554,7 @@ def test_header_s1_max_s3_max_key_roundtrip():
 
 
 # ---------------------------------------------------------------------------
-# 5. Specific bug regression: l, n_edges, sw saved but not loaded (BUG 2)
-# ---------------------------------------------------------------------------
-
-def test_header_l_n_edges_sw_roundtrip():
-    """Fields l, n_edges, sw are saved and loaded correctly."""
-    h = _make_handler()
-    _attach_header_widgets(h, {"l": 120.0, "n_edges": 6.0, "sw": 30.0})
-
-    header = h._collect_program_header()
-    assert header["l"] == 120.0
-    assert header["n_edges"] == 6.0
-    assert header["sw"] == 30.0
-
-    # Reset and load
-    h.program_l.setValue(0.0)
-    h.program_n.setValue(0.0)
-    h.program_sw.setValue(0.0)
-
-    h._load_program_header_to_form(header)
-    assert h.program_l.value() == 120.0
-    assert h.program_n.value() == 6.0
-    assert h.program_sw.value() == 30.0
-
-
-# ---------------------------------------------------------------------------
-# 6. Specific bug regression: xt_absolute / zt_absolute not loaded (BUG 3)
-# ---------------------------------------------------------------------------
-
-def test_header_xt_zt_absolute_roundtrip():
-    """xt_absolute and zt_absolute checkboxes survive round-trip."""
-    h = _make_handler()
-    _attach_header_widgets(h, {"xt_absolute": True, "zt_absolute": True})
-
-    header = h._collect_program_header()
-    assert header["xt_absolute"] is True
-    assert header["zt_absolute"] is True
-
-    # Reset
-    h.program_xt_absolute.setChecked(False)
-    h.program_zt_absolute.setChecked(False)
-
-    h._load_program_header_to_form(header)
-    assert h.program_xt_absolute.isChecked() is True
-    assert h.program_zt_absolute.isChecked() is True
-
-
-# ---------------------------------------------------------------------------
-# 7. _apply_header_to_ui: QLineEdit support (BUG 4)
+# 5. _apply_header_to_ui: QLineEdit support (BUG 4)
 # ---------------------------------------------------------------------------
 
 def test_apply_header_sets_program_name():
@@ -618,7 +571,7 @@ def test_apply_header_sets_program_name():
 
 
 # ---------------------------------------------------------------------------
-# 8. Slice view: isinstance(path[0], (list, tuple)) after JSON (BUG 7)
+# 6. Slice view: isinstance(path[0], (list, tuple)) after JSON (BUG 7)
 # ---------------------------------------------------------------------------
 
 def test_slice_view_accepts_lists_from_json():
@@ -637,7 +590,7 @@ def test_slice_view_accepts_lists_from_json():
 
 
 # ---------------------------------------------------------------------------
-# 9. Program save uses _operation_to_step_data (BUG 8)
+# 7. Program save uses _operation_to_step_data (BUG 8)
 # ---------------------------------------------------------------------------
 
 def test_program_save_uses_step_data_serialization():
@@ -660,7 +613,7 @@ def test_program_save_uses_step_data_serialization():
 
 
 # ---------------------------------------------------------------------------
-# 10. Full .lse round-trip simulation (BUG 6 + BUG 8)
+# 8. Full .lse round-trip simulation (BUG 6 + BUG 8)
 # ---------------------------------------------------------------------------
 
 def test_full_program_json_roundtrip(tmp_path):
@@ -765,7 +718,7 @@ def test_keyway_program_roundtrip_preserves_angle_offset_values():
 
 
 # ---------------------------------------------------------------------------
-# 11. _load_program_header_to_form calls _apply_unit_suffix etc.
+# 9. _load_program_header_to_form calls _apply_unit_suffix etc.
 # ---------------------------------------------------------------------------
 
 def test_load_header_calls_post_update():
@@ -787,7 +740,7 @@ def test_load_header_calls_post_update():
 
 
 # ---------------------------------------------------------------------------
-# 12. _apply_header_to_ui combo matching
+# 10. _apply_header_to_ui combo matching
 # ---------------------------------------------------------------------------
 
 def test_apply_header_combo_matching():

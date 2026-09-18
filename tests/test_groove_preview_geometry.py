@@ -104,6 +104,19 @@ def test_axial_face_groove_lage_three_cuts_toward_positive_z():
     assert reversed_bottom_z == 1.5
 
 
-def test_zero_width_or_depth_does_not_crash_and_stays_finite():
-    path = build_groove_preview_path({"mode": 0, "lage": 0, "diameter": 30.0, "z": -25.0, "width": 0.0, "depth": 0.0})
-    assert all(all(abs(coord) < 1e6 for coord in point) for point in path)
+def test_zero_width_or_depth_collapses_to_the_nominal_reference_point():
+    """Eine entartete Nut (width=0, depth=0) muss auf genau den einen
+    Referenzpunkt (diameter, z) kollabieren - nicht auf NaN/Inf, aber auch
+    nicht auf ein falsch skaliertes oder falsch referenziertes Rechteck.
+    Eine reine Endlichkeitspruefung wuerde eine falsche Kollapsposition
+    (z.B. falsches Vorzeichen oder falscher Referenzpunkt) nicht erkennen,
+    solange das Ergebnis endlich bleibt."""
+    radial = build_groove_preview_path(
+        {"mode": 0, "lage": 0, "diameter": 30.0, "z": -25.0, "width": 0.0, "depth": 0.0}
+    )
+    assert radial == [(30.0, -25.0)] * 4
+
+    axial = build_groove_preview_path(
+        {"mode": 1, "lage": 0, "diameter": 30.0, "z": -25.0, "width": 0.0, "depth": 0.0}
+    )
+    assert axial == [(30.0, -25.0)] * 4

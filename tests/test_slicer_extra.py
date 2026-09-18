@@ -52,12 +52,27 @@ def test_parallel_x_pass_beyond_contour_extent_has_no_material_regardless_of_fla
 
 
 def test_parallel_x_internal_produces_passes():
+    """Interner (Bohr-)Modus von rough_turn_parallel_x() - der einzige Test
+    in diesem Modul mit external=False. Prueft die konkrete Band- und
+    Schnittgeometrie statt nur, dass irgendwo der Kommentar "X-band"
+    auftaucht (eine reine Substring-Pruefung wuerde eine falsche/fehlende
+    Zustellung im Bohr-Modus nicht erkennen)."""
     path = [(6.0, 0.0), (8.0, -2.0), (10.0, -2.0)]
     lines = rough_turn_parallel_x(path, external=False, x_stock=4.0, x_target=10.0, step_x=3.0, safe_z=5.0, feed=0.2, allow_undercut=False)
-    assert any("X-band" in ln for ln in lines)
+    assert "(Pass 1: X-band [4.000,7.000])" in lines
+    assert "(Pass 2: no cut region in band X[7.000,10.000])" in lines
+    pass_1 = lines.index("(Pass 1: X-band [4.000,7.000])")
+    pass_2 = lines.index("(Pass 2: no cut region in band X[7.000,10.000])")
+    pass_1_g1 = [ln for ln in lines[pass_1:pass_2] if ln.startswith("G1 ")]
+    assert any("Z-1.000" in ln for ln in pass_1_g1)
+    assert any("Z-2.000" in ln for ln in pass_1_g1)
 
 
 def test_parallel_z_basic_behavior():
+    """Zwei Z-Baender mit je einem echten Schnitt bis zur Kontur - prueft
+    konkrete Band-/Schnittwerte statt nur, dass irgendwo der Kommentar
+    "Z-band" auftaucht (eine reine Substring-Pruefung wuerde eine falsche
+    Bandbreite oder einen fehlenden Schnitt nicht erkennen)."""
     path = [(10.0, -1.0), (12.0, -3.0), (14.0, -3.0)]
     # external True, z_stock=max z = -1, z_target = -3, step_z=1 => passes
     lines = rough_turn_parallel_z(
@@ -71,7 +86,10 @@ def test_parallel_z_basic_behavior():
         start_x=16.0,
         allow_undercut=True,
     )
-    assert any("Z-band" in ln for ln in lines)
+    assert "(Pass 1: Z-band [-2.000,-1.000])" in lines
+    assert "(Pass 2: Z-band [-3.000,-2.000])" in lines
+    assert "G1 X10.000 Z-2.000 F0.200" in lines
+    assert "G1 X11.000 Z-3.000 F0.200" in lines
 
 
 def test_parallel_z_respects_undercut():

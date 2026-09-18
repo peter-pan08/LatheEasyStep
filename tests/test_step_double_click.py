@@ -184,46 +184,75 @@ def _make_handler():
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_double_click_switches_tab_face():
-    """Double-clicking a FACE step switches to tab index 1."""
-    h = _make_handler()
-    op = Operation(OpType.FACE, {"tool": 1, "feed": 0.15}, path=[])
-    h.model.add_operation(op)
-    h.list_ops.addItem("1: Planen")
-    h.list_ops.setCurrentRow(0)
+def _attach_program_header_widgets(h):
+    """Minimal header widgets so _load_program_header_to_form doesn't fail."""
+    h.program_npv = _ComboBox(["G54"], 0)
+    h.program_unit = _ComboBox(["mm"], 0)
+    h.program_shape = _ComboBox(["Rund"], 0)
+    h.program_retract_mode = _ComboBox(["Individuell"], 0)
+    for attr in ["program_xa", "program_xi", "program_za", "program_zi",
+                 "program_zb", "program_w", "program_l", "program_n",
+                 "program_sw", "program_xra", "program_xri", "program_zra",
+                 "program_zri", "program_xt", "program_zt", "program_sc",
+                 "program_s1", "program_s3"]:
+        setattr(h, attr, _SpinBox())
+    h.program_name = _LineEdit()
+    for attr in ["program_xra_absolute", "program_xri_absolute",
+                 "program_zra_absolute", "program_zri_absolute",
+                 "program_xt_absolute", "program_zt_absolute",
+                 "program_has_subspindle"]:
+        setattr(h, attr, _CheckBox())
+    h._get_widget_by_name = lambda name: None
 
-    # Simulate double-click on item 0
-    item = h.list_ops.item(0)
+
+@pytest.mark.parametrize(
+    "ops, click_index, expected_tab",
+    [
+        pytest.param(
+            [Operation(OpType.FACE, {"tool": 1, "feed": 0.15}, [])], 0, 1, id="face",
+        ),
+        pytest.param(
+            [Operation(OpType.THREAD, {"pitch": 1.5}, [])], 0, 4, id="thread",
+        ),
+        pytest.param(
+            [Operation(OpType.DRILL, {"mode": 0.0}, [])], 0, 6, id="drill",
+        ),
+        pytest.param(
+            [
+                Operation(OpType.FACE, {"tool": 1}, []),
+                Operation(OpType.GROOVE, {"width": 3.0}, []),
+                Operation(OpType.DRILL, {"mode": 0.0}, []),
+            ],
+            1,
+            5,
+            id="groove_second_of_three",
+        ),
+        pytest.param(
+            [Operation(OpType.PROGRAM_HEADER, {"program_name": "Welle", "xa": 50.0}, [])],
+            0,
+            0,
+            id="program_header",
+        ),
+    ],
+)
+def test_double_click_switches_to_the_operations_tab(ops, click_index, expected_tab):
+    """Double-clicking a step selects it and switches to its op_type's tab -
+    parametrisiert ueber die op_type->tab_index-Zuordnungstabelle (LES-Doku:
+    fuenf vormals strukturell identische Einzeltests), damit jeder
+    Mapping-Wert (FACE/THREAD/DRILL/GROOVE/PROGRAM_HEADER) weiterhin einzeln
+    abgedeckt bleibt - inklusive der Auswahl eines nicht-ersten Eintrags in
+    einer mehrteiligen Liste (groove_second_of_three)."""
+    h = _make_handler()
+    _attach_program_header_widgets(h)
+    for i, op in enumerate(ops):
+        h.model.add_operation(op)
+        h.list_ops.addItem(f"{i + 1}: {op.op_type}")
+
+    item = h.list_ops.item(click_index)
     h._on_step_double_clicked(item)
 
-    assert h.tab_params.currentIndex() == 1  # FACE tab
-
-
-def test_double_click_switches_tab_thread():
-    """Double-clicking a THREAD step switches to tab index 4."""
-    h = _make_handler()
-    op = Operation(OpType.THREAD, {"pitch": 1.5}, path=[])
-    h.model.add_operation(op)
-    h.list_ops.addItem("1: Gewinde")
-    h.list_ops.setCurrentRow(0)
-
-    item = h.list_ops.item(0)
-    h._on_step_double_clicked(item)
-
-    assert h.tab_params.currentIndex() == 4  # THREAD tab
-
-
-def test_double_click_switches_tab_drill():
-    """Double-clicking a DRILL step switches to tab index 6."""
-    h = _make_handler()
-    op = Operation(OpType.DRILL, {"mode": 0.0}, path=[])
-    h.model.add_operation(op)
-    h.list_ops.addItem("1: Bohren")
-
-    item = h.list_ops.item(0)
-    h._on_step_double_clicked(item)
-
-    assert h.tab_params.currentIndex() == 6  # DRILL tab
+    assert h.list_ops.currentRow() == click_index
+    assert h.tab_params.currentIndex() == expected_tab
 
 
 def test_double_click_loads_params_into_widgets():
@@ -478,59 +507,6 @@ def test_double_click_flushes_current_operation():
 
     # _update_selected_operation should have been called with force=True
     assert flush_called and flush_called[0] is True
-
-
-def test_double_click_second_step_of_three():
-    """With 3 operations, double-clicking #2 selects it and opens correct tab."""
-    h = _make_handler()
-
-    ops = [
-        Operation(OpType.FACE, {"tool": 1}, []),
-        Operation(OpType.GROOVE, {"width": 3.0}, []),
-        Operation(OpType.DRILL, {"mode": 0.0}, []),
-    ]
-    for i, op in enumerate(ops):
-        h.model.add_operation(op)
-        h.list_ops.addItem(f"{i+1}: {op.op_type}")
-
-    # Double-click on index 1 (GROOVE)
-    item = h.list_ops.item(1)
-    h._on_step_double_clicked(item)
-
-    assert h.list_ops.currentRow() == 1
-    assert h.tab_params.currentIndex() == 5  # GROOVE tab
-
-
-def test_double_click_program_header():
-    """Double-clicking the PROGRAM_HEADER step switches to tab 0."""
-    h = _make_handler()
-    # Supply header widgets so _load_program_header_to_form doesn't fail
-    h.program_npv = _ComboBox(["G54"], 0)
-    h.program_unit = _ComboBox(["mm"], 0)
-    h.program_shape = _ComboBox(["Rund"], 0)
-    h.program_retract_mode = _ComboBox(["Individuell"], 0)
-    for attr in ["program_xa", "program_xi", "program_za", "program_zi",
-                 "program_zb", "program_w", "program_l", "program_n",
-                 "program_sw", "program_xra", "program_xri", "program_zra",
-                 "program_zri", "program_xt", "program_zt", "program_sc",
-                 "program_s1", "program_s3"]:
-        setattr(h, attr, _SpinBox())
-    h.program_name = _LineEdit()
-    for attr in ["program_xra_absolute", "program_xri_absolute",
-                 "program_zra_absolute", "program_zri_absolute",
-                 "program_xt_absolute", "program_zt_absolute",
-                 "program_has_subspindle"]:
-        setattr(h, attr, _CheckBox())
-    h._get_widget_by_name = lambda name: None
-
-    op = Operation(OpType.PROGRAM_HEADER, {"program_name": "Welle", "xa": 50.0}, [])
-    h.model.add_operation(op)
-    h.list_ops.addItem("1: Programmkopf")
-
-    item = h.list_ops.item(0)
-    h._on_step_double_clicked(item)
-
-    assert h.tab_params.currentIndex() == 0  # PROGRAM_HEADER tab
 
 
 def test_double_click_invalid_index_no_crash():
