@@ -52,8 +52,10 @@ TODO.md/CHANGELOG.md dokumentiert) statt es stillschweigend auszulassen.
 
 Commit attribution:
 Do not add Co-Authored-By, Signed-off-by, or any other AI/agent attribution
-to commits unless the user explicitly requests it.
-
+to commits unless the user explicitly requests it. Do not set, override, or
+otherwise change commit author or committer identity - both must come
+unchanged from the existing git configuration (`user.name`/`user.email`),
+never from an agent- or environment-provided identity.
 
 ## LinuxCNC-Konfigurationsdateien: das Panel selbst darf nur lesen, niemals schreiben
 

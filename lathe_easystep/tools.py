@@ -39,9 +39,10 @@ class Tool:
     # LES-052 Abschnitt 5: Tool-Tabellen-Token, die parse_tool_table() liest,
     # aber nicht in ein eigenes Tool-Feld uebernimmt (alles ausser T/P/D/Q,
     # z. B. X/Y/Z/A/B/C/U/V/W/I/J/R aus dem Standard-LinuxCNC-Tooltable-
-    # Layout). Vorher stillschweigend verworfen - jetzt erhalten, damit ein
-    # spaeteres Zurueckschreiben der Tabelle (separater, noch offener
-    # Schritt) keine vorhandenen Werte verliert. Rein additiv: wird aktuell
+    # Layout). Vorher stillschweigend verworfen - jetzt erhalten, reine
+    # Datenerhaltung. Kein Zurueckschreiben in die Tool-Tabelle: das Panel
+    # darf LinuxCNC-Konfigurationsdateien dauerhaft nur lesen (siehe
+    # CLAUDE.md, nutzerbestaetigt 2026-09-17). Rein additiv: wird aktuell
     # von keiner Fachlogik gelesen.
     unknown_fields: Dict[str, str] = field(default_factory=dict)
 

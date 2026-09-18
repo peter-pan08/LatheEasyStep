@@ -17,6 +17,57 @@
 
 ## [Unreleased]
 
+### Commit-Audit: veralteter Zurueckschreiben-Kommentar in tools.py korrigiert 2026-09-18
+
+- Auf Nutzeranfrage die letzten Commits auf Richtigkeit und Obsolenz
+  geprueft (Commit-Nachrichten gegen tatsaechliche Diffs, sowie ob
+  spaetere Commits fruehere inhaltlich ueberholt haben, ohne dass alle
+  betroffenen Stellen nachgezogen wurden).
+- Fund: Der Kommentar zu `Tool.unknown_fields` in `lathe_easystep/tools.py`
+  (eingefuehrt in "LES-052: Abschnitt 5 - unbekannte Tool-Tabellen-Felder
+  werden erhalten") begruendete die Datenerhaltung noch mit einem
+  "spaeteren Zurueckschreiben der Tabelle (separater, noch offener
+  Schritt)". Das war zum Zeitpunkt dieses Commits zutreffend, wurde aber
+  von den beiden direkt folgenden Commits ("Klarstellung: ...dauerhaft nur
+  lesbar" und der Praezisierung auf das Panel-Programm) inhaltlich
+  ueberholt: Zurueckschreiben ist seither eine dauerhaft ausgeschlossene
+  Sicherheitsregel, keine offene Scoping-Frage. `TODO.md` und `CLAUDE.md`
+  wurden damals korrekt nachgezogen, der Code-Kommentar in `tools.py`
+  jedoch nicht - er verwies weiterhin auf die ueberholte Formulierung.
+  Kommentar korrigiert, verweist jetzt auf die dauerhafte Nur-Lesen-Regel
+  in CLAUDE.md statt auf einen vermeintlich noch offenen Schritt.
+- Alle anderen gepruefter Commits (Attribution-Regel, Documentation-only-
+  correction-Policy inkl. ihrer tatsaechlichen Anwendung auf `main`
+  (`e16728a`), Panel-vs-SIM-Praezisierung, LES-052-Abschnitt-2-Bestands-
+  aufnahmen) stimmen inhaltlich mit ihren Commit-Nachrichten und dem
+  jeweils aktuellen Dokumentationsstand ueberein - keine weiteren Funde.
+- Reine Dokumentations-/Kommentarkorrektur, kein Verhalten veraendert.
+
+### Dokumentation: veraltete Teststaende und 0.8.0-Prioritaeten in README/ROADMAP korrigiert 2026-09-18
+
+- `README.md` und `ROADMAP.md` nannten noch `877 passed (Stub-Qt), 108
+  passed (Real-Qt)`; `TODO.md` war mit `921`/`110` bereits aktueller. Beide
+  Zahlen live gegengeprueft (`pytest --qt-mode=stub` bzw. `--qt-mode=real`
+  mit dem System-Python, der PyQt5/qtpy besitzt - die lokale `.venv` nicht,
+  siehe DEV.md): `921 passed` (Stub) und `110 passed` (Real), 0 skipped.
+  Beide Stellen in README.md (DE/EN) und ROADMAP.md auf die verifizierten
+  Zahlen aktualisiert.
+- `tests/conftest.py` gegengeprueft: Stub/Real ist eine harte, dateibasierte
+  Partition (`REAL_QT_TESTS`-Liste in `pytest_ignore_collect`), keine
+  ueberlappende Marker-Sammlung - die 921/110 sind disjunkt, kein
+  Kollektionsfehler.
+- `README.md` (DE/EN) Abschnitt "Aktuelle Prioritaeten"/"Current Priorities"
+  aktualisiert: die bisherige Liste fuehrte noch 0.8.0-Gate-Punkte (sichere
+  Anfahrt, Innen-Schruppen/-Schlichten, lokale DIN-Freistichgeometrie,
+  G96/G97) als aktuelle Reihenfolge, obwohl `ROADMAP.md` das 0.8.0-Gate
+  bereits am 2026-09-16 als freigegeben fuehrt. Ersetzt durch die
+  tatsaechliche `TODO.md`-Prioritaetsliste (Release-Prozess, LES-051,
+  LES-052, LES-022, LES-044, LES-032, LES-043, LES-030).
+- Reine Dokumentationskorrektur, kein Code veraendert. `LES-051`/`LES-052`
+  selbst sind davon unberuehrt - Abschnitte 3 (atomare Fehlergrenzen) und 4
+  (Undo/Redo, Autosave) in `TODO.md` bleiben mit echtem, nicht nur
+  kosmetischem Restumfang offen.
+
 ### Klarstellung: LinuxCNC-Konfigurationsdateien sind fuer dieses Panel dauerhaft nur lesbar 2026-09-17
 
 - Der vorige Changelog-Eintrag ("Zurueckschreiben in die `tool.tbl`-Datei

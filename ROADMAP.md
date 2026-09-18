@@ -1,6 +1,6 @@
 # Roadmap LatheEasyStep
 
-Stand: 2026-09-16
+Stand: 2026-09-18
 
 LatheEasyStep soll ein werkstattnahes, konversationelles Drehpanel fuer
 LinuxCNC werden. Die Roadmap beschreibt Release-Ziele und Abhaengigkeiten.
@@ -13,7 +13,7 @@ Verifikation in
 - `main`: Version 0.8.0 als lauffaehige Basis (freigegeben 2026-09-16)
 - `dev`: aktueller Entwicklungsstand fuer die naechste Version; `main`
   bleibt die stabile Basis
-- aktueller Teststand: `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`
+- aktueller Teststand: `921 passed (Stub-Qt), 110 passed (Real-Qt), 0 skipped`
 - UI-Shell, acht Reiter, Step-Verwaltung und Vorschau sind bereits in Teil-UIs
   und Fachmodule getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,
@@ -84,8 +84,8 @@ und gegengeprueft:
   Aussen-/Innenfall (103 s/122 s bis Programmende) und die Innenbearbeitungs-
   Richtungsvarianten (187,1 s/186,2 s bis `M30`, identische Endposition,
   deckungsgleicher Backplot, je leerer NML-Fehlerkanal) besitzen
-  dokumentierte QtDragon-SIM-Nachweise. Die allgemeine Testbasis (877
-  Stub-/108 Real-Qt-Tests) ist erfolgreich; alle zwoelf Referenzen liefen
+  dokumentierte QtDragon-SIM-Nachweise. Die allgemeine Testbasis (921
+  Stub-/110 Real-Qt-Tests) ist erfolgreich; alle zwoelf Referenzen liefen
   in QtDragon-SIM bis `M30`.
 
 Der reale Maschinenlauf mit tatsaechlich geschnittenem Gewinde ist kein
