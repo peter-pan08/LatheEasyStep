@@ -13,7 +13,7 @@ Verifikation in
 - `main`: Version 0.8.0 als lauffaehige Basis (freigegeben 2026-09-16)
 - `dev`: aktueller Entwicklungsstand fuer die naechste Version; `main`
   bleibt die stabile Basis
-- aktueller Teststand: `921 passed (Stub-Qt), 110 passed (Real-Qt), 0 skipped`
+- aktueller Teststand: `920 passed (Stub-Qt), 115 passed (Real-Qt), 0 skipped`
 - UI-Shell, acht Reiter, Step-Verwaltung und Vorschau sind bereits in Teil-UIs
   und Fachmodule getrennt
 - Deutsch, Englisch und Spanisch besitzen jeweils 1.022 identische,

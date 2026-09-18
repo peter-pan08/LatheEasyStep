@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 921 Stub-Qt-Tests und 110 Tests mit echtem PyQt5, keine Skips.
+- 920 Stub-Qt-Tests und 115 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.

@@ -17,6 +17,90 @@
 
 ## [Unreleased]
 
+### Test-Audit umgesetzt: Duplikate entfernt, schwache Assertions geschaerft, Kontur-Tabellen-Luecke geschlossen 2026-09-18
+
+Umsetzung des Test-Redundanz-/Qualitaets-Audits (921 Stub-/110 Real-Qt-Tests,
+vollstaendig gelesen, siehe vorherige Audit-Konversation). Vorher/Nachher:
+`920 passed (Stub-Qt), 115 passed (Real-Qt), 0 skipped` (netto -1 Stub durch
+Duplikat-/Redundanzabbau, +5 Real-Qt durch neue Kontur-Tabellen-Tests, +2
+Stub durch neue Werkzeugtabellen-Reload-Tests). Zwoelf Referenzen weiterhin
+bestanden `rs274` und die statische NGC-Pruefung ohne jede Aenderung am
+erzeugten G-Code (`regenerate_all_ngc.py` liefert einen leeren Diff) - keine
+Generator-/Fahrwegaenderung in dieser Runde, nur Test- und ein Dead-Code-Fund.
+
+- **Echte Duplikate entfernt** (`tests/test_save_load_roundtrip.py`):
+  `test_header_l_n_edges_sw_roundtrip` und `test_header_xt_zt_absolute_roundtrip`
+  gestrichen - beide vollstaendig von `test_header_roundtrip_load_program_header_to_form`
+  abgedeckt (identische Felder/Werte, keine zusaetzliche Assertion). Ebenso
+  `tests/test_contour_arc_gcode.py::test_arc_geometry_from_error_case`
+  gestrichen (identisches Params-Dict wie `test_arc_primitive_outputs_valid_G2_G3`,
+  dessen eigene Endpunkt-Assertion die schwaechere Negativpruefung bereits
+  impliziert).
+- **Wirkungslose Assertions durch den tatsaechlichen fachlichen Vertrag
+  ersetzt statt kosmetisch angepasst:**
+  - `test_contour_arc_gcode.py::test_arc_primitive_outputs_valid_G2_G3`: die
+    tautologische `"I0" not in line or "K0" not in line`-Zeile ersetzt durch
+    `_assert_arc_line_is_geometrically_valid()` (echte Radius-Start/Radius-
+    Ende-Pruefung, wie sie LinuxCNC selbst durchfuehrt) - deckte beim ersten
+    Versuch mit dem *falschen* Referenzpunkt (Konturstart statt Bogenstart)
+    sofort einen eigenen Fehler in der Testkorrektur auf, der Bogen selbst
+    ist nach Korrektur des Referenzpunkts nachweislich gueltig.
+  - `test_operation_action_button_states.py::test_missing_action_buttons_are_supported_during_lazy_ui_loading`:
+    hatte keine einzige Assertion. Ersetzt durch ein gemischtes Szenario
+    (manche Buttons vorhanden, manche `None`) - prueft jetzt, dass
+    vorhandene Buttons trotzdem korrekt aktualisiert werden, statt nur "kein
+    Crash".
+  - `test_regression_contracts.py::test_string_valued_combo_params_do_not_crash_generation`:
+    `or thread_gcode` (macht die Assertion bei jedem nichtleeren String
+    automatisch wahr) entfernt - prueft jetzt tatsaechlich, dass G76/G33
+    erzeugt wurde.
+  - `test_slicer_extra.py::test_parallel_x_internal_produces_passes` +
+    `test_parallel_z_basic_behavior`: reine Substring-Pruefungen
+    (`"X-band"/"Z-band" in line`) durch konkrete Band-/Schnittgeometrie
+    ersetzt (exakte Pass-Grenzen und G1-Koordinaten) - `parallel_x_internal`
+    ist der einzige Test im Modul mit `external=False`, also nicht durch
+    einen Nachbartest ersetzbar, sondern gezielt verstaerkt.
+  - `test_groove_preview_geometry.py::test_zero_width_or_depth_...`: reine
+    Endlichkeitspruefung durch exakten Kollaps-Punkt `(diameter, z)` fuer
+    radialen und axialen Modus ersetzt.
+- **Parametrisiert statt fuenf strukturell identischer Funktionen**
+  (`test_step_double_click.py`): `test_double_click_switches_tab_face/_thread/_drill`,
+  `test_double_click_second_step_of_three` und `test_double_click_program_header`
+  zu einer `pytest.mark.parametrize`-Funktion
+  `test_double_click_switches_to_the_operations_tab` zusammengefasst - alle
+  fuenf op_type->tab_index-Werte (inkl. der Mehrfachlisten-Auswahl fuer
+  GROOVE und dem Sonderfall PROGRAM_HEADER) bleiben einzeln abgedeckt.
+- **Die neun als Teilueberlappung eingestuften Regressionen unveraendert
+  gelassen** (kein neuer Befund, der eine Loeschung rechtfertigt).
+- **Kontur-Tabellen-Luecke geschlossen** (neu: `tests/test_contour_table_interaction.py`,
+  5 Tests, zu `REAL_QT_TESTS` in `tests/conftest.py` hinzugefuegt): testet
+  erstmals den echten Datenweg von einer realen `QTableWidget` durch
+  `collect_contour_segments()` sowie die Add-/Delete-/Move-/Edge-Change-
+  Handler (`ui_contour.py`/`ui_contour_input.py`) - bisher wurde
+  ausschliesslich mit direkt vorgegebenen `Operation.params["segments"]`
+  getestet, nie mit den Tabellen-Widgets selbst (der Stub-Qt-Modus kann das
+  nicht abbilden, da `QTableWidget` dort eine wirkungslose Dummy-Klasse
+  ist). Deckt Zeilen anlegen mit korrekten Defaults, Kantentyp-Aenderung
+  ueber die Vorlage-Combo inkl. Aktivierung der Bogen-Seite-ComboBox,
+  gezieltes Loeschen nur der ausgewaehlten Zeile sowie Verschieben mit
+  Erhalt der Cell-Widgets (Kantentyp geht beim Verschieben nicht verloren)
+  ab.
+- **`handle_load_tool_table()` separat abgesichert** (neu:
+  `tests/test_tool_table_manual_reload.py`, 2 Stub-Qt-Tests): der manuelle
+  "Werkzeugtabelle laden"-Button war bisher ungetestet (nur der
+  automatische Startpfad `auto_load_tool_table` war es). Deckt den
+  Erfolgspfad (echte Datei geparst, `ToolTableState` sowie Pfad-Widgets
+  aktualisiert, Combos/Previews tatsaechlich mit den echten Tools
+  aufgerufen) und den Abbruchpfad (leerer Dialogpfad laesst bestehenden
+  Zustand unveraendert) ab.
+- **Toten Code entfernt:** `lathe_easystep/gcode.py` (`contour_to_gcode()`)
+  - vor der Entfernung erneut repo-weit (Produktivcode, Tests, Doku,
+    dynamische Nutzung, `__init__.py`-Reexport) auf jede Referenz geprueft:
+    keine gefunden. Relikt aus einem fruehen Milestone (eigener Docstring:
+    "Platzhalter"), abgeloest von den echten `gcode_*.py`-Generatoren.
+- Teststandzahlen in `README.md`/`ROADMAP.md`/`TODO.md` entsprechend auf
+  `920 passed (Stub-Qt), 115 passed (Real-Qt)` aktualisiert.
+
 ### Commit-Audit: veralteter Zurueckschreiben-Kommentar in tools.py korrigiert 2026-09-18
 
 - Auf Nutzeranfrage die letzten Commits auf Richtigkeit und Obsolenz
