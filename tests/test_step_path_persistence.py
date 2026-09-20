@@ -290,7 +290,7 @@ def test_save_changes_writes_only_dirty_steps_and_dirty_program(tmp_path):
     handler._handle_save_changes()
 
     assert step_a.exists() is False
-    assert json.loads(step_b.read_text()) == {"tool": 2}
+    assert json.loads(step_b.read_text()) == {"tool": 2, "version": 2}
     assert gcode_calls == [str(gcode_path)]
 
 
@@ -354,7 +354,7 @@ def test_save_changes_warns_when_user_cancels_auto_link_prompt(tmp_path):
     handler._handle_save_changes()
 
     assert step_a.exists() is False
-    assert json.loads(step_b.read_text()) == {"tool": 2}
+    assert json.loads(step_b.read_text()) == {"tool": 2, "version": 2}
     assert len(infos) == 1
     shown_text = infos[0][-1]
     assert "1" in shown_text
@@ -390,8 +390,8 @@ def test_save_changes_automatically_links_and_saves_unlinked_dirty_step(tmp_path
 
     handler._handle_save_changes()
 
-    assert json.loads(step_a.read_text()) == {"tool": 1}
-    assert json.loads(step_b.read_text()) == {"tool": 2}
+    assert json.loads(step_a.read_text()) == {"tool": 1, "version": 2}
+    assert json.loads(step_b.read_text()) == {"tool": 2, "version": 2}
     assert op_a.params["__step_file_path"] == str(step_a)
     assert len(infos) == 1
     shown_text = infos[0][-1]

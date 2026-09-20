@@ -14,7 +14,7 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 920 Stub-Qt-Tests und 115 Tests mit echtem PyQt5, keine Skips.
+- 948 Stub-Qt-Tests und 115 Tests mit echtem PyQt5, keine Skips.
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
 - Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
@@ -26,10 +26,10 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
 | Release-Prozess | P1 | echten Release-Pfad testen, Manifest-Vollstaendigkeit absichern | S | vor 0.9.0 |
-| LES-022 | P2 | Bewegungs- und Modalzustand vollstaendig fuehren | L | 0.9.0 |
+| LES-022 | P2 | vier verstreute Settings-Zustaende typisieren (kein bekannter Fehler, Rest laut Audit 2026-09-18 bereits umgesetzt/bewusst abgeschlossen) | S | 0.9.0 |
 | LES-051 | P1 | Panel-Grundgeruest und Darstellungsadapter weiter entkoppeln | XL | 0.9.0 |
 | LES-052 | P1 | Panel-Architektur, Zustandsmodell und Wiederherstellung planen/umsetzen | XL | 0.9.0 |
-| LES-044 | P2 | verbleibende Vorschau-Geometrie und Ausnahmegrenzen entkoppeln | L-XL | 0.9.0 |
+| LES-044 | P2 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, Rest laut Audit 2026-09-18 bereits umgesetzt) | S | 0.9.0 |
 | LES-032 | P2 | Werkzeuggeometrie fuer Plausibilitaet und Kollision erweitern | L | 0.9.0 |
 | LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
 | LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
@@ -59,15 +59,68 @@ wurden am 17.09.2026 eingefuehrt und bislang nur mit `--check` gegengeprueft
 
 ## LES-022 Bewegungs- und Modalzustand
 
-`MotionState` und `SpindleState` sind bereits eingefuehrt. Offen bleiben:
+Audit 2026-09-18 gegen den aktuellen `dev`-Stand: `MotionState` und
+`SpindleState` sind fuer alle tatsaechlich dynamisch umgeschalteten
+Modalgruppen abgeschlossen.
 
-- [ ] weitere relevante modale G-/M-Codes in einem zentralen, typisierten
-  Zustand fuehren, statt sie ueber verstreute Settings-Schluessel abzuleiten.
-- [ ] Bewegungen auch waehrend der Schnittpfade granular nachfuehren; die
-  aktuelle Invalidierung nach Roughing bleibt nur eine Zwischenloesung.
-- [ ] fuer die neuen Zustandsuebergaenge gezielte Regressionen ergaenzen und
-  sicherstellen, dass daraus keine unnoetigen Eilgaenge oder Modalwechsel
-  entstehen.
+- G96/G97 (CSS) vollstaendig zentral ueber `SpindleState`
+  (`request()`/`activate()`/`suspend()`, `gcode_safety.py`).
+- Reale Endposition wird nach jeder Operation mit deterministisch bekanntem
+  Ergebnis in `MotionState` nachgefuehrt: Bohren (`gcode_drill.py`),
+  Gewinde (`gcode_thread.py`), G70-Fertigzyklus und move-basiertes
+  Schruppen (`rough_turn_parallel_x/z`, `gcode_roughing.py`, seit "vierte
+  Etappe" 2026-09-13 inkl. Bandendposition, nicht mehr nur bedingungslos
+  invalidiert).
+- G90/G91, G7/G8, G94/G95, G18, G80 werden einmalig im Programmkopf
+  gesetzt (`gcode_program.py`) und im gesamten Repo nie dynamisch
+  umgeschaltet - dafuer ist aktuell kein zentraler Zustand erforderlich,
+  es gibt keinen Codepfad, der das aendern wuerde.
+- G40/G41/G42 (Werkzeugradiuskorrektur) wird ausschliesslich in
+  `generate_abspanen_gcode()` (`gcode_roughing.py`) genutzt und dort in
+  jedem Pfad, der sie aktiviert, im selben Funktionsdurchlauf auch wieder
+  per G40 abgewaehlt (inkl. harter Weglaengen-Validierung) - lokal
+  korrekt, kein zentraler Zustand noetig.
+- Zustandsuebergaenge sind regressionsgesichert
+  (`tests/test_gcode_motion_regressions.py`,
+  `tests/test_no_redundant_zero_move_after_finish.py`,
+  `tests/test_css_and_drill_validation.py`, `tests/test_css_clearance.py`).
+
+**Bewusste, abgeschlossene Designentscheidung (kein offener Punkt):**
+`MotionState.clear()` bleibt endgueltig fuer zwei Faelle bestehen, in denen
+die reale Endposition strukturell nicht von aussen bekannt ist, ohne
+LinuxCNC-/Makro-interne Zustellogik in Python zu duplizieren:
+
+- G71/G72-Roughing-Zyklus ohne abschliessendes G70
+  (`generate_abspanen_gcode()`, `gcode_roughing.py`) - die Einzelpaesse
+  laufen interpreterintern, ihre Endposition ist von aussen nicht bekannt.
+- Nut-Zyklus `o220` (`gcode_groove.py`) - die Breitenachsen-Endposition
+  haengt datenabhaengig von Werkzeugbreite/Nutbreite/Ueberdeckung ab.
+
+In beiden Faellen ist das Fallback-Verhalten sicher-konservativ:
+`MotionState.at()` liefert bei unbekannter Position immer `False`, jede
+nachfolgende Anfahrt (`emit_approach()`/`append_tool_and_spindle()`,
+`gcode_safety.py`) faehrt deshalb immer die volle sichere Rueckzugs-/
+Anfahrtsroute, statt eine noetige Bewegung faelschlich zu uebergehen. Eine
+"granulare" Nachfuehrung waere hier keine Fehlerbehebung, sondern haette
+zur Folge, LinuxCNC-Zykluscode bzw. Makro-Zustellogik in Python
+nachzubilden - bewusst nicht vorgesehen.
+
+**Technische Restarbeit (kein nachgewiesener funktionaler Fehler, daher
+keine hohe Prioritaet):** vier Zustaende leben weiterhin als rohe
+`settings["_..."]`-Schluessel statt in einem typisierten Objekt wie
+`MotionState`/`SpindleState`. Jeder Wert wird konsistent gelesen/
+geschrieben, keiner der vier zeigt einen aktuell nachweisbaren
+funktionalen Fehler - eine Typisierung waere Architekturaufraeumen, keine
+Fehlerbehebung:
+
+- [ ] `_current_tool` (aktuell geladenes Werkzeug, `gcode_safety.py`)
+- [ ] `_active_retract_mode` (Innen-/Aussen-Rueckzugsebene je Operation,
+  gesetzt in `gcode_program.py`, gelesen in `gcode_safety.py`)
+- [ ] `_cycle_defined_subs` (bereits per G71/G72 definierte
+  Zyklus-Subroutinen fuer G70-Wiederverwendung, `gcode_roughing.py`)
+- [ ] `_last_drill_diameter`/`_last_drill_depth` (Gedaechtnis fuer
+  nachfolgende Innenbearbeitungs-Sicherheitspruefungen, `gcode_program.py`/
+  `gcode_utils.py`/`gcode_roughing.py`)
 
 ## LES-051 Panel-Grundgeruest, Ressourcen und Darstellungsadapter
 
@@ -204,13 +257,15 @@ Regressionsbewiesen.
 - [ ] weitere Stellen mit demselben Muster (Modelluebernahme vor
   Validierung, kein Rollback bei Fehlschlag) suchen - `sync_form_to_
   operation()` war nur die eine gefundene, gezielt untersuchte Stelle.
-- [ ] breite `except Exception`-Fallbacks in den betroffenen UI-/Preview-
-  Modulen durch definierte Fehlerklassen oder engere Fehlergrenzen ersetzen,
-  ohne erwartete optionale Ressourcenfehler zu verschlucken. Ueberschneidet
-  sich mit LES-044s engerem Punkt (nur `preview_widget.py`/`ui_preview.py`);
-  projektweite Zaehlung ergab ~400 Vorkommen in 40+ Dateien - deutlich
-  groesser als der bisherige LES-044-Umfang, nicht in einem Rutsch
-  angehen, sondern inkrementell oder explizit in Etappen zerlegen.
+- [ ] breite `except Exception`-Fallbacks in den betroffenen UI-Modulen
+  durch definierte Fehlerklassen oder engere Fehlergrenzen ersetzen, ohne
+  erwartete optionale Ressourcenfehler zu verschlucken. `preview_widget.py`/
+  `ui_preview.py` sind dieser Aufgabe entwachsen - dort ist das bereits
+  abgeschlossen (siehe LES-044). Projektweite Zaehlung (Audit 2026-09-18)
+  ergab weiterhin ~400 Vorkommen in 40+ Dateien, u. a. `ui_header.py` (6)
+  und `ui_params.py` (4) - deutlich groesser als der bisherige LES-044-
+  Umfang, nicht in einem Rutsch angehen, sondern inkrementell oder
+  explizit in Etappen zerlegen.
 - [ ] Fehlerdiagnosen zentral sammeln und fuer Log, UI-Warnung und Tests
   strukturiert nutzbar machen - vollstaendig unimplementiert, eigene
   Entwurfsarbeit.
@@ -279,17 +334,48 @@ Schreibpfad.
 
 ## LES-053 Programm-/Step-Dateiformat versionieren
 
-Das Dateiformat wird vor 1.0 explizit versioniert. Migrationen gehoeren in
-eine zentrale Persistenzschicht und duerfen nicht von UI- oder Generator-
-Modulen erraten werden.
+Umgesetzt 2026-09-18 (Details im Changelog). Zentrale Versionierung/Migration
+in `storage.py`: `CURRENT_FORMAT_VERSION = 2` (der JSON-Schluessel heisst
+weiterhin `"version"`, wie schon vor LES-053 - keine Umbenennung, um
+bestehende `.lse`-Dateien nicht anzufassen), `_migrate_v1_to_v2()`,
+`_MIGRATIONS` (Versionsnummer -> Migrationsfunktion) und der einzige
+Einstiegspunkt `_migrate_to_current()`. Programmdateien (`parse_program_
+payload()`) und Step-Dateien (`parse_step_payload()`, neu - Step-Dateien
+hatten vorher ueberhaupt kein Versionsfeld) laufen beide durch dieselbe
+Migrationskette.
 
-- [ ] `format_version` in Programm- und Step-Dateien einfuehren.
-- [ ] Migrationen fuer alle unterstuetzten Altformate zentral definieren
-  (zunaechst `v1 -> v2` und `v2 -> v3`).
-- [ ] kein Format-Raten in Loadern, UI-Fragmenten oder Generatoren.
-- [ ] Roundtrip-Tests fuer jede unterstuetzte Altversion ergaenzen.
-- [ ] unbekannte neuere Versionen sauber ablehnen.
-- [ ] Migrationen duerfen die Quelldatei nicht ungefragt ueberschreiben.
+- [x] Versionsfeld in Programm- **und** Step-Dateien - Step-Dateien hatten
+  vorher gar keins (Audit-Fund 2026-09-18). `write_step_file()` und der
+  Step-Resave in `handle_save_changes()` schreiben jetzt `version: 2`.
+- [x] Migration zentral definiert: `v1 -> v2` real umgesetzt (siehe LES-032
+  unten - der Werkzeug-Snapshot ist ihr erster echter Anwendungsfall). Eine
+  `v2 -> v3`-Migration existiert NICHT, da aktuell keine v3-relevante
+  Formataenderung ansteht - der Mechanismus (`_MIGRATIONS`-Dict) traegt eine
+  weitere Migration bei Bedarf ohne Strukturaenderung.
+- [x] kein Format-Raten: `_migrate_to_current()` ist der einzige
+  Einstiegspunkt fuer beide Dateiarten; Ausnahme bewusst dokumentiert (siehe
+  unten).
+- [x] Roundtrip-Tests fuer die unterstuetzte Altversion (v1) ergaenzt
+  (`tests/test_format_versioning.py`), inkl. Save-\>Load-\>Save fuer v2.
+- [x] unbekannte neuere Versionen sauber abgelehnt, mit eigener,
+  unterscheidbarer Fehlermeldung (nicht mehr derselbe generische Text wie
+  fuer jeden anderen Fehlerfall).
+- [x] Migrationen ueberschreiben die Quelldatei nicht ungefragt - jeder
+  Migrationsschritt arbeitet auf `deepcopy()`, getestet dass Laden einer
+  alten Datei nichts auf die Platte zurueckschreibt.
+
+**Bewusste Ausnahme vom "kein Format-Raten"-Grundsatz, nicht versehentlich:**
+eine fehlende Version wird nur bei Step-Dateien (nicht bei Programmdateien)
+stillschweigend als historisches Step-v1 behandelt - das ist das einzige
+Step-Dateiformat, das je geschrieben wurde (vor LES-053 gab es dort gar kein
+Versionsfeld), keine Erkennung anhand mehrerer moeglicher Formen. Fehlt die
+Version in einer Programmdatei, wird das weiterhin abgelehnt - gueltige
+`.lse`-Programme hatten schon vor Format v2 immer eine Version.
+
+Der beim Audit gefundene Fehlerpfad in `handle_load_step()` (ungueltige
+Step-Daten propagierten dort bisher ungefangen) ist mitbehoben: der neue
+Ladeweg ueber `parse_step_payload()` ist jetzt in dasselbe `except
+ValueError` eingefasst wie `_step_data_to_operation()`.
 
 Ziel: 0.9.0, verpflichtendes 1.0.0-Gate.
 
@@ -327,23 +413,59 @@ Ziel: 1.0.0.
 
 ## LES-044 Vorschau und Darstellung
 
-Die Qt-freie Geometrieplanung ist fuer Navigation, Raster, Pfade, Sperrzonen
-und Vorderansicht weitgehend umgesetzt. Farb-/Stil-Datenvertraege fuer das
-Preview-Widget sind vollstaendig ausgelagert (siehe LES-051); die breiten
-`except Exception`-Fallbacks in `preview_widget.py`/`ui_preview.py` wurden
-einzeln bewertet und, wo fachlich moeglich, auf erwartete Ausnahmetypen
-begrenzt (36 von 40 Vorkommen, Details im Changelog). Offen bleiben:
+Audit 2026-09-18 gegen den aktuellen `dev`-Stand: die Qt-freie
+Geometrieplanung ist fuer Navigation, Raster, Pfade, Sperrzonen und
+Vorderansicht weitgehend umgesetzt. Farb-/Stil-Datenvertraege fuer das
+Preview-Widget sind vollstaendig ausgelagert (siehe LES-051). Bereits als
+duenne Qt-Adapter auf Qt-freie Funktionen delegiert (`preview_geometry.py`/
+`contour_logic.py`, alle in `preview_widget.py`): `_sample_arc` →
+`sample_preview_arc`, `primitives_to_points` →
+`preview_primitives_to_points`, `_interp_x_at_z`/`_interp_x_hits_at_z`,
+`_path_hits_at_slice`, `_front_operation_side`, `_front_slice_profile`,
+`_front_reference_diameter`, `_apply_side_navigation` →
+`apply_side_navigation`, das Kreis-Layout in `_paint_slice_view()` →
+`circular_view_layout`.
 
-- [ ] verbleibende fachliche Darstellungsberechnungen (Geometrie, nicht
-  Farbe/Stil) aus `preview_widget.py`/`ui_preview.py` in Qt-freie
-  Planfunktionen verschieben; Qt-Code soll nur Stil, Widget-Zustand und
-  QPainter-Ausgabe enthalten.
-- [ ] `except Exception`-Fallbacks ausserhalb von `preview_widget.py`/
-  `ui_preview.py` (z. B. `ui_header.py`, `ui_params.py`) noch nicht
-  durchsucht - falls dort ebenfalls relevant, nach demselben Muster bewerten.
-- [ ] jeden weiteren Extraktionsschritt mit einem kleinen Stub-Test und einem
-  Real-Qt-Start pruefen; bestehende Vorschau-Pakete nicht erneut als offene
-  Aufgaben dokumentieren.
+Die `except Exception`-Fallbacks in `preview_widget.py`/`ui_preview.py`
+wurden einzeln bewertet und, wo fachlich moeglich, auf erwartete
+Ausnahmetypen begrenzt (Details im Changelog). Aktueller Codebestand
+(Audit 2026-09-18, per Vorkommenszaehlung statt der Changelog-Prosa
+mehrerer Teilschritte vom selben Tag): 10 `except Exception` verbleiben
+bewusst breit, jede mit `# LES-044:`-Begruendungskommentar -
+`preview_widget.py:277,287` (`set_slice_z`: `sliceChanged.emit()`/
+Fallback-Callback rufen beliebigen Fremdcode auf), `preview_widget.py:
+676,689,742,895,913,917` (`paintEvent`-Sicherheitsnetz je Zeichenzweig -
+eine unbehandelte Ausnahme dort stuerzt unter echtem PyQt5 den gesamten
+Prozess ab, empirisch verifiziert), `ui_preview.py:349,376`
+(`collect_preview_state`: Warnungs-Aggregation aus drei bzw. Rohteil-/
+Rueckzugs-/Worklimit-/Sperrzonen-Vorschau aus vier unabhaengigen
+Funktionen). Dieser Teil von LES-044 ist damit abgeschlossen; die frueher
+hier genannte absolute Zahl ("36 von 40") war nicht mehr aktuell und wurde
+entfernt.
+
+`except Exception` ausserhalb von `preview_widget.py`/`ui_preview.py`
+(z. B. `ui_header.py`, `ui_params.py`) betrifft keine Preview-Geometrie
+und gehoert inhaltlich nicht zu "Vorschau und Darstellung" - dieser Punkt
+wird jetzt ausschliesslich unter LES-052 Abschnitt 3 (projektweites
+Fehlergrenzen-Aufraeumen) gefuehrt, nicht mehr hier.
+
+**Technische Restbereinigung, kein funktionaler Blocker fuer 0.9.0** (kein
+daraus bekannter Fehler in falscher/fehlender Preview-Geometrie):
+
+- [ ] `_pixel_to_z()` (`preview_widget.py`) als Qt-freie Funktion nach
+  `preview_geometry.py` auslagern (Pixel->Z-Ruecktransformation, reine
+  Arithmetik, analog zum bereits extrahierten `apply_side_navigation`).
+- [ ] die Eingabe-Normalisierung in `set_paths()` (`preview_widget.py`:
+  Primitive-Dicts vs. Punktlisten, Float-Koerzion) als eigene Qt-freie
+  Funktion auslagern statt sie direkt in der Widget-Methode zu halten.
+- [ ] `_detect_preview_collision()` (`ui_preview.py`) nach
+  `preview_geometry.py` verschieben - ist bereits eine reine Funktion ohne
+  Qt-/Handler-Bezug, liegt aber noch am falschen Ort.
+
+Jeden dieser Schritte weiterhin mit einem kleinen Stub-Test und einem
+Real-Qt-Start pruefen (etablierte Praxis, siehe Changelog); bereits
+abgeschlossene Vorschau-Pakete nicht erneut als offene Aufgaben
+dokumentieren.
 
 ## LES-032 Werkzeuggeometrie
 
@@ -351,17 +473,64 @@ Werkzeugnummer, Radius, ISO-Code, Orientierung und Stechbreite werden bereits
 aus dem normalisierten `Tool`-Datensatz verwendet. Die Q-basierte Innen-/
 Aussenableitung ist bewusst verworfen; Details stehen im Changelog.
 
-- [ ] eine belastbare Datenquelle fuer Schneidenlaenge und Haltergeometrie
-  festlegen. Im aktuell verwendeten `Drehbank/tool.tbl` gibt es dafuer keine
-  erkennbare Spalte oder Kommentarkonvention.
+### 1. Werkzeughuelle / Bohrstangengeometrie
+
+Audit 2026-09-18 gegen `dev`: bestehender Stand, bevor hier weitergemacht
+wird.
+
+Bereits vorhanden (kein offener Punkt): eine punktfoermige Rueckzugs-/
+Sperrzonenpruefung fuer alle Operationstypen
+(`validate_chuck_segment()`, `gcode_safety.py` - das Werkzeug wird dabei
+ausdruecklich als Punkt behandelt, keine Schaft-/Halterbreite
+beruecksichtigt) sowie eine echte, geometriebasierte Kollisionspruefung mit
+realer Werkzeugbreite, aber nur fuer Einstich-/Abstechwerkzeuge
+(`_check_groove_reaches_chuck_no_go_zone()`, `checks.py`, nutzt
+`Tool.insert_width_mm`).
+
+- [ ] tatsaechlich offen, noch NICHT umgesetzt: zunaechst eine belastbare
+  Datenquelle bzw. Eingabekonvention fuer Schneidenlaenge/Haltergeometrie
+  festlegen. Im real genutzten `Drehbank/tool.tbl` weiterhin keine
+  erkennbare Spalte oder Kommentarkonvention dafuer (Audit bestaetigt).
+  Keine Schaftdurchmesser, Schneidenlaengen, Halterabmessungen oder
+  Defaultwerte erfinden, solange diese Quelle nicht feststeht - auch die
+  innen liegende Rueckzugsebene XRI (`resolve_internal_safe_x()`,
+  `gcode_utils.py`) bleibt bis dahin eine reine Anwenderangabe ohne
+  Gegenpruefung gegen die tatsaechliche Bohrstangenschaftgeometrie.
 - [ ] erst danach die Werkzeughuellenpruefung fuer Dreh- und Bohrwerkzeuge
-  erweitern; keine Geometrie aus geratenen Defaults ableiten.
+  (insbesondere Bohrstangenschaft gegen XRI) nach demselben Muster wie die
+  bestehende Einstich-Pruefung ergaenzen; keine Geometrie aus geratenen
+  Defaults ableiten.
 - [ ] fuer jede neue Reichweiten-/Kollisionsregel einen positiven und einen
   negativen Test mit realistischen Tooltable-Daten ergaenzen.
-- [ ] Aenderungen der Werkzeugmerkmale seit Programmerstellung erkennen;
-  mindestens Werkzeugnummer, Radius und Orientierung vergleichen. Eine
-  Diskrepanz muss nachvollziehbar gemeldet werden, ohne pauschal jede
-  Abweichung als harte Sperre zu behandeln.
+
+### 2. Aenderung von Werkzeugmerkmalen seit Programmerstellung
+
+Umgesetzt 2026-09-18, zusammen mit LES-053 als deren erster realer
+`v1 -> v2`-Anwendungsfall (Details im Changelog). Genau wie im Audit
+vorgeschlagen: `tools.py::build_tool_snapshot()` erzeugt einen minimalen,
+abgeleiteten Schnappschuss (nur `radius_mm`, `orientation`/Q,
+`insert_width_mm` - NICHT die volle Tooltable-Zeile) fuer jede Operation
+mit Werkzeugbezug, geschrieben beim Speichern
+(`persistence.py::operation_to_step_data()`, ueber alle drei Speicherpfade
+Gesamtprogramm, einzelne Step-Datei und Step-Resave bei "Aenderungen
+speichern") aus der dann aktuell geladenen Tabelle in
+`op.params["tool_snapshot"]`. `checks.py::_check_tool_matches_snapshot()`
+(neu, aus `validate_program_setup()` aufgerufen) vergleicht das gegen die
+beim Laden/Erzeugen aktuell geladene Tabelle - nur Warnung, nie eine
+Sperre. Erkennt geaenderten Radius, geaenderte Orientierung und geaenderte
+Einstichbreite je einzeln.
+
+- Operationen ohne Snapshot (aus Format v1 migrierte Altprogramme) werden
+  bewusst uebersprungen - kein historischer Vergleichswert vorhanden, siehe
+  `storage.py::_migrate_v1_to_v2()` (erzeugt ausdruecklich KEINEN
+  nachtraeglichen Snapshot aus der aktuellen Tabelle).
+- Fehlt das Werkzeug in der aktuellen Tabelle komplett, meldet weiterhin
+  ausschliesslich `validate_tool_table_completeness()` (LES-028) - keine
+  Dopplung.
+- Tests: `tests/test_tool_snapshot_check.py` (unveraendert/Radius/
+  Orientierung/Breite geaendert, kein Snapshot, fehlendes Werkzeug).
+
+Kein offener Punkt mehr fuer diesen Unterabschnitt.
 
 ## LES-043 Gegenspindel
 

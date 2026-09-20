@@ -2515,7 +2515,8 @@ class HandlerClass:
         return -1
 
     def _operation_to_step_data(self, op: Operation) -> Dict[str, object]:
-        return operation_to_step_data(op)
+        tools = getattr(getattr(self, "_tool_table", None), "tools", None)
+        return operation_to_step_data(op, tools)
 
     def _step_data_to_operation(self, data: Dict[str, object]) -> Operation | None:
         return step_data_to_operation(data)

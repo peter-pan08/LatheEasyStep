@@ -233,6 +233,68 @@ def _check_tool_width_matches_operation(operations: List[object], tools: Dict[in
             )
 
 
+_TOOL_SNAPSHOT_FLOAT_TOL = 1e-6
+
+
+def _tool_snapshot_value_differs(old_value: object, new_value: object, *, tol: float = _TOOL_SNAPSHOT_FLOAT_TOL) -> bool:
+    if old_value is None and new_value is None:
+        return False
+    if old_value is None or new_value is None:
+        return True
+    try:
+        return abs(float(old_value) - float(new_value)) > tol
+    except (TypeError, ValueError):
+        return old_value != new_value
+
+
+def _check_tool_matches_snapshot(operations: List[object], tools: Dict[int, object], warnings: List[str]) -> None:
+    """LES-032/LES-053 (Format v2): `op.params["tool_snapshot"]` (siehe
+    `tools.py::build_tool_snapshot()`) haelt fest, welche Radius-/
+    Orientierungs-/Einstichbreiten-Werte beim letzten Speichern dieser
+    Operation tatsaechlich galten. Weicht die AKTUELL geladene Tooltable
+    davon ab, wurde das Werkzeug an dieser Nummer seither veraendert oder
+    ausgetauscht - nur eine Warnung, keine Sperre (LES-032-Anforderung).
+
+    Nur Operationen MIT Snapshot werden geprueft: ueber Format v1 geladene
+    (und nach v2 migrierte) Altprogramme haben keinen Snapshot - dafuer
+    entsteht bewusst KEINE Warnung, da kein historischer Vergleichswert
+    existiert (siehe `storage.py::_migrate_v1_to_v2`). Fehlt das Werkzeug in
+    der aktuellen Tabelle komplett, meldet das bereits separat
+    `validate_tool_table_completeness()` (LES-028) - hier keine Dopplung."""
+    for idx, op in enumerate(operations):
+        params = getattr(op, "params", {}) or {}
+        snapshot = params.get("tool_snapshot")
+        if not isinstance(snapshot, dict):
+            continue
+        try:
+            tool_num = int(float(params.get("tool", 0) or 0))
+        except Exception:
+            continue
+        if tool_num <= 0:
+            continue
+        tool = tools.get(tool_num)
+        if tool is None:
+            continue
+        if _tool_snapshot_value_differs(snapshot.get("radius_mm"), getattr(tool, "radius_mm", None)):
+            warnings.append(
+                f"T{tool_num:02d}: Radius hat sich seit dem Speichern von Schritt {idx + 1} "
+                f"geaendert ({float(snapshot.get('radius_mm') or 0.0):.3f} mm -> "
+                f"{float(getattr(tool, 'radius_mm', 0.0) or 0.0):.3f} mm). Bitte Werkzeug pruefen."
+            )
+        snap_orientation = snapshot.get("orientation")
+        tool_orientation = getattr(tool, "q", None)
+        if snap_orientation != tool_orientation:
+            warnings.append(
+                f"T{tool_num:02d}: Orientierung hat sich seit dem Speichern von Schritt {idx + 1} "
+                f"geaendert (Q{snap_orientation} -> Q{tool_orientation}). Bitte Werkzeug pruefen."
+            )
+        if _tool_snapshot_value_differs(snapshot.get("insert_width_mm"), getattr(tool, "insert_width_mm", None)):
+            warnings.append(
+                f"T{tool_num:02d}: Einstichbreite hat sich seit dem Speichern von Schritt {idx + 1} "
+                f"geaendert. Bitte Werkzeug pruefen."
+            )
+
+
 def _check_groove_reaches_chuck_no_go_zone(
     operations: List[object], tools: Dict[int, object], settings: Dict[str, object], warnings: List[str]
 ) -> None:
@@ -328,6 +390,7 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
     _check_duplicate_operations(operations, warnings)
     _check_tool_kind_matches_operation(operations, tools, warnings)
     _check_tool_width_matches_operation(operations, tools, warnings)
+    _check_tool_matches_snapshot(operations, tools, warnings)
     _check_groove_reaches_chuck_no_go_zone(operations, tools, settings, warnings)
     for op in operations:
         op_type = getattr(op, "op_type", "")

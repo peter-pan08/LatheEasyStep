@@ -125,23 +125,86 @@ Gemeinsame Querschnittslogik:
 - `lathe_easystep/ui_registry.py`
   - `PANEL_WIDGET_NAMES` (moegliche Root-Objektnamen je nach Embedding), neben
     den bestehenden Text-/Tooltip-/Combo-Item-Registries
-- `lathe_easystep/motion_state.py` (LES-022)
+- `lathe_easystep/motion_state.py` (LES-022, vier Etappen; Audit
+  2026-09-18: abgeschlossen bis auf die unten genannte technische
+  Restarbeit ohne bekannten Fehler)
   - `MotionState` (erste Etappe): zentraler, typisierter Bewegungszustand
     (zuletzt real erreichte X/Z-Position). Ersetzt die fruehere ad-hoc
     Ablage ueber `settings["_is_at_safe"/"_safe_x"/"_safe_z"]` in
     `gcode_safety.py` und `gcode_groove.py`. `gcode_safety._motion_state(settings)`
     liefert/legt die Instanz unter `settings["_motion"]` an (lazy, auch fuer
-    Tests mit handgebauten Dicts ohne vorherige Initialisierung). Wird nach
-    jedem Schruppdurchlauf in `gcode_roughing.py` explizit invalidiert
-    (`clear()`), da Schnittbewegungen (G1/G2/G3) dort noch nicht
-    feingranular mitgefuehrt werden.
+    Tests mit handgebauten Dicts ohne vorherige Initialisierung).
   - `SpindleState` (zweite Etappe): CSS(G96)-Modalzustand (`pending`/
     `active`/`fixed_rpm`). Ersetzt `settings["_pending_css"/"_active_css"/
     "_css_fixed_rpm"]` in `activate_pending_css()`/`suspend_css()`/
     `append_tool_and_spindle()` (`gcode_safety.py`), analog ueber
     `gcode_safety._spindle_state(settings)` unter `settings["_spindle"]`.
-  - Siehe TODO.md fuer die verbleibenden LES-022-Punkte (uebrige modale
-    G/M-Codes, vollstaendiges Move-Tracking ueber Schnittbewegungen).
+  - Dritte Etappe (2026-09-10): jede Operation mit deterministisch
+    bekannter Endposition traegt sie in `MotionState` ein statt sie
+    stillschweigend veraltet stehen zu lassen (`gcode_drill.py`,
+    `gcode_thread.py`, `gcode_face.py`, G70-Fertigzyklus in
+    `gcode_roughing.py`).
+  - Vierte Etappe (2026-09-13): auch move-basiertes Schruppen
+    (`rough_turn_parallel_x()`/`rough_turn_parallel_z()`,
+    `gcode_roughing.py`) traegt seine tatsaechlich erreichte
+    Bandendposition selbst ein, statt dass der Aufrufer danach
+    bedingungslos `clear()` setzen muss.
+  - **Bewusst dauerhaft auf `clear()` (Endposition unbekannt), kein
+    offener Punkt:** G71/G72-Roughing-Zyklus ohne folgendes G70
+    (`generate_abspanen_gcode()`, `gcode_roughing.py`) und der Nut-Zyklus
+    `o220` (`gcode_groove.py`) - beide fuehren die Einzelzustellungen
+    interpreter-/makro-intern aus; eine reale Endposition liesse sich nur
+    durch Duplizieren dieser Logik in Python ermitteln. Fallback ist
+    sicher-konservativ: `MotionState.at()` liefert bei unbekannter
+    Position immer `False`, sodass die naechste Anfahrt
+    (`emit_approach()`/`append_tool_and_spindle()`) immer die volle
+    sichere Route faehrt statt eine noetige Bewegung faelschlich zu
+    uebergehen.
+  - Technische Restarbeit ohne bekannten Fehler (Details: TODO.md): vier
+    weiterhin als rohe `settings["_..."]`-Schluessel gefuehrte Zustaende
+    (`_current_tool`, `_active_retract_mode`, `_cycle_defined_subs`,
+    `_last_drill_diameter`/`_last_drill_depth`) sind nicht in
+    `MotionState`/`SpindleState`-artige typisierte Objekte ueberfuehrt.
+- `lathe_easystep/storage.py` (LES-053, Programm-/Step-Dateiformat-
+  Versionierung, umgesetzt 2026-09-18)
+  - `CURRENT_FORMAT_VERSION` ist die einzige Quelle der aktuellen
+    Formatversion (aktuell `2`). Der JSON-Schluessel heisst weiterhin
+    `"version"` (keine Umbenennung zu `format_version` - bestehende
+    `.lse`-Dateien bleiben dadurch unveraendert lesbar).
+  - `_MIGRATIONS` (Dict Versionsnummer -\> Migrationsfunktion) plus
+    `_migrate_to_current()` als einziger Einstiegspunkt: keine
+    Formaterkennung anhand vorhandener Felder an anderer Stelle im
+    Loadpfad. Jede Migrationsfunktion arbeitet auf `deepcopy()` und
+    veraendert ihre Eingabe nie. `_migrate_v1_to_v2()` ist die bisher
+    einzige reale Migration (siehe LES-032 unten). Eine weitere Stufe
+    (`v2 -\> v3` usw.) wird bei Bedarf einfach als zusaetzlicher
+    Dict-Eintrag ergaenzt, keine Strukturaenderung noetig.
+  - `parse_program_payload()` lehnt eine fehlende Version ab (gueltige
+    `.lse`-Programme hatten immer eine); `parse_step_payload()` (neu -
+    Step-Dateien hatten vorher ueberhaupt kein Versionsfeld) behandelt eine
+    fehlende Version dagegen ausdruecklich als historisches Step-v1, weil
+    das das einzige je geschriebene Step-Format ist - bewusste, dokumentierte
+    Ausnahme vom "kein Format-Raten"-Grundsatz, keine Erkennung anhand
+    mehrerer moeglicher Formen.
+  - `write_step_file()`/der Step-Resave in `handle_save_changes()`
+    (`ui_persistence.py`) schreiben `version: CURRENT_FORMAT_VERSION`.
+    `handle_load_step()` lief vor der Behebung mit einer unbehandelten
+    Exception bei ungueltigen/zu neuen Step-Daten durch
+    `_step_data_to_operation()` durch (Audit-Fund) - jetzt ueber denselben
+    `except ValueError`-Pfad wie `parse_step_payload()` abgesichert.
+- `lathe_easystep/tools.py::build_tool_snapshot()` (LES-032, erster realer
+  `v1 -\> v2`-Anwendungsfall von LES-053, umgesetzt 2026-09-18)
+  - Minimaler, ABGELEITETER Schnappschuss (`radius_mm`, `orientation`,
+    `insert_width_mm` - keine vollstaendige Tooltable-Zeile) pro Operation
+    mit Werkzeugbezug, geschrieben in `op.params["tool_snapshot"]` beim
+    Speichern (`persistence.py::operation_to_step_data()`) aus der dann
+    aktuell geladenen Tabelle.
+  - `checks.py::_check_tool_matches_snapshot()` (aus `validate_program_
+    setup()` aufgerufen) vergleicht ihn beim Laden/Erzeugen gegen die
+    aktuell geladene Tabelle - nur Warnung, nie eine Sperre. Operationen
+    ohne Snapshot (aus Format v1 migrierte Altprogramme) werden bewusst
+    uebersprungen; `_migrate_v1_to_v2()` erzeugt ausdruecklich KEINEN
+    nachtraeglichen Snapshot aus der aktuellen Tabelle heraus.
 
 Lokale Kopien dieser Helfer sollen nicht erneut in UI- oder G-Code-Modulen
 angelegt werden. Das fruehere Paket `lathe_easystep/contour/` war ungenutzt

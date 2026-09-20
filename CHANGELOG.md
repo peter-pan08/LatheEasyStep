@@ -17,6 +17,236 @@
 
 ## [Unreleased]
 
+### LES-053 umgesetzt: Programm-/Step-Dateiformat-Versionierung + LES-032-Werkzeug-Snapshot als erster v1-\>v2-Anwendungsfall 2026-09-18
+
+Umsetzung des zuvor erarbeiteten LES-053-Audits/Entwurfs, minimal und ohne
+neues Serialisierungsframework (bestehende Struktur `storage.py`/
+`persistence.py`/`ui_persistence.py` weiterverwendet).
+
+**Format/Migration (`storage.py`):**
+- `CURRENT_FORMAT_VERSION = 2` als einzige Quelle der aktuellen
+  Formatversion. Der JSON-Schluessel heisst weiterhin `"version"` (keine
+  Umbenennung - bestehende `.lse`-Dateien bleiben unveraendert lesbar).
+- `_migrate_v1_to_v2()`, `_MIGRATIONS` (Dict Versionsnummer -\> Migrations-
+  funktion) und `_migrate_to_current()` als einziger Einstiegspunkt fuer
+  Versionspruefung/-migration - keine Formaterkennung anhand vorhandener
+  Felder an anderer Stelle. Jeder Migrationsschritt arbeitet auf
+  `deepcopy()`, die uebergebenen Quelldaten werden nie veraendert
+  (testverifiziert).
+- `parse_program_payload()` lehnt eine fehlende Version weiterhin ab
+  (gueltige `.lse`-Programme hatten schon vor v2 immer eine) sowie eine
+  unbekannte neuere Version (`version > CURRENT_FORMAT_VERSION`) und einen
+  ungueltigen Versionstyp, jeweils mit eigener, verstaendlicher statt der
+  vorherigen generischen Fehlermeldung.
+- Neu: `parse_step_payload()` - Step-Dateien (`.step.json`) hatten bisher
+  ueberhaupt kein Versionsfeld und keine Pruefung (Audit-Fund). Eine
+  fehlende Version wird dort - ausdruecklich und ausschliesslich fuer
+  Step-Dateien - als historisches Step-v1 behandelt, weil das das einzige
+  je geschriebene Step-Dateiformat ist; keine Formaterkennung anhand
+  mehrerer moeglicher Formen.
+
+**Step-Dateien (`ui_persistence.py`):**
+- `write_step_file()` und der Step-Resave-Zweig in `handle_save_changes()`
+  schreiben jetzt `version: CURRENT_FORMAT_VERSION`.
+- `handle_load_step()` nutzt `parse_step_payload()` als zentralen Ladeweg.
+- Audit-Fund behoben: `_step_data_to_operation()` lief bisher OHNE eigenes
+  `except` in `handle_load_step()` - eine ungueltige (z. B. nicht-finite
+  Zahlen, zu neue Version) Step-Datei erzeugte dadurch eine unbehandelte
+  Exception statt eines Dialogs. Jetzt in denselben `except ValueError`
+  wie `parse_step_payload()` eingefasst, meldet ueber den vorhandenen
+  UI-Fehlerpfad (`QMessageBox.warning`) wie beim Programm-Ladeweg.
+
+**LES-032-Werkzeug-Snapshot (erster realer v1-\>v2-Anwendungsfall):**
+- Neu `tools.py::build_tool_snapshot(tool_value, tools)`: minimaler,
+  ABGELEITETER Schnappschuss (nur `radius_mm`, `orientation`,
+  `insert_width_mm` - keine vollstaendige Tooltable-Zeile, keine erfundenen
+  Werte). `None`, wenn keine Werkzeugnummer gesetzt ist oder das Werkzeug
+  in der aktuell geladenen Tabelle nicht gefunden wird.
+- `persistence.py::operation_to_step_data(op, tools=None)` schreibt den
+  Snapshot beim Speichern in `data["params"]["tool_snapshot"]` (Kopie,
+  nicht das live editierte `op.params`); `tools` optional (Default `None`
+  -\> kein Snapshot), damit bestehende Aufrufer ohne Tooltable-Kontext
+  (Tests, reine Generatorpfade) unveraendert funktionieren. Alle drei
+  Speicherpfade (Gesamtprogramm ueber `build_program_data()`, einzelne
+  Step-Datei, Step-Resave) reichen jetzt die aktuell geladene Tabelle
+  durch (`handler._tool_table.tools`, defensiv per `getattr()` falls auf
+  einem Test-Handler nicht gesetzt).
+- Neu `checks.py::_check_tool_matches_snapshot()`, aus
+  `validate_program_setup()` aufgerufen: vergleicht den Snapshot gegen die
+  aktuell geladene Tabelle, meldet geaenderten Radius, geaenderte
+  Orientierung und geaenderte Einstichbreite je einzeln - **nur als
+  Warnung, nie als Sperre**. Operationen ohne Snapshot (aus Format v1
+  migrierte Altprogramme) werden uebersprungen: `_migrate_v1_to_v2()`
+  erzeugt ausdruecklich KEINEN nachtraeglichen Snapshot aus der aktuellen
+  Tabelle - dafuer gibt es zum Migrationszeitpunkt keinen verlaesslichen
+  historischen Vergleichswert. Fehlt das Werkzeug in der aktuellen Tabelle
+  komplett, meldet weiterhin ausschliesslich `validate_tool_table_
+  completeness()` (LES-028) - keine Dopplung.
+
+**Tests (neu, 28 Tests, alle gruen):**
+- `tests/test_format_versioning.py` (20): aktuelle Version, v1-\>v2-
+  Migration inkl. Nicht-Mutation der Quelldaten, Migrationskette wendet
+  mehrere Schritte sequenziell an (mit temporaerer Fake-Migration
+  monkeygepatcht), fehlende/ungueltige/zu neue Version je fuer Programm-
+  UND Step-Dateien (Programmdateien lehnen fehlende Version ab, Step-
+  Dateien behandeln sie als v1), Save-\>Load-\>Save-Rundlauf fuer v2,
+  Laden einer alten Datei schreibt nichts auf die Platte zurueck, sowie
+  der behobene Step-Fehlerdialog-Fund.
+- `tests/test_tool_snapshot_check.py` (8): Snapshot-Inhalt, unveraendertes
+  Werkzeug (keine Warnung), geaenderter Radius/Orientierung/Einstichbreite
+  (je eine Warnung), keine Warnung ohne Snapshot, keine Dopplung bei
+  fehlendem aktuellem Werkzeug.
+- Drei bestehende Tests in `tests/test_step_path_persistence.py`
+  aktualisiert (erwarteten jetzt `version: 2` im geschriebenen Step-JSON).
+
+**Verifikation:** volle Stub- (948, vorher 920) und Real-Qt-Suite (115)
+bestanden. `regenerate_all_ngc.py` liefert einen leeren Diff, alle zwoelf
+Referenzen bestehen weiterhin `rs274` - diese Aenderung betrifft
+ausschliesslich Persistenz/Pruefung, keine G-Code-Erzeugung.
+
+### LES-032-Audit: TODO.md aufgeteilt, Snapshot-Vorschlag fuer Werkzeugmerkmale erarbeitet 2026-09-18
+
+Vollstaendiger Code-Audit von LES-032 gegen `dev`, noch keine Umsetzung.
+`TODO.md` in zwei klar getrennte Punkte aufgeteilt.
+
+**1. Werkzeughuelle/Bohrstangengeometrie** - bestaetigt weiterhin offen,
+keine Kommentarkonvention/Spalte fuer Schneidenlaenge/Haltergeometrie im
+real genutzten `Drehbank/tool.tbl`. Bestehender Stand korrekt als
+umgesetzt dokumentiert: `validate_chuck_segment()` (`gcode_safety.py`)
+behandelt das Werkzeug fuer alle Operationstypen als Punkt;
+`_check_groove_reaches_chuck_no_go_zone()` (`checks.py`) ist die einzige
+echte, geometriebasierte Kollisionspruefung mit realer Werkzeugbreite
+(`Tool.insert_width_mm`), aber ausschliesslich fuer Einstichwerkzeuge. Die
+innen liegende Rueckzugsebene XRI (`resolve_internal_safe_x()`,
+`gcode_utils.py`) ist reine Anwenderangabe ohne Gegenpruefung gegen die
+tatsaechliche Bohrstangenschaftgeometrie - keine Datenquelle dafuer
+vorhanden. Kein Code geaendert, keine Defaults erfunden.
+
+**2. Aenderung von Werkzeugmerkmalen seit Programmerstellung** - detailliert
+untersucht, konkreter Implementierungsvorschlag erarbeitet, noch nicht
+umgesetzt:
+
+- *Ist-Zustand:* `op.params["tool"]` (nur die Nummer) ist die einzige
+  Werkzeugreferenz, die in `.lse`-/Step-Dateien landet
+  (`persistence.py::operation_to_step_data()`/`step_data_to_operation()`).
+  `collect_program_header()` (`ui_header.py`) enthaelt keinen `tools`-
+  Schluessel - die Tooltable selbst wird nie persistiert.
+  `build_gcode_lines()` (`ui_flow.py:121-130`) setzt
+  `handler.model.program_settings["tools"] = handler._tool_table.tools`
+  bei jedem Erzeugungslauf frisch aus der aktuell geladenen Datei - ein
+  zwischen Programmerstellung und -erzeugung geaenderter/getauschter
+  Tooltable-Eintrag ist damit vollstaendig unsichtbar.
+- *Relevante Operationen:* alle mit `params["tool"] > 0`
+  (FACE/TURN/BORE/DRILL/GROOVE/THREAD/ABSPANEN) - jede referenziert nur
+  die Nummer, nie Geometrie.
+- *Zur Laufzeit relevante, aenderbare Tooltable-Eigenschaften* (aus dem
+  LES-032-Audit vom selben Tag): `radius_mm` (G41.1/G42.1-D-Wert, direkt
+  aus ISO-Kommentar oder D-Spalte-Fallback abgeleitet),
+  `q`/Orientierung (L-Wort der Kompensation UND `Tool.kind`-Klassifikation),
+  `insert_width_mm` (Einstich-Kollisions- und Breitenpruefung, aus dem
+  Kommentar abgeleitet). `d`/`p`/roher Kommentar selbst sind nur
+  Zwischenwerte, nicht direkt vergleichsrelevant.
+- *Vorschlag:* ein minimaler, ABGELEITETER Snapshot dieser drei Werte
+  (nicht die volle Tooltable-Zeile, keine zweite Datenquelle) pro
+  Operation mit Werkzeugbezug, in `op.params` (z. B. `tool_snapshot`)
+  geschrieben beim Speichern aus der dann aktuell geladenen Tabelle -
+  fliesst dadurch ohne zusaetzliche Plumbing automatisch durch den
+  bestehenden Step-/Programm-Speicherpfad (`ui_persistence.py:67,207,
+  317,414`, derselbe Code fuer einzelne Step-Dateien UND das
+  Gesamtprogramm). Verglichen von einer neuen `_check_tool_matches_
+  snapshot()`-artigen Funktion in `checks.py` (exakt demselben Muster wie
+  `_check_tool_kind_matches_operation()`), aufgerufen aus
+  `validate_program_setup()`, Warnung ueber denselben `prog["__warnings"]`/
+  `validation_warnings`-Mechanismus.
+- *Sechs Verhaltensfaelle prognostiziert:*
+  1. unveraendertes Werkzeug (Snapshot == aktuell) → keine Warnung.
+  2. geaenderter Radius → Warnung (aendert direkt den G41.1/G42.1-D-Wert).
+  3. geaendertes Q/Orientierung → Warnung (aendert L-Wort UND
+     Kind-Klassifikation, kann auf ein komplett anderes Werkzeug an
+     derselben Nummer hindeuten).
+  4. geaenderter Einsatzcode/geaenderte Breite → Warnung (betrifft die
+     Einstich-Kollisions-/Breitenpruefung).
+  5. Werkzeug in der aktuellen Tabelle nicht mehr vorhanden → keine neue
+     Pruefung, bereits durch `validate_tool_table_completeness()`
+     (LES-028) separat abgedeckt, keine Dopplung.
+  6. neu hinzugefuegtes Werkzeug unter einer bisher fremden Nummer, die
+     keine Operation referenziert → nicht betroffen, kein Vergleich
+     ausgeloest.
+  Alte `.lse`-Programme ohne `tool_snapshot`-Feld bleiben unveraendert
+  ladbar (Feld fehlt schlicht, keine Pruefung, kein Fehler) - `parse_
+  program_payload()` (`storage.py`) validiert nur `version`, nicht die
+  Feldmenge von `header`/`operations`.
+- *Verhaeltnis zu LES-053:* das Dateiformat hat bereits ein hartes
+  `"version": 1`-Gleichheitsgate (`storage.py::parse_program_payload()`,
+  `persistence.py::build_program_data()`), aber keinerlei
+  Migrationsmechanismus - jede kuenftige Formataenderung braucht ohnehin
+  erst LES-053s vorgesehene `format_version`/Migrationskette. Empfehlung:
+  den Snapshot nicht jetzt als weitere unversionierte Ad-hoc-Erweiterung
+  einfuehren (widerspraeche LES-053s "kein Format-Raten"-Grundsatz),
+  sondern als Teil von LES-053s erster echten `v1 -> v2`-Migration
+  umsetzen.
+- Kein Code geaendert, keine Codeaenderung vorgenommen - reine
+  Untersuchung und Vorschlag.
+
+### LES-044-Audit: TODO.md auf tatsaechlichen Stand gebracht 2026-09-18
+
+- Vollstaendiger Code-Audit von LES-044 gegen `dev`: die bereits erfolgten
+  Extraktionen (`_sample_arc`, `primitives_to_points`, `_interp_x_at_z`/
+  `_interp_x_hits_at_z`, `_path_hits_at_slice`, `_front_operation_side`,
+  `_front_slice_profile`, `_front_reference_diameter`,
+  `_apply_side_navigation`, Kreis-Layout in `_paint_slice_view()`) jetzt
+  in `TODO.md` als umgesetzt dokumentiert statt implizit vorausgesetzt.
+- Die veraltete absolute Angabe "36 von 40 Vorkommen" fuer die
+  `except Exception`-Faelle in `preview_widget.py`/`ui_preview.py`
+  entfernt - aktuelle Zaehlung ergibt 10 verbleibende, bewusst breite
+  Vorkommen (8 in `preview_widget.py`, 2 in `ui_preview.py`), jedes mit
+  `# LES-044:`-Begruendungskommentar. Dieser Teil von LES-044 gilt damit
+  als abgeschlossen.
+- `except Exception` ausserhalb von `preview_widget.py`/`ui_preview.py`
+  (z. B. `ui_header.py` mit 6, `ui_params.py` mit 4 Vorkommen) betrifft
+  keine Preview-Geometrie und wurde aus LES-044 entfernt - der bereits
+  bestehende LES-052-Abschnitt-3-Punkt zum projektweiten
+  Fehlergrenzen-Aufraeumen (~400 Vorkommen in 40+ Dateien) nennt die
+  beiden Dateien jetzt als Beispiele. Keine neue Aufgabe erzeugt.
+- Drei kleine verbleibende Qt-freie Restauslagerungen
+  (`_pixel_to_z()`, Eingabe-Normalisierung in `set_paths()`,
+  Verschieben von `_detect_preview_collision()` nach
+  `preview_geometry.py`) als technische Restbereinigung ohne bekannten
+  funktionalen Fehler dokumentiert, nicht als Blocker fuer 0.9.0.
+- Reine Dokumentationskorrektur, kein Code veraendert.
+
+### LES-022-Audit: TODO.md/DEV.md auf tatsaechlichen Stand gebracht 2026-09-18
+
+- Vollstaendiger Code-Audit von LES-022 gegen `dev` (siehe vorherige
+  Audit-Konversation): `MotionState`/`SpindleState` sind fuer alle
+  tatsaechlich dynamisch umgeschalteten Modalgruppen (G96/G97 vollstaendig
+  zentral, reale Endposition nach Bohren/Gewinde/G70/move-basiertem
+  Schruppen seit "dritter"/"vierter Etappe" 2026-09-10/2026-09-13
+  nachgefuehrt) bereits abgeschlossen - TODO.md hatte das seit der
+  Wiederaufnahme am 2026-09-15 (ohne technische Begruendung) nicht mehr
+  akkurat wiedergegeben und DEV.md beschrieb `MotionState` noch auf dem
+  Stand vor der vierten Etappe (bedingungslose Invalidierung nach jedem
+  Schruppdurchlauf, was seit move-basiertes Schruppen seine Bandend-
+  position selbst eintraegt nicht mehr zutrifft).
+- `TODO.md` LES-022-Abschnitt neu gefasst: G71/G72-Roughing-Zyklus ohne
+  folgendes G70 (`gcode_roughing.py`) und der Nut-Zyklus `o220`
+  (`gcode_groove.py`) sind jetzt explizit als bewusste, abgeschlossene
+  Designentscheidung mit sicher-konservativem Fallback dokumentiert (nicht
+  mehr als offener Punkt/"Zwischenloesung") - `MotionState.at()` liefert
+  bei unbekannter Position immer `False`, jede nachfolgende Anfahrt faehrt
+  deshalb immer die volle sichere Route.
+- Als tatsaechlich noch offene, aber niedrig priorisierte technische
+  Restarbeit (kein nachgewiesener funktionaler Fehler) dokumentiert: vier
+  Zustaende (`_current_tool`, `_active_retract_mode`,
+  `_cycle_defined_subs`, `_last_drill_diameter`/`_last_drill_depth`) leben
+  weiterhin als rohe `settings["_..."]`-Schluessel statt in einem
+  typisierten Objekt.
+- `DEV.md` (Abschnitt zu `lathe_easystep/motion_state.py`) um die dritte
+  und vierte Etappe sowie die bewusste `clear()`-Designentscheidung
+  ergaenzt; die veraltete Formulierung ("wird nach jedem Schruppdurchlauf
+  explizit invalidiert") entfernt.
+- Reine Dokumentationskorrektur, kein Code veraendert.
+
 ### Test-Audit umgesetzt: Duplikate entfernt, schwache Assertions geschaerft, Kontur-Tabellen-Luecke geschlossen 2026-09-18
 
 Umsetzung des Test-Redundanz-/Qualitaets-Audits (921 Stub-/110 Real-Qt-Tests,

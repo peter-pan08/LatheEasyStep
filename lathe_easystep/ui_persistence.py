@@ -11,7 +11,7 @@ from qtpy import QtCore, QtWidgets
 from .model import OpType
 from .ui_helpers import translate as _tr
 from .persistence import build_program_data as build_program_data_payload
-from .storage import parse_program_payload, atomic_write_json
+from .storage import CURRENT_FORMAT_VERSION, parse_program_payload, parse_step_payload, atomic_write_json
 from .ui_messages import format_user_error
 from .ui_step_list_view import StepListView
 
@@ -27,10 +27,12 @@ def build_program_data(handler):
     # gespeicherten Segmente). Vor jedem Speichern ebenfalls auffrischen.
     handler._rebuild_all_operation_geometry()
     header = handler._collect_program_header()
+    tools = getattr(getattr(handler, "_tool_table", None), "tools", None)
     return build_program_data_payload(
         handler.model.operations,
         header,
         handler._program_file_meta(),
+        tools,
     )
 
 
@@ -64,7 +66,9 @@ def write_step_file(handler, op, file_path):
     normalized = handler._normalized_file_path(file_path) or file_path
     snapshot = deepcopy(op)
     handler._set_step_file_path(snapshot, normalized)
-    atomic_write_json(normalized, handler._operation_to_step_data(snapshot))
+    step_data = handler._operation_to_step_data(snapshot)
+    step_data["version"] = CURRENT_FORMAT_VERSION
+    atomic_write_json(normalized, step_data)
     handler._set_step_file_path(op, normalized)
     return normalized
 
@@ -204,7 +208,17 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
             QtWidgets.QMessageBox.critical(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.open_failed", error=exc))
             return
 
-        op = handler._step_data_to_operation(data)
+        # LES-053-Audit-Fund: fehlende/ungueltige Version oder anderweitig
+        # ungueltige Step-Daten (z. B. nicht-finite Zahlen, fehlerhafte
+        # Pfadpunkte) duerfen keine unbehandelte Exception erzeugen, sondern
+        # muessen ueber denselben Dialogpfad wie ein defektes JSON gemeldet
+        # werden - vorher lief _step_data_to_operation() hier ungefangen.
+        try:
+            data = parse_step_payload(data)
+            op = handler._step_data_to_operation(data)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), str(exc))
+            return
         if op is None:
             QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.invalid"))
             return
@@ -412,6 +426,7 @@ def handle_save_changes(handler) -> None:
                 continue
             linked_steps += 1
             data = handler._operation_to_step_data(op)
+            data["version"] = CURRENT_FORMAT_VERSION
             atomic_write_json(step_path, data)
             handler._remember_dialog_path(
                 settings,
