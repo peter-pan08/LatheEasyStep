@@ -30,7 +30,6 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 | LES-051 | P1 | Panel-Grundgeruest und Darstellungsadapter weiter entkoppeln | XL | 0.9.0 |
 | LES-052 | P1 | Panel-Architektur, Zustandsmodell und Wiederherstellung planen/umsetzen | XL | 0.9.0 |
 | LES-044 | P2 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, Rest laut Audit 2026-09-18 bereits umgesetzt) | S | 0.9.0 |
-| LES-032 | P2 | Werkzeuggeometrie fuer Plausibilitaet und Kollision erweitern | L | 0.9.0 |
 | LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
 | LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
 
@@ -475,33 +474,47 @@ Aussenableitung ist bewusst verworfen; Details stehen im Changelog.
 
 ### 1. Werkzeughuelle / Bohrstangengeometrie
 
-Audit 2026-09-18 gegen `dev`: bestehender Stand, bevor hier weitergemacht
-wird.
+**Dauerhaft abgeschlossen - mit der offiziellen LinuxCNC-`tool.tbl` nicht
+loesbar (Audit 2026-09-18/2026-09-20 gegen `dev`, kein offener Punkt mehr,
+kein spaeter erneut zu pruefender Punkt):**
 
-Bereits vorhanden (kein offener Punkt): eine punktfoermige Rueckzugs-/
-Sperrzonenpruefung fuer alle Operationstypen
-(`validate_chuck_segment()`, `gcode_safety.py` - das Werkzeug wird dabei
-ausdruecklich als Punkt behandelt, keine Schaft-/Halterbreite
-beruecksichtigt) sowie eine echte, geometriebasierte Kollisionspruefung mit
-realer Werkzeugbreite, aber nur fuer Einstich-/Abstechwerkzeuge
+LatheEasyStep verwendet ausschliesslich die offizielle LinuxCNC-`tool.tbl`
+als Werkzeugdatenquelle. Die dort verfuegbaren Drehwerkzeug-Felder D, I, J
+und Q enthalten laut offizieller LinuxCNC-Dokumentation nachweislich keine
+Information ueber Schaftdurchmesser, Schaftlaenge oder Halterausladung: D
+ist der Kompensationsradius (bereits fuer die Schneidennase vergeben,
+groessenordnungsmaessig ohnehin die falsche Groesse fuer einen
+Bohrstangenschaft), I/J ("front angle"/"back angle") sind reine
+Winkelangaben zur Schneidkantenform ohne Laengeninformation und laut
+LinuxCNC-Doku nicht einmal in die eigene Kompensations-/Gouge-Pruefung des
+Interpreters einbezogen, Q ist ein diskreter Orientierungscode. Die
+uebrigen offiziellen Tabellenfelder (X/Y/Z/A/B/C/U/V/W) sind
+Werkzeug-/TCP-Offsets und duerfen dafuer nicht zweckentfremdet werden. In
+der real genutzten `Drehbank/tool.tbl` sind I und J bei allen Eintraegen
+zusaetzlich durchgehend 0.
+
+Da keine proprietaeren Zusatzdateien, Kommentarkonventionen oder
+erfundenen Defaultwerte eingefuehrt werden, ist eine belastbare
+Werkzeughuellen-/Bohrstangen-Kollisionspruefung mit der verfuegbaren
+Datenquelle nicht moeglich - nicht als Zwischenstand, sondern als
+strukturelle Grenze des offiziellen Tabellenformats selbst.
+
+Unveraendert bestehen bleiben: die punktfoermige Rueckzugs-/
+Sperrzonenpruefung fuer alle Operationstypen (`validate_chuck_segment()`,
+`gcode_safety.py` - das Werkzeug wird dabei ausdruecklich als Punkt
+behandelt) sowie die echte, geometriebasierte Kollisionspruefung mit
+realer Werkzeugbreite fuer Einstich-/Abstechwerkzeuge
 (`_check_groove_reaches_chuck_no_go_zone()`, `checks.py`, nutzt
-`Tool.insert_width_mm`).
+`Tool.insert_width_mm` - dieser Wert kommt aus dem ISO-Einsatzcode im
+Kommentar, nicht aus D/I/J/Q). Die innen liegende Rueckzugsebene XRI
+(`resolve_internal_safe_x()`, `gcode_utils.py`) bleibt dauerhaft eine reine
+Anwenderangabe ohne Gegenpruefung gegen die tatsaechliche
+Bohrstangenschaftgeometrie.
 
-- [ ] tatsaechlich offen, noch NICHT umgesetzt: zunaechst eine belastbare
-  Datenquelle bzw. Eingabekonvention fuer Schneidenlaenge/Haltergeometrie
-  festlegen. Im real genutzten `Drehbank/tool.tbl` weiterhin keine
-  erkennbare Spalte oder Kommentarkonvention dafuer (Audit bestaetigt).
-  Keine Schaftdurchmesser, Schneidenlaengen, Halterabmessungen oder
-  Defaultwerte erfinden, solange diese Quelle nicht feststeht - auch die
-  innen liegende Rueckzugsebene XRI (`resolve_internal_safe_x()`,
-  `gcode_utils.py`) bleibt bis dahin eine reine Anwenderangabe ohne
-  Gegenpruefung gegen die tatsaechliche Bohrstangenschaftgeometrie.
-- [ ] erst danach die Werkzeughuellenpruefung fuer Dreh- und Bohrwerkzeuge
-  (insbesondere Bohrstangenschaft gegen XRI) nach demselben Muster wie die
-  bestehende Einstich-Pruefung ergaenzen; keine Geometrie aus geratenen
-  Defaults ableiten.
-- [ ] fuer jede neue Reichweiten-/Kollisionsregel einen positiven und einen
-  negativen Test mit realistischen Tooltable-Daten ergaenzen.
+`I`/`J` landen weiterhin unveraendert in `Tool.unknown_fields`
+(`tools.py:229`) und werden von keiner Fachfunktion gelesen - das ist
+korrekt und erfordert keine Codeaenderung, solange diese Felder fuer keine
+Fachfunktion benoetigt werden.
 
 ### 2. Aenderung von Werkzeugmerkmalen seit Programmerstellung
 

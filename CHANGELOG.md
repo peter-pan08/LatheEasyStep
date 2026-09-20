@@ -17,7 +17,46 @@
 
 ## [Unreleased]
 
-### LES-053 umgesetzt: Programm-/Step-Dateiformat-Versionierung + LES-032-Werkzeug-Snapshot als erster v1-\>v2-Anwendungsfall 2026-09-18
+### LES-032 Abschnitt 1 (Werkzeughuelle/Bohrstangengeometrie) dauerhaft geschlossen: mit der offiziellen LinuxCNC-tool.tbl nicht loesbar 2026-09-20
+
+Gezielter Audit von D, I, J und Q (den einzigen offiziellen LinuxCNC-
+Drehwerkzeugfeldern) gegen die offizielle LinuxCNC-Dokumentation
+(`tool-compensation.html`, `lathe-user.html`) und die real genutzte
+`Drehbank/tool.tbl`:
+
+- D ist der Kompensationsradius (bereits fuer die Schneidennase vergeben);
+  I ("front angle")/J ("back angle") sind laut offizieller Doku reine
+  Winkelangaben zur Schneidkantenform ohne Laengeninformation und laut
+  Dokumentation nicht einmal Eingabe der eigenen Kompensations-/Gouge-
+  Pruefung des LinuxCNC-Interpreters; Q ist ein diskreter
+  Orientierungscode. Keines der vier Felder enthaelt eine Information
+  ueber Schaftdurchmesser, Schaftlaenge oder Halterausladung. Die
+  uebrigen Tabellenfelder (X/Y/Z/A/B/C/U/V/W) sind Werkzeug-/TCP-Offsets.
+- In der real genutzten `Drehbank/tool.tbl` sind I und J zusaetzlich bei
+  allen Eintraegen durchgehend 0.
+- `lathe_easystep/tools.py:229` bestaetigt: I/J landen in
+  `Tool.unknown_fields` und werden von keiner Fachfunktion gelesen - das
+  ist korrekt und bleibt unveraendert, solange diese Felder fuer keine
+  Fachfunktion benoetigt werden. Keine Codeaenderung.
+- Da LatheEasyStep ausschliesslich die offizielle `tool.tbl` als
+  Werkzeugdatenquelle verwendet und keine proprietaeren Zusatzdateien,
+  Kommentarkonventionen oder erfundenen Defaultwerte einfuehrt, ist eine
+  belastbare Werkzeughuellen-/Bohrstangen-Kollisionspruefung mit der
+  verfuegbaren Datenquelle nicht moeglich - eine strukturelle Grenze des
+  offiziellen Tabellenformats, kein Zwischenstand.
+- `TODO.md` LES-032 Abschnitt 1 entsprechend von "offen, Datenquelle noch
+  zu klaeren" auf "dauerhaft abgeschlossen, nicht loesbar" umgestellt und
+  aus der Prioritaetstabelle entfernt (LES-032 hat damit keinen offenen
+  Punkt mehr - Abschnitt 2, die Erkennung geaenderter Werkzeugmerkmale,
+  war bereits zusammen mit LES-053/Format v2 umgesetzt und ist davon
+  unabhaengig).
+- Unveraendert: die punktfoermige Rueckzugs-/Sperrzonenpruefung
+  (`validate_chuck_segment()`, `gcode_safety.py`) und die geometrische
+  Einstichpruefung mit `Tool.insert_width_mm`
+  (`_check_groove_reaches_chuck_no_go_zone()`, `checks.py`) bleiben
+  bestehen. Reine Dokumentationskorrektur, kein Code veraendert.
+
+### LES-053 umgesetzt: Programm-/Step-Dateiformat-Versionierung + LES-032-Werkzeug-Snapshot als erster v1->v2-Anwendungsfall 2026-09-18
 
 Umsetzung des zuvor erarbeiteten LES-053-Audits/Entwurfs, minimal und ohne
 neues Serialisierungsframework (bestehende Struktur `storage.py`/
