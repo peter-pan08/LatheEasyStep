@@ -17,6 +17,10 @@
 
 ## [Unreleased]
 
+- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+
+## [0.9.0] - 2026-09-21
+
 ### 0.9.0-Scope-Audit: Architekturpunkte ohne bekannten Fehler auf 1.0.0/optional verschoben 2026-09-21
 
 Systematischer Audit aller bis dahin als "Ziel 0.9.0" gefuehrten

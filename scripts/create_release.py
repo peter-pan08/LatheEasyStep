@@ -553,7 +553,7 @@ def main() -> int:
         print("Nothing has been pushed and no tag has been created.")
         print()
         print("After manual review, publish with:")
-        print(f"  git tag -a {tag} {release_commit} -m \"LatheEasyStep {args.version}\"")
+        print(f"  git tag {tag} {release_commit}")
         print("  git push origin main")
         print(f"  git push origin {tag}")
 

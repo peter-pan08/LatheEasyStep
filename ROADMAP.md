@@ -1,6 +1,6 @@
 # Roadmap LatheEasyStep
 
-Stand: 2026-09-18
+Stand: 2026-09-21
 
 LatheEasyStep soll ein werkstattnahes, konversationelles Drehpanel fuer
 LinuxCNC werden. Die Roadmap beschreibt Release-Ziele und Abhaengigkeiten.
@@ -10,9 +10,9 @@ Verifikation in
 
 ## Ausgangsstand
 
-- `main`: Version 0.8.0 als lauffaehige Basis (freigegeben 2026-09-16)
-- `dev`: aktueller Entwicklungsstand fuer die naechste Version; `main`
-  bleibt die stabile Basis
+- `main`: Version 0.9.0 als lauffaehige Basis (freigegeben 2026-09-21)
+- `dev`: aktueller Entwicklungsstand fuer die naechste Version (noch ohne
+  festgelegtes Versionsziel); `main` bleibt die stabile Basis
 - aktueller Teststand: `968 passed (Stub-Qt), 131 passed (Real-Qt), 0 skipped`
 - UI-Shell, acht Reiter, Step-Verwaltung und Vorschau sind bereits in Teil-UIs
   und Fachmodule getrennt
@@ -22,8 +22,10 @@ Verifikation in
   Slice-/Frontview, Bohren-Anfahrt, G76-Plausibilitaet und `rough_finish`
   wurden praktisch bestaetigt oder umgesetzt
 
-Der Umfang auf `dev` ist als Entwicklung zu Version 0.8.0 einzuordnen, nicht
-als kleine Patchversion 0.7.1.
+`dev` und `main` sind unmittelbar nach der 0.9.0-Veroeffentlichung
+inhaltlich deckungsgleich (Release-Commit `33d5db3` auf `main`, Quell-`dev`-
+Commit `dc6b6fe`). Der Umfang der naechsten Entwicklung auf `dev` ist noch
+nicht als eigener Versionsschritt eingeordnet.
 
 ## 0.8.0 - Generator- und Sicherheitsrelease
 
@@ -154,12 +156,33 @@ davon behebt einen bekannten Fehler, verursacht falschen G-Code/falsche
 Fahrwege oder blockiert eines der obigen Abnahmekriterien. Einzelbegruendung
 je Punkt in `TODO.md`.
 
-**Fuer 0.9.0 ist damit derzeit kein bekannter funktionaler Codefehler mehr
-offen.** Der verbleibende technische Schritt ist der reguläre Release-
-Vorgang selbst, einschliesslich des bisher nur lesend (`--check`)
-getesteten, noch nie schreibend durchgespielten Release-Skripts (siehe
-`TODO.md` → "Release-Prozess"). Dieser Schritt wird bewusst erst beim
-tatsaechlichen Erstellen von 0.9.0 durchgefuehrt, nicht vorab kuenstlich.
+**Fuer 0.9.0 war damit kein bekannter funktionaler Codefehler mehr offen.**
+Der damals verbleibende technische Schritt - der regulaere Release-Vorgang
+selbst, einschliesslich des bis dahin nur lesend (`--check`) getesteten,
+noch nie schreibend durchgespielten Release-Skripts - wurde am 2026-09-21
+durchgefuehrt (siehe "Release-Gate-Status 0.9.0: freigegeben" unten sowie
+`TODO.md` → "Release-Prozess").
+
+### Release-Gate-Status 0.9.0: freigegeben
+
+`v0.9.0` wurde am 2026-09-21 freigegeben (Release-Commit `33d5db3` auf
+`main`, Quell-`dev`-Commit `dc6b6fe`, Tag `v0.9.0`, lightweight - konsistent
+zu `v0.7.0`/`v0.8.0`). Der zuvor nur lesend (`--check`) getestete
+schreibende Release-Pfad von `scripts/create_release.py` wurde damit
+erstmals real durchgefuehrt und vollstaendig verifiziert:
+
+- 95 Release-Dateien exakt gemaess `release_manifest.txt`
+- alle 95 Dateien blob-identisch zum geprueften `dev`-Stand `dc6b6fe`
+- keine Test-, Entwicklungsdoku- oder Release-Infrastrukturdateien im
+  Release-Commit
+- Autor/Committer korrekt aus bestehender Git-Konfiguration, keine KI-/
+  Co-Author-Trailer
+- Release-Commit ist direkter Nachfolger des vorherigen `main` (`e16728a`),
+  kein Merge
+
+Vorausgegangen: 968 Stub-Qt-/131 Real-Qt-Tests (0 Skips), zwoelf Referenzen
+und 43 Matrixfaelle unter `rs274` sowie diffreie Referenzregeneration -
+Details siehe `TODO.md`/Changelog.
 
 ## 1.0.0 - Werkstattgeeigneter dokumentierter Stand
 

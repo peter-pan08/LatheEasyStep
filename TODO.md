@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-09-17
+Stand: 2026-09-21
 
 Diese Datei enthaelt ausschliesslich offene Aufgaben. Abgeschlossene Arbeiten,
 Befunde und historische Teststaende stehen im [CHANGELOG.md](CHANGELOG.md) und
@@ -21,46 +21,59 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 - Der Generator ist von Qt getrennt. Reiter, Step-Verwaltung und Vorschau
   liegen in eigenen UI-/Fachmodulen.
 
-## 0.9.0-Scope-Status (Audit 2026-09-21)
+## 0.9.0-Scope-Status (Audit 2026-09-21, veroeffentlicht 2026-09-21)
 
-**Fuer 0.9.0 ist derzeit kein bekannter funktionaler Codefehler mehr
-offen.** Der 0.9.0-Scope-Audit 2026-09-21 hat alle bis dahin als
-"Ziel 0.9.0" gefuehrten Architekturpunkte (LES-022, LES-044, LES-051-Rest,
+**Fuer 0.9.0 war kein bekannter funktionaler Codefehler mehr offen.** Der
+0.9.0-Scope-Audit 2026-09-21 hat alle bis dahin als "Ziel 0.9.0"
+gefuehrten Architekturpunkte (LES-022, LES-044, LES-051-Rest,
 LES-052-Handler-Kleber/`except Exception`/Fehlerklassen/Undo-Redo/Autosave/
 Pruefbericht) einzeln gegen den Code- und Teststand geprueft: keiner davon
 behebt einen bekannten Fehler, verursacht falschen G-Code/falsche
 Fahrwege oder blockiert ein bestehendes 0.9.0-Abnahmekriterium - Details
 und Einzelbegruendung je Punkt in den jeweiligen Abschnitten unten sowie
-im Changelog. Der verbleibende technische Schritt vor 0.9.0 ist
-ausschliesslich der regulaere Release-Vorgang selbst, einschliesslich des
-bisher nur lesend (`--check`) getesteten, noch nie schreibend
-durchgespielten Release-Skripts (siehe "Release-Prozess" unten).
+im Changelog. Der damals verbleibende technische Schritt, der regulaere
+Release-Vorgang selbst einschliesslich des erstmaligen schreibenden
+Laufs von `scripts/create_release.py`, wurde am 2026-09-21 durchgefuehrt:
+`v0.9.0` (lightweight Tag, konsistent zu `v0.7.0`/`v0.8.0`) zeigt auf den
+Release-Commit `33d5db3` auf `main` (Quelle: `dev`-Commit `dc6b6fe`,
+Vorgaenger-`main` `e16728a`). Details siehe ROADMAP.md → "Release-Gate-
+Status 0.9.0: freigegeben".
 
 ## Priorisierter Arbeitsindex
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| Release-Prozess | P1 | echten Release-Pfad beim tatsaechlichen 0.9.0-Release-Vorgang testen, Manifest-Vollstaendigkeit absichern | S | 0.9.0-Release-Vorgang |
 | LES-051 | - | Panel-Grundgeruest/Darstellungsadapter: 0.9.0-Kernumfang abgeschlossen, zwei Restpunkte verschoben (siehe Abschnitt) | - | 0.9.0 abgeschlossen |
 | LES-052 | - | Panel-Architektur/Zustandsmodell: 0.9.0-Kernumfang abgeschlossen, Restpunkte verschoben/optional (siehe Abschnitt) | - | 0.9.0 abgeschlossen |
 | LES-022 | P3 | vier verstreute Settings-Zustaende typisieren (kein bekannter Fehler, Audit 2026-09-21: reine Typisierung) | S | 1.0.0/spaeter |
 | LES-044 | P3 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, Audit 2026-09-21: reine Codeverschiebung) | S | 1.0.0/spaeter |
 | LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
 | LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
+| Release-Prozess | P3 | Standing-Checkliste fuer jedes zukuenftige Release pflegen (siehe Abschnitt) | S | laufend |
 
 ## Release-Prozess
 
 `RELEASE_POLICY.md` und `scripts/create_release.py` (mit `release_manifest.txt`)
-wurden am 17.09.2026 eingefuehrt und bislang nur mit `--check` gegengeprueft
-(reine Validierung, kein Schreibvorgang). Vor 0.9.0 noch offen:
+wurden am 17.09.2026 eingefuehrt. Der zuvor nur lesend (`--check`)
+gegengepruefte schreibende Release-Pfad wurde am 2026-09-21 beim
+tatsaechlichen 0.9.0-Release erstmals real durchgespielt
+(`scripts/create_release.py 0.9.0`, Release-Commit `33d5db3` auf `main`,
+Tag `v0.9.0`) und vollstaendig verifiziert (Manifest-Deckungsgleichheit,
+Blob-Identitaet zu `dev`, korrekter Autor/Committer aus bestehender
+Git-Konfiguration, keine KI-/Co-Author-Trailer, kein Leck von Test- oder
+Entwicklungsdateien in den Release-Commit). Die dabei im Skript gefundene
+Abweichung (empfohlener Tag-Befehl `git tag -a ...` widersprach der
+tatsaechlichen Projektpraxis mit lightweight Tags bei `v0.7.0`/`v0.8.0`)
+wurde in `scripts/create_release.py` auf `git tag <tag> <commit>`
+korrigiert.
 
-- [ ] den tatsaechlich schreibenden Release-Pfad einmal vollstaendig
-  durchspielen: `scripts/create_release.py` ohne `--check` fuer einen
-  Wegwerf-/Test-Release ausfuehren, den erzeugten `main`-Commit und den
-  Manifestvergleich pruefen, danach lokal zuruecksetzen (`git branch -f
-  main <vorheriger main-Commit>`, temporaeren Worktree/Tag entfernen).
-  Bisher wurde nur der lesende `--check`-Pfad unter Windows und Debian
-  getestet.
+- [x] den tatsaechlich schreibenden Release-Pfad einmal vollstaendig
+  durchspielen - geschehen als echter 0.9.0-Release (kein Wegwerf-/Test-
+  Release mehr noetig).
+
+Fuer jedes zukuenftige Release weiterhin als Standing-Checkliste offen
+(nicht an eine bestimmte naechste Version gebunden):
+
 - [ ] vor jedem Release explizit pruefen, ob seit dem letzten Release neue
   Laufzeitabhaengigkeiten ausserhalb der `release_manifest.txt`-Pfade
   hinzugekommen sind. Das Skript erkennt fehlende/veraenderte Manifest-
@@ -684,7 +697,8 @@ Step-Daten propagierten dort bisher ungefangen) ist mitbehoben: der neue
 Ladeweg ueber `parse_step_payload()` ist jetzt in dasselbe `except
 ValueError` eingefasst wie `_step_data_to_operation()`.
 
-Ziel: 0.9.0, verpflichtendes 1.0.0-Gate.
+Ziel 0.9.0 erreicht (veroeffentlicht 2026-09-21); bleibt verpflichtendes
+1.0.0-Gate.
 
 ## LES-054 Deterministische Programmerzeugung
 
@@ -719,7 +733,8 @@ basierte interne Korrelation in `gcode_program.py` wird nur fuer
 Mitgliedschafts-/Lookup-Pruefungen innerhalb eines Generatorlaufs
 verwendet, nie fuer eine die Ausgabe beeinflussende Iterationsreihenfolge.
 
-Ziel: 0.9.0, Gate fuer die 1.0.0-Abnahme.
+Ziel 0.9.0 erreicht (veroeffentlicht 2026-09-21); bleibt Gate fuer die
+1.0.0-Abnahme.
 
 ## LES-055 Maschinenprofil-Identitaet und Kompatibilitaet
 

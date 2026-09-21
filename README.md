@@ -1,8 +1,8 @@
 Lathe EasyStep
 ==============
 
-Current Version: `0.8.0`
-Status Date: `2026-09-16`
+Current Version: `0.9.0`
+Status Date: `2026-09-21`
 Primary Test Branch: `dev`
 
 Deutsch
@@ -42,7 +42,7 @@ Der Stand wurde auch auf dem nativen LinuxCNC-Rechner nachgeprueft:
 wurden in der QtDragon-SIM bis `M30` ausgefuehrt. Details im
 [Pruefbericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
 
-Stand: Version 0.8.0, 16. September 2026
+Stand: Version 0.9.0, 21. September 2026
 
 Das Projekt ist aktiv in Entwicklung, aber die technische Basis ist deutlich
 weiter als ein reiner Prototyp:
@@ -61,7 +61,7 @@ weiter als ein reiner Prototyp:
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
-Der derzeit dokumentierte Arbeitsstand ist `Version 0.8.0`.
+Der derzeit dokumentierte Arbeitsstand ist `Version 0.9.0`.
 
 Beim inneren Schlichten bleibt das Werkzeug fuer die axiale Anfahrt bis zur
 Z-Lage des Konturstarts auf der im Programmkopf festgelegten XRI-Ebene. Erst
@@ -410,16 +410,14 @@ Die vollstaendige, priorisierte Aufgabenliste steht in der
 [TODO.md](TODO.md), die Release-Zuordnung in der [ROADMAP.md](ROADMAP.md).
 
 Der 0.9.0-Scope-Audit (2026-09-21, Details in TODO.md/ROADMAP.md) hat
-bestaetigt: fuer 0.9.0 ist kein bekannter funktionaler Codefehler mehr
+bestaetigt: fuer 0.9.0 war kein bekannter funktionaler Codefehler mehr
 offen. Der Panel-Architektur-/Zustandsmodell-Kern (LES-051/LES-052) ist
 fuer 0.9.0 abgeschlossen, einschliesslich der atomaren State-/Rollback-/
-Fehlergrenzen-Arbeiten. Verbleibende Prioritaeten:
+Fehlergrenzen-Arbeiten. **Version 0.9.0 wurde am 21.09.2026 veroeffentlicht
+(Tag `v0.9.0` auf `main`).** Verbleibende Prioritaeten:
 
-1. Release-Prozess: den tatsaechlich schreibenden Release-Pfad beim
-   0.9.0-Release-Vorgang selbst einmal durchspielen und Manifest-
-   Vollstaendigkeit absichern
-2. LES-043 Gegenspindel als separates Projekt spezifizieren (nicht 0.9.0)
-3. LES-030 weitere reale Maschinenprofile verifizieren (extern, offen)
+1. LES-043 Gegenspindel als separates Projekt spezifizieren (nicht 0.9.0)
+2. LES-030 weitere reale Maschinenprofile verifizieren (extern, offen)
 
 Auf 1.0.0/spaeter verschoben bzw. als optionale zukuenftige Features
 eingestuft (kein bekannter Fehler, kein 0.9.0-Blocker, Einzelbegruendung
@@ -502,7 +500,7 @@ The main focus is:
 
 ## Project Status
 
-Current documented state: Version 0.8.0, September 16, 2026.
+Current documented state: Version 0.9.0, September 21, 2026.
 
 For internal finishing, the tool stays on the XRI clearance diameter while
 moving axially to the contour start Z position. It then feeds radially to the
@@ -671,16 +669,14 @@ The complete prioritized backlog is maintained in [TODO.md](TODO.md), with
 release milestones in [ROADMAP.md](ROADMAP.md).
 
 The 0.9.0 scope audit (2026-09-21, details in TODO.md/ROADMAP.md)
-confirmed: no known functional code defect remains open for 0.9.0. The
+confirmed: no known functional code defect remained open for 0.9.0. The
 panel architecture/state model core (LES-051/LES-052) is complete for
-0.9.0, including the atomic state/rollback/error-boundary work. Remaining
+0.9.0, including the atomic state/rollback/error-boundary work. **Version
+0.9.0 was released on 2026-09-21 (tag `v0.9.0` on `main`).** Remaining
 priorities:
 
-1. Release process: run the actual writing release path once end to end,
-   as part of the actual 0.9.0 release itself, and verify manifest
-   completeness
-2. LES-043 specify the sub-spindle feature as a separate project (not 0.9.0)
-3. LES-030 verify further real machine profiles (external, open)
+1. LES-043 specify the sub-spindle feature as a separate project (not 0.9.0)
+2. LES-030 verify further real machine profiles (external, open)
 
 Deferred to 1.0.0/later, or reclassified as optional future features (no
 known defect, no 0.9.0 blocker, per-item justification in TODO.md): the
