@@ -5,7 +5,12 @@ from typing import Callable, Dict, List, Tuple
 
 from .checks import validate_program_setup
 from .contour_features import normalize_relief_mode
-from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
+from .contour_logic import (
+    build_contour_variants,
+    select_thread_relief_for_contour,
+    thread_relief_spec,
+    validate_contour_segments_for_profile,
+)
 from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
 from .preview_scene import PreviewScene, scene_from_legacy_paths
@@ -240,7 +245,19 @@ def collect_preview_state(
                 "coord_mode": handler.contour_coord_mode.currentIndex() if getattr(handler, "contour_coord_mode", None) else 0,
                 "segments": handler._collect_contour_segments(),
             }
-            contour_prims = build_contour_path(params)
+            # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3 Teil A): eine
+            # neue, noch nicht zum Programm hinzugefuegte Kontur (dieser
+            # Zweig laeuft nur, solange handler.model.operations noch leer
+            # ist) kann voruebergehend zu wenige Punkte haben, waehrend der
+            # Nutzer sie gerade erst aufbaut - build_contour_path() lehnt
+            # das seit dem contour_logic.py-Fix bewusst mit einem ValueError
+            # ab (siehe dort), statt es unbehandelt durchschlagen zu lassen,
+            # dieselbe bereits vorhandene Validierung wie die Kontur-Tab-
+            # eigene Live-Vorschau (update_contour_preview_temp(),
+            # ui_contour.py) verwenden: bei unvollstaendigen Daten einfach
+            # keine Konturgeometrie erzeugen.
+            contour_is_valid, _contour_errors = validate_contour_segments_for_profile(params)
+            contour_prims = build_contour_path(params) if contour_is_valid else []
             if contour_prims:
                 paths.append(contour_prims)
                 active = len(paths) - 1

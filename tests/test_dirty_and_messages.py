@@ -4,6 +4,7 @@ import types
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
 from lathe_easystep.runtime_state import RuntimeState
 from lathe_easystep.ui_dirty import (
@@ -289,6 +290,60 @@ def test_handle_param_change_ignores_unnamed_widget():
     handle_param_change(handler)
 
     assert dirty_calls == []
+
+
+def _rejecting_update(force=False):
+    raise ValueError("simulierte ungueltige Geometrie")
+
+
+def test_handle_param_change_does_not_mark_dirty_and_resyncs_widget_when_update_is_rejected():
+    """LES-052 Abschnitt 3 Fund 2 (Audit 2026-09-20): _update_selected_operation()
+    kann eine ungueltige Eingabe ueber sync_form_to_operation() korrekt
+    zurueckrollen (op.params bleibt/wird wieder gueltig) und wirft dabei
+    weiter. handle_param_change() hat das bisher lautlos verschluckt und
+    trotzdem dirty markiert, obwohl inhaltlich nichts uebernommen wurde -
+    und liess das editierte Widget auf dem abgelehnten Wert stehen, ohne
+    das Formular wieder mit dem (bereits zurueckgerollten) Modellzustand
+    zu synchronisieren. Erwartet: kein neues dirty, der bestehende
+    Dirty-Zustand bleibt exakt erhalten, und das Formular wird resynct."""
+    handler = _handler()
+    handler.list_ops = _List(1)  # Zeile 1 -> GROOVE-Step
+    widget = _SpinWidget("groove_depth", -999.0)
+    handler.sender = lambda: widget
+    handler._log = lambda *a, **kw: None
+    handler._update_selected_operation = _rejecting_update
+    handler._dirty = DirtyState(operation_indices={0}, program_dirty=True, program_header_dirty=True)
+    handler._mark_dirty = lambda **kw: mark_dirty(handler, **kw)
+    handler._update_dirty_status = lambda: None
+    resync_calls = []
+    handler._load_params_to_form = lambda op: resync_calls.append(op)
+
+    handle_param_change(handler)
+
+    assert resync_calls == [handler.model.operations[1]]
+    assert handler._dirty.operation_indices == {0}
+    assert handler._dirty.program_dirty is True
+    assert handler._dirty.program_header_dirty is True
+
+
+def test_handle_param_change_does_not_mark_program_dirty_when_header_update_is_rejected():
+    handler = _handler()
+    handler.list_ops = _List(0)  # Zeile 0 -> PROGRAM_HEADER
+    widget = _SpinWidget("program_xt", 10.0)
+    handler.sender = lambda: widget
+    handler._log = lambda *a, **kw: None
+    handler._update_selected_operation = _rejecting_update
+    handler._dirty = DirtyState()
+    handler._mark_dirty = lambda **kw: mark_dirty(handler, **kw)
+    handler._update_dirty_status = lambda: None
+    resync_calls = []
+    handler._load_params_to_form = lambda op: resync_calls.append(op)
+
+    handle_param_change(handler)
+
+    assert resync_calls == [handler.model.operations[0]]
+    assert handler._dirty.program_dirty is False
+    assert handler._dirty.has_unsaved_changes() is False
 
 
 def test_user_error_formatter_maps_required_field_to_tab_and_label():

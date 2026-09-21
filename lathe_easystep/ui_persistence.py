@@ -232,8 +232,18 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
         )
         handler._update_parting_ready_state()
         handler._setup_groove_tab_ui()
+        # SICHERHEITSFUND 2026-09-20: das Einfuegen eines geladenen Steps in
+        # ein bereits offenes Programm ist eine Strukturaenderung DIESES
+        # Programms - genau wie "Operation hinzufuegen"
+        # (handle_add_operation(), _mark_program_structure_dirty()). Hier
+        # stand bisher _clear_dirty_state(), was faelschlich jeden
+        # bestehenden Dirty-Zustand geloescht hat, nicht nur den des neu
+        # eingefuegten Steps. _insert_loaded_operation() hat den neuen Step
+        # bereits korrekt als sauber relativ zu SEINER EIGENEN Datei markiert
+        # (_clear_dirty_operation()) - hier wird nur noch die Programmebene
+        # als dirty markiert, ohne andere Indizes/Flags anzufassen.
         try:
-            handler._clear_dirty_state()
+            handler._mark_program_structure_dirty()
         except Exception:
             pass
     finally:
@@ -320,17 +330,27 @@ def handle_load_program(handler) -> None:
             QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.program.load.title"), str(exc))
             return
 
+        # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): das komplette neue
+        # Programm erst ausserhalb von handler.model aufbauen/validieren -
+        # ein Fehler in einer SPAETEREN Operation (_step_data_to_operation()
+        # kann z. B. bei einem strukturell ungueltigen path-Eintrag werfen,
+        # was parse_program_payload()s reine Zahlen-Endlichkeitspruefung oben
+        # nicht abdeckt) darf das noch offene, ggf. ungespeicherte Programm
+        # nicht durch einen kaputten Teilimport ersetzen. handler.model wird
+        # erst nach vollstaendigem Erfolg angefasst.
+        new_operations = []
+        for op_dict in ops_data:
+            op = handler._step_data_to_operation(op_dict)
+            if op is not None:
+                new_operations.append(op)
+
         handler.model.operations.clear()
+        handler.model.operations.extend(new_operations)
         handler._op_row_user_selected = False
         handler._active_form_operation_index = -1
         handler._load_program_header_to_form(header)
         handler._current_program_path = current_program_path
         handler._current_gcode_path = current_gcode_path
-
-        for op_dict in ops_data:
-            op = handler._step_data_to_operation(op_dict)
-            if op is not None:
-                handler.model.add_operation(op)
 
         handler._rebuild_all_operation_geometry()
 

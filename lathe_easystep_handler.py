@@ -74,7 +74,9 @@ from lathe_easystep.ui_contour import (
     handle_contour_edge_change,
     handle_contour_move_down,
     handle_contour_move_up,
+    handle_contour_name_change,
     handle_contour_row_select,
+    handle_contour_start_change,
     handle_contour_table_change,
     init_contour_table,
     resolve_contour_path,
@@ -2250,13 +2252,25 @@ class HandlerClass:
 
         if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
             self.contour_start_x.valueChanged.connect(self._update_contour_preview_temp)
+            # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): Start-X/Z
+            # sind fachliche Kontur-Parameter (_collect_params(CONTOUR)
+            # liest sie), aktualisierten bisher aber nur die Live-Vorschau,
+            # nie zuverlaessig Modell/Dirty-State eines bereits bestehenden
+            # Kontur-Steps.
+            self.contour_start_x.valueChanged.connect(self._handle_contour_start_change)
             self._contour_start_x_connected = True
         if getattr(self, "contour_start_z", None) and not getattr(self, "_contour_start_z_connected", False):
             self.contour_start_z.valueChanged.connect(self._update_contour_preview_temp)
+            self.contour_start_z.valueChanged.connect(self._handle_contour_start_change)
             self._contour_start_z_connected = True
         if getattr(self, "contour_name", None) and not getattr(self, "_contour_name_connected", False):
             self.contour_name.textChanged.connect(self._update_contour_preview_temp)
             self.contour_name.textChanged.connect(self._update_parting_contour_choices)
+            # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3): contour_name
+            # ist ein fachlicher Parameter (op.params["name"]), war aber nur
+            # an Vorschau/Auswahlliste angebunden, nie zuverlaessig an
+            # Modell/Dirty-State eines bestehenden, ausgewaehlten Steps.
+            self.contour_name.textChanged.connect(self._handle_contour_name_change)
             self._contour_name_connected = True
 
         if getattr(self, "contour_edge_type", None) and not getattr(self, "_contour_edge_type_connected", False):
@@ -2403,8 +2417,22 @@ class HandlerClass:
             else:
                 idx = w_edge.findData(str(edge_text), QtCore.Qt.UserRole)
                 if idx >= 0:
-                    w_edge.setCurrentIndex(idx)
-        
+                    # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3):
+                    # dieser Combo ist bereits mit _handle_contour_table_
+                    # change() verbunden - setCurrentIndex() wuerde das
+                    # Signal sonst REENTRANT ausloesen, WAEHREND diese rein
+                    # programmatische Zeilen-Befuellung noch laeuft, und
+                    # damit einen ungewollten Sync-/Dirty-Zyklus zu einem
+                    # nicht vorgesehenen Zeitpunkt anstossen. Nur das
+                    # betroffene Widget-Signal kurz blocken (dieselbe
+                    # bereits etablierte Technik wie in _load_contour_
+                    # operation_to_form()), keine globale Signalsperre.
+                    w_edge.blockSignals(True)
+                    try:
+                        w_edge.setCurrentIndex(idx)
+                    finally:
+                        w_edge.blockSignals(False)
+
             # Radius size in Spalte 4
             if edge_size is not None:
                 table.setItem(row, 4, item_cls(f"{float(edge_size):.3f}"))
@@ -2420,7 +2448,13 @@ class HandlerClass:
                 if arc_text is not None and hasattr(w, "findData"):
                     idx = w.findData(str(arc_text).strip().lower(), QtCore.Qt.UserRole)
                     if idx >= 0:
-                        w.setCurrentIndex(idx)
+                        # Gleicher Reentranz-Schutz wie oben fuer den
+                        # Kantentyp-Combo.
+                        w.blockSignals(True)
+                        try:
+                            w.setCurrentIndex(idx)
+                        finally:
+                            w.blockSignals(False)
         except Exception:
             pass
 
@@ -2655,6 +2689,12 @@ class HandlerClass:
 
     def _handle_contour_table_change(self, *args, **kwargs):
         handle_contour_table_change(self, *args, **kwargs)
+
+    def _handle_contour_start_change(self, *args, **kwargs):
+        handle_contour_start_change(self, *args, **kwargs)
+
+    def _handle_contour_name_change(self, *args, **kwargs):
+        handle_contour_name_change(self, *args, **kwargs)
 
     def _handle_contour_row_select(self, *args, **kwargs):
         handle_contour_row_select(self, *args, **kwargs)

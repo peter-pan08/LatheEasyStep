@@ -180,7 +180,21 @@ def handle_add_operation(handler) -> None:
             # nur einen Programmkopf zulassen -> ersetzen oder neu hinzufuegen
             for i, existing in enumerate(handler.model.operations):
                 if existing.op_type == OpType.PROGRAM_HEADER:
+                    # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3, Fund
+                    # 3b): anders als beim Neu-Einfuegen unten (das
+                    # update_geometry() VOR dem Insert aufruft) fehlte hier
+                    # jede Validierung - existing.params wurde ungeprueft
+                    # uebernommen. Erst auf einem noch nicht uebernommenen
+                    # Kandidaten validieren, damit ein ungueltiger Wert den
+                    # bestehenden Kopf unveraendert laesst (wirft weiter,
+                    # gleiches Verhalten wie der Insert-Zweig).
+                    candidate = Operation(op_type, params)
+                    handler.model.update_geometry(candidate)
                     existing.params = params
+                    try:
+                        handler._mark_dirty(program=True)
+                    except Exception:
+                        pass
                     if handler.list_ops:
                         item = handler.list_ops.item(i)
                         if item:
@@ -194,6 +208,14 @@ def handle_add_operation(handler) -> None:
             handler.model.operations.insert(0, op)
             try:
                 handler._reindex_dirty_operations_after_insert(0)
+            except Exception:
+                pass
+            # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3, Fund 3): das
+            # ist der einzige Weg, wie ein neues Programm ueberhaupt seinen
+            # ersten Programmkopf bekommt - bisher wurde hier nie dirty
+            # markiert.
+            try:
+                handler._mark_program_structure_dirty()
             except Exception:
                 pass
             handler._refresh_operation_list(select_index=0)
@@ -426,8 +448,24 @@ def handle_param_change(handler) -> None:
     # so we rebuild the selected operation from the UI and refresh geometry/preview.
     try:
         handler._update_selected_operation(force=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): _sync_form_to_
+        # operation() rollt op.params bei einer ungueltigen Eingabe bereits
+        # korrekt zurueck, bevor sie hier erneut geworfen wird - das darf
+        # aber nicht lautlos zu "dirty" fuehren, obwohl inhaltlich nichts
+        # uebernommen wurde, und das editierte Widget darf nicht auf dem
+        # abgelehnten Wert stehen bleiben. Formular mit dem (bereits
+        # zurueckgerollten) Modellzustand neu synchronisieren, dirty NICHT
+        # markieren, bestehenden Dirty-Zustand unangetastet lassen.
+        try:
+            handler._log(f"[LatheEasyStep][debug] param change rejected: widget={name} op_type={op.op_type} row={idx}: {exc!r}", level="warning")
+        except Exception:
+            pass
+        try:
+            handler._load_params_to_form(op)
+        except Exception:
+            pass
+        return
     if name.endswith("_spindle_mode"):
         try:
             handler._update_spindle_mode_visibility()

@@ -55,6 +55,13 @@ def _make_contour_handler():
     h._contour_edge_template_size = 0.0
     h._contour_arc_template_data = "auto"
     h._contour_row_user_selected = False
+    # LES-052 Abschnitt 3 (2026-09-20): die Add/Delete/Move-Handler markieren
+    # einen bestehenden Kontur-Step jetzt dirty, dafuer wird ueber
+    # _selected_operation_index() auf handler.list_ops zugegriffen. Diese
+    # Tests pruefen bewusst nur den Tabellen-Datenweg (kein Step in der
+    # Step-Liste ausgewaehlt), list_ops bleibt entsprechend ungebunden.
+    h.list_ops = None
+    h._op_row_user_selected = False
     h._ensure_contour_widgets = lambda: None
     h._update_selected_operation = lambda *a, **kw: None
     h._update_contour_preview_temp = lambda: None
