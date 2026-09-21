@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List
 
 
@@ -36,6 +36,15 @@ class Tool:
     kind: str
     wear: bool = False
     radius_source: str | None = None
+    # LES-052 Abschnitt 5: Tool-Tabellen-Token, die parse_tool_table() liest,
+    # aber nicht in ein eigenes Tool-Feld uebernimmt (alles ausser T/P/D/Q,
+    # z. B. X/Y/Z/A/B/C/U/V/W/I/J/R aus dem Standard-LinuxCNC-Tooltable-
+    # Layout). Vorher stillschweigend verworfen - jetzt erhalten, reine
+    # Datenerhaltung. Kein Zurueckschreiben in die Tool-Tabelle: das Panel
+    # darf LinuxCNC-Konfigurationsdateien dauerhaft nur lesen (siehe
+    # CLAUDE.md, nutzerbestaetigt 2026-09-17). Rein additiv: wird aktuell
+    # von keiner Fachlogik gelesen.
+    unknown_fields: Dict[str, str] = field(default_factory=dict)
 
     @property
     def toolno(self) -> int:
@@ -118,6 +127,36 @@ def tool_kind_from_orientation(orientation: int | None) -> str:
     return _TOOL_KIND_BY_ORIENTATION.get(orientation, "parting")
 
 
+def build_tool_snapshot(tool_value: object, tools: Dict[int, "Tool"] | None) -> Dict[str, object] | None:
+    """LES-032/LES-053 (Format v2): minimaler, ABGELEITETER Schnappschuss der
+    zum Speicherzeitpunkt tatsaechlich bekannten, G-Code-/pruefungsrelevanten
+    Werkzeugmerkmale (Radius, Orientierung, Einstichbreite) - bewusst NICHT
+    die vollstaendige Tooltable-Zeile (kein P/D/Kommentar/iso_size/wear/
+    unknown_fields) und keine zweite dauerhafte Datenquelle neben der
+    LinuxCNC-Tooltable selbst.
+
+    Liefert None (kein Snapshot), wenn keine positive Werkzeugnummer gesetzt
+    ist oder das Werkzeug in der aktuell geladenen Tabelle nicht gefunden
+    wird - dann gibt es nichts tatsaechlich Bekanntes zu snapshotten, und es
+    wird bewusst kein Wert erfunden."""
+    if not tools:
+        return None
+    try:
+        tool_num = int(float(tool_value)) if tool_value is not None else 0
+    except (TypeError, ValueError):
+        return None
+    if tool_num <= 0:
+        return None
+    tool = tools.get(tool_num)
+    if tool is None:
+        return None
+    return {
+        "radius_mm": tool.radius_mm,
+        "orientation": tool.q,
+        "insert_width_mm": tool.insert_width_mm,
+    }
+
+
 def parse_tool_table(
     filepath: str,
     *,
@@ -186,6 +225,9 @@ def parse_tool_table(
                 radius_value = diameter
                 radius_source = "D"
             kind = tool_kind_from_orientation(orientation)
+            unknown_fields = {
+                key: value for key, value in token_map.items() if key not in ("T", "P", "D", "Q")
+            }
             tool = Tool(
                 t=toolno,
                 p=pocket,
@@ -197,6 +239,7 @@ def parse_tool_table(
                 radius_mm=radius_value,
                 kind=kind,
                 radius_source=radius_source,
+                unknown_fields=unknown_fields,
             )
             tools[toolno] = tool
 

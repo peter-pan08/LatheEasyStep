@@ -5,9 +5,11 @@ from typing import Dict, List, Tuple
 from .model import OpType, Operation
 from .numeric import finite_float, validate_finite_data
 from .comments import is_generated_comment, unnumbered_comment
+from .storage import CURRENT_FORMAT_VERSION
+from .tools import build_tool_snapshot
 
 
-def operation_to_step_data(op: Operation) -> Dict[str, object]:
+def operation_to_step_data(op: Operation, tools: Dict[int, object] | None = None) -> Dict[str, object]:
     data = {
         "op_type": op.op_type,
         "params": dict(op.params or {}),
@@ -16,6 +18,15 @@ def operation_to_step_data(op: Operation) -> Dict[str, object]:
         if data["params"].get("comment"):
             data["params"]["comment"] = unnumbered_comment(data["params"]["comment"])
             data["params"]["_auto_comment"] = True
+    # LES-032/LES-053 (Format v2): minimaler Werkzeug-Snapshot zum
+    # tatsaechlichen Speicherzeitpunkt - siehe build_tool_snapshot() fuer die
+    # Begruendung, warum das keine vollstaendige Tooltable-Kopie ist. `tools`
+    # ist optional (Default None -> kein Snapshot), damit bestehende Aufrufer
+    # ohne Tooltable-Kontext (Tests, reine Generatorpfade) unveraendert
+    # funktionieren.
+    snapshot = build_tool_snapshot(data["params"].get("tool"), tools)
+    if snapshot is not None:
+        data["params"]["tool_snapshot"] = snapshot
     if op.path and isinstance(op.path[0], dict):
         data["primitives"] = op.path
     else:
@@ -53,14 +64,15 @@ def build_program_data(
     operations: List[Operation],
     header: Dict[str, object],
     meta: Dict[str, object],
+    tools: Dict[int, object] | None = None,
 ) -> Dict[str, object]:
     ops_data = []
     for op in operations:
-        op_dict = operation_to_step_data(op)
+        op_dict = operation_to_step_data(op, tools)
         op_dict["title"] = op.params.get("title", "")
         ops_data.append(op_dict)
     return {
-        "version": 1,
+        "version": CURRENT_FORMAT_VERSION,
         "header": header,
         "operations": ops_data,
         "meta": meta,

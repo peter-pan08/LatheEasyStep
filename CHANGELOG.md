@@ -17,7 +17,1507 @@
 
 ## [Unreleased]
 
-- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+### 0.9.0-Scope-Audit: Architekturpunkte ohne bekannten Fehler auf 1.0.0/optional verschoben 2026-09-21
+
+Systematischer Audit aller bis dahin als "Ziel 0.9.0" gefuehrten
+Architekturpunkte (LES-022, LES-044, LES-051-Rest, LES-052-Handler-Kleber/
+`except Exception`/Fehlerklassen/Undo-Redo/Autosave/Pruefbericht) einzeln
+gegen den Code- und Teststand: keiner davon behebt einen bekannten Fehler,
+verursacht falschen G-Code/falsche Fahrwege oder blockiert ein bestehendes
+0.9.0-Abnahmekriterium. Scope entsprechend bereinigt (`TODO.md`/
+`ROADMAP.md`):
+
+- LES-022, LES-044: aus den 0.9.0-"Verbindlichen Aufgaben" entfernt -
+  ihr 0.9.0-relevanter Kern (`MotionState`/`SpindleState`-Zentralisierung
+  bzw. Qt-freie Vorschaugeometrie) ist bereits abgeschlossen, die
+  jeweiligen Restpunkte (vier untypisierte, aber konsistente
+  Generator-Laufzustaende; drei reine Funktionsverschiebungen) verschoben
+  auf 1.0.0/spaeter.
+- LES-051 Restpunkte (dauerhaft fehlendes UI-Fragment, optionaler
+  Bedienelement-Datenvertrag) und LES-052-Handler-Kleber: verschoben auf
+  1.0.0/spaeter bzw. als optionales zukuenftiges Architekturfeature
+  eingestuft.
+- `except Exception`-Bereinigung: kein eigener 0.9.0-Meilenstein mehr -
+  konkrete, einzeln bestaetigte Faelle werden weiterhin gezielt mit
+  Regressionstest behoben (wie in den letzten Sitzungen bereits praktiziert),
+  statt eine pauschale Bereinigung als Meilenstein zu fuehren.
+- Zentrale Fehlerdiagnose/Fehlerklassen-Taxonomie: verschoben auf
+  1.0.0/spaeter - der bestehende `format_user_error()`/
+  `parse_error_location()`-Mechanismus ist fuer 0.9.0 ausreichend.
+- Undo/Redo, technischer Pruefbericht: als optionale zukuenftige Features
+  eingestuft, Ziel 1.0.0 oder spaeter.
+- Autosave: als optionales zukuenftiges Feature mit dokumentiertem
+  Recovery-Nutzen eingestuft (kein Warnhinweis beim Schliessen des Panels
+  mit ungespeicherten Aenderungen existiert aktuell), aber kein
+  0.9.0-Blocker.
+- Die davon abhaengigen Undo-/Autosave-Roundtrip-Abnahmekriterien aus der
+  0.9.0-"Abnahme fuer LES-052" entfernt und bei den jeweiligen
+  zukuenftigen Features neu eingeordnet.
+
+Release-Prozess bleibt bewusst unveraendert offen: der schreibende
+Release-Pfad wird erst beim tatsaechlichen Erstellen von 0.9.0 einmal
+durchgespielt, nicht vorab kuenstlich. LES-043/LES-030 unveraendert
+ausserhalb des 0.9.0-Scopes.
+
+**Ergebnis: fuer 0.9.0 ist damit kein bekannter funktionaler Codefehler
+mehr offen.** Der verbleibende technische Schritt ist der regulaere
+Release-Vorgang selbst.
+
+### Fix (LES-052 Abschnitt 3): Reentranz in `_write_contour_row()` behoben - deterministischer Sync/Dirty-Ablauf 2026-09-21
+
+Der im vorherigen Durchgang gefundene, bewusst nicht behobene
+Reentranz-Punkt wurde jetzt geschlossen.
+
+**Ursache.** Der Kantentyp-Combo einer Tabellenzeile ist an
+`handle_contour_table_change()` angebunden (verbunden beim urspruenglichen
+Zeilenaufbau, siehe `_load_contour_operation_to_form()`/
+`handle_contour_add_segment()`). `_write_contour_row()`
+(`lathe_easystep_handler.py`) rief auf genau diesem bereits verbundenen
+Combo `setCurrentIndex()` auf, um Kantentyp/-Bogenrichtung
+programmgesteuert zu setzen - das loeste `currentIndexChanged` REENTRANT
+aus, WAEHREND die Zeile noch programmgesteuert befuellt bzw.
+wiederhergestellt wurde. Eine rein programmatische Zeilen-Befuellung
+loeste dadurch denselben Sync-/Dirty-Zyklus aus wie eine echte
+Benutzeraenderung, mit einem vom genauen Aufrufzeitpunkt abhaengigen, nicht
+deterministischen Endergebnis - enthielt eine ANDERE Zeile zu diesem
+Zeitpunkt bereits ungueltigen Text, fuehrte das sogar zu einem *nativen
+Prozessabsturz* (`Fatal Python error: Aborted`), nicht nur einer
+Python-Exception.
+
+**Fix.** Die zwei `setCurrentIndex()`-Aufrufe in `_write_contour_row()`
+(Kantentyp-Combo Spalte 3, Bogenrichtung-Combo Spalte 5) blocken jetzt
+kurzzeitig nur das Signal des jeweils betroffenen Combo-Widgets selbst
+(`widget.blockSignals(True/False)` um genau den einen Aufruf) - dieselbe
+bereits im Projekt etablierte Technik wie in `_load_contour_operation_
+to_form()`/`sync_contour_edge_controls()`, keine globale Signalsperre,
+keine neue Reentranzarchitektur.
+
+**Ergebnis, jetzt vollstaendig deterministisch nachgewiesen:**
+- ein rein programmatischer `_write_contour_row()`-Aufruf (ohne den
+  umgebenden `handle_contour_edge_change()`-Sync) erzeugt keine fachliche
+  Aenderung und kein Dirty.
+- eine echte Benutzeraenderung des Kantentyps (`handle_contour_edge_
+  change()`) funktioniert weiterhin unveraendert und markiert den
+  bestehenden Kontur-Step korrekt dirty.
+- Restore nach einer fachlich abgelehnten Tabellenaenderung (eine andere
+  Zeile enthaelt bereits ungueltigen Text) endet jetzt exakt und
+  reproduzierbar mit Tabelle == unveraendertem `op.params` (vorher nur
+  lose ueber Selbstkonsistenz geprueft, da zeitpunktabhaengig).
+- ein bereits bestehender Dirty-Zustand bleibt beim Restore unveraendert.
+
+**Tests (zuerst rot):**
+`test_write_contour_row_alone_does_not_sync_or_mark_dirty`,
+`test_edge_change_restore_after_invalid_change_ends_deterministically_with_table_matching_model`,
+`test_edge_change_restore_after_invalid_change_does_not_alter_existing_dirty_state`
+(`tests/test_contour_segment_change_dirty_and_rollback.py`, drei neue
+Faelle plus eine Straffung des bisherigen, nur lose pruefenden Tests).
+
+`_write_contour_row()` enthaelt keine Generator-/Konturgeometrielogik
+(nur Qt-Signal-Handhabung) - `regenerate_all_ngc.py`/`rs274` deshalb nicht
+erneut ausgefuehrt (letzter Null-Diff-Stand bleibt gueltig).
+
+Testzahlen: 968 Stub-Qt-Tests (unveraendert), 131 Real-Qt-Tests (vorher
+129, netto +2), `run_tests.py` vollstaendig gruen.
+
+Damit ist LES-052 Abschnitt 3 vollstaendig abgeschlossen; verbleibend
+offen sind nur noch die bereits bekannten, projektweiten Punkte
+(`except Exception`-Bereinigung, Fehlerklassen-Taxonomie).
+
+### Fix (LES-052 Abschnitt 3): Kontur-State-/Preview-Block vollstaendig abgeschlossen 2026-09-21
+
+**Teil A - Preview-Fehler bei unvollstaendiger neuer Kontur.**
+`ui_preview.py::collect_preview_state()` rief fuer eine noch nicht zum
+Programm hinzugefuegte, gerade erst begonnene Kontur (nur erreichbar,
+solange `handler.model.operations` komplett leer ist, z. B. unmittelbar
+nach "Neues Programm" mit aktivem Kontur-Tab) `build_contour_path()`
+unbedingt auf. Seit dem `contour_logic.py`-Fix (siehe vorheriger Eintrag)
+wirft diese Funktion fuer <2 Punkte einen `ValueError` statt eines
+`TypeError` - fachlich korrekt, aber weiterhin unbehandelt fuer diesen
+voellig normalen, temporaeren Eingabezustand. Fix: dieselbe bereits
+vorhandene `validate_contour_segments_for_profile()`-Pruefung wie die
+Kontur-Tab-eigene Live-Vorschau (`update_contour_preview_temp()`,
+`ui_contour.py`) davor geschaltet - bei unvollstaendigen Daten wird
+einfach keine Konturgeometrie erzeugt, keine neue Bedeutung fuer eine
+leere Kontur erfunden, nichts wird ins Modell uebernommen (dieser Zweig
+baut nur ein lokales Preview-`Operation`-Objekt, nie `handler.model`).
+Tests (zuerst rot): `tests/test_contour_preview_incomplete_draft.py`
+(neu, 2 Faelle, Stub-Qt - `collect_preview_state()` braucht fuer den
+Kontur-Zweig keine echten Qt-Widgets).
+
+**Teil B - die drei noch offenen Kontur-Aenderungspfade real geprueft.**
+`handle_contour_table_change()` (direkter Zellen-/Combo-Edit) und
+`handle_contour_edge_change()` (Kantentyp-Vorlage anwenden) hatten real
+reproduziert denselben Doppelbefund wie `delete_segment` vor dem letzten
+Fix: ein direkter, nicht-numerischer Zellen-Text (z. B. X/Z) laesst
+`finite_float()` ueber `_collect_contour_segments()` mit einem
+`ValueError` scheitern (`"Kontur Zeile 1: ungueltige Zahl 'abc'."`) -
+vorher unbehandelt, Tabelle blieb auf dem abgelehnten Text stehen, nie
+dirty auch im Erfolgsfall. Fix: beide nutzen jetzt den aus
+`handle_contour_delete_segment()` extrahierten, wiederverwendeten
+`_sync_selected_contour_operation_or_restore()`-Helfer - bei Erfolg wird
+der Step dirty markiert, bei einem Fehlschlag die Tabelle aus dem
+unveraenderten `op.params` wiederhergestellt (`_load_params_to_form()`),
+bestehender Dirty-Zustand bleibt unangetastet.
+
+`contour_name` wurde geprueft, ob es tatsaechlich fachlicher Bestandteil
+des Steps ist oder nur Anzeige-/Metadatenfunktion hat: es ist
+`op.params["name"]`, wird von ABSPANEN-Operationen ueber den
+`contour_name`-Parameter referenziert (`_current_parting_contour_name()`/
+`available_contour_names()`) - also ein echter fachlicher Bestandteil,
+keine reine Anzeigeangabe. Hatte denselben Fund wie `contour_start_x`/
+`contour_start_z` (nur an Vorschau/Auswahlliste angebunden, nie
+zuverlaessig an Modell/Dirty-State). Fix: neue
+`handle_contour_name_change()`, analog zu `handle_contour_start_change()`
+zusaetzlich verdrahtet - bewusst die leichte Variante ohne eigene
+Fehlerbehandlung (eine Umbenennung kann selbst keine ungueltigen Zahlen
+erzeugen). Tests (zuerst rot): 8 neue Faelle in `tests/test_contour_
+segment_change_dirty_and_rollback.py` (Real-Qt).
+
+**Dabei entdeckt, bewusst NICHT behoben** (separater, tieferer Befund -
+keine allgemeine Kontur-Refaktorierung in diesem Paket): der Kantentyp-
+Combo einer Tabellenzeile ist an `handle_contour_table_change()`
+angebunden; `_write_contour_row()`s `setCurrentIndex()`
+(`lathe_easystep_handler.py`) loest dieses Signal REENTRANT aus, waehrend
+`handle_contour_edge_change()` noch laeuft. Enthielt vor diesem Fix eine
+ANDERE Zeile bereits ungueltigen Text, fuehrte das zu einem *nativen
+Prozessabsturz* (unbehandelte Python-Exception mitten im reentranten
+Qt-C++-Signal-Dispatch, `Fatal Python error: Aborted`) statt einer
+normalen Python-Exception - schwerwiegender als der eigentlich bearbeitete
+Fund. Der jetzige Fix in `handle_contour_table_change()` faengt auch den
+reentranten Aufruf ab und verhindert den Absturz zuverlaessig, das
+Gesamtergebnis dieses spezifischen Reentranz-Falls bleibt aber
+zeitpunktabhaengig statt sauber vorhersagbar (Testkommentar in
+`test_edge_change_with_other_row_invalid_does_not_raise_or_crash`
+dokumentiert das). Eine saubere Loesung braeuchte eine Reentranz-Sperre
+oder `blockSignals()` um `_write_contour_row()` - nicht Teil dieses
+Pakets, als offener Punkt in TODO.md vermerkt.
+
+`ui_preview.py` und `ui_contour.py`/`lathe_easystep_handler.py` enthalten
+keine Generator-/Konturgeometrielogik - `regenerate_all_ngc.py`/`rs274`
+deshalb in diesem Durchgang nicht erneut ausgefuehrt (letzter Stand aus
+dem vorherigen `contour_logic.py`-Fix: Null-Diff, weiterhin gueltig).
+
+Testzahlen: 968 Stub-Qt-Tests (vorher 966, +2), 129 Real-Qt-Tests (vorher
+123, +6), `run_tests.py` vollstaendig gruen.
+
+Damit ist der Kontur-State-/Preview-Block aus LES-052 Abschnitt 3
+vollstaendig abgeschlossen; verbleibend offen sind ausschliesslich die
+projektweite `except Exception`-Bereinigung, die Fehlerklassen-Taxonomie
+und der neu gefundene, bewusst nicht behobene Reentranz-Punkt.
+
+### Fix (LES-052 Abschnitt 3): Kontur-Segment loeschen konnte Tabelle/Modell auseinanderlaufen lassen; fehlende Dirty-Markierung fuer add/delete/move/Start-X/Z 2026-09-20
+
+Der im vorherigen Audit nur vermutete Kontur-Tabellen-Fall wurde untersucht,
+mit einer echten PyQt5-Kette (`QTableWidget -> handle_contour_delete_
+segment() -> _update_selected_operation() -> sync_form_to_operation() ->
+model.update_geometry()`) reproduziert, bestaetigt und behoben.
+
+**Ursache:** `contour_logic.build_contour_variants()` verletzte bei
+`len(pts) < 2` (0 Segmentzeilen) seinen eigenen Rueckgabetyp - eine blanke
+Liste `[]` statt des sonst ueblichen Dicts mit `finish_primitives`/
+`feature_primitives`/... . `build_contour_path()`s `variants["finish_
+primitives"]` warf dadurch einen unbehandelten `TypeError` statt einer
+fachlichen Fehlermeldung, sobald die letzte verbleibende Segmentzeile
+eines bereits bestehenden, in der Step-Liste ausgewaehlten Kontur-Steps
+geloescht wurde. `sync_form_to_operation()` rollte `op.params` zwar
+bereits korrekt auf den alten, gueltigen Stand zurueck - die sichtbare
+TABELLE blieb aber auf dem abgelehnten (leeren) Zustand stehen. Modell
+und Tabelle zeigten danach unterschiedliche Konturen, ohne jede
+Fehlermeldung und ohne Dirty-Markierung.
+
+**Fix in `contour_logic.py`:** `build_contour_variants()` wirft fuer
+`len(pts) < 2` jetzt einen `ValueError` ("Kontur: mindestens ein Segment
+erforderlich, um eine Geometrie zu erzeugen."), konsistent mit der bereits
+etablierten Bedeutung aus `validate_contour_segments_for_profile()`
+("zu wenige Segmente = ungueltig", nicht "leer ist ein legitimer
+Zustand") - keine neue Bedeutung erfunden, nur der Rueckgabetyp-Bruch
+behoben.
+
+**Fix in `ui_contour.py`/`lathe_easystep_handler.py`:**
+
+- `handle_contour_delete_segment()` faengt einen Fehlschlag jetzt ab und
+  stellt die Tabelle ueber die bereits vorhandene Formular-Ladefunktion
+  (`_load_params_to_form()`, dispatcht fuer CONTOUR an `_load_contour_
+  operation_to_form()`) aus dem unveraenderten `op.params` wieder her -
+  keine zweite Wiederherstellungslogik gebaut. Kein Dirty bei Ablehnung,
+  bestehender Dirty-Zustand bleibt unangetastet.
+- `handle_contour_add_segment()`/`handle_contour_move_up()`/`handle_
+  contour_move_down()` markieren einen bestehenden, ausgewaehlten
+  Kontur-Step nach Erfolg jetzt dirty (vorher: nie) - bewusst ohne
+  zusaetzliche Fehlerbehandlung fuer nur theoretische Exception-Risiken
+  (LES-052 Abschnitt 3-Vorgabe).
+- Mitgefundener, im selben Paket behobener Fehler: `contour_start_x`/
+  `contour_start_z` sind fachliche Kontur-Parameter (Teil von `_collect_
+  params(OpType.CONTOUR)`), waren aber nur an die Live-Vorschau
+  angebunden - eine Aenderung erreichte nie zuverlaessig Modell oder
+  Dirty-State eines bestehenden Steps (auch der Katch-up-Sync beim
+  Stepwechsel markiert nicht dirty). Neue `handle_contour_start_change()`
+  synchronisiert wie jede andere Kontur-Aenderung.
+
+**Bewusst nicht angefasst** (ausserhalb des bestaetigten Funds):
+`handle_contour_table_change()`/`handle_contour_edge_change()` (direkte
+Zellen-/Combo-Aenderungen) und `contour_name` zeigen dasselbe
+Anbindungsmuster, waren aber nicht Teil dieses Funds. Zusaetzlich
+entdeckt, ebenfalls nicht behoben: `ui_preview.py:243`
+(`collect_preview_state()`) ruft `build_contour_path()` mit denselben
+(jetzt `ValueError` statt `TypeError`) fuer eine noch leere, gerade erst
+begonnene NEUE Kontur auf der Kontur-Tab-Live-Vorschau auf - ein
+vorbestehender, separater Fehler (betrifft eine noch nicht hinzugefuegte
+Kontur, nicht einen bestehenden Step), nicht Teil dieses Auftrags.
+
+**Tests (zuerst rot, dann gruen):** `tests/test_contour_segment_change_
+dirty_and_rollback.py` (neu, Real-Qt, 8 Faelle: Loeschen der letzten Zeile
+wirft nicht mehr, stellt Tabelle wieder her, aendert bestehenden
+Dirty-Zustand nicht; add/delete/move/Start-X/Z markieren bei Erfolg
+korrekt dirty). `tests/test_contour_table_interaction.py`s bestehende
+Tests brauchten dafuer `handler.list_ops = None` in der Testdoppel (die
+neue Dirty-Markierung fragt `_selected_operation_index()` ab) - reine
+Fixture-Anpassung an den erweiterten Aufruf, keine Verhaltensaenderung.
+
+**G-Code-Referenzen:** `contour_logic.py` geaendert, deshalb geprueft:
+`regenerate_all_ngc.py` liefert einen Null-Diff auf `ngc/`, alle zwoelf
+Referenzen und 43 Matrixfaelle bestehen weiterhin `rs274`.
+
+Testzahlen: 966 Stub-Qt-Tests (unveraendert), 123 Real-Qt-Tests (vorher
+115, acht neu), `run_tests.py` vollstaendig gruen.
+
+### Fix (LES-052 Abschnitt 3, drei Befunde): nicht-atomares "Programm laden", faelschlich dirty nach abgelehnter Aenderung, fehlende Dirty-/Validierungsluecke beim Programmkopf 2026-09-20
+
+Systematischer Audit gegen den Ablauf Eingabe -> Normalisierung ->
+Validierung -> Modelluebernahme -> Dirty-State -> Preview/Warnungen (Save/
+Load, Step hinzufuegen/laden/loeschen/verschieben, Parameter-/Header-
+Aenderungen, Werkzeugauswahl/-tabelle) fand und behob drei echte Fehler,
+jeweils zuerst mit einem rot nachgewiesenen Regressionstest, dann mit der
+kleinstmoeglichen Korrektur:
+
+**Fund 1 (kritisch, echter Datenverlust): `handle_load_program()` nicht
+atomar.** `handler.model.operations` wurde bereits geleert, WAEHREND die
+einzelnen Operationen der zu ladenden Datei noch geparst wurden. Ein
+Fehler in einer SPAETEREN Operation (`_step_data_to_operation()` wirft
+z. B. bei einem strukturell ungueltigen `path`-Eintrag - eine Pruefung,
+die die vorgelagerte Zahlen-Endlichkeitspruefung in
+`parse_program_payload()` nicht abdeckt) ersetzte das noch offene, ggf.
+ungespeicherte Programm durch einen kaputten Teilimport, ohne jede
+Moeglichkeit zur Wiederherstellung. Fix: das neue Programm wird jetzt
+vollstaendig in einer lokalen Liste aufgebaut und validiert
+(`_step_data_to_operation()` fuer alle Operationen), bevor
+`handler.model.operations` ueberhaupt angefasst wird; `clear()` und
+`extend()` erfolgen erst danach, direkt hintereinander. Bei einem Fehler
+bleiben Modell, `_current_program_path`/`_current_gcode_path` und
+Dirty-Zustand des offenen Programms vollstaendig unveraendert, der
+bestehende Fehlerdialog bleibt unveraendert. Tests (zuerst rot):
+`test_load_program_failure_in_later_operation_leaves_clean_program_untouched`,
+`test_load_program_failure_in_later_operation_leaves_dirty_program_untouched`
+(`tests/test_dirty_state_load_save_contract.py`).
+
+**Fund 2: `handle_param_change()` markierte nach einer abgelehnten
+Aenderung trotzdem dirty.** `_update_selected_operation()` rollt eine
+ungueltige Eingabe ueber `sync_form_to_operation()` bereits korrekt
+zurueck (`op.params` bleibt/wird wieder gueltig), wirft dabei aber weiter.
+Diese Exception wurde bisher lautlos verschluckt (`except Exception:
+pass`) und direkt danach unbedingt dirty markiert, obwohl inhaltlich
+nichts uebernommen wurde. Das editierte Widget blieb ausserdem auf dem
+abgelehnten Wert stehen, im Widerspruch zum (zurueckgerollten) Modell.
+Fix: bei einem Fehlschlag wird das Formular jetzt ueber die bereits
+vorhandene `_load_params_to_form()` mit dem gueltigen Modellzustand
+resynchronisiert, kein dirty gesetzt und die Funktion beendet, bevor die
+Dirty-Markierung erreicht wird - ein bestehender Dirty-Zustand bleibt
+dabei unangetastet. Tests (zuerst rot):
+`test_handle_param_change_does_not_mark_dirty_and_resyncs_widget_when_update_is_rejected`,
+`test_handle_param_change_does_not_mark_program_dirty_when_header_update_is_rejected`
+(`tests/test_dirty_and_messages.py`).
+
+**Fund 3/3b: Programmkopf-Zweig von `handle_add_operation()` ohne
+Dirty-Markierung, Ersetzen-Fall zusaetzlich ohne Validierung.** Beide
+Unterfaelle (neuen Kopf einfuegen - der einzige Weg, wie ein neues
+Programm ueberhaupt seinen ersten Kopf bekommt - und einen bestehenden
+Kopf ersetzen) aenderten das Modell, ohne jemals `_mark_dirty()`/
+`_mark_program_structure_dirty()` aufzurufen. Der Ersetzen-Fall rief
+zusaetzlich, anders als der Einfuegen-Fall (`update_geometry()` vor dem
+Insert), ueberhaupt keine Validierung auf. Fix: neuer Kopf ->
+`_mark_program_structure_dirty()` nach dem Insert; Kopf ersetzen -> erst
+auf einem noch nicht uebernommenen Kandidaten `update_geometry()`
+validieren (wie beim Einfuegen), erst danach `existing.params`
+uebernehmen und `_mark_dirty(program=True)` setzen - bei ungueltigen
+Werten bleibt der bestehende Kopf unveraendert und wird nicht dirty
+markiert. Tests (zuerst rot, neue Datei):
+`tests/test_program_header_add_operation.py` (vier Faelle: einfuegen,
+ersetzen, beide jeweils erfolgreich und mit ungueltigen Werten
+abgelehnt).
+
+Nicht bearbeitet (wie angewiesen): der bisher nur vermutete, nicht
+verifizierte Kontur-Tabellen-Fall (`ui_contour.py`, siehe TODO.md LES-052
+Abschnitt 3), projektweite `except Exception`-Bereinigung,
+Fehlerklassen-Taxonomie, LES-051-Handler-Architektur, Autosave/Undo.
+
+Testzahlen nach diesen drei Fixes: 966 Stub-Qt-Tests (vorher 958, acht
+neue Regressionstests), 115 Real-Qt-Tests unveraendert, `run_tests.py`
+vollstaendig gruen. Alle drei Aenderungen betreffen ausschliesslich
+Zustands-/Dirty-Flusssteuerung (`lathe_easystep/ui_persistence.py`,
+`lathe_easystep/ui_flow.py`), keine Generator-/Fahrweg-Logik - keine
+Referenz-NGC/`rs274`-Verifikation erforderlich (siehe CLAUDE.md).
+
+### Fix (LES-052, sicherheitsrelevant): "Step laden" loeschte faelschlich den gesamten Dirty-State 2026-09-20
+
+Ursache: `handle_load_step()` (`lathe_easystep/ui_persistence.py`) rief nach
+erfolgreichem Einfuegen eines geladenen Steps in ein bereits offenes
+Programm `handler._clear_dirty_state()` auf - das loescht IMMER den
+kompletten Dirty-Zustand (alle Step-Indizes + alle Programm-Flags), nicht
+nur den des gerade eingefuegten Steps. Das Laden eines Steps in ein
+offenes Programm ist aber eine Strukturaenderung DIESES Programms, keine
+Ersetzung wie "Programm laden" (`handle_load_program()`, dort ist der
+volle Clear korrekt, weil das gesamte Modell ausgetauscht wird). Reale
+Konsequenz: jede VORHER bestehende, tatsaechlich noch ungespeicherte
+Aenderung (Programmkopf oder ein anderer Step) wurde durch ein simples
+"Step laden" unbemerkt als "gespeichert" angezeigt, obwohl sie es nicht
+war - Datenverlustrisiko, falls der Nutzer sich danach auf die
+Dirty-Anzeige verlassen und das Panel geschlossen haette.
+
+Fix: derselbe Aufruf markiert jetzt `handler._mark_program_structure_
+dirty()` statt zu leeren - analog zur bereits korrekten Aktion "Operation
+hinzufuegen" (`handle_add_operation()`). `_insert_loaded_operation()`
+selbst war bereits korrekt (markiert den neu geladenen Step zu Recht als
+sauber relativ zu SEINER EIGENEN Datei, `_clear_dirty_operation()`) und
+blieb unveraendert - der Fehler lag ausschliesslich in der zusaetzlichen,
+zu weit gefassten Klammer in `handle_load_step()`.
+
+Regressionstests (zuerst rot geschrieben, dann durch den Fix gruen):
+`test_load_step_into_dirty_program_preserves_preexisting_dirty_state`,
+`test_load_step_into_clean_program_marks_program_dirty`
+(`tests/test_dirty_state_load_save_contract.py`). Volle Suite:
+958 Stub-Qt-Tests (vorher 956), 115 Real-Qt-Tests, `run_tests.py`
+vollstaendig gruen. Keine G-Code-/Fahrweg-relevante Aenderung, daher keine
+erneute Referenz-/`rs274`-Verifikation noetig (siehe CLAUDE.md).
+
+### LES-052 Abnahme: dedizierter Dirty-State-Test nach Laden/Speichern + echter Fund bei "Step laden" 2026-09-20
+
+Bestehende Dirty-State- und Save/Load-Tests geprueft (`test_dirty_state.py`
+reine `DirtyState`-Arithmetik, `test_step_path_persistence.py` Step-
+Save/Load-Mechanik, `test_dirty_and_messages.py`) - keiner davon rief
+`handle_load_program()`/`handle_save_program()` end-zu-ende mit einem
+echten `handler._dirty` auf und pruefte danach `has_unsaved_changes()`.
+Diese Luecke wird mit `tests/test_dirty_state_load_save_contract.py`
+geschlossen (4 neue Tests, keine Duplikate):
+
+- "Programm laden" (Erfolg) leert Programm- UND Step-Dirty vollstaendig -
+  korrekt, weil das gesamte Modell ersetzt wird (bereits als Verhalten
+  dokumentiert, jetzt erstmals mit einer eigenen Assertion abgesichert).
+- "Programm laden" mit ungueltigem Programm (fehlende Version) laesst
+  einen vorher bestehenden Dirty-Zustand unveraendert - kein falsches
+  "sauber" nach einem fehlgeschlagenen Laden.
+- "Programm speichern" (Erfolg) macht `has_unsaved_changes()` sauber.
+- "Programm speichern" mit einer Exception beim eigentlichen Schreiben
+  laesst den Dirty-Zustand unveraendert - kein falsches "sauber" nach
+  einem fehlgeschlagenen Speichern.
+
+**Beim Audit echter Fehler gefunden** (in dieser Sitzung zunaechst nur
+berichtet, bewusst NICHT durch eine angepasste Testerwartung kaschiert;
+noch am selben Tag behoben - siehe den Eintrag direkt oberhalb dieses
+hier): "Step laden" (`handle_load_step()`/`_insert_loaded_operation()`,
+`lathe_easystep/ui_persistence.py`) rief nach dem Einfuegen des geladenen
+Steps in ein bereits offenes Programm `handler._clear_dirty_state()` auf
+und machte damit faelschlich den KOMPLETTEN Dirty-Zustand sauber - sowohl
+fuer den neu eingefuegten Step selbst (der noch ins Programm gespeichert
+werden musste) als auch fuer jeden VORHER bestehenden, tatsaechlich noch
+ungespeicherten Dirty-Zustand, der mit dieser Aktion nichts zu tun hatte.
+Die strukturell identische Aktion "Operation hinzufuegen"
+(`handle_add_operation()`) markierte bereits korrekt nur die neue
+Strukturaenderung (`_mark_program_structure_dirty()`), ohne bestehenden
+Dirty-Zustand zu loeschen.
+
+Testzahlen nach dieser Ergaenzung (vor dem Fix): 956 Stub-Qt-Tests (vorher
+952), 115 Real-Qt-Tests unveraendert, `run_tests.py` vollstaendig gruen.
+Keine G-Code-/Fahrweg-relevante Aenderung, daher keine erneute
+Referenz-/`rs274`-Verifikation noetig (siehe CLAUDE.md).
+
+### LES-051/LES-052-Audit: TODO.md auf den tatsaechlich noch offenen Bestand bereinigt 2026-09-20
+
+Reine Bestandsaufnahme gegen `dev` (Code + Tests + `doc/PANEL_ARCHITECTURE.md`),
+kein Produktivcode veraendert. `TODO.md` entsprechend bereinigt:
+
+- **Standalone-/Embedded-Ladevertrag** (LES-051): bereits vollstaendig
+  untersucht/abgesichert unter LES-052 Abschnitt 1 - nicht erneut als
+  allgemeiner Punkt gefuehrt. Als einziger tatsaechlicher Rest bleibt die
+  bisher nicht untersuchte Fehlerbehandlung bei einem dauerhaft (nicht nur
+  verzoegert) fehlenden Fragment/Widget.
+- **Handler-Kleber-Reduzierung**: LES-051- und LES-052-Abschnitt-1-Punkt
+  waren derselbe Punkt in zwei Formulierungen - zu einem zusammengefuehrt,
+  mit sieben konkret benannten Restkandidaten
+  (`_select_operation_for_current_tab()` u. a., alle
+  `lathe_easystep_handler.py`).
+- **Darstellungs-/Ressourcenadapter** (LES-052 Abschnitt 2): keine offenen
+  Punkte mehr; die Theme-Auswahl-Produktentscheidung fuer
+  `ToolVisualProvider` war doppelt (einmal in LES-051, einmal in LES-052
+  Abschnitt 2) - jetzt nur noch einmalig gefuehrt.
+- **Werkzeugtabelle als eigene Domaene / Trennung Werkzeugdaten-Geometrie-
+  Darstellung** (LES-052 Abschnitt 5): beide bereits erfuellt, nicht mehr
+  offen.
+- **Pruefung gespeicherter Werkzeugmerkmale** (LES-052 Abschnitt 5): exaktes
+  Duplikat von LES-032 Abschnitt 2, dort bereits umgesetzt - hier entfernt.
+- **Abnahmekriterium "identischer G-Code bei unterschiedlichen
+  Ressourcensaetzen"** und **"fehlende Ressource -> Diagnose ohne
+  G-Code-/Datenaenderung"**: beide bereits durch bestehende Tests belegt
+  (`test_switching_tool_visual_resource_never_affects_generated_gcode`,
+  `test_missing_resource_has_visible_diagnostic_and_safe_fallback`,
+  `test_changing_visual_set_cannot_mutate_tool_data`) - Checkboxen waren
+  trotzdem noch offen, jetzt korrigiert.
+- **Save/Load-/Undo/Redo-/Autosave-Abnahmepunkt**: aufgeteilt. Der
+  Save/Load-Anteil ist durch LES-053/LES-054 abgedeckt. Offen bleiben nur
+  noch ein kleiner dedizierter Dirty-State-Nachweis nach Laden/Speichern
+  sowie, getrennt gefuehrt, die von Undo/Redo bzw. Autosave abhaengigen
+  Roundtrip-Kriterien.
+- **Globale Abschlussregeln**: die am Ende von "Abnahme fuer LES-052"
+  zusaetzlich gefuehrte Regel zu Referenzen/NGC/`rs274`/SIM duplizierte die
+  bereits bestehenden globalen "Abschlussregeln fuer Aenderungen" - entfernt.
+- **Undo/Redo und Autosave** (LES-052 Abschnitt 4): NICHT implementiert
+  oder umpriorisiert, nur der Auditbefund zur Notwendigkeit fuer 0.9.0
+  dokumentiert - Autosave hat eine plausible, konkrete Sicherheits-
+  begruendung (kein periodisches Sichern, Datenverlust bei Absturz/
+  Stromausfall), Undo/Redo ist dafuer schwaecher begruendet (bestehender
+  Speicher-Zwang wirkt bereits als impliziter Schutz) und ein Kandidat fuer
+  eine Verschiebung auf 1.0.0 - Entscheidung bewusst offengelassen.
+- Tatsaechlich unveraendert offen bleiben: Abschnitt 3 (atomare
+  Zustandsaenderungen/Fehlergrenzen, vier Punkte, teils sicherheitsrelevant),
+  der technische Pruefbericht pro Programm (neues Feature), die sieben
+  Handler-Kleber-Kandidaten, die Fragment-/Widget-Fehlerbehandlung sowie
+  die optionalen Preview-Bedienelemente als Datenvertrag (letztere
+  ausdruecklich als reine Architekturidee ohne bekannten funktionalen
+  Fehler gekennzeichnet).
+
+### LES-054 umgesetzt: deterministische Programmerzeugung als expliziter, getesteter Vertrag 2026-09-20
+
+Bestandsaufnahme vor der Umsetzung (um bestehende Determinismus-Tests
+nicht zu duplizieren) ergab bereits vorhandene Nachweise fuer zwei der
+sechs geforderten Faelle: Vorschau-Widget-Zustand
+(`test_regression_contracts.py::test_gcode_unaffected_by_preview_widget_rendering_cache`)
+und Theme-/Ressourcenwechsel ueber alle Beispielprogramme
+(`test_tool_preview_layout.py::test_switching_tool_visual_resource_never_affects_generated_gcode`);
+zusaetzlich bestaetigt der bestehende
+`test_generation_boundaries.py::test_generation_is_repeatable_and_leaves_input_unchanged`,
+dass der Generator selbst bei gleichen Objekten wiederholbar ist und seine
+Eingabe nicht mutiert. Diese Nachweise wurden nicht erneut geschrieben.
+
+Neu `tests/test_deterministic_generation.py` (4 Tests) fuer die vier
+tatsaechlich fehlenden Faelle, mit dem expliziten Vertrag als
+Moduldocstring statt als separates, driftgefaehrdetes Prosadokument:
+
+- **Speichern -\> Laden -\> Erzeugen auf G-Code-Ebene** - der bestehende
+  `test_example_programs_roundtrip_through_program_payload` prueft nur
+  Datenaequivalenz (`op_type`/`params`/`path`), nicht den tatsaechlich
+  erzeugten G-Code. Ergaenzt fuer alle Beispielprogramme.
+- **Format-v1-Migration vs. nativer v2-Zustand** - eine aus Format v1
+  migrierte Operation (ohne Werkzeug-Snapshot, LES-032/LES-053) erzeugt
+  denselben G-Code wie dieselben Daten nativ als v2 gespeichert (MIT
+  Snapshot), solange die aktuell geladene Tooltable damit uebereinstimmt.
+- **Sprachwechsel aendert nachweislich nur Kommentartext** - bisherige
+  Sprachtests belegten nur, dass sich Kommentare unterscheiden, nicht dass
+  NUR sie sich unterscheiden. Neuer Vergleich entfernt Klammerkommentare
+  (`(...)` -\> Platzhalter, Anzahl/Position bleibt vergleichbar) und haelt
+  den Rest fuer Deutsch/Englisch/Spanisch identisch, mit Gegenprobe, dass
+  der Rohvergleich tatsaechlich unterschiedlich waere.
+- **Embedded vs. Standalone** - `build_gcode_lines()` (`ui_flow.py`) liest
+  nachweislich nirgends `handler.root_widget` (der einzige strukturelle
+  Unterschied zwischen beiden Betriebsarten); zwei Handler-Instanzen mit
+  identischem Modell/Header, die sich nur in `root_widget` unterscheiden,
+  erzeugen identischen G-Code.
+
+Untersucht und als unproblematisch bestaetigt (kein Fund, keine
+Codeaenderung): `id()`-basierte interne Korrelation in `gcode_program.py`
+(automatische DIN-Freistich-Zuordnung ueber `id(thread_op)`/`id(feature)`)
+dient ausschliesslich Mitgliedschafts-/Lookup-Pruefungen innerhalb eines
+einzelnen Generatorlaufs, nie einer die Ausgabe beeinflussenden
+Iterationsreihenfolge - `automatic_reliefs` bleibt eine Liste in
+`operations`-Reihenfolge, Subroutinen-Referenzen werden explizit sortiert.
+Ebenfalls untersucht: keine Zeitstempel im gesamten Generator-/
+Persistenzpfad; Dateipfade (`meta`) erreichen `generate_program_gcode()`
+nie - beide fuer den G-Code-Vergleich nachweislich irrelevant.
+
+**Ergebnis: keine Abweichung gefunden.** Alle vier neuen Tests bestanden
+bereits beim ersten Lauf - kein Architekturumbau vorgenommen, da kein
+konkreter Determinismus-Fehler bestand. Volle Stub- (952, vorher 948) und
+Real-Qt-Suite (115) bestanden. `regenerate_all_ngc.py` liefert einen
+leeren Diff, alle zwoelf Referenzen bestehen weiterhin `rs274` - reine
+Testergaenzung, kein Produktivcode veraendert.
+
+### LES-032 Abschnitt 1 (Werkzeughuelle/Bohrstangengeometrie) dauerhaft geschlossen: mit der offiziellen LinuxCNC-tool.tbl nicht loesbar 2026-09-20
+
+Gezielter Audit von D, I, J und Q (den einzigen offiziellen LinuxCNC-
+Drehwerkzeugfeldern) gegen die offizielle LinuxCNC-Dokumentation
+(`tool-compensation.html`, `lathe-user.html`) und die real genutzte
+`Drehbank/tool.tbl`:
+
+- D ist der Kompensationsradius (bereits fuer die Schneidennase vergeben);
+  I ("front angle")/J ("back angle") sind laut offizieller Doku reine
+  Winkelangaben zur Schneidkantenform ohne Laengeninformation und laut
+  Dokumentation nicht einmal Eingabe der eigenen Kompensations-/Gouge-
+  Pruefung des LinuxCNC-Interpreters; Q ist ein diskreter
+  Orientierungscode. Keines der vier Felder enthaelt eine Information
+  ueber Schaftdurchmesser, Schaftlaenge oder Halterausladung. Die
+  uebrigen Tabellenfelder (X/Y/Z/A/B/C/U/V/W) sind Werkzeug-/TCP-Offsets.
+- In der real genutzten `Drehbank/tool.tbl` sind I und J zusaetzlich bei
+  allen Eintraegen durchgehend 0.
+- `lathe_easystep/tools.py:229` bestaetigt: I/J landen in
+  `Tool.unknown_fields` und werden von keiner Fachfunktion gelesen - das
+  ist korrekt und bleibt unveraendert, solange diese Felder fuer keine
+  Fachfunktion benoetigt werden. Keine Codeaenderung.
+- Da LatheEasyStep ausschliesslich die offizielle `tool.tbl` als
+  Werkzeugdatenquelle verwendet und keine proprietaeren Zusatzdateien,
+  Kommentarkonventionen oder erfundenen Defaultwerte einfuehrt, ist eine
+  belastbare Werkzeughuellen-/Bohrstangen-Kollisionspruefung mit der
+  verfuegbaren Datenquelle nicht moeglich - eine strukturelle Grenze des
+  offiziellen Tabellenformats, kein Zwischenstand.
+- `TODO.md` LES-032 Abschnitt 1 entsprechend von "offen, Datenquelle noch
+  zu klaeren" auf "dauerhaft abgeschlossen, nicht loesbar" umgestellt und
+  aus der Prioritaetstabelle entfernt (LES-032 hat damit keinen offenen
+  Punkt mehr - Abschnitt 2, die Erkennung geaenderter Werkzeugmerkmale,
+  war bereits zusammen mit LES-053/Format v2 umgesetzt und ist davon
+  unabhaengig).
+- Unveraendert: die punktfoermige Rueckzugs-/Sperrzonenpruefung
+  (`validate_chuck_segment()`, `gcode_safety.py`) und die geometrische
+  Einstichpruefung mit `Tool.insert_width_mm`
+  (`_check_groove_reaches_chuck_no_go_zone()`, `checks.py`) bleiben
+  bestehen. Reine Dokumentationskorrektur, kein Code veraendert.
+
+### LES-053 umgesetzt: Programm-/Step-Dateiformat-Versionierung + LES-032-Werkzeug-Snapshot als erster v1->v2-Anwendungsfall 2026-09-18
+
+Umsetzung des zuvor erarbeiteten LES-053-Audits/Entwurfs, minimal und ohne
+neues Serialisierungsframework (bestehende Struktur `storage.py`/
+`persistence.py`/`ui_persistence.py` weiterverwendet).
+
+**Format/Migration (`storage.py`):**
+- `CURRENT_FORMAT_VERSION = 2` als einzige Quelle der aktuellen
+  Formatversion. Der JSON-Schluessel heisst weiterhin `"version"` (keine
+  Umbenennung - bestehende `.lse`-Dateien bleiben unveraendert lesbar).
+- `_migrate_v1_to_v2()`, `_MIGRATIONS` (Dict Versionsnummer -\> Migrations-
+  funktion) und `_migrate_to_current()` als einziger Einstiegspunkt fuer
+  Versionspruefung/-migration - keine Formaterkennung anhand vorhandener
+  Felder an anderer Stelle. Jeder Migrationsschritt arbeitet auf
+  `deepcopy()`, die uebergebenen Quelldaten werden nie veraendert
+  (testverifiziert).
+- `parse_program_payload()` lehnt eine fehlende Version weiterhin ab
+  (gueltige `.lse`-Programme hatten schon vor v2 immer eine) sowie eine
+  unbekannte neuere Version (`version > CURRENT_FORMAT_VERSION`) und einen
+  ungueltigen Versionstyp, jeweils mit eigener, verstaendlicher statt der
+  vorherigen generischen Fehlermeldung.
+- Neu: `parse_step_payload()` - Step-Dateien (`.step.json`) hatten bisher
+  ueberhaupt kein Versionsfeld und keine Pruefung (Audit-Fund). Eine
+  fehlende Version wird dort - ausdruecklich und ausschliesslich fuer
+  Step-Dateien - als historisches Step-v1 behandelt, weil das das einzige
+  je geschriebene Step-Dateiformat ist; keine Formaterkennung anhand
+  mehrerer moeglicher Formen.
+
+**Step-Dateien (`ui_persistence.py`):**
+- `write_step_file()` und der Step-Resave-Zweig in `handle_save_changes()`
+  schreiben jetzt `version: CURRENT_FORMAT_VERSION`.
+- `handle_load_step()` nutzt `parse_step_payload()` als zentralen Ladeweg.
+- Audit-Fund behoben: `_step_data_to_operation()` lief bisher OHNE eigenes
+  `except` in `handle_load_step()` - eine ungueltige (z. B. nicht-finite
+  Zahlen, zu neue Version) Step-Datei erzeugte dadurch eine unbehandelte
+  Exception statt eines Dialogs. Jetzt in denselben `except ValueError`
+  wie `parse_step_payload()` eingefasst, meldet ueber den vorhandenen
+  UI-Fehlerpfad (`QMessageBox.warning`) wie beim Programm-Ladeweg.
+
+**LES-032-Werkzeug-Snapshot (erster realer v1-\>v2-Anwendungsfall):**
+- Neu `tools.py::build_tool_snapshot(tool_value, tools)`: minimaler,
+  ABGELEITETER Schnappschuss (nur `radius_mm`, `orientation`,
+  `insert_width_mm` - keine vollstaendige Tooltable-Zeile, keine erfundenen
+  Werte). `None`, wenn keine Werkzeugnummer gesetzt ist oder das Werkzeug
+  in der aktuell geladenen Tabelle nicht gefunden wird.
+- `persistence.py::operation_to_step_data(op, tools=None)` schreibt den
+  Snapshot beim Speichern in `data["params"]["tool_snapshot"]` (Kopie,
+  nicht das live editierte `op.params`); `tools` optional (Default `None`
+  -\> kein Snapshot), damit bestehende Aufrufer ohne Tooltable-Kontext
+  (Tests, reine Generatorpfade) unveraendert funktionieren. Alle drei
+  Speicherpfade (Gesamtprogramm ueber `build_program_data()`, einzelne
+  Step-Datei, Step-Resave) reichen jetzt die aktuell geladene Tabelle
+  durch (`handler._tool_table.tools`, defensiv per `getattr()` falls auf
+  einem Test-Handler nicht gesetzt).
+- Neu `checks.py::_check_tool_matches_snapshot()`, aus
+  `validate_program_setup()` aufgerufen: vergleicht den Snapshot gegen die
+  aktuell geladene Tabelle, meldet geaenderten Radius, geaenderte
+  Orientierung und geaenderte Einstichbreite je einzeln - **nur als
+  Warnung, nie als Sperre**. Operationen ohne Snapshot (aus Format v1
+  migrierte Altprogramme) werden uebersprungen: `_migrate_v1_to_v2()`
+  erzeugt ausdruecklich KEINEN nachtraeglichen Snapshot aus der aktuellen
+  Tabelle - dafuer gibt es zum Migrationszeitpunkt keinen verlaesslichen
+  historischen Vergleichswert. Fehlt das Werkzeug in der aktuellen Tabelle
+  komplett, meldet weiterhin ausschliesslich `validate_tool_table_
+  completeness()` (LES-028) - keine Dopplung.
+
+**Tests (neu, 28 Tests, alle gruen):**
+- `tests/test_format_versioning.py` (20): aktuelle Version, v1-\>v2-
+  Migration inkl. Nicht-Mutation der Quelldaten, Migrationskette wendet
+  mehrere Schritte sequenziell an (mit temporaerer Fake-Migration
+  monkeygepatcht), fehlende/ungueltige/zu neue Version je fuer Programm-
+  UND Step-Dateien (Programmdateien lehnen fehlende Version ab, Step-
+  Dateien behandeln sie als v1), Save-\>Load-\>Save-Rundlauf fuer v2,
+  Laden einer alten Datei schreibt nichts auf die Platte zurueck, sowie
+  der behobene Step-Fehlerdialog-Fund.
+- `tests/test_tool_snapshot_check.py` (8): Snapshot-Inhalt, unveraendertes
+  Werkzeug (keine Warnung), geaenderter Radius/Orientierung/Einstichbreite
+  (je eine Warnung), keine Warnung ohne Snapshot, keine Dopplung bei
+  fehlendem aktuellem Werkzeug.
+- Drei bestehende Tests in `tests/test_step_path_persistence.py`
+  aktualisiert (erwarteten jetzt `version: 2` im geschriebenen Step-JSON).
+
+**Verifikation:** volle Stub- (948, vorher 920) und Real-Qt-Suite (115)
+bestanden. `regenerate_all_ngc.py` liefert einen leeren Diff, alle zwoelf
+Referenzen bestehen weiterhin `rs274` - diese Aenderung betrifft
+ausschliesslich Persistenz/Pruefung, keine G-Code-Erzeugung.
+
+### LES-032-Audit: TODO.md aufgeteilt, Snapshot-Vorschlag fuer Werkzeugmerkmale erarbeitet 2026-09-18
+
+Vollstaendiger Code-Audit von LES-032 gegen `dev`, noch keine Umsetzung.
+`TODO.md` in zwei klar getrennte Punkte aufgeteilt.
+
+**1. Werkzeughuelle/Bohrstangengeometrie** - bestaetigt weiterhin offen,
+keine Kommentarkonvention/Spalte fuer Schneidenlaenge/Haltergeometrie im
+real genutzten `Drehbank/tool.tbl`. Bestehender Stand korrekt als
+umgesetzt dokumentiert: `validate_chuck_segment()` (`gcode_safety.py`)
+behandelt das Werkzeug fuer alle Operationstypen als Punkt;
+`_check_groove_reaches_chuck_no_go_zone()` (`checks.py`) ist die einzige
+echte, geometriebasierte Kollisionspruefung mit realer Werkzeugbreite
+(`Tool.insert_width_mm`), aber ausschliesslich fuer Einstichwerkzeuge. Die
+innen liegende Rueckzugsebene XRI (`resolve_internal_safe_x()`,
+`gcode_utils.py`) ist reine Anwenderangabe ohne Gegenpruefung gegen die
+tatsaechliche Bohrstangenschaftgeometrie - keine Datenquelle dafuer
+vorhanden. Kein Code geaendert, keine Defaults erfunden.
+
+**2. Aenderung von Werkzeugmerkmalen seit Programmerstellung** - detailliert
+untersucht, konkreter Implementierungsvorschlag erarbeitet, noch nicht
+umgesetzt:
+
+- *Ist-Zustand:* `op.params["tool"]` (nur die Nummer) ist die einzige
+  Werkzeugreferenz, die in `.lse`-/Step-Dateien landet
+  (`persistence.py::operation_to_step_data()`/`step_data_to_operation()`).
+  `collect_program_header()` (`ui_header.py`) enthaelt keinen `tools`-
+  Schluessel - die Tooltable selbst wird nie persistiert.
+  `build_gcode_lines()` (`ui_flow.py:121-130`) setzt
+  `handler.model.program_settings["tools"] = handler._tool_table.tools`
+  bei jedem Erzeugungslauf frisch aus der aktuell geladenen Datei - ein
+  zwischen Programmerstellung und -erzeugung geaenderter/getauschter
+  Tooltable-Eintrag ist damit vollstaendig unsichtbar.
+- *Relevante Operationen:* alle mit `params["tool"] > 0`
+  (FACE/TURN/BORE/DRILL/GROOVE/THREAD/ABSPANEN) - jede referenziert nur
+  die Nummer, nie Geometrie.
+- *Zur Laufzeit relevante, aenderbare Tooltable-Eigenschaften* (aus dem
+  LES-032-Audit vom selben Tag): `radius_mm` (G41.1/G42.1-D-Wert, direkt
+  aus ISO-Kommentar oder D-Spalte-Fallback abgeleitet),
+  `q`/Orientierung (L-Wort der Kompensation UND `Tool.kind`-Klassifikation),
+  `insert_width_mm` (Einstich-Kollisions- und Breitenpruefung, aus dem
+  Kommentar abgeleitet). `d`/`p`/roher Kommentar selbst sind nur
+  Zwischenwerte, nicht direkt vergleichsrelevant.
+- *Vorschlag:* ein minimaler, ABGELEITETER Snapshot dieser drei Werte
+  (nicht die volle Tooltable-Zeile, keine zweite Datenquelle) pro
+  Operation mit Werkzeugbezug, in `op.params` (z. B. `tool_snapshot`)
+  geschrieben beim Speichern aus der dann aktuell geladenen Tabelle -
+  fliesst dadurch ohne zusaetzliche Plumbing automatisch durch den
+  bestehenden Step-/Programm-Speicherpfad (`ui_persistence.py:67,207,
+  317,414`, derselbe Code fuer einzelne Step-Dateien UND das
+  Gesamtprogramm). Verglichen von einer neuen `_check_tool_matches_
+  snapshot()`-artigen Funktion in `checks.py` (exakt demselben Muster wie
+  `_check_tool_kind_matches_operation()`), aufgerufen aus
+  `validate_program_setup()`, Warnung ueber denselben `prog["__warnings"]`/
+  `validation_warnings`-Mechanismus.
+- *Sechs Verhaltensfaelle prognostiziert:*
+  1. unveraendertes Werkzeug (Snapshot == aktuell) → keine Warnung.
+  2. geaenderter Radius → Warnung (aendert direkt den G41.1/G42.1-D-Wert).
+  3. geaendertes Q/Orientierung → Warnung (aendert L-Wort UND
+     Kind-Klassifikation, kann auf ein komplett anderes Werkzeug an
+     derselben Nummer hindeuten).
+  4. geaenderter Einsatzcode/geaenderte Breite → Warnung (betrifft die
+     Einstich-Kollisions-/Breitenpruefung).
+  5. Werkzeug in der aktuellen Tabelle nicht mehr vorhanden → keine neue
+     Pruefung, bereits durch `validate_tool_table_completeness()`
+     (LES-028) separat abgedeckt, keine Dopplung.
+  6. neu hinzugefuegtes Werkzeug unter einer bisher fremden Nummer, die
+     keine Operation referenziert → nicht betroffen, kein Vergleich
+     ausgeloest.
+  Alte `.lse`-Programme ohne `tool_snapshot`-Feld bleiben unveraendert
+  ladbar (Feld fehlt schlicht, keine Pruefung, kein Fehler) - `parse_
+  program_payload()` (`storage.py`) validiert nur `version`, nicht die
+  Feldmenge von `header`/`operations`.
+- *Verhaeltnis zu LES-053:* das Dateiformat hat bereits ein hartes
+  `"version": 1`-Gleichheitsgate (`storage.py::parse_program_payload()`,
+  `persistence.py::build_program_data()`), aber keinerlei
+  Migrationsmechanismus - jede kuenftige Formataenderung braucht ohnehin
+  erst LES-053s vorgesehene `format_version`/Migrationskette. Empfehlung:
+  den Snapshot nicht jetzt als weitere unversionierte Ad-hoc-Erweiterung
+  einfuehren (widerspraeche LES-053s "kein Format-Raten"-Grundsatz),
+  sondern als Teil von LES-053s erster echten `v1 -> v2`-Migration
+  umsetzen.
+- Kein Code geaendert, keine Codeaenderung vorgenommen - reine
+  Untersuchung und Vorschlag.
+
+### LES-044-Audit: TODO.md auf tatsaechlichen Stand gebracht 2026-09-18
+
+- Vollstaendiger Code-Audit von LES-044 gegen `dev`: die bereits erfolgten
+  Extraktionen (`_sample_arc`, `primitives_to_points`, `_interp_x_at_z`/
+  `_interp_x_hits_at_z`, `_path_hits_at_slice`, `_front_operation_side`,
+  `_front_slice_profile`, `_front_reference_diameter`,
+  `_apply_side_navigation`, Kreis-Layout in `_paint_slice_view()`) jetzt
+  in `TODO.md` als umgesetzt dokumentiert statt implizit vorausgesetzt.
+- Die veraltete absolute Angabe "36 von 40 Vorkommen" fuer die
+  `except Exception`-Faelle in `preview_widget.py`/`ui_preview.py`
+  entfernt - aktuelle Zaehlung ergibt 10 verbleibende, bewusst breite
+  Vorkommen (8 in `preview_widget.py`, 2 in `ui_preview.py`), jedes mit
+  `# LES-044:`-Begruendungskommentar. Dieser Teil von LES-044 gilt damit
+  als abgeschlossen.
+- `except Exception` ausserhalb von `preview_widget.py`/`ui_preview.py`
+  (z. B. `ui_header.py` mit 6, `ui_params.py` mit 4 Vorkommen) betrifft
+  keine Preview-Geometrie und wurde aus LES-044 entfernt - der bereits
+  bestehende LES-052-Abschnitt-3-Punkt zum projektweiten
+  Fehlergrenzen-Aufraeumen (~400 Vorkommen in 40+ Dateien) nennt die
+  beiden Dateien jetzt als Beispiele. Keine neue Aufgabe erzeugt.
+- Drei kleine verbleibende Qt-freie Restauslagerungen
+  (`_pixel_to_z()`, Eingabe-Normalisierung in `set_paths()`,
+  Verschieben von `_detect_preview_collision()` nach
+  `preview_geometry.py`) als technische Restbereinigung ohne bekannten
+  funktionalen Fehler dokumentiert, nicht als Blocker fuer 0.9.0.
+- Reine Dokumentationskorrektur, kein Code veraendert.
+
+### LES-022-Audit: TODO.md/DEV.md auf tatsaechlichen Stand gebracht 2026-09-18
+
+- Vollstaendiger Code-Audit von LES-022 gegen `dev` (siehe vorherige
+  Audit-Konversation): `MotionState`/`SpindleState` sind fuer alle
+  tatsaechlich dynamisch umgeschalteten Modalgruppen (G96/G97 vollstaendig
+  zentral, reale Endposition nach Bohren/Gewinde/G70/move-basiertem
+  Schruppen seit "dritter"/"vierter Etappe" 2026-09-10/2026-09-13
+  nachgefuehrt) bereits abgeschlossen - TODO.md hatte das seit der
+  Wiederaufnahme am 2026-09-15 (ohne technische Begruendung) nicht mehr
+  akkurat wiedergegeben und DEV.md beschrieb `MotionState` noch auf dem
+  Stand vor der vierten Etappe (bedingungslose Invalidierung nach jedem
+  Schruppdurchlauf, was seit move-basiertes Schruppen seine Bandend-
+  position selbst eintraegt nicht mehr zutrifft).
+- `TODO.md` LES-022-Abschnitt neu gefasst: G71/G72-Roughing-Zyklus ohne
+  folgendes G70 (`gcode_roughing.py`) und der Nut-Zyklus `o220`
+  (`gcode_groove.py`) sind jetzt explizit als bewusste, abgeschlossene
+  Designentscheidung mit sicher-konservativem Fallback dokumentiert (nicht
+  mehr als offener Punkt/"Zwischenloesung") - `MotionState.at()` liefert
+  bei unbekannter Position immer `False`, jede nachfolgende Anfahrt faehrt
+  deshalb immer die volle sichere Route.
+- Als tatsaechlich noch offene, aber niedrig priorisierte technische
+  Restarbeit (kein nachgewiesener funktionaler Fehler) dokumentiert: vier
+  Zustaende (`_current_tool`, `_active_retract_mode`,
+  `_cycle_defined_subs`, `_last_drill_diameter`/`_last_drill_depth`) leben
+  weiterhin als rohe `settings["_..."]`-Schluessel statt in einem
+  typisierten Objekt.
+- `DEV.md` (Abschnitt zu `lathe_easystep/motion_state.py`) um die dritte
+  und vierte Etappe sowie die bewusste `clear()`-Designentscheidung
+  ergaenzt; die veraltete Formulierung ("wird nach jedem Schruppdurchlauf
+  explizit invalidiert") entfernt.
+- Reine Dokumentationskorrektur, kein Code veraendert.
+
+### Test-Audit umgesetzt: Duplikate entfernt, schwache Assertions geschaerft, Kontur-Tabellen-Luecke geschlossen 2026-09-18
+
+Umsetzung des Test-Redundanz-/Qualitaets-Audits (921 Stub-/110 Real-Qt-Tests,
+vollstaendig gelesen, siehe vorherige Audit-Konversation). Vorher/Nachher:
+`920 passed (Stub-Qt), 115 passed (Real-Qt), 0 skipped` (netto -1 Stub durch
+Duplikat-/Redundanzabbau, +5 Real-Qt durch neue Kontur-Tabellen-Tests, +2
+Stub durch neue Werkzeugtabellen-Reload-Tests). Zwoelf Referenzen weiterhin
+bestanden `rs274` und die statische NGC-Pruefung ohne jede Aenderung am
+erzeugten G-Code (`regenerate_all_ngc.py` liefert einen leeren Diff) - keine
+Generator-/Fahrwegaenderung in dieser Runde, nur Test- und ein Dead-Code-Fund.
+
+- **Echte Duplikate entfernt** (`tests/test_save_load_roundtrip.py`):
+  `test_header_l_n_edges_sw_roundtrip` und `test_header_xt_zt_absolute_roundtrip`
+  gestrichen - beide vollstaendig von `test_header_roundtrip_load_program_header_to_form`
+  abgedeckt (identische Felder/Werte, keine zusaetzliche Assertion). Ebenso
+  `tests/test_contour_arc_gcode.py::test_arc_geometry_from_error_case`
+  gestrichen (identisches Params-Dict wie `test_arc_primitive_outputs_valid_G2_G3`,
+  dessen eigene Endpunkt-Assertion die schwaechere Negativpruefung bereits
+  impliziert).
+- **Wirkungslose Assertions durch den tatsaechlichen fachlichen Vertrag
+  ersetzt statt kosmetisch angepasst:**
+  - `test_contour_arc_gcode.py::test_arc_primitive_outputs_valid_G2_G3`: die
+    tautologische `"I0" not in line or "K0" not in line`-Zeile ersetzt durch
+    `_assert_arc_line_is_geometrically_valid()` (echte Radius-Start/Radius-
+    Ende-Pruefung, wie sie LinuxCNC selbst durchfuehrt) - deckte beim ersten
+    Versuch mit dem *falschen* Referenzpunkt (Konturstart statt Bogenstart)
+    sofort einen eigenen Fehler in der Testkorrektur auf, der Bogen selbst
+    ist nach Korrektur des Referenzpunkts nachweislich gueltig.
+  - `test_operation_action_button_states.py::test_missing_action_buttons_are_supported_during_lazy_ui_loading`:
+    hatte keine einzige Assertion. Ersetzt durch ein gemischtes Szenario
+    (manche Buttons vorhanden, manche `None`) - prueft jetzt, dass
+    vorhandene Buttons trotzdem korrekt aktualisiert werden, statt nur "kein
+    Crash".
+  - `test_regression_contracts.py::test_string_valued_combo_params_do_not_crash_generation`:
+    `or thread_gcode` (macht die Assertion bei jedem nichtleeren String
+    automatisch wahr) entfernt - prueft jetzt tatsaechlich, dass G76/G33
+    erzeugt wurde.
+  - `test_slicer_extra.py::test_parallel_x_internal_produces_passes` +
+    `test_parallel_z_basic_behavior`: reine Substring-Pruefungen
+    (`"X-band"/"Z-band" in line`) durch konkrete Band-/Schnittgeometrie
+    ersetzt (exakte Pass-Grenzen und G1-Koordinaten) - `parallel_x_internal`
+    ist der einzige Test im Modul mit `external=False`, also nicht durch
+    einen Nachbartest ersetzbar, sondern gezielt verstaerkt.
+  - `test_groove_preview_geometry.py::test_zero_width_or_depth_...`: reine
+    Endlichkeitspruefung durch exakten Kollaps-Punkt `(diameter, z)` fuer
+    radialen und axialen Modus ersetzt.
+- **Parametrisiert statt fuenf strukturell identischer Funktionen**
+  (`test_step_double_click.py`): `test_double_click_switches_tab_face/_thread/_drill`,
+  `test_double_click_second_step_of_three` und `test_double_click_program_header`
+  zu einer `pytest.mark.parametrize`-Funktion
+  `test_double_click_switches_to_the_operations_tab` zusammengefasst - alle
+  fuenf op_type->tab_index-Werte (inkl. der Mehrfachlisten-Auswahl fuer
+  GROOVE und dem Sonderfall PROGRAM_HEADER) bleiben einzeln abgedeckt.
+- **Die neun als Teilueberlappung eingestuften Regressionen unveraendert
+  gelassen** (kein neuer Befund, der eine Loeschung rechtfertigt).
+- **Kontur-Tabellen-Luecke geschlossen** (neu: `tests/test_contour_table_interaction.py`,
+  5 Tests, zu `REAL_QT_TESTS` in `tests/conftest.py` hinzugefuegt): testet
+  erstmals den echten Datenweg von einer realen `QTableWidget` durch
+  `collect_contour_segments()` sowie die Add-/Delete-/Move-/Edge-Change-
+  Handler (`ui_contour.py`/`ui_contour_input.py`) - bisher wurde
+  ausschliesslich mit direkt vorgegebenen `Operation.params["segments"]`
+  getestet, nie mit den Tabellen-Widgets selbst (der Stub-Qt-Modus kann das
+  nicht abbilden, da `QTableWidget` dort eine wirkungslose Dummy-Klasse
+  ist). Deckt Zeilen anlegen mit korrekten Defaults, Kantentyp-Aenderung
+  ueber die Vorlage-Combo inkl. Aktivierung der Bogen-Seite-ComboBox,
+  gezieltes Loeschen nur der ausgewaehlten Zeile sowie Verschieben mit
+  Erhalt der Cell-Widgets (Kantentyp geht beim Verschieben nicht verloren)
+  ab.
+- **`handle_load_tool_table()` separat abgesichert** (neu:
+  `tests/test_tool_table_manual_reload.py`, 2 Stub-Qt-Tests): der manuelle
+  "Werkzeugtabelle laden"-Button war bisher ungetestet (nur der
+  automatische Startpfad `auto_load_tool_table` war es). Deckt den
+  Erfolgspfad (echte Datei geparst, `ToolTableState` sowie Pfad-Widgets
+  aktualisiert, Combos/Previews tatsaechlich mit den echten Tools
+  aufgerufen) und den Abbruchpfad (leerer Dialogpfad laesst bestehenden
+  Zustand unveraendert) ab.
+- **Toten Code entfernt:** `lathe_easystep/gcode.py` (`contour_to_gcode()`)
+  - vor der Entfernung erneut repo-weit (Produktivcode, Tests, Doku,
+    dynamische Nutzung, `__init__.py`-Reexport) auf jede Referenz geprueft:
+    keine gefunden. Relikt aus einem fruehen Milestone (eigener Docstring:
+    "Platzhalter"), abgeloest von den echten `gcode_*.py`-Generatoren.
+- Teststandzahlen in `README.md`/`ROADMAP.md`/`TODO.md` entsprechend auf
+  `920 passed (Stub-Qt), 115 passed (Real-Qt)` aktualisiert.
+
+### Commit-Audit: veralteter Zurueckschreiben-Kommentar in tools.py korrigiert 2026-09-18
+
+- Auf Nutzeranfrage die letzten Commits auf Richtigkeit und Obsolenz
+  geprueft (Commit-Nachrichten gegen tatsaechliche Diffs, sowie ob
+  spaetere Commits fruehere inhaltlich ueberholt haben, ohne dass alle
+  betroffenen Stellen nachgezogen wurden).
+- Fund: Der Kommentar zu `Tool.unknown_fields` in `lathe_easystep/tools.py`
+  (eingefuehrt in "LES-052: Abschnitt 5 - unbekannte Tool-Tabellen-Felder
+  werden erhalten") begruendete die Datenerhaltung noch mit einem
+  "spaeteren Zurueckschreiben der Tabelle (separater, noch offener
+  Schritt)". Das war zum Zeitpunkt dieses Commits zutreffend, wurde aber
+  von den beiden direkt folgenden Commits ("Klarstellung: ...dauerhaft nur
+  lesbar" und der Praezisierung auf das Panel-Programm) inhaltlich
+  ueberholt: Zurueckschreiben ist seither eine dauerhaft ausgeschlossene
+  Sicherheitsregel, keine offene Scoping-Frage. `TODO.md` und `CLAUDE.md`
+  wurden damals korrekt nachgezogen, der Code-Kommentar in `tools.py`
+  jedoch nicht - er verwies weiterhin auf die ueberholte Formulierung.
+  Kommentar korrigiert, verweist jetzt auf die dauerhafte Nur-Lesen-Regel
+  in CLAUDE.md statt auf einen vermeintlich noch offenen Schritt.
+- Alle anderen gepruefter Commits (Attribution-Regel, Documentation-only-
+  correction-Policy inkl. ihrer tatsaechlichen Anwendung auf `main`
+  (`e16728a`), Panel-vs-SIM-Praezisierung, LES-052-Abschnitt-2-Bestands-
+  aufnahmen) stimmen inhaltlich mit ihren Commit-Nachrichten und dem
+  jeweils aktuellen Dokumentationsstand ueberein - keine weiteren Funde.
+- Reine Dokumentations-/Kommentarkorrektur, kein Verhalten veraendert.
+
+### Dokumentation: veraltete Teststaende und 0.8.0-Prioritaeten in README/ROADMAP korrigiert 2026-09-18
+
+- `README.md` und `ROADMAP.md` nannten noch `877 passed (Stub-Qt), 108
+  passed (Real-Qt)`; `TODO.md` war mit `921`/`110` bereits aktueller. Beide
+  Zahlen live gegengeprueft (`pytest --qt-mode=stub` bzw. `--qt-mode=real`
+  mit dem System-Python, der PyQt5/qtpy besitzt - die lokale `.venv` nicht,
+  siehe DEV.md): `921 passed` (Stub) und `110 passed` (Real), 0 skipped.
+  Beide Stellen in README.md (DE/EN) und ROADMAP.md auf die verifizierten
+  Zahlen aktualisiert.
+- `tests/conftest.py` gegengeprueft: Stub/Real ist eine harte, dateibasierte
+  Partition (`REAL_QT_TESTS`-Liste in `pytest_ignore_collect`), keine
+  ueberlappende Marker-Sammlung - die 921/110 sind disjunkt, kein
+  Kollektionsfehler.
+- `README.md` (DE/EN) Abschnitt "Aktuelle Prioritaeten"/"Current Priorities"
+  aktualisiert: die bisherige Liste fuehrte noch 0.8.0-Gate-Punkte (sichere
+  Anfahrt, Innen-Schruppen/-Schlichten, lokale DIN-Freistichgeometrie,
+  G96/G97) als aktuelle Reihenfolge, obwohl `ROADMAP.md` das 0.8.0-Gate
+  bereits am 2026-09-16 als freigegeben fuehrt. Ersetzt durch die
+  tatsaechliche `TODO.md`-Prioritaetsliste (Release-Prozess, LES-051,
+  LES-052, LES-022, LES-044, LES-032, LES-043, LES-030).
+- Reine Dokumentationskorrektur, kein Code veraendert. `LES-051`/`LES-052`
+  selbst sind davon unberuehrt - Abschnitte 3 (atomare Fehlergrenzen) und 4
+  (Undo/Redo, Autosave) in `TODO.md` bleiben mit echtem, nicht nur
+  kosmetischem Restumfang offen.
+
+### Klarstellung: LinuxCNC-Konfigurationsdateien sind fuer dieses Panel dauerhaft nur lesbar 2026-09-17
+
+- Der vorige Changelog-Eintrag ("Zurueckschreiben in die `tool.tbl`-Datei
+  ... separater, groesserer Schritt ... verdient eigene Klaerung") hatte
+  das faelschlich als offene Scoping-Frage fuer spaeter dargestellt. Vom
+  Nutzer klargestellt: das Panel darf LinuxCNC-Konfigurationsdateien -
+  dazu zaehlt die Werkzeugtabelle (`tool.tbl` oder wie auch immer vom
+  Anwender benannt) - ausschliesslich LESEN, niemals schreiben.
+  Geschrieben wird ausschliesslich, was zum Programm/G-Code gehoert. Das
+  ist eine feste, dauerhafte Grenze, keine spaeter zu klaerende Frage.
+- `TODO.md` entsprechend korrigiert (Abschnitt 5): das Zurueckschreiben in
+  die Werkzeugtabelle ist jetzt als dauerhaft ausgeschlossen markiert,
+  nicht mehr als offener Punkt. `Tool.unknown_fields` (voriger Commit)
+  bleibt davon unberuehrt - reine Datenerhaltung ohne jeden Schreibpfad,
+  genau wie beabsichtigt.
+- Reine Dokumentationskorrektur, kein Code veraendert.
+
+### LES-052: Abschnitt 5 - unbekannte Tool-Tabellen-Felder werden erhalten 2026-09-17
+
+- Kleinsten offenen Teil von Abschnitt 5 ("Werkzeugtabelle als eigene
+  Domaene kapseln ... unbekannte Felder") umgesetzt, nach Nutzer-
+  Entscheidung bewusst ohne das Zurueckschreiben in die `tool.tbl`-Datei
+  selbst (separater, groesserer Schritt mit Schreibzugriff auf eine
+  externe Maschinenkonfigurationsdatei).
+- `parse_tool_table()` (`tools.py`) las Tool-Tabellen-Token wie X/Y/Z/A/B/
+  C/U/V/W/I/J/R (alles ausser T/P/D/Q, aus dem Standard-LinuxCNC-
+  Tooltable-Layout) bisher in ein lokales `token_map`, verwarf sie danach
+  aber stillschweigend - nie an das `Tool`-Objekt weitergegeben. Neues
+  Feld `Tool.unknown_fields: Dict[str, str]` (mit Default `{}`, daher
+  keine bestehende `Tool(...)`-Konstruktion betroffen) erhaelt diese Werte
+  jetzt. Rein additive Datenerhaltung, noch keine Fachlogik liest das Feld.
+- `parse_tool_table()` hatte bislang ueberhaupt keine eigene Testdatei -
+  nur `Tool`-Konstruktion und darauf aufbauende Pruefungen waren getestet,
+  nie der Parser selbst. Neue Datei `tests/test_tool_table_parsing.py` (4
+  Tests) deckt jetzt auch den Grundfall (bekannte Felder korrekt geparst)
+  ab. Regressionsbewiesen: ein Test schlug vor dem Fix nachweislich fehl.
+- 921 Stub-/110 Real-Qt-Tests bestanden (917 vorher + 4 neue),
+  Standalone-Panel sauber gestartet (echter `tool.tbl`-Ladepfad
+  durchlaufen).
+
+### LES-052: Abschnitt 3 - Rollback-Luecke gefunden und behoben 2026-09-17
+
+- Abschnitt 3 ("Atomare Zustandsaenderungen und Fehlergrenzen") gegen den
+  Code geprueft - anders als Abschnitt 1/2 ist das hier NICHT ueberwiegend
+  bereits erledigt. Details: `doc/PANEL_ARCHITECTURE.md` → "Atomare
+  Zustandsaenderungen und Fehlergrenzen".
+- **Konkreter, sicherheitsrelevanter Fund und behoben:**
+  `sync_form_to_operation()` (`ui_program.py`) ueberschrieb `op.params` mit
+  den neu gesammelten Formularwerten, BEVOR `update_geometry()`
+  validierte. `validate_finite_data()` (`model.py`/`numeric.py`) wirft bei
+  NaN/Inf oder nicht-numerischen Eingaben eine echte, erreichbare
+  Exception - schlug diese Validierung fehl, blieb `op.params` auf dem
+  halb angewendeten, ungueltigen Stand stehen, ohne jede sichtbare
+  Meldung (der einzige Aufrufer `handle_param_change()` schluckt die
+  Exception komplett). Jetzt wird bei einem Fehlschlag von
+  `update_geometry()` auf die vorherigen Parameter zurueckgesetzt, bevor
+  die Exception weitergereicht wird. Regressionsbewiesen: ein neuer Test
+  schlug vor dem Fix nachweislich fehl.
+- Die anderen drei Punkte des Abschnitts (projektweite `except Exception`-
+  Haertung: ~400 Vorkommen in 40+ Dateien, deutlich groesser als der
+  bereits laufende, engere LES-044-Umfang; zentrale Fehlerdiagnose-
+  Sammlung; einheitliche Fehlerklassen `INFO`/`WARNING`/`BLOCKING_ERROR`/
+  `INTERNAL_ERROR`) sind vollstaendig unimplementiert und bewusst NICHT in
+  dieser Session angegangen - eigenstaendige, projektweite
+  Entwurfsentscheidungen, die vor der Umsetzung eigene Klaerung
+  verdienen.
+- 917 Stub-/110 Real-Qt-Tests bestanden, Standalone-Panel sauber
+  gestartet.
+
+### LES-052: Abschnitt 2 vollstaendig - vierter Punkt war ebenfalls schon erledigt 2026-09-17
+
+- Vierten und letzten offenen Punkt aus Abschnitt 2 ("Preview-Canvas,
+  Werkzeugbild, Legende, Status-/Warnungsbox ... ueber stabile
+  Datenvertraege austauschbar machen") gegen den Code geprueft: bereits
+  seit LES-044/LES-051 vollstaendig umgesetzt. `preview_geometry.py`
+  enthaelt fuer jeden dieser Bereiche einen dedizierten, Qt-freien
+  Datenvertrag (`PREVIEW_DRAW_STYLES`, `FRONT_VIEW_RING_STYLES`,
+  `FRONT_VIEW_FILL_COLORS`, `PREVIEW_CHROME_STYLES`, `PREVIEW_CHROME_
+  FILLS`, `LEGEND_ENTRIES`/`legend_layout()`, `STATUS_BOX_STYLE`/
+  `status_message_layout()`), `preview_scene.py` die zugehoerigen
+  Zeichenplaene (`build_preview_draw_plan()` u. a.) - `paintEvent()`
+  (`preview_widget.py`) liest nur noch daraus, konstruiert keine `QPen`/
+  `QColor`-Werte mehr direkt. Jeder Vertrag hat einen eigenen "ist ein
+  reiner Vertrag"-Test in `tests/test_preview_legend_and_status_layout.py`
+  (bereits vorhanden, nicht neu geschrieben).
+- Reine Dokumentationskorrektur, kein Code veraendert - TODO.md Abschnitt 2
+  ist damit komplett geschlossen (alle vier Punkte), `doc/PANEL_
+  ARCHITECTURE.md`s "Werkzeugdarstellung"-Abschnitt entsprechend ergaenzt.
+  916 Stub-/110 Real-Qt-Tests weiterhin bestanden (keine Aenderung).
+
+### LES-052: Korrektur einer Testduplizierung + Section-2-Bestandsaufnahme 2026-09-17
+
+- Beim Umsetzen von TODO.md-Abschnitt 2 ("Darstellungs- und
+  Ressourcenadapter") festgestellt: `ToolVisualProvider`/
+  `ToolVisualRequest`/`ToolVisual` (`tool_visuals.py`) waren bereits aus
+  LES-051 vollstaendig implementiert, getestet und ueber
+  `resolve_tool_visual()`/`handler._tool_visual_provider`
+  (`tool_logic.py`) live verdrahtet - TODO.md war hier veraltet (drei der
+  vier Punkte in Abschnitt 2 waren faktisch schon erledigt), analog zum
+  frueheren `ViewState`-Befund.
+- **Eigener Fehler korrigiert:** der im vorigen Commit hinzugefuegte Test
+  `test_gcode_identical_across_different_tool_visual_resource_sets`
+  (`tests/test_regression_contracts.py`) erwies sich als redundant mit der
+  bereits bestehenden `test_switching_tool_visual_resource_never_affects_
+  generated_gcode` (`tests/test_tool_preview_layout.py`, LES-051) - die
+  urspruengliche Bestandsaufnahme hatte diese Abdeckung uebersehen (die
+  Grep-Suche war zu eng auf `resource_set`-artige Substrings fokussiert,
+  der bestehende Test heisst anders). Entfernt; stattdessen den
+  bestehenden Test echt verbessert (laeuft jetzt gegen alle
+  `example_programs()` statt nur "Bohren.ngc").
+- Fehlenden Teil des LES-052-Abnahmekriteriums ergaenzt: "Dirty-/Save-
+  State" war bisher nirgends explizit geprueft. Neuer Test
+  `test_render_tool_preview_never_marks_program_dirty`
+  (`tests/test_tool_preview_layout.py`) macht das explizit
+  (`_mark_dirty`-Spion bleibt beim Rendern ungenutzt). Regressionsbewiesen.
+- TODO.md Abschnitt 2 entsprechend aktualisiert: drei der vier Punkte als
+  erledigt markiert, der vierte (stabile Datenvertraege fuer Preview-
+  Canvas/Werkzeugbild/Legende/Status-Box) noch nicht im Detail geprueft -
+  bleibt offen. Ebenfalls festgehalten: `handler._tool_visual_provider`
+  wird in der laufenden Anwendung nirgends auf ein echtes Theme-Verzeichnis
+  gesetzt (nur prozeduraler Fallback) - kein Bug, aber ein offener
+  Produktentscheid.
+- 916 Stub-/110 Real-Qt-Tests bestanden.
+
+### LES-052: Ladevertrag- und Views-Bestandsaufnahme umgesetzt 2026-09-17
+
+- Alle vier Punkte aus der vorangegangenen Ladevertrag-/Views-
+  Bestandsaufnahme umgesetzt (Details: `doc/PANEL_ARCHITECTURE.md`).
+- **Bugfix:** `connect_mode_visibility_signals()` (`ui_signals.py`) hat
+  jetzt denselben Dedup-Schutz wie die anderen fuenf Signal-Connectoren
+  (ein Bool-Flag pro Widget). Regressionsbewiesen: ein neuer Test schlug
+  vor dem Fix nachweislich fehl (3 statt 1 Verbindung nach drei Aufrufen).
+- **Toter Code entfernt:** `process_deferred_lookups()` (`ui_widget_
+  lookup.py`) hatte nachweislich keine Aufrufstelle im gesamten Projekt -
+  entfernt, zusammen mit der nie geleerten `_deferred_lookup_queue`
+  (Initialisierung im Handler-`__init__`, Befuellungslogik in
+  `resolve_core_widgets_strict()` und `bootstrap_widget_refs()`). Reine
+  Aufraeumarbeit, keine Verhaltensaenderung.
+- **Toter Code entfernt, aber differenzierter als gedacht:**
+  `HandlerClass._connect_signals()` war tatsaechlich toter Code (nirgends
+  aufgerufen) und wurde entfernt, ebenso die davon exklusiv aufgerufenen
+  `_connect_live_update_signals()`/`_connect_live_update()`/
+  `_on_param_changed()` (nachweislich redundant mit dem laengst laufenden
+  `connect_param_change_signals()`-Pfad) und `prepare_signal_connection_
+  context()` (alle vier Einzelaktionen bereits anderweitig abgedeckt).
+  `connect_resolver_fallbacks()` dagegen war NICHT redundant - ein
+  einzigartiger 5s-Polling-Rueckfall speziell fuer `listOperations` (eines
+  der vier `_ui_finalized`-kritischen Widgets). Statt entfernt: sauber in
+  `finalize_ui_ready()` eingebunden, mit neuem
+  `_list_ops_resolver_fallback_started`-Schutz gegen mehrfach gestartete
+  Polling-Ketten ueber die drei Durchlaeufe. Zwei neue Tests decken das ab,
+  regressionsbewiesen.
+- **Zwei neue Regressionstests** fuer die LES-052-Abnahmekriterien zu
+  "Views ohne eigenen Fachzustand" (`tests/test_regression_contracts.py`):
+  identischer G-Code bei unterschiedlichen `ToolVisualProvider`-
+  Ressourcensaetzen; `LathePreviewWidget`s Rendering-Cache-Felder
+  (`paths`/`primitives`/`front_program`/`front_operation`/
+  `preview_scene`) fliessen nachweislich nie in G-Code zurueck. Beide per
+  absichtlicher Mutation der verglichenen Werte sanity-geprueft.
+- Kein struktureller Umbau des Drei-Durchlaeufe-Ladeablaufs, wie in der
+  Bestandsaufnahme vorgeschlagen - nur die konkreten Befunde behoben.
+- 917 Stub-/109 Real-Qt-Tests bestanden (912 Stub-Tests vorher + 5 neue,
+  alle Stub-only), Standalone-Panel sauber gestartet.
+
+### LES-052: Ladevertrag + Views-Bestandsaufnahme 2026-09-17
+
+- Die beiden verbleibenden Punkte aus LES-052 Abschnitt 1 ("einheitlicher
+  Ladevertrag" und "Views ohne eigenen Fachzustand") gegen den
+  tatsaechlichen Code geprueft und in `doc/PANEL_ARCHITECTURE.md`
+  dokumentiert - reine Bestandsaufnahme, kein Code veraendert.
+- **Ladevertrag:** kein expliziter Standalone-/Embedded-Modus im Code -
+  Unterscheidung ist rein strukturell (`_looks_like_panel_widget()`). Der
+  bestehende Drei-Durchlaeufe-Timer (`_finalize_ui_ready`, 0/500/2000ms)
+  ist idempotent gut abgesichert (`_ui_finalized`-Riegel,
+  `_finalize_ui_ready_running`-Reentranzschutz, pro Schicht konsistente,
+  aber unterschiedliche Dedup-Muster). Zwei konkrete Befunde: (1)
+  `connect_mode_visibility_signals()` fehlt als einzigem von sechs
+  Signal-Connectoren ein Dedup-Schutz - echtes Mehrfachverbindungsrisiko
+  ueber die drei Durchlaeufe, besonders embedded; (2) toter Code
+  `HandlerClass._connect_signals()` wird laut projektweiter Suche nirgends
+  aufgerufen, divergiert von der tatsaechlich laufenden Signalbindung in
+  `finalize_ui_ready()`; (3) unklar, ob `process_deferred_lookups()`
+  ueberhaupt eine Aufrufstelle hat. Vorschlag: die drei Punkte beheben/
+  klaeren, den bestehenden Ablauf selbst NICHT strukturell umbauen.
+- **Views ohne eigenen Fachzustand:** Stichprobe der View-Klassen
+  (`StepListView`, `PreviewView`, `LathePreviewWidget`, `ToolVisualProvider`,
+  Kontur-Tabelle) fand keine tatsaechliche "zweite Wahrheit" - das in
+  LES-051 bereits dokumentierte Prinzip wird eingehalten. Der eigentliche
+  Befund: keines der beiden LES-052-Abnahmekriterien dazu (identischer
+  G-Code bei unterschiedlichen Darstellungs-/Ressourcensaetzen; fehlende
+  Ressource aendert G-Code nicht) hat heute eine automatisierte
+  Absicherung. Vorschlag: zwei neue Regressionstests statt eines
+  strukturellen Umbaus.
+- Details und vollstaendige Fundstellen: `doc/PANEL_ARCHITECTURE.md`
+  (neue Abschnitte "Ladevertrag: Standalone und Embedded" und "Views ohne
+  eigenen Fachzustand"), `TODO.md` (LES-052 Abschnitt 1).
+- 912 Stub-/109 Real-Qt-Tests weiterhin bestanden (reine
+  Dokumentationsaenderung, kein Code betroffen).
+
+### LES-052: toten Code in `refresh_operation_list()` entfernt 2026-09-17
+
+- Der bei der `refresh_operation_list()`-Handler-Kleber-Extraktion
+  gefundene tote `select_index is None`-Zweig ("vorherige Auswahl
+  beibehalten") entfernt - jeder Aufrufer im Projekt (neun Stueck, ueber
+  `ui_flow.py`/`ui_persistence.py`/`lathe_easystep_handler.py`) uebergibt
+  bereits einen expliziten `select_index`. `select_index` ist jetzt ein
+  regulaerer Pflichtparameter statt `int | None = None` - sowohl auf der
+  freien Funktion (`ui_flow.py`) als auch auf dem duennen Handler-Wrapper.
+  Die damit ebenfalls unbenutzt gewordene `current = lst.currentRow()`-
+  Zeile mit entfernt.
+- Reine Aufraeumarbeit ohne Verhaltensaenderung (der entfernte Zweig war
+  beweisbar unerreichbar); keine neuen Tests noetig, volle Suite bestaetigt
+  unveraendertes Verhalten.
+- 912 Stub-/109 Real-Qt-Tests weiterhin bestanden, Standalone-Panel sauber
+  gestartet.
+
+### LES-052: `ViewState` gekapselt - fuenfte Zustandskategorie 2026-09-17
+
+- `view_state.py` neu: fasst die neun bisher losen Attribute auf
+  `LathePreviewWidget` (`_view_zoom`, `_view_pan`, `slice_z`,
+  `slice_enabled`, `view_mode`, `active_index`, `_legend_collapsed`,
+  `show_legend`, `status_messages`) in einer einzigen, Qt-freien Klasse
+  zusammen (`widget._view`). `_view_pan` (vormals `QtCore.QPointF`) wird
+  als zwei reine `float`-Felder (`pan_x`/`pan_y`) gehalten, damit das Modul
+  komplett ohne Qt-Import auskommt.
+- Anders als bei `DirtyState`/`ToolTableState`/`RuntimeState` (deren
+  Aufrufstellen ueber viele Module verteilt waren, deshalb per Umbenennung
+  auf `handler._<name>.<feld>` umgestellt) liegt die gesamte Nutzung dieser
+  neun Felder innerhalb einer einzigen Klasse (62 Fundstellen in
+  `preview_widget.py`). Deshalb ein anderer Adapter-Mechanismus:
+  `LathePreviewWidget` haelt fuer jedes Feld eine gleichnamige `@property`,
+  die transparent an `self._view.<feld>` delegiert - keine der 62 internen
+  Nutzungsstellen musste angefasst werden, und externer Code (mehrere
+  Tests lesen/setzen `widget.slice_z`/`widget.active_index`/`widget.
+  _view_zoom`/`widget._view_pan` direkt) funktioniert unveraendert weiter.
+- 4 Testfixturen (`LathePreviewWidget.__new__(LathePreviewWidget)`,
+  `__init__` uebersprungen) in `tests/test_front_slice_profile.py`,
+  `tests/test_preview_widget_error_boundaries.py`,
+  `tests/test_slice_view_sync.py` mussten um `widget._view = ViewState()`
+  ergaenzt werden.
+- 4 neue eigenstaendige Tests (`tests/test_view_state.py`, Qt-frei) plus 1
+  neuer Property-Rundlauf-Test in `tests/test_preview_navigation.py`
+  (`test_view_zoom_and_pan_properties_delegate_to_view_state`), der
+  gezielt die `_view_pan`-QPointF-Rueckuebersetzung absichert - die
+  einzige echte Logik dieser Kapselung.
+- Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung der
+  `_view_pan`-Setter-Property (Y-Komponente faelschlich aus `value.x()`
+  statt `value.y()`) wurde von mehreren Tests korrekt erkannt, darunter
+  zwei bereits vorher bestehende Navigationstests.
+- Damit sind jetzt alle sechs in LES-052 genannten Zustandskategorien
+  tatsaechlich gekapselt (`ProgramState`, `OperationState`, `ToolTableState`,
+  `ViewState`, `DirtyState`, `RuntimeState`) - siehe auch die fruehere
+  Korrektur weiter unten, die diese Aussage vorschnell fuer `ViewState`
+  behauptet hatte, bevor die Arbeit tatsaechlich erledigt war.
+- 912 Stub-/109 Real-Qt-Tests bestanden (908 vorher + 4 neue Stub- und 1
+  neuer Real-Qt-Test), Standalone-Panel sauber gestartet.
+
+### LES-052: fuenfte Handler-Kleber-Extraktion (`tool_change_position_lines`) 2026-09-17
+
+- `_tool_change_position_lines()` (~35 Zeilen, baut G-Code zum Anfahren der
+  Werkzeugwechselposition aus XT/ZT/Koordinatenmodus) griff ueberhaupt
+  nicht auf `self` zu - reine Funktion, die nur zufaellig als Handler-
+  Methode lebte. Nach `tool_change_position_lines(header)` in `ui_flow.py`
+  verschoben, ganz ohne Handler-Parameter. Einziger Aufrufer war bereits
+  `build_gcode_lines()` (selbst schon in `ui_flow.py`); dessen zwei
+  Aufrufstellen rufen die Funktion jetzt direkt auf.
+  `HandlerClass._tool_change_position_lines()` bleibt als duenner
+  Delegations-Wrapper bestehen, falls extern noch darauf zugegriffen wird.
+- Bestandsaufnahme deckte eine bemerkenswerte Luecke auf: diese G-Code-
+  Pfad-Logik (Werkzeugwechsel-Anfahrposition) hatte ueberhaupt keine Tests.
+  `generate_program_gcode()` (`gcode_program.py`) implementiert dieselbe
+  work/machine/mixed-Logik ein zweites Mal, unabhaengig, fuer die inline
+  `"(Toolchange move)"`-Zeilen im Hauptprogramm - deren vorhandene Tests
+  (`tests/test_regression_contracts.py`) deckten nur diese zweite,
+  separate Implementierung ab, nie `_tool_change_position_lines()` selbst.
+  Geschlossen durch drei neue Tests in derselben Datei.
+- Reine Verschiebung ohne Verhaltensaenderung, daher keine `rs274`-
+  Nachverifikation noetig (CLAUDE.md verlangt sie fuer Aenderungen an
+  G-Code-Ausgabe/Fahrwegen, nicht fuer reine Code-Bewegung); die neue
+  Testabdeckung schliesst trotzdem eine bisher unbeaufsichtigte Luecke in
+  diesem sicherheitsrelevanten Bereich.
+- Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung des
+  mixed-Zweigs (fehlendes `G53`-Praefix fuer die nicht-absolute X-Achse)
+  wurde korrekt erkannt.
+- 908 Stub-/108 Real-Qt-Tests bestanden (905 vorher + 3 neue), Standalone-
+  Panel sauber gestartet.
+
+### LES-052: vierte Handler-Kleber-Extraktion (`populate_thread_standard_options`) 2026-09-17
+
+- `_populate_thread_standard_options()` (Handler-Methode, ~46 Zeilen) nach
+  `populate_thread_standard_options(self)` in `ui_thread.py` verschoben -
+  diesmal nicht nach `ui_flow.py`, sondern in das bereits existierende
+  `ui_thread.py`, das mit `apply_thread_preset(self, ...)` bereits dasselbe
+  Delegations-Muster fuer Gewinde-Logik enthielt. Die beiden nur dafuer
+  gebrauchten Imports (`metric_thread_presets`, `trapezoidal_thread_
+  presets`) aus `lathe_easystep_handler.py` entfernt (dort ungenutzt).
+- Bewusst NICHT extrahiert: `_ensure_contour_widgets()`/
+  `_ensure_thread_widgets()` (reine Widget-Lookup-Bootstrap-Methoden,
+  aehnliche Groessenordnung) - das ist Bootstrap-Code, der laut LES-052
+  Abschnitt 1 auf dem Handler bleiben soll; ihre eigentliche offene Aufgabe
+  ist der separate "einheitlicher Ladevertrag"-Punkt, keine reine
+  Verschiebung.
+- Bestandsaufnahme ergab wieder eine echte Testluecke:
+  `test_apply_thread_preset_applies_real_metric_preset`
+  (`tests/test_preview_safety_and_language.py`) baut das erwartete Combo-
+  itemData nur von Hand nach, ruft `_populate_thread_standard_options()`
+  selbst nie auf. Geschlossen durch zwei neue Tests
+  (`test_populate_thread_standard_options_builds_valid_preset_itemdata`,
+  `test_populate_thread_standard_options_is_idempotent`).
+- Regressionsverifikation reproduzierte gezielt den im Nachbartest bereits
+  dokumentierten historischen Bug (Metric-Presets ohne `"label"`-Schluessel
+  im itemData) und wurde vom neuen Test korrekt erkannt.
+- 905 Stub-/108 Real-Qt-Tests bestanden (903 vorher + 2 neue), Standalone-
+  Panel sauber gestartet (ein erster Lauf brach ohne Fehler/Traceback beim
+  20s-Timeout knapp vor der `DONE`-Zeile ab, bei 25s reproduzierbar sauber -
+  als Umgebungs-/Lastschwankung eingeordnet, keine Codeaenderung noetig).
+
+### LES-052: dritte Handler-Kleber-Extraktion (`handle_param_change`) 2026-09-17
+
+- `_handle_param_change()` (Handler-Methode, ~73 Zeilen; generischer
+  Signal-Handler fuer alle Parameter-Widgets - Spinbox/Combo/Checkbox/
+  Lineedit) nach `handle_param_change(handler)` in `ui_flow.py` verschoben;
+  Handler-Methode auf einen einzeiligen Delegations-Wrapper reduziert. Bleibt
+  als Qt-Slot in `ui_signals.py` (`widget.valueChanged.connect(handler.
+  _handle_param_change)` u. ae.) unveraendert funktionsfaehig, da weiterhin
+  eine gebundene Methode auf `handler` verbunden wird.
+- `test_current_text_occurrences_are_limited_to_audited_fallbacks`
+  (`tests/test_ui_visibility_guards.py`, eine Positivliste erlaubter
+  `currentText()`-Fallback-Vorkommen je Datei) musste um die verschobene
+  Datei ergaenzt werden - reine Ortsangabe, keine inhaltliche Aenderung der
+  Pruefung selbst.
+- Bestandsaufnahme vor der Extraktion ergab eine echte Testluecke: kein
+  Test rief `_handle_param_change()`/`handle_param_change()` bisher
+  end-zu-end auf. Die beiden vorhandenen Tests pruefen nur die Signal-
+  Verbindung bzw. dass das Befuellen der Formularfelder keine Signale
+  ausloest (LES-025), nie die eigentliche Wert-Lese-/Dirty-Markier-Logik.
+  Geschlossen durch drei neue Tests in `tests/test_dirty_and_messages.py`
+  (`test_handle_param_change_marks_operation_dirty_for_spinbox`,
+  `test_handle_param_change_marks_program_dirty_for_header`,
+  `test_handle_param_change_ignores_unnamed_widget`).
+- Regressionsverifikation bestaetigt: eine absichtliche Verstuemmelung der
+  PROGRAM_HEADER-vs-Step-Unterscheidung beim Dirty-Markieren wurde vom
+  neuen `test_handle_param_change_marks_program_dirty_for_header` korrekt
+  erkannt.
+- 903 Stub-/108 Real-Qt-Tests bestanden (900 vorher + 3 neue), Standalone-
+  Panel sauber gestartet.
+
+### LES-052: zweite Handler-Kleber-Extraktion (`refresh_operation_list`) 2026-09-17
+
+- `_refresh_operation_list()` (Handler-Methode, ~74 Zeilen) nach
+  `refresh_operation_list(handler, select_index=None)` in `ui_flow.py`
+  verschoben; Handler-Methode auf einen einzeiligen Delegations-Wrapper
+  reduziert - gleiches Muster wie zuvor `handle_add_operation`/
+  `handle_delete_operation`. Bestehende Tests, die `handler.
+  _refresh_operation_list` als Instanz-Lambda ueberschreiben (u. a.
+  `test_dirty_and_messages.py`), bleiben unveraendert funktionsfaehig, da
+  nur der Methodenkoerper und nicht die Aufruf-Signatur verschoben wurde.
+- Regressionsverifikation deckte einen zweiten, andersartigen Befund auf:
+  der `select_index is None`-Zweig ("vorherige Auswahl beibehalten") ist
+  toter Code - jeder Aufrufer im Projekt uebergibt bereits einen expliziten
+  `select_index`, nie `None`. Eine Verstuemmelung dieser Zeile wurde
+  folgerichtig von keinem Test erkannt, weil kein Aufrufpfad sie erreicht.
+  Bewusst NICHT behoben (waere eine Verhaltensaenderung ueber reine
+  Code-Verschiebung hinaus); als eigener Aufraeumpunkt in `TODO.md`
+  vermerkt. Eine zweite Korruption am tatsaechlich erreichten
+  `select_index`-Zweig wurde dagegen korrekt von
+  `test_delete_last_step_selects_previous`
+  (`tests/test_step_double_click.py`) erkannt - bestaetigt echte
+  Regressionsabdeckung fuer den produktiv genutzten Pfad.
+- 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel sauber gestartet.
+
+### Korrektur: `ViewState` in LES-052 faelschlich als abgeschlossen gefuehrt 2026-09-17
+
+- Die Formulierung "alle sechs Zustandskategorien ... sind jetzt fachlich
+  getrennte, Qt-freie Verantwortungen" im Commit "LES-052: RuntimeState
+  gekapselt - Zustandsmodell abgeschlossen" (2026-09-17) und in der davon
+  abgeleiteten `TODO.md`-Zusammenfassung war fuer `ViewState` sachlich
+  falsch: der Baustein selbst hat nur `ProgramState`, `OperationState`,
+  `ToolTableState`, `DirtyState` und `RuntimeState` gekapselt.
+  `doc/PANEL_ARCHITECTURE.md`s eigener, detaillierterer `ViewState`-
+  Abschnitt hatte den tatsaechlichen Stand die ganze Zeit korrekt als
+  "teilweise gekapselt, aber ungetypt" beschrieben - dieser Widerspruch
+  wurde beim Schreiben nicht bemerkt.
+- `TODO.md` korrigiert: `ViewState` aus der "Umgesetzt"-Liste entfernt, ein
+  neuer offener Punkt fuer einen benannten `ViewState`-Typ (Zoom/Pan/Slice/
+  Ansichtsmodus/Legende, aktuell lose Attribute auf `LathePreviewWidget`)
+  ergaenzt. Reine Dokumentationskorrektur, kein Code betroffen - der
+  fehlerhafte Commit selbst wird nicht nachtraeglich umgeschrieben, da er
+  bereits nach `origin/dev` gepusht war.
+
+### LES-052: erste Handler-Kleber-Extraktion (`handle_add_operation`/`handle_delete_operation`) 2026-09-17
+
+- `_handle_add_operation()`/`_handle_delete_operation()` (Handler-Methoden in
+  `lathe_easystep_handler.py`, ~95/~54 Zeilen) nach `handle_add_operation
+  (handler)`/`handle_delete_operation(handler)` in `ui_flow.py` verschoben;
+  Handler-Methoden auf einzeilige Delegations-Wrapper reduziert - gleiches
+  Muster wie zuvor `handle_move_up`/`handle_move_down`.
+- Zwei bei der urspruenglichen `RuntimeState`-Bestandsaufnahme uebersehene
+  lose Reentranz-/Debounce-Attribute (`_adding_operation`,
+  `_last_add_operation_ts`) beim Lesen des Methodenkoerpers entdeckt und
+  direkt als `adding_operation`/`last_add_operation_ts` in `RuntimeState`
+  aufgenommen statt als weitere lose Handler-Attribute stehen zu lassen.
+  `last_add_operation_ts` ist ein 0,8s-Debounce-Zeitstempel gegen sehr
+  schnell aufeinanderfolgende, aber nicht ueberlappende Klicks - kein
+  Reentranz-Flag wie die anderen zehn `RuntimeState`-Felder.
+- Regressionsverifikation (absichtliche `if False:`-Verstuemmelung der
+  Kommentar-Auffrisch-Zeile in `handle_add_operation()`) deckte eine echte
+  Testluecke auf: `test_handle_add_operation_refreshes_stale_numbered_
+  comment_via_helper` (`tests/test_auto_comment_on_creation.py`) pruefte
+  trotz seines Namens nur den reinen `_looks_like_generated_step_comment()`-
+  Helfer, nie `handle_add_operation()` end-to-end - die Korruption blieb
+  dadurch unbemerkt. Behoben: der irrefuehrend benannte Test in
+  `test_looks_like_generated_step_comment_helper` umbenannt (unveraenderter
+  Inhalt) und zwei neue End-zu-Ende-Tests ergaenzt
+  (`test_handle_add_operation_refreshes_stale_numbered_comment`,
+  `test_handle_add_operation_keeps_individual_comment`), die
+  `handle_add_operation()` tatsaechlich aufrufen. Luecke danach nachweislich
+  geschlossen: Korruption fuehrte zu einem Testfehlschlag, Ruecknahme wieder
+  zu gruen.
+- 900 Stub-/108 Real-Qt-Tests bestanden, Standalone-Panel sauber gestartet
+  (kein `AttributeError`, `_finalize_ui_ready DONE`).
+
+### Dokumentation: TODO.md auf offene Aufgaben reduziert 2026-09-17
+
+- `TODO.md` war entgegen der eigenen Einleitung ("enthaelt ausschliesslich
+  offene Aufgaben") wieder zu einem Entwicklungsprotokoll angewachsen: 6
+  abgehakte (`[x]`) Punkte mit mehrseitigen Umsetzungsnarrativen sowie lange,
+  in offene (`[ ]`) Punkte eingebettete Baustein-Historien (u. a. teilweise
+  veraltete Zwischen-Teststaende wie "877 Stub-/107 Real-Qt-Tests" neben
+  einer bereits auf 898/108 aktualisierten "Verifizierte Basis" oben).
+  Von 560 auf 323 Zeilen reduziert: alle 6 `[x]`-Punkte entfernt (jeder
+  bereits mit eigenem, vollstaendigem Changelog-Eintrag dokumentiert -
+  ueberprueft vor dem Entfernen), Baustein-Historien in den verbleibenden
+  offenen Punkten auf kurze "umgesetzt, Details im Changelog"-Absaetze
+  gekuerzt. Alle 57 zuvor offenen Teilaufgaben inhaltlich unveraendert
+  erhalten (per Zeilenvergleich verifiziert) - nur die Umsetzungsnarrative
+  entfernt, keine Aufgabe geaendert oder gestrichen.
+- Drei neue offene Punkte ergaenzt (neuer Abschnitt "Release-Prozess"): der
+  am 17.09.2026 eingefuehrte `scripts/create_release.py`-Release-Pfad wurde
+  bisher nur mit `--check` (rein lesend) getestet, nicht der tatsaechlich
+  schreibende Pfad; Manifest-Vollstaendigkeit (neue Laufzeitpfade ausserhalb
+  `release_manifest.txt`) muss vor jedem Release explizit geprueft werden,
+  da das Skript das nicht selbst erkennen kann; die Agenten-
+  Instruktionsdateien sollen auf `RELEASE_POLICY.md` als verbindliche Quelle
+  verweisen, statt deren Regeln zu duplizieren.
+- Ausserdem in "Verifizierte Basis" nachgezogen: `main` enthaelt seit dem
+  17.09.2026 nur noch kompakte Release-Commits nach der neu eingefuehrten
+  `RELEASE_POLICY.md` (`release_manifest.txt`), nicht mehr den vollstaendigen
+  `dev`-Baum per Fast-Forward wie beim 0.8.0-Release. `main`s Historie sowie
+  die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig neu aufgebaut.
+- 898 Stub-/108 Real-Qt-Tests weiterhin bestanden (reine Dokumentations-
+  aenderung, kein Code betroffen).
+
+### LES-052: RuntimeState gekapselt - Zustandsmodell abgeschlossen 2026-09-17
+
+- Vierter und letzter LES-052-Baustein: neun lose Reentranz-/Ladezustands-
+  Flags (`_loading_step`, `_deleting`, `_saving_step`, `_saving_changes`,
+  `_moving_up`, `_moving_down`, `_generating_gcode`,
+  `_creating_new_program`, `_ui_loading`) durch eine einzelne Qt-freie
+  Klasse `RuntimeState` (`runtime_state.py`) ersetzt, jetzt als
+  `handler._runtime` gehalten. Damit sind alle sechs in LES-052 genannten
+  Zustandskategorien (`ProgramState`, `OperationState`, `ToolTableState`,
+  `ViewState`, `DirtyState`, `RuntimeState`) fachlich getrennte, Qt-freie
+  Verantwortungen mit dokumentierten Besitzverhaeltnissen.
+- Acht der neun Felder folgen an neun praktisch identischen Aufrufstellen
+  (`ui_flow.py`, `ui_persistence.py`, `lathe_easystep_handler.py`)
+  demselben Reentranz-Muster (`if state.x: return` / `state.x = True` /
+  im `finally` `state.x = False`) - bewusst NICHT zu einer
+  `guard()`-Kontextmanager-Abstraktion zusammengefasst, da das eine echte
+  Struktur-/Verhaltensaenderung an den Aufrufstellen gewesen waere, nicht
+  nur eine Verschiebung des Speicherorts.
+- `ui_loading` ist semantisch anders (unterdrueckt Signal-Reaktionen
+  waehrend programmatischen Zurueckschreibens ins Formular) und war zuvor
+  NIE explizit initialisiert - nur per `getattr(handler, "_ui_loading",
+  False)` defensiv gelesen. Jetzt wie die anderen acht ein regulaeres
+  `RuntimeState`-Feld mit Default `False`.
+- Groesste Testflaeche der vier LES-052-Bausteine: 12 Testdateien mit
+  minimalen/bare Test-Handlern (`object.__new__(HandlerClass)`,
+  `SimpleNamespace`) mussten um `handler._runtime = RuntimeState()`
+  ergaenzt werden - mehr als bei `DirtyState`/`ToolTableState`, weil
+  `_ui_loading` bisher ueberall defensiv gelesen wurde und dadurch auf
+  fehlenden Testattributen nie sichtbar auffiel.
+- 3 neue eigenstaendige Tests (`tests/test_runtime_state.py`) - anders als
+  bei `DirtyState`/`ToolTableState` ohne Regressionsverifikation per
+  absichtlich entfernter Logik, da die Klasse selbst keine Methoden
+  enthaelt (alles reentranz-relevante Verhalten blieb unveraendert an den
+  Aufrufstellen, durch den vollen Testlauf ueber alle betroffenen Module
+  abgedeckt).
+- 898 Stub-/108 Real-Qt-Tests bestanden (895 vorher + 3 neue). Standalone-
+  Panel offscreen sauber gestartet, kein `AttributeError` im Log. Details:
+  TODO.md/`doc/PANEL_ARCHITECTURE.md` (LES-052).
+
+### LES-052: ToolTableState gekapselt 2026-09-17
+
+- Dritter LES-052-Baustein: `handler.tools` (ein rohes `Dict[int, Tool]`)
+  plus zwei bei der ersten Bestandsaufnahme uebersehene lose Attribute
+  (`_loaded_tools`, `_missing_iso_tools`) durch eine einzelne Qt-freie
+  Klasse `ToolTableState` (`tool_table_state.py`) ersetzt, jetzt als
+  `handler._tool_table` gehalten.
+- `_loaded_tools` ist der Cache der zuletzt geladenen NICHT-leeren Tabelle
+  fuer das Nachbefuellen von erst spaeter (lazy) auftauchenden Werkzeug-
+  Combo-Widgets; `set_tools()` kapselt exakt die bisherige "leere Tabelle
+  ueberschreibt den Cache nicht"-Logik aus
+  `ui_tools.py::populate_tool_combos()`. `_missing_iso_tools` (die von
+  `parse_tool_table()` gelieferten ISO-Warnungen) war schon vor der
+  Kapselung ein reines Schreib-Attribut ohne Leser - hier bewusst nicht
+  "repariert", nur unveraendert mituebernommen.
+- `handler.tool_table_path` (der angezeigte Dateipfad-Text) bleibt bewusst
+  aussen vor - das ist Qt-View-Zustand, keine Fachdaten.
+- Alle neun betroffenen Aufrufstellen (`tool_logic.py`, `ui_flow.py`,
+  `ui_persistence.py`, `ui_preview.py`, `ui_tools.py`,
+  `lathe_easystep_handler.py`) mussten nur ihren direkten Attributzugriff
+  von `handler.tools`/`handler._loaded_tools` auf
+  `handler._tool_table.tools`/`handler._tool_table.loaded_tools`
+  umstellen, keine strukturellen Aenderungen.
+- 4 neue eigenstaendige Tests (`tests/test_tool_table_state.py`), per
+  absichtlich entferntem Leer-Dict-Schutz als echte Regression
+  verifiziert (die "leere Tabelle ueberschreibt den Cache nicht"-Logik
+  schlug korrekt fehl, als der Schutz entfernt wurde).
+- 895 Stub-/108 Real-Qt-Tests bestanden (891 vorher + 4 neue).
+  Standalone-Panel-Log bestaetigt den echten Ladepfad: `tool.tbl`
+  automatisch geladen, Combos befuellt, kein `AttributeError`. Details:
+  TODO.md (LES-052).
+
+### LES-052: DirtyState gekapselt 2026-09-16
+
+- Zweiter LES-052-Baustein: die fuenf bisherigen Handler-Attribute
+  (`_dirty_operation_indices`, `_program_dirty`, `_dirty_program_header`,
+  `_dirty_program_structure`, `_dirty_warning_suppressed`) durch eine
+  einzelne Qt-freie Klasse `DirtyState` (`dirty_state.py`) ersetzt, jetzt
+  als `handler._dirty` gehalten.
+- `ui_dirty.py`s freie Funktionen bleiben mit unveraenderter Signatur als
+  duenne Adapter bestehen (Koerper delegiert an Methoden auf `DirtyState`)
+  - alle Aufrufstellen ausserhalb von `ui_dirty.py` (`ui_flow.py`,
+  `ui_persistence.py`, `ui_selection.py`, `lathe_easystep_handler.py`)
+  mussten deshalb nicht umgebaut werden; nur der direkte Attributzugriff
+  wurde von `handler._dirty_xxx` auf `handler._dirty.xxx` umgestellt.
+- 14 neue eigenstaendige Tests (`tests/test_dirty_state.py`) decken die
+  Klasse Qt-frei und unabhaengig von der Handler-Integration ab. Per
+  absichtlich entfernter Nachzieh-Arithmetik zweimal als echte Regression
+  verifiziert: einmal fuer `reindex_after_removal()` (die Methode hinter
+  dem SICHERHEITSFUND 2026-09-13), einmal fuer die abgeleitete
+  `program_dirty`-Logik in `clear_program()`.
+- Dabei nebenbei entdeckt: `RuntimeState` hat tatsaechlich neun statt der
+  in der ersten Bestandsaufnahme notierten zwei Flags -
+  `lathe_easystep_handler.py`s `__init__` setzt zusaetzlich zu
+  `_ui_loading` noch `_loading_step`, `_deleting`, `_saving_step`,
+  `_saving_changes`, `_moving_up`, `_moving_down`, `_generating_gcode`
+  und `_creating_new_program` direkt auf `self`. `doc/PANEL_ARCHITECTURE.md`
+  entsprechend korrigiert.
+- 891 Stub-/108 Real-Qt-Tests bestanden (877 vorher + 14 neue). Standalone-
+  Panel offscreen sauber gestartet, kein `AttributeError` im Log. Details:
+  TODO.md (LES-052).
+
+### LES-052: Zustandsmodell-Bestandsaufnahme 2026-09-16
+
+- Erster LES-052-Baustein ("Architektur und Ladevertrag"): die sechs
+  genannten Zustandskategorien (`ProgramState`, `OperationState`,
+  `ToolTableState`, `ViewState`, `DirtyState`, `RuntimeState`) gegen den
+  tatsaechlichen Code geprueft und in `doc/PANEL_ARCHITECTURE.md`
+  dokumentiert - reine Bestandsaufnahme, kein Code veraendert.
+- `ProgramState`/`OperationState` (`model.py`) und `MotionState`/
+  `SpindleState` (`motion_state.py`) sind bereits sauber gekapselt. Drei
+  Kategorien sind es nicht: `ToolTableState` (`handler.tools`-Dict, direkt
+  von `ui_tools.py` gesetzt), `DirtyState` (fuenf Attribute direkt auf dem
+  Handler, von neun Modulen gelesen/geschrieben) und `RuntimeState`
+  (`_generating_gcode`/`_ui_loading`, ebenfalls lose Handler-Attribute).
+- `DirtyState` hat dabei nachweislich die groesste Dringlichkeit: die
+  Index-Nachzieh-Logik in `ui_dirty.py` traegt an zwei Stellen den
+  Kommentar "SICHERHEITSFUND 2026-09-13" fuer bereits real aufgetretene
+  Bugs durch genau dieses Streuungsmuster (ein dirty-Flag "wanderte" beim
+  Verschieben einer Operation auf den falschen Nachbar-Step).
+  `ViewState` (Zoom/Pan/Slice/Ansichtsmodus) ist auf `LathePreviewWidget`
+  immerhin lokal gebuendelt, aber ungetypt.
+- Details: TODO.md (LES-052).
 
 ## [0.8.0] - 2026-09-16
 

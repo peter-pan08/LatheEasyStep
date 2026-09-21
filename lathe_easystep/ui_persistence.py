@@ -11,7 +11,7 @@ from qtpy import QtCore, QtWidgets
 from .model import OpType
 from .ui_helpers import translate as _tr
 from .persistence import build_program_data as build_program_data_payload
-from .storage import parse_program_payload, atomic_write_json
+from .storage import CURRENT_FORMAT_VERSION, parse_program_payload, parse_step_payload, atomic_write_json
 from .ui_messages import format_user_error
 from .ui_step_list_view import StepListView
 
@@ -27,10 +27,12 @@ def build_program_data(handler):
     # gespeicherten Segmente). Vor jedem Speichern ebenfalls auffrischen.
     handler._rebuild_all_operation_geometry()
     header = handler._collect_program_header()
+    tools = getattr(getattr(handler, "_tool_table", None), "tools", None)
     return build_program_data_payload(
         handler.model.operations,
         header,
         handler._program_file_meta(),
+        tools,
     )
 
 
@@ -64,7 +66,9 @@ def write_step_file(handler, op, file_path):
     normalized = handler._normalized_file_path(file_path) or file_path
     snapshot = deepcopy(op)
     handler._set_step_file_path(snapshot, normalized)
-    atomic_write_json(normalized, handler._operation_to_step_data(snapshot))
+    step_data = handler._operation_to_step_data(snapshot)
+    step_data["version"] = CURRENT_FORMAT_VERSION
+    atomic_write_json(normalized, step_data)
     handler._set_step_file_path(op, normalized)
     return normalized
 
@@ -106,9 +110,9 @@ def update_save_step_button_state(handler) -> None:
 
 
 def handle_save_step(handler, *, step_file_filter: str) -> None:
-    if handler._saving_step:
+    if handler._runtime.saving_step:
         return
-    handler._saving_step = True
+    handler._runtime.saving_step = True
     try:
         idx = handler._selected_operation_index()
         if idx < 0:
@@ -153,9 +157,9 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
         try:
             handler._clear_dirty_operation(idx)
             if (
-                not handler._dirty_operation_indices
-                and not getattr(handler, "_dirty_program_header", False)
-                and getattr(handler, "_dirty_program_structure", False)
+                not handler._dirty.operation_indices
+                and not handler._dirty.program_header_dirty
+                and handler._dirty.program_structure_dirty
                 and not handler._normalized_file_path(getattr(handler, "_current_program_path", None))
             ):
                 handler._clear_program_dirty(structure=True)
@@ -174,13 +178,13 @@ def handle_save_step(handler, *, step_file_filter: str) -> None:
         except Exception:
             pass
     finally:
-        handler._saving_step = False
+        handler._runtime.saving_step = False
 
 
 def handle_load_step(handler, *, step_file_filter: str) -> None:
-    if handler._loading_step:
+    if handler._runtime.loading_step:
         return
-    handler._loading_step = True
+    handler._runtime.loading_step = True
     try:
         parent = handler.root_widget or handler._find_root_widget()
         settings = QtCore.QSettings()
@@ -204,7 +208,17 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
             QtWidgets.QMessageBox.critical(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.open_failed", error=exc))
             return
 
-        op = handler._step_data_to_operation(data)
+        # LES-053-Audit-Fund: fehlende/ungueltige Version oder anderweitig
+        # ungueltige Step-Daten (z. B. nicht-finite Zahlen, fehlerhafte
+        # Pfadpunkte) duerfen keine unbehandelte Exception erzeugen, sondern
+        # muessen ueber denselben Dialogpfad wie ein defektes JSON gemeldet
+        # werden - vorher lief _step_data_to_operation() hier ungefangen.
+        try:
+            data = parse_step_payload(data)
+            op = handler._step_data_to_operation(data)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), str(exc))
+            return
         if op is None:
             QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.invalid"))
             return
@@ -218,12 +232,22 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
         )
         handler._update_parting_ready_state()
         handler._setup_groove_tab_ui()
+        # SICHERHEITSFUND 2026-09-20: das Einfuegen eines geladenen Steps in
+        # ein bereits offenes Programm ist eine Strukturaenderung DIESES
+        # Programms - genau wie "Operation hinzufuegen"
+        # (handle_add_operation(), _mark_program_structure_dirty()). Hier
+        # stand bisher _clear_dirty_state(), was faelschlich jeden
+        # bestehenden Dirty-Zustand geloescht hat, nicht nur den des neu
+        # eingefuegten Steps. _insert_loaded_operation() hat den neuen Step
+        # bereits korrekt als sauber relativ zu SEINER EIGENEN Datei markiert
+        # (_clear_dirty_operation()) - hier wird nur noch die Programmebene
+        # als dirty markiert, ohne andere Indizes/Flags anzufassen.
         try:
-            handler._clear_dirty_state()
+            handler._mark_program_structure_dirty()
         except Exception:
             pass
     finally:
-        handler._loading_step = False
+        handler._runtime.loading_step = False
 
 
 def handle_save_program(handler) -> None:
@@ -259,7 +283,7 @@ def handle_save_program(handler) -> None:
             _tr(handler, "message.program.saved", path=file_path),
         )
         try:
-            handler._program_dirty = False
+            handler._dirty.program_dirty = False
             handler._update_dirty_status()
         except Exception:
             pass
@@ -306,17 +330,27 @@ def handle_load_program(handler) -> None:
             QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.program.load.title"), str(exc))
             return
 
+        # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): das komplette neue
+        # Programm erst ausserhalb von handler.model aufbauen/validieren -
+        # ein Fehler in einer SPAETEREN Operation (_step_data_to_operation()
+        # kann z. B. bei einem strukturell ungueltigen path-Eintrag werfen,
+        # was parse_program_payload()s reine Zahlen-Endlichkeitspruefung oben
+        # nicht abdeckt) darf das noch offene, ggf. ungespeicherte Programm
+        # nicht durch einen kaputten Teilimport ersetzen. handler.model wird
+        # erst nach vollstaendigem Erfolg angefasst.
+        new_operations = []
+        for op_dict in ops_data:
+            op = handler._step_data_to_operation(op_dict)
+            if op is not None:
+                new_operations.append(op)
+
         handler.model.operations.clear()
+        handler.model.operations.extend(new_operations)
         handler._op_row_user_selected = False
         handler._active_form_operation_index = -1
         handler._load_program_header_to_form(header)
         handler._current_program_path = current_program_path
         handler._current_gcode_path = current_gcode_path
-
-        for op_dict in ops_data:
-            op = handler._step_data_to_operation(op_dict)
-            if op is not None:
-                handler.model.add_operation(op)
 
         handler._rebuild_all_operation_geometry()
 
@@ -325,8 +359,8 @@ def handle_load_program(handler) -> None:
             # Reiter-Widgets mit der bereits geladenen Werkzeugtabelle neu
             # befuellen - _auto_load_tool_table() ist nach dem ersten Aufruf
             # (Programmstart) dauerhaft gesperrt und wuerde hier nichts tun.
-            if handler.tools:
-                handler._populate_tool_combos(handler.tools)
+            if handler._tool_table.tools:
+                handler._populate_tool_combos(handler._tool_table.tools)
             else:
                 handler._auto_load_tool_table()
         except Exception:
@@ -361,9 +395,9 @@ def handle_load_program(handler) -> None:
 
 
 def handle_save_changes(handler) -> None:
-    if handler._saving_changes:
+    if handler._runtime.saving_changes:
         return
-    handler._saving_changes = True
+    handler._runtime.saving_changes = True
     saved_steps = 0
     saved_program = False
     try:
@@ -392,7 +426,7 @@ def handle_save_changes(handler) -> None:
         # unverknuepft und wird weiterhin uebersprungen, aber explizit
         # gezaehlt/gewarnt statt still.
         unlinked_dirty_steps = 0
-        dirty_step_indices = sorted(int(idx) for idx in getattr(handler, "_dirty_operation_indices", set()) if int(idx) >= 0)
+        dirty_step_indices = sorted(int(idx) for idx in handler._dirty.operation_indices if int(idx) >= 0)
         for idx in dirty_step_indices:
             if idx >= len(handler.model.operations):
                 continue
@@ -412,6 +446,7 @@ def handle_save_changes(handler) -> None:
                 continue
             linked_steps += 1
             data = handler._operation_to_step_data(op)
+            data["version"] = CURRENT_FORMAT_VERSION
             atomic_write_json(step_path, data)
             handler._remember_dialog_path(
                 settings,
@@ -423,7 +458,7 @@ def handle_save_changes(handler) -> None:
 
         saved_program = False
         program_path = handler._normalized_file_path(handler._current_program_path)
-        if program_path and handler._program_dirty:
+        if program_path and handler._dirty.program_dirty:
             handler._write_program_file(program_path)
             handler._remember_dialog_path(
                 settings,
@@ -437,7 +472,7 @@ def handle_save_changes(handler) -> None:
 
         saved_gcode = False
         gcode_path = handler._normalized_file_path(handler._current_gcode_path)
-        if gcode_path and (bool(dirty_step_indices) or handler._program_dirty):
+        if gcode_path and (bool(dirty_step_indices) or handler._dirty.program_dirty):
             handler._write_gcode_file(gcode_path)
             handler._remember_dialog_path(
                 settings,
@@ -480,7 +515,7 @@ def handle_save_changes(handler) -> None:
             "\n".join(messages),
         )
         try:
-            if saved_program or (linked_steps == len(dirty_step_indices) and not handler._program_dirty):
+            if saved_program or (linked_steps == len(dirty_step_indices) and not handler._dirty.program_dirty):
                 handler._clear_dirty_state()
         except Exception:
             pass
@@ -493,4 +528,4 @@ def handle_save_changes(handler) -> None:
             + ("\n" + _tr(handler, "message.changes.program_updated") if saved_program else ""),
         )
     finally:
-        handler._saving_changes = False
+        handler._runtime.saving_changes = False

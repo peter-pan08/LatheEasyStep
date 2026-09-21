@@ -29,8 +29,8 @@ def handle_load_tool_table(handler) -> None:
             return
 
         tools, missing_iso = handler._parse_tool_table(filepath)
-        handler.tools = tools
-        handler._missing_iso_tools = missing_iso
+        handler._tool_table.tools = tools
+        handler._tool_table.missing_iso = missing_iso
         handler._populate_tool_combos(tools)
         handler._update_tool_previews()
 
@@ -95,8 +95,8 @@ def auto_load_tool_table(handler) -> None:
             tools, missing_iso = handler._parse_tool_table(filepath)
             if not tools:
                 continue
-            handler.tools = tools
-            handler._missing_iso_tools = missing_iso
+            handler._tool_table.tools = tools
+            handler._tool_table.missing_iso = missing_iso
             handler._populate_tool_combos(tools)
             handler._update_tool_previews()
             if handler.tool_table_path:
@@ -116,9 +116,7 @@ def auto_load_tool_table(handler) -> None:
 
 def populate_tool_combos(handler, tools) -> None:
     """Populate all tool comboboxes with the same set of tools."""
-    handler.tools = tools
-    if tools:
-        handler._loaded_tools = tools
+    handler._tool_table.set_tools(tools)
     sorted_tools = sorted(tools.values(), key=lambda t: t.t)
     if sorted_tools:
         items = []
@@ -185,7 +183,7 @@ def update_tool_previews(handler) -> None:
         handler._style_tool_preview_label(img_label)
 
         tool_num = handler._tool_number_from_combo(combo)
-        tool = handler.tools.get(tool_num)
+        tool = handler._tool_table.tools.get(tool_num)
         if tool:
             try:
                 pixmap = handler._render_tool_preview(tool)

@@ -37,7 +37,7 @@ CAM-Ersatz.
 ## Projektstatus
 
 Der Stand wurde auch auf dem nativen LinuxCNC-Rechner nachgeprueft:
-877 Stub-Qt- und 108 Real-Qt-Tests sowie alle 55 Interpreterfaelle
+968 Stub-Qt- und 131 Real-Qt-Tests sowie alle 55 Interpreterfaelle
 (zwoelf Referenzen, 43 Matrixfaelle) bestanden. Alle zwoelf Referenzen
 wurden in der QtDragon-SIM bis `M30` ausgefuehrt. Details im
 [Pruefbericht](doc/NATIVE_VERIFICATION_2026-09-09.md).
@@ -56,7 +56,7 @@ weiter als ein reiner Prototyp:
 - gemeinsame UI-Helfer fuer Sprache, Uebersetzung, ComboBoxen und Tab-Bezeichnungen verhindern auseinanderlaufende Parallelimplementierungen
 - generische G-Code-Parameter-Lookups und die Safe-X-Berechnung fuer Innenbearbeitung liegen zentral in `gcode_utils.py`
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
-- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped` validiert
+- die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `968 passed (Stub-Qt), 131 passed (Real-Qt), 0 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter, die Step-Liste/Programmverwaltung und die Aktionsleiste liegen als eigene `.ui`-Fragmente unter `lathe_easystep/ui_parts/`
 - `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
@@ -409,16 +409,29 @@ editiert werden koennen.
 Die vollstaendige, priorisierte Aufgabenliste steht in der
 [TODO.md](TODO.md), die Release-Zuordnung in der [ROADMAP.md](ROADMAP.md).
 
-Aktuelle Reihenfolge:
+Der 0.9.0-Scope-Audit (2026-09-21, Details in TODO.md/ROADMAP.md) hat
+bestaetigt: fuer 0.9.0 ist kein bekannter funktionaler Codefehler mehr
+offen. Der Panel-Architektur-/Zustandsmodell-Kern (LES-051/LES-052) ist
+fuer 0.9.0 abgeschlossen, einschliesslich der atomaren State-/Rollback-/
+Fehlergrenzen-Arbeiten. Verbleibende Prioritaeten:
 
-1. sichere Anfahrt zwischen aufeinanderfolgenden Operationen
-2. Innen-Schruppen und Innen-Schlichten an weiteren Konturformen verifizieren
-   (Innenbearbeitung verwendet ausgeschriebene Bewegungen; Backplot-/Realverifikation offen)
-3. lokale DIN-Freistichgeometrie und gemeinsame Vorschau-/G-Code-Primitive
-4. G96/G97 pro Operation ist umgesetzt (Planen/Abspanen/Einstich/Gewinde);
-   G97-Anfahrt und verzoegertes G96 sind implementiert; offen bleiben
-   vollstaendige Modalsequenz und LinuxCNC-Abnahme
-5. anschliessend Handler-, UI-, Sprach- und Modalarchitektur konsolidieren
+1. Release-Prozess: den tatsaechlich schreibenden Release-Pfad beim
+   0.9.0-Release-Vorgang selbst einmal durchspielen und Manifest-
+   Vollstaendigkeit absichern
+2. LES-043 Gegenspindel als separates Projekt spezifizieren (nicht 0.9.0)
+3. LES-030 weitere reale Maschinenprofile verifizieren (extern, offen)
+
+Auf 1.0.0/spaeter verschoben bzw. als optionale zukuenftige Features
+eingestuft (kein bekannter Fehler, kein 0.9.0-Blocker, Einzelbegruendung
+in TODO.md): restliche LES-051/LES-052-Punkte (Handler-Kleber, breite
+`except Exception`-Faelle, zentrale Fehlerdiagnose/Fehlerklassen, Undo/
+Redo, Autosave, technischer Pruefbericht), LES-022 (vier restliche
+Settings-Zustaende) sowie LES-044 (drei restliche Codeverschiebungen).
+LES-032 Werkzeuggeometrie: die Werkzeughuellen-/Bohrstangengeometrie-
+Pruefung ist mit der offiziellen LinuxCNC-`tool.tbl` nicht loesbar und
+wurde bewusst dauerhaft geschlossen; die Erkennung geaenderter
+Werkzeugmerkmale seit Programmerstellung ist bereits umgesetzt - kein
+offener Punkt mehr.
 
 ## Regressionstests und Smoke-Test
 
@@ -509,7 +522,7 @@ early prototype:
 - LinuxCNC embedded usage was stabilized
 - chuck, no-go and machine-safety logic was expanded
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.8.0
-- the current development baseline is validated with `877 passed (Stub-Qt), 108 passed (Real-Qt), 0 skipped`
+- the current development baseline is validated with `968 passed (Stub-Qt), 131 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell; eight operation tabs, the step list/program management area and the action button bar live as separate `.ui` fragments under `lathe_easystep/ui_parts/`
 - the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
 
@@ -657,17 +670,28 @@ Current behaviour:
 The complete prioritized backlog is maintained in [TODO.md](TODO.md), with
 release milestones in [ROADMAP.md](ROADMAP.md).
 
-Current order:
+The 0.9.0 scope audit (2026-09-21, details in TODO.md/ROADMAP.md)
+confirmed: no known functional code defect remains open for 0.9.0. The
+panel architecture/state model core (LES-051/LES-052) is complete for
+0.9.0, including the atomic state/rollback/error-boundary work. Remaining
+priorities:
 
-1. make operation-to-operation approach moves safe
-2. verify internal roughing and finishing on additional contour forms
-   (internal machining uses explicit moves; backplot/real-machine
-   verification still open)
-3. complete local DIN-relief geometry and shared preview/G-code primitives
-4. per-operation G96/G97 is implemented (facing/turning/parting/threading);
-   G97 approach and deferred G96 are implemented; the complete modal
-   sequence and LinuxCNC acceptance remain open
-5. then consolidate handler, UI, translation and modal-state architecture
+1. Release process: run the actual writing release path once end to end,
+   as part of the actual 0.9.0 release itself, and verify manifest
+   completeness
+2. LES-043 specify the sub-spindle feature as a separate project (not 0.9.0)
+3. LES-030 verify further real machine profiles (external, open)
+
+Deferred to 1.0.0/later, or reclassified as optional future features (no
+known defect, no 0.9.0 blocker, per-item justification in TODO.md): the
+remaining LES-051/LES-052 points (handler glue, broad `except Exception`
+cases, central error diagnostics/error classes, undo/redo, autosave,
+technical inspection report), LES-022 (four remaining settings states),
+and LES-044 (three remaining code relocations). LES-032 tool geometry:
+the tool-envelope/boring-bar-geometry check is not solvable with the
+official LinuxCNC `tool.tbl` and was deliberately closed for good;
+detecting tool-characteristic changes since program creation is already
+implemented - no open point remains.
 
 ## Regression and Smoke Test
 

@@ -297,6 +297,64 @@ def init_contour_table(handler) -> None:
         pass
 
 
+def _mark_selected_contour_operation_dirty(handler) -> None:
+    """Nach einem bereits erfolgreich durchgelaufenen `_update_selected_
+    operation()`-Aufruf den betroffenen Step dirty markieren - aber nur,
+    wenn dabei tatsaechlich ein bestehender, ausgewaehlter Kontur-Step
+    synchronisiert wurde (nicht bei einer noch nicht hinzugefuegten neuen
+    Kontur, wo `_update_selected_operation()` ein reiner No-Op ist). Wird
+    diese Funktion nicht erreicht, weil der Sync-Aufruf davor eine
+    Exception geworfen hat, bleibt automatisch alles unveraendert - LES-052
+    Abschnitt 3 (Audit 2026-09-20): `add_segment()`/`move_up()`/
+    `move_down()`/Start-X/Z bekommen bewusst keine zusaetzliche
+    Fehlerbehandlung fuer nur theoretische Exception-Risiken, nur die
+    bestaetigt fehlende Dirty-Markierung."""
+    idx = handler._selected_operation_index()
+    if idx < 0 or not handler._op_row_user_selected:
+        return
+    try:
+        handler._mark_dirty(operation_index=idx)
+    except Exception:
+        pass
+
+
+def _sync_selected_contour_operation_or_restore(handler) -> None:
+    """Wie `_mark_selected_contour_operation_dirty()`, aber fuer Aufrufer,
+    bei denen ein Fehlschlag bestaetigt real reproduzierbar ist (LES-052
+    Abschnitt 3, Audit 2026-09-21): ein direkter Zellen-Text-Edit
+    (`handle_contour_table_change()`, ueber `itemChanged`) oder ein
+    Kantentyp-Wechsel (`handle_contour_edge_change()`) kann ueber eine
+    ANDERE, nicht die gerade bearbeitete Zeile mit bereits vorhandenem
+    ungueltigem Text scheitern - reproduziert mit `finite_float()`
+    ("Kontur Zeile N: ungueltige Zahl '...'.") ueber `_collect_contour_
+    segments()`. `sync_form_to_operation()` rollt `op.params` dabei bereits
+    korrekt zurueck; hier wird zusaetzlich die TABELLE ueber die
+    vorhandene Formular-Ladefunktion (`_load_params_to_form()`, dispatcht
+    fuer CONTOUR an `_load_contour_operation_to_form()`) aus dem
+    unveraenderten `op.params` wiederhergestellt, damit Modell und
+    sichtbare Tabelle wieder denselben Zustand zeigen. Nur bei Erfolg wird
+    dirty markiert; bei einem Fehlschlag bleibt ein bestehender
+    Dirty-Zustand unangetastet."""
+    idx = handler._selected_operation_index()
+    active = idx >= 0 and handler._op_row_user_selected
+    try:
+        handler._update_selected_operation()
+    except Exception as exc:
+        handler._log(f"[LatheEasyStep][debug] Kontur-Aenderung abgelehnt (Step {idx}): {exc!r}", level="warning")
+        if active:
+            op = handler.model.operations[idx]
+            try:
+                handler._load_params_to_form(op)
+            except Exception:
+                pass
+        return
+    if active:
+        try:
+            handler._mark_dirty(operation_index=idx)
+        except Exception:
+            pass
+
+
 def handle_contour_add_segment(handler) -> None:
     handler._ensure_contour_widgets()
     table = handler.contour_segments
@@ -382,6 +440,7 @@ def handle_contour_add_segment(handler) -> None:
         pass
     handler._contour_row_user_selected = False
     handler._update_selected_operation()
+    _mark_selected_contour_operation_dirty(handler)
     handler._update_contour_preview_temp()
     handler._sync_contour_edge_controls()
 
@@ -391,11 +450,18 @@ def handle_contour_delete_segment(handler) -> None:
     if table is None:
         return
     row = table.currentRow()
-    if row >= 0:
-        table.removeRow(row)
-        handler._update_selected_operation()
-        handler._update_contour_preview_temp()
-        handler._sync_contour_edge_controls()
+    if row < 0:
+        return
+    table.removeRow(row)
+    # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3, bestaetigt und
+    # reproduziert): Loeschen der letzten verbleibenden Segmentzeile liess
+    # update_geometry() ueber build_contour_path() mit einem TypeError
+    # scheitern (siehe contour_logic.build_contour_variants()-Fix). Die
+    # Tabellenzeile war zu diesem Zeitpunkt aber schon entfernt - siehe
+    # _sync_selected_contour_operation_or_restore() fuer die Wiederherstellung.
+    _sync_selected_contour_operation_or_restore(handler)
+    handler._update_contour_preview_temp()
+    handler._sync_contour_edge_controls()
 
 
 def handle_contour_move_up(handler) -> None:
@@ -419,6 +485,7 @@ def handle_contour_move_up(handler) -> None:
     table.removeRow(row + 1)
     table.setCurrentCell(row - 1, 0)
     handler._update_selected_operation()
+    _mark_selected_contour_operation_dirty(handler)
     handler._update_contour_preview_temp()
 
 
@@ -443,14 +510,52 @@ def handle_contour_move_down(handler) -> None:
     table.removeRow(row)
     table.setCurrentCell(row + 1, 0)
     handler._update_selected_operation()
+    _mark_selected_contour_operation_dirty(handler)
     handler._update_contour_preview_temp()
     handler._sync_contour_edge_controls()
 
 
 def handle_contour_table_change(handler, *args, **kwargs) -> None:
-    handler._update_selected_operation()
+    # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3, bestaetigt und
+    # reproduziert): ein direkter Zellen-Text-Edit auf eine nicht-numerische
+    # Eingabe (z. B. X/Z/Kantenmass) laesst finite_float() ueber
+    # _collect_contour_segments() mit einem ValueError scheitern - vorher
+    # unbehandelt, Tabelle blieb auf dem abgelehnten Text stehen, obwohl
+    # op.params bereits korrekt zurueckgerollt war, und nie dirty markiert.
+    _sync_selected_contour_operation_or_restore(handler)
     handler._update_contour_preview_temp()
     handler._sync_contour_edge_controls()
+
+
+def handle_contour_start_change(handler, *args, **kwargs) -> None:
+    """LES-052 Abschnitt 3 (Audit 2026-09-20, bestaetigter Fund):
+    contour_start_x/contour_start_z sind fachliche Kontur-Parameter (Teil
+    von `_collect_params(OpType.CONTOUR)`, siehe `ui_params.py`), waren
+    aber nur an `_update_contour_preview_temp()` angebunden (siehe
+    `lathe_easystep_handler.py`) - eine Aenderung aktualisierte damit
+    ausschliesslich die Live-Vorschau, nie zuverlaessig das Modell eines
+    bereits bestehenden, ausgewaehlten Kontur-Steps und nie dessen
+    Dirty-State (auch der Katch-up-Sync beim Stepwechsel in
+    `handle_selection_change()` markiert nicht dirty). Diese zusaetzliche
+    Anbindung synchronisiert wie jede andere Kontur-Aenderung."""
+    handler._update_selected_operation()
+    _mark_selected_contour_operation_dirty(handler)
+
+
+def handle_contour_name_change(handler, *args, **kwargs) -> None:
+    """LES-052 Abschnitt 3 (Audit 2026-09-21, bestaetigter Fund):
+    contour_name ist ein fachlicher Bestandteil des gespeicherten Steps
+    (`op.params["name"]`, ueber `_collect_params(OpType.CONTOUR)` gelesen,
+    siehe `ui_params.py`) - er identifiziert die Kontur fuer verweisende
+    ABSPANEN-Operationen (`contour_name`-Parameter,
+    `_current_parting_contour_name()`/`available_contour_names()`), ist
+    also keine reine Anzeige-/Metadatenangabe. War aber wie Start-X/Z nur
+    an `_update_contour_preview_temp()`/`_update_parting_contour_choices()`
+    angebunden - eine Umbenennung aktualisierte nie zuverlaessig das
+    Modell eines bereits bestehenden, ausgewaehlten Kontur-Steps und nie
+    dessen Dirty-State."""
+    handler._update_selected_operation()
+    _mark_selected_contour_operation_dirty(handler)
 
 
 def handle_contour_row_select(handler, *args, **kwargs) -> None:
@@ -467,7 +572,12 @@ def handle_contour_edge_change(handler, *args, **kwargs) -> None:
     table = handler.contour_segments
     if table is not None and table.currentRow() >= 0:
         handler._write_contour_row(table.currentRow(), edge_text=edge_data, edge_size=edge_size)
-        handler._update_selected_operation()
+        # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3): derselbe
+        # geteilte Fehlerfall wie handle_contour_table_change() - eine
+        # ANDERE Zeile kann bereits ungueltigen Text enthalten, auch wenn
+        # der hier geschriebene Kantenwert selbst immer aus begrenzten
+        # Widgets (Combo/DoubleSpinBox) stammt.
+        _sync_selected_contour_operation_or_restore(handler)
         handler._update_contour_preview_temp()
     handler._sync_contour_edge_controls()
 

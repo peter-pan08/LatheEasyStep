@@ -21,7 +21,7 @@ def handle_global_change(handler, *args, **kwargs):
     handler._update_subspindle_visibility()
     handler._update_face_visibility()
     handler._update_spindle_mode_visibility()
-    if sender_name and sender_name != "program_language" and not getattr(handler, "_ui_loading", False):
+    if sender_name and sender_name != "program_language" and not handler._runtime.ui_loading:
         try:
             handler._mark_dirty(program=True)
         except Exception:

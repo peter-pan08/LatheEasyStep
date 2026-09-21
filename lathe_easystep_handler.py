@@ -18,10 +18,13 @@ from qtvcp.core import Action
 import logging
 from lathe_easystep.ui_header import collect_program_header
 from lathe_easystep.ui_contour_input import collect_contour_segments
-from lathe_easystep.ui_thread import apply_thread_preset
+from lathe_easystep.ui_thread import apply_thread_preset, populate_thread_standard_options
 from lathe_easystep.comments import update_auto_comment
 from lathe_easystep.ui_tooltips import _TooltipRelay, set_tooltip_deep, fallback_tooltip_text, apply_registered_tooltips
+from lathe_easystep.dirty_state import DirtyState
 from lathe_easystep.model import OpType, Operation, ProgramModel
+from lathe_easystep.runtime_state import RuntimeState
+from lathe_easystep.tool_table_state import ToolTableState
 from lathe_easystep.gcode_utils import is_internal_side
 from lathe_easystep.tools import Tool, parse_tool_table
 from lathe_easystep.persistence import (
@@ -71,7 +74,9 @@ from lathe_easystep.ui_contour import (
     handle_contour_edge_change,
     handle_contour_move_down,
     handle_contour_move_up,
+    handle_contour_name_change,
     handle_contour_row_select,
+    handle_contour_start_change,
     handle_contour_table_change,
     init_contour_table,
     resolve_contour_path,
@@ -99,11 +104,16 @@ from lathe_easystep.ui_flow import (
     _looks_like_generated_step_comment,
     build_gcode_lines,
     describe_operation,
+    handle_add_operation,
+    handle_delete_operation,
     handle_generate_gcode,
     handle_move_down,
     handle_move_up,
     handle_new_program,
+    handle_param_change,
+    refresh_operation_list,
     renumber_operations,
+    tool_change_position_lines,
 )
 from lathe_easystep.tool_logic import (
     build_insert_geometry,
@@ -172,11 +182,8 @@ from lathe_easystep.ui_signals import (
     connect_param_change_signals,
     connect_resolver_fallbacks,
     connect_tool_preview_signals,
-    prepare_signal_connection_context,
 )
 from lathe_easystep.presets import (
-    metric_thread_presets,
-    trapezoidal_thread_presets,
     validate_thread_preset_data,
 )
 from lathe_easystep.translations import TRANSLATIONS
@@ -935,9 +942,7 @@ class HandlerClass:
         self.paths = paths
         self.model = ProgramModel()
         # self.root_widget wurde oben gesetzt
-        self.tools: Dict[int, Tool] = {}  # loaded tool table
-        self._loaded_tools: Dict[int, Tool] | None = None  # cache for repopulating combos after deferred widgets
-        self._missing_iso_tools: List[int] = []
+        self._tool_table = ToolTableState()
         self.param_widgets: Dict[str, Dict[str, QtWidgets.QWidget]] = {}
         self._connected_param_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
         self._connected_global_widgets: WeakSet[QtWidgets.QWidget] = WeakSet()
@@ -954,17 +959,8 @@ class HandlerClass:
         self._last_dialog_dir: str | None = None
         self._current_program_path: str | None = None
         self._current_gcode_path: str | None = None
-        self._loading_step = False
-        self._deleting = False
-        self._saving_step = False
-        self._saving_changes = False
-        self._moving_up = False
-        self._moving_down = False
-        self._generating_gcode = False
-        self._creating_new_program = False
-        self._program_dirty = False
-        self._dirty_operation_indices = set()
-        self._dirty_warning_suppressed = False
+        self._runtime = RuntimeState()
+        self._dirty = DirtyState()
 
         # zentrale Widgets
         self.preview = getattr(self.w, "previewWidget", None)
@@ -972,8 +968,6 @@ class HandlerClass:
         self.btn_slice_view = getattr(self.w, "btn_slice_view", None)
         self.btn_reset_view = getattr(self.w, "btn_reset_view", None)
         self.contour_preview = getattr(self.w, "contourPreview", None)
-        # Queue für nachträgliche Widget-Suchen, bis das Panel vollständig geladen ist
-        self._deferred_lookup_queue: List[Tuple[str, str, object, bool]] = []
         self.debug_mode = _debug_mode_enabled()
         self._verbose_widget_logs = self.debug_mode
         if self.debug_mode:
@@ -1240,11 +1234,11 @@ class HandlerClass:
                 self._update_program_visibility()
             elif name.endswith("_spindle_mode"):
                 self._update_spindle_mode_visibility()
-            if self._loaded_tools and name in {
+            if self._tool_table.loaded_tools and name in {
                 'face_tool', 'thread_tool', 'groove_tool', 'drill_tool', 'parting_tool', 'key_tool',
                 'contour_tool', 'taper_tool', 'boring_tool'
             }:
-                self._populate_tool_combos(self._loaded_tools)
+                self._populate_tool_combos(self._tool_table.loaded_tools)
                 self._update_tool_previews()
             if name in {
                 'face_tool_img', 'thread_tool_img', 'groove_tool_img', 'drill_tool_img', 'parting_tool_img'
@@ -1725,51 +1719,7 @@ class HandlerClass:
                 pass
 
     def _populate_thread_standard_options(self):
-        combo = self.thread_standard
-        if combo is None or self._thread_standard_populated:
-            return
-
-        def _compact(value: float) -> str:
-            text = f"{value:.3f}".rstrip("0").rstrip(".")
-            return text if text else "0"
-
-        lang = self._current_language_code()
-        custom_key = "combo.thread_standard.custom"
-
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem(TRANSLATIONS.tr(custom_key, lang), {"label_key": custom_key})
-        # Metric threads (ISO 60°) -> profile "metric"
-        for name, diameter, pitch in metric_thread_presets():
-            pitch_text = _compact(pitch)
-            technical_id = f"thread.standard.metric.{name.lower()}x{pitch_text.replace('.', '_')}"
-            combo.addItem(
-                TRANSLATIONS.tr(technical_id, lang),
-                {
-                    "label": name,
-                    "label_key": technical_id,
-                    "major": diameter,
-                    "pitch": pitch,
-                    "profile": "metric",
-                },
-            )
-        # Trapezoidal threads -> profile "tr"
-        for name, diameter, pitch in trapezoidal_thread_presets():
-            pitch_text = _compact(pitch)
-            technical_id = f"thread.standard.tr.{name.lower()}x{pitch_text.replace('.', '_')}"
-            combo.addItem(
-                TRANSLATIONS.tr(technical_id, lang),
-                {
-                    "label": name,
-                    "label_key": technical_id,
-                    "major": diameter,
-                    "pitch": pitch,
-                    "profile": "tr",
-                },
-            )
-        combo.setCurrentIndex(0)
-        combo.blockSignals(False)
-        self._thread_standard_populated = True
+        populate_thread_standard_options(self)
 
     def _setup_thread_helpers(self):
         self._ensure_thread_widgets()
@@ -1847,7 +1797,7 @@ class HandlerClass:
 
         Wir disconnecten *immer* zuerst, weil Buttons an mehreren Stellen initialisiert werden können
 
-        (_ensure_core_widgets, _connect_signals, usw.). Das verhindert zuverlässig Mehrfachverbindungen.
+        (_ensure_core_widgets, _connect_core_signals, usw.). Das verhindert zuverlässig Mehrfachverbindungen.
 
         """
 
@@ -1930,62 +1880,6 @@ class HandlerClass:
 
     # ---- Signalanschlüsse ---------------------------------------------
 
-    def _connect_live_update(self, widget):
-            """Connect changes of a widget to live-update the currently selected operation."""
-            if widget is None:
-                return
-            from PyQt5 import QtWidgets
-
-            def _safe_connect(signal):
-                try:
-                    signal.connect(self._on_param_changed)
-                except Exception:
-                    pass
-
-            if isinstance(widget, QtWidgets.QComboBox):
-                _safe_connect(widget.currentIndexChanged)
-            elif isinstance(widget, QtWidgets.QAbstractSpinBox):
-                _safe_connect(widget.valueChanged)
-            elif isinstance(widget, QtWidgets.QCheckBox):
-                _safe_connect(widget.toggled)
-            elif isinstance(widget, QtWidgets.QLineEdit):
-                _safe_connect(widget.textChanged)
-
-    def _on_param_changed(self, *args):
-        """Called whenever a parameter field changes; updates op + preview."""
-        if getattr(self, "_ui_loading", False):
-            return
-        row = -1
-        try:
-            if self.list_ops:
-                row = self.list_ops.currentRow()
-        except Exception:
-            row = -1
-        if row < 0:
-            try:
-                self._refresh_preview()
-            except Exception:
-                pass
-            return
-        try:
-            self._update_selected_operation(force=True)
-        except Exception as e:
-            self._log(f"[LatheEasyStep] _on_param_changed: update failed: {e}", level="error")
-
-    def _connect_signals(self):
-            self._prepare_signal_connection_context()
-            self._connect_core_signals()
-            self._connect_resolver_fallbacks()
-            self._connect_tool_preview_signals()
-            self._connect_param_change_signals()
-            self._connect_global_form_signals()
-            self._connect_language_signal()
-            self._connect_mode_visibility_signals()
-            self._connect_live_update_signals()
-
-    def _prepare_signal_connection_context(self):
-            prepare_signal_connection_context(self)
-
     def _connect_resolver_fallbacks(self):
             connect_resolver_fallbacks(self)
 
@@ -2003,20 +1897,6 @@ class HandlerClass:
 
     def _connect_mode_visibility_signals(self):
             connect_mode_visibility_signals(self)
-
-    def _connect_live_update_signals(self):
-            for w in [
-                getattr(self, "face_start_z", None), getattr(self, "face_end_z", None),
-                getattr(self, "face_stepover", None), getattr(self, "face_doc", None),
-                getattr(self, "face_allowance_x", None), getattr(self, "face_allowance_z", None),
-                getattr(self, "face_finish_allow_x", None), getattr(self, "face_finish_allow_z", None),
-                getattr(self, "face_rpm", None), getattr(self, "face_feed", None),
-                getattr(self, "face_plunge", None), getattr(self, "face_retract", None),
-                getattr(self, "face_mode", None), getattr(self, "face_finish_direction", None),
-                getattr(self, "face_edge_type", None), getattr(self, "face_edge_size", None),
-                getattr(self, "face_tool", None), getattr(self, "face_coolant", None),
-            ]:
-                self._connect_live_update(w)
 
     def _connect_core_signals(self):
             connect_core_signals(self)
@@ -2372,13 +2252,25 @@ class HandlerClass:
 
         if getattr(self, "contour_start_x", None) and not getattr(self, "_contour_start_x_connected", False):
             self.contour_start_x.valueChanged.connect(self._update_contour_preview_temp)
+            # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): Start-X/Z
+            # sind fachliche Kontur-Parameter (_collect_params(CONTOUR)
+            # liest sie), aktualisierten bisher aber nur die Live-Vorschau,
+            # nie zuverlaessig Modell/Dirty-State eines bereits bestehenden
+            # Kontur-Steps.
+            self.contour_start_x.valueChanged.connect(self._handle_contour_start_change)
             self._contour_start_x_connected = True
         if getattr(self, "contour_start_z", None) and not getattr(self, "_contour_start_z_connected", False):
             self.contour_start_z.valueChanged.connect(self._update_contour_preview_temp)
+            self.contour_start_z.valueChanged.connect(self._handle_contour_start_change)
             self._contour_start_z_connected = True
         if getattr(self, "contour_name", None) and not getattr(self, "_contour_name_connected", False):
             self.contour_name.textChanged.connect(self._update_contour_preview_temp)
             self.contour_name.textChanged.connect(self._update_parting_contour_choices)
+            # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3): contour_name
+            # ist ein fachlicher Parameter (op.params["name"]), war aber nur
+            # an Vorschau/Auswahlliste angebunden, nie zuverlaessig an
+            # Modell/Dirty-State eines bestehenden, ausgewaehlten Steps.
+            self.contour_name.textChanged.connect(self._handle_contour_name_change)
             self._contour_name_connected = True
 
         if getattr(self, "contour_edge_type", None) and not getattr(self, "_contour_edge_type_connected", False):
@@ -2506,40 +2398,7 @@ class HandlerClass:
         return collect_program_header(self)
 
     def _tool_change_position_lines(self, header: Dict[str, object]) -> List[str]:
-        """Generiert G-Code zum Anfahren der Werkzeugwechselposition (XT/ZT)."""
-        xt = float(header.get("xt", 0.0))
-        zt = float(header.get("zt", 0.0))
-        coord_mode = str(header.get("toolchange_coords", "") or "").strip().lower()
-        if coord_mode not in ("work", "machine"):
-            xt_abs = bool(header.get("xt_absolute", True))
-            zt_abs = bool(header.get("zt_absolute", True))
-            if xt_abs != zt_abs:
-                coord_mode = "mixed"
-            else:
-                coord_mode = "work" if xt_abs and zt_abs else "machine"
-
-        lines: List[str] = []
-
-        if coord_mode == "work":
-            lines.append(f"G0 X{xt:.3f} Z{zt:.3f}")
-            return lines
-        if coord_mode == "mixed":
-            xt_abs = bool(header.get("xt_absolute", True))
-            zt_abs = bool(header.get("zt_absolute", True))
-            if not xt_abs:
-                lines.append(f"G53 G0 X{xt:.3f}")
-            if not zt_abs:
-                lines.append(f"G53 G0 Z{zt:.3f}")
-            work_parts = []
-            if xt_abs:
-                work_parts.append(f"X{xt:.3f}")
-            if zt_abs:
-                work_parts.append(f"Z{zt:.3f}")
-            if work_parts:
-                lines.append(f"G0 {' '.join(work_parts)}")
-            return lines
-        lines.append(f"G53 G0 X{xt:.3f} Z{zt:.3f}")
-        return lines
+        return tool_change_position_lines(header)
 
     def _collect_contour_segments(self) -> List[Dict[str, object]]:
         return collect_contour_segments(self)
@@ -2558,8 +2417,22 @@ class HandlerClass:
             else:
                 idx = w_edge.findData(str(edge_text), QtCore.Qt.UserRole)
                 if idx >= 0:
-                    w_edge.setCurrentIndex(idx)
-        
+                    # SICHERHEITSFUND 2026-09-21 (LES-052 Abschnitt 3):
+                    # dieser Combo ist bereits mit _handle_contour_table_
+                    # change() verbunden - setCurrentIndex() wuerde das
+                    # Signal sonst REENTRANT ausloesen, WAEHREND diese rein
+                    # programmatische Zeilen-Befuellung noch laeuft, und
+                    # damit einen ungewollten Sync-/Dirty-Zyklus zu einem
+                    # nicht vorgesehenen Zeitpunkt anstossen. Nur das
+                    # betroffene Widget-Signal kurz blocken (dieselbe
+                    # bereits etablierte Technik wie in _load_contour_
+                    # operation_to_form()), keine globale Signalsperre.
+                    w_edge.blockSignals(True)
+                    try:
+                        w_edge.setCurrentIndex(idx)
+                    finally:
+                        w_edge.blockSignals(False)
+
             # Radius size in Spalte 4
             if edge_size is not None:
                 table.setItem(row, 4, item_cls(f"{float(edge_size):.3f}"))
@@ -2575,7 +2448,13 @@ class HandlerClass:
                 if arc_text is not None and hasattr(w, "findData"):
                     idx = w.findData(str(arc_text).strip().lower(), QtCore.Qt.UserRole)
                     if idx >= 0:
-                        w.setCurrentIndex(idx)
+                        # Gleicher Reentranz-Schutz wie oben fuer den
+                        # Kantentyp-Combo.
+                        w.blockSignals(True)
+                        try:
+                            w.setCurrentIndex(idx)
+                        finally:
+                            w.blockSignals(False)
         except Exception:
             pass
 
@@ -2629,80 +2508,8 @@ class HandlerClass:
         )
         self._log(f"[LatheEasyStep][debug] preview refreshed in {time.monotonic() - t0:.3f}s", level="debug")
 
-    def _refresh_operation_list(self, select_index: int | None = None):
-        """Synchronisiert die linke Operationsliste mit dem internen Modell."""
-        if self.list_ops is not None:
-            try:
-                if self.list_ops.objectName() not in ("listOperations", "list_ops"):
-                    self.list_ops = None
-            except Exception:
-                self.list_ops = None
-
-        if self.list_ops is None:
-            root = self.root_widget or self._find_root_widget()
-            if root:
-                for w in root.findChildren(QtWidgets.QListWidget):
-                    if w.objectName() in ("listOperations", "list_ops"):
-                        self.list_ops = w
-                        break
-
-        if self.list_ops is None:
-            self._update_parting_contour_choices()
-            return
-
-        # Nur die Operations-Liste updaten (nicht andere QListWidgets).
-        for lst in [self.list_ops]:
-            current = lst.currentRow()
-            lst.blockSignals(True)
-            self._op_row_user_selected = False
-            lst.clear()
-            for i, op in enumerate(self.model.operations):
-                lst.addItem(self._describe_operation(op, i + 1))
-
-            if select_index is None:
-                target_idx = current
-            else:
-                target_idx = select_index
-            if target_idx is None:
-                target_idx = -1
-
-            if 0 <= target_idx < lst.count():
-                lst.setCurrentRow(target_idx)
-            elif lst.count() > 0:
-                lst.setCurrentRow(lst.count() - 1)
-            lst.blockSignals(False)
-            try:
-                if getattr(self, "_verbose_widget_logs", False):
-                    items = [lst.item(i).text() for i in range(lst.count())]
-                    self._log(
-                        f"[LatheEasyStep][debug] list '{lst.objectName()}' "
-                        f"count={lst.count()} items={items} vis={lst.isVisible()} "
-                        f"size={lst.size()}", level="debug")
-                # Sichtbarkeit erzwingen – eigener Style gegen dunkle QSS
-                lst.setStyleSheet(
-                    "QListWidget { background: #f5f5f5; color: #000000; }"
-                    "QListWidget::item:selected { background: #4fa3f7; color: #ffffff; }"
-                )
-                lst.show()
-                lst.raise_()
-                lst.setMinimumWidth(220)
-            except Exception:
-                pass
-            try:
-                lst.repaint()
-                lst.update()
-                # Zum selektierten Step scrollen, nicht immer ans Ende.
-                sel_item = lst.item(lst.currentRow())
-                if sel_item:
-                    lst.scrollToItem(sel_item)
-                elif lst.count() > 0:
-                    lst.scrollToBottom()
-            except Exception:
-                pass
-
-        self._update_parting_contour_choices()
-        self._update_save_step_button_state()
-        self._update_operation_action_button_states()
+    def _refresh_operation_list(self, select_index: int):
+        refresh_operation_list(self, select_index)
 
     def _ensure_preview_widgets(self):
         ensure_preview_widgets(self, LathePreviewWidget, QtWidgets.QWidget)
@@ -2728,152 +2535,10 @@ class HandlerClass:
 
     # ---- Button-Handler -----------------------------------------------
     def _handle_add_operation(self):
-        # Sicherheitsnetz: Widgets nachziehen, falls sie erst später verfügbar sind
-        self._ensure_core_widgets()
-        self._force_attach_core_widgets()
-        if not self.tools:
-            try:
-                self._auto_load_tool_table()
-            except Exception:
-                pass
-        # Schutz gegen doppelte Auslösung (UI kann Click-Events doppelt feuern)
-        if getattr(self, "_adding_operation", False):
-            return
-        now = time.monotonic()
-        last = getattr(self, "_last_add_operation_ts", 0.0)
-        if now - last < 0.8:
-            return
-        self._last_add_operation_ts = now
-        self._adding_operation = True
-        try:
-            try:
-                self._log("[LatheEasyStep] add operation triggered", level="info")
-            except Exception:
-                pass
-            op_type = self._current_op_type()
-            if op_type == OpType.PROGRAM_HEADER:
-                params = self._collect_program_header()
-                # nur einen Programmkopf zulassen -> ersetzen oder neu hinzufügen
-                for i, existing in enumerate(self.model.operations):
-                    if existing.op_type == OpType.PROGRAM_HEADER:
-                        existing.params = params
-                        if self.list_ops:
-                            item = self.list_ops.item(i)
-                            if item:
-                                item.setText(self._describe_operation(existing, i + 1))
-                            self.list_ops.setCurrentRow(i)
-                        self._refresh_preview()
-                        return
-                # noch kein Programmkopf: vorne einfügen
-                op = Operation(op_type, params)
-                self.model.update_geometry(op)
-                self.model.operations.insert(0, op)
-                try:
-                    self._reindex_dirty_operations_after_insert(0)
-                except Exception:
-                    pass
-                self._refresh_operation_list(select_index=0)
-                self._refresh_preview()
-            else:
-                params = self._collect_params(op_type)
-                if op_type == OpType.ABSPANEN:
-                    contour_name = self._current_parting_contour_name()
-                    contour_path = self._resolve_contour_path(contour_name)
-                    if not contour_name or not contour_path:
-                        self._log("[LatheEasyStep] Abspanen benötigt eine vorhandene Kontur-Auswahl", level="info")
-                        self._update_parting_ready_state()
-                        return
-                    params["contour_name"] = contour_name
-                    params["source_path"] = contour_path
-                op = Operation(op_type, params)
-                self.model.update_geometry(op)
-                parent = self.root_widget or self._find_root_widget()
-                settings = QtCore.QSettings()
-                next_index = len(self.model.operations)
-                if any(existing.op_type == OpType.PROGRAM_HEADER for existing in self.model.operations):
-                    next_index += 1
-                if not self._ensure_step_file_link(
-                    op,
-                    index_hint=next_index,
-                    parent=parent,
-                    settings=settings,
-                ):
-                    self._log("[LatheEasyStep] add operation cancelled: no step file selected", level="info")
-                    return
-                self.model.add_operation(op)
-                # Kommentar leer -> Erstbefuellung; sieht er bereits wie eine
-                # maschinell nummerierte Beschreibung aus -> Nummer auffrischen
-                # (gleiche Regel wie _insert_loaded_operation(), LES-023). Ein
-                # bewusst individueller Kommentar bleibt unangetastet.
-                if _looks_like_generated_step_comment(op.params.get("comment")):
-                    update_auto_comment(op, self._describe_operation(op, len(self.model.operations)))
-                try:
-                    self._mark_program_structure_dirty(operation_indices={len(self.model.operations) - 1})
-                except Exception:
-                    pass
-                try:
-                    debug_ops = [f"{i}:{o.op_type}" for i, o in enumerate(self.model.operations)]
-                    self._log(f"[LatheEasyStep][debug] operations now: {debug_ops}", level="debug")
-                except Exception:
-                    pass
-
-                self._refresh_operation_list(select_index=len(self.model.operations) - 1)
-                self._refresh_preview()
-                self._update_parting_ready_state()
-        finally:
-            self._adding_operation = False
+        handle_add_operation(self)
 
     def _handle_delete_operation(self):
-        if self._deleting:
-            return
-        self._deleting = True
-        try:
-            if self.list_ops is None:
-                return
-            idx = self.list_ops.currentRow()
-            self._log(
-                f"[LatheEasyStep] delete: currentRow={idx}, "
-                f"ops_count={len(self.model.operations)}",
-                level="info",
-            )
-            if idx < 0 or idx >= len(self.model.operations):
-                return
-            if idx == 0:
-                parent = self.root_widget or self._find_root_widget()
-                lang = self._current_language_code()
-                if parent is not None:
-                    try:
-                        QtWidgets.QMessageBox.warning(
-                            parent,
-                            TRANSLATIONS.tr("dialog.delete.title", lang),
-                            TRANSLATIONS.tr("message.delete.program_header_forbidden", lang),
-                        )
-                    except Exception:
-                        self._log(
-                            "[LatheEasyStep] blocked delete of program header without Qt parent",
-                            level="warning",
-                        )
-                else:
-                    self._log(
-                        "[LatheEasyStep] blocked delete of program header without Qt parent",
-                        level="warning",
-                    )
-                return
-            self.model.remove_operation(idx)
-            try:
-                self._reindex_dirty_operations_after_removal(idx)
-            except Exception:
-                pass
-            try:
-                self._mark_program_structure_dirty()
-            except Exception:
-                pass
-            new_idx = min(idx, len(self.model.operations) - 1)
-            self._refresh_operation_list(select_index=new_idx)
-            self._renumber_operations()
-            self._refresh_preview()
-        finally:
-            self._deleting = False
+        handle_delete_operation(self)
 
     def _selected_operation_index(self) -> int:
         if self.list_ops is None:
@@ -2884,7 +2549,8 @@ class HandlerClass:
         return -1
 
     def _operation_to_step_data(self, op: Operation) -> Dict[str, object]:
-        return operation_to_step_data(op)
+        tools = getattr(getattr(self, "_tool_table", None), "tools", None)
+        return operation_to_step_data(op, tools)
 
     def _step_data_to_operation(self, data: Dict[str, object]) -> Operation | None:
         return step_data_to_operation(data)
@@ -3024,6 +2690,12 @@ class HandlerClass:
     def _handle_contour_table_change(self, *args, **kwargs):
         handle_contour_table_change(self, *args, **kwargs)
 
+    def _handle_contour_start_change(self, *args, **kwargs):
+        handle_contour_start_change(self, *args, **kwargs)
+
+    def _handle_contour_name_change(self, *args, **kwargs):
+        handle_contour_name_change(self, *args, **kwargs)
+
     def _handle_contour_row_select(self, *args, **kwargs):
         handle_contour_row_select(self, *args, **kwargs)
 
@@ -3117,78 +2789,7 @@ class HandlerClass:
         return build_program_filepath(self, name_raw)
 
     def _handle_param_change(self):
-        """Generic handler for parameter widgets (spinboxes, combos, checkboxes, lineedits)."""
-        try:
-            w = self.sender()
-        except Exception:
-            return
-        if w is None:
-            return
-
-        # Determine current operation
-        idx = -1
-        try:
-            if self.list_ops is not None:
-                idx = int(self.list_ops.currentRow())
-        except Exception:
-            idx = -1
-
-        if idx < 0 or idx >= len(self.model.operations):
-            return
-
-        op = self.model.operations[idx]
-        if op.params is None:
-            op.params = {}
-
-        name = getattr(w, "objectName", lambda: "")()
-        if not name:
-            return
-
-        # Read widget value
-        val = None
-        try:
-            # QComboBox
-            if hasattr(w, "currentText") and hasattr(w, "currentIndex"):
-                # Prefer itemData if present (but fall back to text)
-                try:
-                    data = w.itemData(w.currentIndex())
-                    val = data if data is not None else w.currentText()
-                except Exception:
-                    val = w.currentText()
-            # QCheckBox
-            elif hasattr(w, "isChecked"):
-                val = bool(w.isChecked())
-            # Spin boxes
-            elif hasattr(w, "value"):
-                val = float(w.value())
-            # Line edit
-            elif hasattr(w, "text"):
-                val = str(w.text())
-        except Exception:
-            return
-
-        self._log(f"[LatheEasyStep][debug] param change: widget={name} op_type={op.op_type} row={idx} value={val!r}", level="debug")
-
-        # Do NOT write widget.objectName() directly into op.params.
-        # The authoritative mapping is built by _collect_params(op_type),
-        # so we rebuild the selected operation from the UI and refresh geometry/preview.
-        try:
-            self._update_selected_operation(force=True)
-        except Exception:
-            pass
-        if name.endswith("_spindle_mode"):
-            try:
-                self._update_spindle_mode_visibility()
-            except Exception:
-                pass
-        try:
-            if op.op_type == OpType.PROGRAM_HEADER:
-                self._mark_dirty(program=True)
-            else:
-                self._mark_dirty(operation_index=idx)
-        except Exception:
-            pass
-        return
+        handle_param_change(self)
 
 
     def _handle_selection_change(self, row: int):

@@ -197,7 +197,16 @@ def build_contour_variants(params) -> Dict[str, List[Dict[str, object]]]:
         last_x, last_z = x, z
 
     if len(pts) < 2:
-        return []
+        # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): fruehere Version
+        # gab hier eine blanke Liste zurueck, obwohl jeder andere Rueckgabepfad
+        # dieser Funktion ein Dict mit finish_primitives/feature_primitives/...
+        # liefert - build_contour_path()s variants["finish_primitives"] warf
+        # dadurch einen verwirrenden TypeError statt einer fachlichen
+        # Fehlermeldung. Kein Segment (0 Zeilen) ist wie in
+        # validate_contour_segments_for_profile() ein ungueltiger, kein
+        # legitim leerer Zustand - konsistent damit hier ebenfalls ablehnen,
+        # statt eine neue "leere Kontur ist gueltig"-Bedeutung zu erfinden.
+        raise ValueError("Kontur: mindestens ein Segment erforderlich, um eine Geometrie zu erzeugen.")
 
     def _v(a, b):
         return (b[0] - a[0], b[1] - a[1])

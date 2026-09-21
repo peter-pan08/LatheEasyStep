@@ -3,18 +3,12 @@ from __future__ import annotations
 from qtpy import QtWidgets
 
 
-def prepare_signal_connection_context(handler) -> None:
-    handler._ensure_core_widgets()
-    if handler.tab_params is None:
-        handler.tab_params = handler._get_widget_by_name("tabParams")
-    handler._ensure_list_ops_type()
-    if not hasattr(handler, "_resolver"):
-        handler._setup_resolver()
-
-
 def connect_resolver_fallbacks(handler) -> None:
     if handler.list_ops is not None:
         return
+    if getattr(handler, "_list_ops_resolver_fallback_started", False):
+        return
+    handler._list_ops_resolver_fallback_started = True
 
     def on_list_ops_ready(widget, err):
         if err is not None:
@@ -169,15 +163,18 @@ def connect_language_signal(handler) -> None:
 
 def connect_mode_visibility_signals(handler) -> None:
     try:
-        if getattr(handler, "face_mode", None):
+        if getattr(handler, "face_mode", None) and not getattr(handler, "_face_mode_visibility_connected", False):
             handler.face_mode.currentIndexChanged.connect(lambda *_: handler._update_face_visibility())
-        if getattr(handler, "face_edge_type", None):
+            handler._face_mode_visibility_connected = True
+        if getattr(handler, "face_edge_type", None) and not getattr(handler, "_face_edge_type_visibility_connected", False):
             handler.face_edge_type.currentIndexChanged.connect(lambda *_: handler._update_face_visibility())
+            handler._face_edge_type_visibility_connected = True
     except Exception:
         pass
     try:
-        if getattr(handler, "drill_mode", None):
+        if getattr(handler, "drill_mode", None) and not getattr(handler, "_drill_mode_visibility_connected", False):
             handler.drill_mode.currentIndexChanged.connect(lambda *_: handler._update_drill_visibility())
+            handler._drill_mode_visibility_connected = True
     except Exception:
         pass
 
