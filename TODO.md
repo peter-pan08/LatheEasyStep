@@ -21,15 +21,30 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
 - Der Generator ist von Qt getrennt. Reiter, Step-Verwaltung und Vorschau
   liegen in eigenen UI-/Fachmodulen.
 
+## 0.9.0-Scope-Status (Audit 2026-09-21)
+
+**Fuer 0.9.0 ist derzeit kein bekannter funktionaler Codefehler mehr
+offen.** Der 0.9.0-Scope-Audit 2026-09-21 hat alle bis dahin als
+"Ziel 0.9.0" gefuehrten Architekturpunkte (LES-022, LES-044, LES-051-Rest,
+LES-052-Handler-Kleber/`except Exception`/Fehlerklassen/Undo-Redo/Autosave/
+Pruefbericht) einzeln gegen den Code- und Teststand geprueft: keiner davon
+behebt einen bekannten Fehler, verursacht falschen G-Code/falsche
+Fahrwege oder blockiert ein bestehendes 0.9.0-Abnahmekriterium - Details
+und Einzelbegruendung je Punkt in den jeweiligen Abschnitten unten sowie
+im Changelog. Der verbleibende technische Schritt vor 0.9.0 ist
+ausschliesslich der regulaere Release-Vorgang selbst, einschliesslich des
+bisher nur lesend (`--check`) getesteten, noch nie schreibend
+durchgespielten Release-Skripts (siehe "Release-Prozess" unten).
+
 ## Priorisierter Arbeitsindex
 
 | ID | Prio | Aufgabe | Aufwand | Ziel |
 |---|---|---|---|---|
-| Release-Prozess | P1 | echten Release-Pfad testen, Manifest-Vollstaendigkeit absichern | S | vor 0.9.0 |
-| LES-022 | P2 | vier verstreute Settings-Zustaende typisieren (kein bekannter Fehler, Rest laut Audit 2026-09-18 bereits umgesetzt/bewusst abgeschlossen) | S | 0.9.0 |
-| LES-051 | P1 | Panel-Grundgeruest und Darstellungsadapter weiter entkoppeln | XL | 0.9.0 |
-| LES-052 | P1 | Panel-Architektur, Zustandsmodell und Wiederherstellung planen/umsetzen | XL | 0.9.0 |
-| LES-044 | P2 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, Rest laut Audit 2026-09-18 bereits umgesetzt) | S | 0.9.0 |
+| Release-Prozess | P1 | echten Release-Pfad beim tatsaechlichen 0.9.0-Release-Vorgang testen, Manifest-Vollstaendigkeit absichern | S | 0.9.0-Release-Vorgang |
+| LES-051 | - | Panel-Grundgeruest/Darstellungsadapter: 0.9.0-Kernumfang abgeschlossen, zwei Restpunkte verschoben (siehe Abschnitt) | - | 0.9.0 abgeschlossen |
+| LES-052 | - | Panel-Architektur/Zustandsmodell: 0.9.0-Kernumfang abgeschlossen, Restpunkte verschoben/optional (siehe Abschnitt) | - | 0.9.0 abgeschlossen |
+| LES-022 | P3 | vier verstreute Settings-Zustaende typisieren (kein bekannter Fehler, Audit 2026-09-21: reine Typisierung) | S | 1.0.0/spaeter |
+| LES-044 | P3 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, Audit 2026-09-21: reine Codeverschiebung) | S | 1.0.0/spaeter |
 | LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
 | LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
 
@@ -104,13 +119,18 @@ Anfahrtsroute, statt eine noetige Bewegung faelschlich zu uebergehen. Eine
 zur Folge, LinuxCNC-Zykluscode bzw. Makro-Zustellogik in Python
 nachzubilden - bewusst nicht vorgesehen.
 
-**Technische Restarbeit (kein nachgewiesener funktionaler Fehler, daher
-keine hohe Prioritaet):** vier Zustaende leben weiterhin als rohe
-`settings["_..."]`-Schluessel statt in einem typisierten Objekt wie
-`MotionState`/`SpindleState`. Jeder Wert wird konsistent gelesen/
-geschrieben, keiner der vier zeigt einen aktuell nachweisbaren
-funktionalen Fehler - eine Typisierung waere Architekturaufraeumen, keine
-Fehlerbehebung:
+**Technische Restarbeit, verschoben auf 1.0.0/spaeter (kein nachgewiesener
+funktionaler Fehler, daher keine hohe Prioritaet):** vier Zustaende leben
+weiterhin als rohe `settings["_..."]`-Schluessel statt in einem
+typisierten Objekt wie `MotionState`/`SpindleState`. Jeder Wert wird
+konsistent gelesen/geschrieben, keiner der vier zeigt einen aktuell
+nachweisbaren funktionalen Fehler - eine Typisierung waere
+Architekturaufraeumen, keine Fehlerbehebung. 0.9.0-Scope-Audit 2026-09-21
+gegen den Code bestaetigt: alle vier sind reine, in sich konsistente
+Buchfuehrung innerhalb eines einzelnen Generatorlaufs (exakt dasselbe
+Muster wie das bereits typisierte `MotionState`), durch die volle
+Referenz-/Matrix-`rs274`-Suite mitgeprueft - kein 0.9.0-Blocker, LES-022
+ist damit fuer 0.9.0 abgeschlossen:
 
 - [ ] `_current_tool` (aktuell geladenes Werkzeug, `gcode_safety.py`)
 - [ ] `_active_retract_mode` (Innen-/Aussen-Rueckzugsebene je Operation,
@@ -150,18 +170,32 @@ und Lebensdauer fuer `ToolVisualProvider`: Produktentscheidung, keine
 Architekturfrage - einmalig unter LES-052 Abschnitt 2 gefuehrt, nicht hier
 dupliziert.
 
-- [ ] Fehlerbehandlung bei einem dauerhaft (nicht nur verzoegert) fehlenden
-  Fragment/Widget - bisher nicht untersucht. Die bestehende
-  Ladevertrag-Bestandsaufnahme deckt Reihenfolge/Registrierung/
-  Signalbindung/Wiederholung ab, aber nicht den Fall, dass ein Lookup auch
-  nach allen drei Durchlaeufen endgueltig fehlschlaegt.
-- [ ] optionale Bedienelemente (z. B. Schnittansicht-/Ansicht-zuruecksetzen-
+0.9.0-Scope-Audit 2026-09-21: die beiden verbleibenden Punkte behandeln
+keinen bekannten Fehler und blockieren kein bestehendes
+0.9.0-Abnahmekriterium - LES-051 ist damit fuer 0.9.0 abgeschlossen,
+beide Punkte verschoben:
+
+- [ ] **(1.0.0/spaeter, spaetere Robustheitsverbesserung)** Fehlerbehandlung
+  bei einem dauerhaft (nicht nur verzoegert) fehlenden Fragment/Widget -
+  bisher nicht untersucht. Die bestehende Ladevertrag-Bestandsaufnahme
+  deckt Reihenfolge/Registrierung/Signalbindung/Wiederholung ab, aber
+  nicht den Fall, dass ein Lookup auch nach allen drei Durchlaeufen
+  endgueltig fehlschlaegt. Code-Pruefung 2026-09-21
+  (`ui_lifecycle.py::finalize_ui_ready()`): nach dem dritten Durchlauf
+  (2000ms) wird bei weiterhin fehlenden kritischen Widgets nur geloggt
+  ("will retry on next timer"), obwohl kein vierter Timer existiert - in
+  der Praxis nie beobachtet (alle 131 Real-Qt-Tests und die QtDragon-SIM
+  finden alle Widgets zuverlaessig), rein hypothetisches Risiko fuer eine
+  kuenftige inkompatible Einbettungsumgebung.
+- [ ] **(optionales zukuenftiges Architekturfeature, kein Versionsziel)**
+  optionale Bedienelemente (z. B. Schnittansicht-/Ansicht-zuruecksetzen-
   Buttons) als austauschbare Komponenten ueber einen eigenen Datenvertrag,
   analog zu den bereits ausgelagerten Farb-/Stil-Vertraegen. Reine
   Architekturidee ohne aktuell bekannten funktionalen Fehler -
   `ui_preview.py` verdrahtet diese Buttons weiterhin direkt
   (`_get_widget_by_name()` + inline `TRANSLATIONS.tr()`), aber kein Bug,
-  kein bekannter Bedarf fuer ein zweites Skin.
+  kein bekannter Bedarf fuer ein zweites Skin. Nur relevant, falls je ein
+  zweites Skin gebraucht wird.
 
 ## LES-052 Panel-Architektur, Zustandsmodell und Wiederherstellung
 
@@ -208,13 +242,21 @@ identifiziert ist (`__init__`, `initialized__`, `_ensure_contour_widgets()`,
 u. Ae. - siehe oben "bewusst NICHT extrahiert"). Kein bekannter Fehler,
 reine Architekturarbeit.
 
-- [ ] `_select_operation_for_current_tab()`, `_ensure_slice_z_matches_
-  operation()`/`_suggest_slice_z_for_preview()`, `_write_contour_row()`,
-  `_select_slice_strategy_index()`, `_setup_thread_helpers()`/
-  `_apply_standard_thread_selection()`/`_apply_thread_preset_force()`,
-  `_insert_loaded_operation()` (alle `lathe_easystep_handler.py`) - echte,
-  nicht rein UI-mechanische Logik, die in testbare Module unter
-  `lathe_easystep/` gehoert.
+- [ ] **(1.0.0/spaeter)** `_select_operation_for_current_tab()`,
+  `_ensure_slice_z_matches_operation()`/`_suggest_slice_z_for_preview()`,
+  `_write_contour_row()`, `_select_slice_strategy_index()`,
+  `_setup_thread_helpers()`/`_apply_standard_thread_selection()`/
+  `_apply_thread_preset_force()`, `_insert_loaded_operation()` (alle
+  `lathe_easystep_handler.py`) - echte, nicht rein UI-mechanische Logik,
+  die in testbare Module unter `lathe_easystep/` gehoert. 0.9.0-Scope-Audit
+  2026-09-21: kein bekannter Fehler in einer dieser sieben Funktionen (alle
+  in dieser Session real gefundenen Fehler darin - Kontur-Rollback,
+  Reentranz, Programmkopf-Dirty - sind bereits behoben); Stichprobe zeigt
+  zudem, dass die Thread-Preset-Funktionen bereits duenne Wrapper um die
+  laengst extrahierte, getestete Kernlogik (`ui_thread.py::
+  apply_thread_preset()`, `tests/test_thread_preset_application.py`) sind
+  - die urspruengliche Begruendung ist fuer diese drei teilweise ueberholt.
+  Kein 0.9.0-Blocker.
 
 Ladevertrag und Views ohne eigenen Fachzustand: Bestandsaufnahme +
 Umsetzung abgeschlossen (Details: `doc/PANEL_ARCHITECTURE.md` →
@@ -413,56 +455,87 @@ gruen):
     bzw. Zustands-/Dirty-Fluss) - `regenerate_all_ngc.py`/`rs274` deshalb
     in diesem Durchgang nicht erneut ausgefuehrt (letzter Stand:
     Null-Diff, siehe oben).
-- [ ] breite `except Exception`-Fallbacks in den betroffenen UI-Modulen
-  durch definierte Fehlerklassen oder engere Fehlergrenzen ersetzen, ohne
-  erwartete optionale Ressourcenfehler zu verschlucken. `preview_widget.py`/
-  `ui_preview.py` sind dieser Aufgabe entwachsen - dort ist das bereits
-  abgeschlossen (siehe LES-044). Projektweite Zaehlung (Audit 2026-09-18)
-  ergab weiterhin ~400 Vorkommen in 40+ Dateien, u. a. `ui_header.py` (6)
-  und `ui_params.py` (4) - deutlich groesser als der bisherige LES-044-
-  Umfang, nicht in einem Rutsch angehen, sondern inkrementell oder
-  explizit in Etappen zerlegen.
-- [ ] Fehlerdiagnosen zentral sammeln und fuer Log, UI-Warnung und Tests
-  strukturiert nutzbar machen - vollstaendig unimplementiert, eigene
-  Entwurfsarbeit.
-- [ ] Fehlerklassen vereinheitlichen: `INFO`, `WARNING`, `BLOCKING_ERROR` und
-  `INTERNAL_ERROR`; insbesondere muss klar sein, wann kein G-Code entstehen
-  darf. Vollstaendig unimplementiert (`checks.py`s `ValidationError` ist nur
-  ein `Tuple[int, str]`-Typalias, keine Klassenhierarchie) - eigenstaendige
-  Entwurfsentscheidung mit projektweiter Auswirkung, verdient eigene
-  Klaerung vor der Umsetzung.
+**Breite `except Exception`-Fallbacks: kein eigener 0.9.0-Meilenstein mehr
+(Entscheidung 0.9.0-Scope-Audit 2026-09-21).** Projektweite Zaehlung ergab
+weiterhin ~400/486 Vorkommen in 40+/43 Dateien; die reine Anzahl ist aber
+kein Fehlerbeleg. Stichprobe in bisher ungeprueften Dateien (`ui_header.py`)
+zeigt dieselbe Kategorie wie die bereits einzeln bewerteten LES-044-Stellen:
+defensive Absicherung gegen PyQt5-Widget-Zugriffsfehler mit sauberem
+Fallback, kein verschluckter Fachfehler. Alle in dieser Session tatsaechlich
+gefundenen, funktional wirksamen verschluckten Fehler (Kontur-Rollback,
+`handle_param_change()`s Dirty-Fehlmarkierung, `handle_load_program()`s
+Teilimport, `handle_load_step()`s Dirty-Loeschung) wurden einzeln, gezielt
+und mit Regressionstest behoben - **dieses Vorgehen bleibt die Praxis**:
+konkrete, einzeln bestaetigte Faelle weiterhin gezielt mit Regressionstest
+beheben, statt eine pauschale Bereinigung als eigenen Meilenstein zu fuehren.
+`preview_widget.py`/`ui_preview.py` bleiben als bereits abgeschlossenes
+Beispiel bestehen (siehe LES-044).
+
+- [ ] **(1.0.0/spaeter)** Fehlerdiagnosen zentral sammeln und fuer Log,
+  UI-Warnung und Tests strukturiert nutzbar machen - vollstaendig
+  unimplementiert, eigene Entwurfsarbeit. 0.9.0-Scope-Audit 2026-09-21:
+  `ui_messages.py::format_user_error()`/`parse_error_location()` bieten
+  bereits einen funktionierenden Mechanismus (Exception -> lokalisierte
+  Nutzermeldung -> automatischer Sprung zu Tab/Feld); alle in dieser
+  Session behobenen Fehler wurden darueber sauber gemeldet, ohne eine
+  zentrale Sammlung zu benoetigen. Kein 0.9.0-Blocker.
+- [ ] **(1.0.0/spaeter)** Fehlerklassen vereinheitlichen: `INFO`, `WARNING`,
+  `BLOCKING_ERROR` und `INTERNAL_ERROR`; insbesondere muss klar sein, wann
+  kein G-Code entstehen darf. Vollstaendig unimplementiert (`checks.py`s
+  `ValidationError` ist nur ein `Tuple[int, str]`-Typalias, keine
+  Klassenhierarchie) - eigenstaendige Entwurfsentscheidung mit
+  projektweiter Auswirkung, verdient eigene Klaerung vor der Umsetzung.
+  0.9.0-Scope-Audit 2026-09-21: heute wird "kein G-Code bei ungueltigen
+  Daten" bereits fallweise durch harte `ValueError`s durchgesetzt
+  (`contour_logic.py`, `validate_finite_data()`) - keine Funktionsluecke
+  bis zur spaeteren Taxonomie-Einfuehrung. Kein 0.9.0-Blocker.
 
 ### 4. Bedienbarkeit und Wiederherstellung
 
-Audit 2026-09-20: Undo/Redo und Autosave sind beide vollstaendig
-unimplementiert. Notwendigkeit fuer 0.9.0 (statt 1.0.0) nur festgestellt,
-noch nicht entschieden - keine Umsetzung, keine Umpriorisierung in dieser
-Aenderung.
+0.9.0-Scope-Audit 2026-09-21 (folgt auf die Bestandsaufnahme 2026-09-20):
+Undo/Redo und Autosave sind beide vollstaendig unimplementiert und beide
+**kein 0.9.0-Blocker** - Entscheidung getroffen, keines von beiden ist
+Teil des 0.9.0-Umfangs. Beide bleiben eigenstaendige, optionale
+zukuenftige Features ohne festes Versionsziel; Autosave mit deutlich
+staerkerer sachlicher Begruendung als Undo/Redo (siehe jeweils unten).
 
-**Autosave/Absturzwiederherstellung:** plausibler, konkreter funktionaler
-Nutzen - es gibt kein periodisches Sichern; ein Panel-Absturz oder
-Stromausfall in der Werkstattumgebung verliert ungespeicherte Aenderungen
-vollstaendig.
+**Autosave/Absturzwiederherstellung - optionales zukuenftiges Feature mit
+dokumentiertem Recovery-Nutzen, aber kein 0.9.0-Blocker:** plausibler,
+konkreter funktionaler Nutzen, durch Code-Pruefung 2026-09-21 bestaetigt -
+es existiert keinerlei Warnung beim Schliessen des Panels mit
+ungespeicherten Aenderungen (`warn_if_dirty()` laeuft ausschliesslich bei
+Tab-/Step-Wechsel, `ui_selection.py:46,110`, nicht beim Beenden); ein
+Panel-Absturz oder Stromausfall in der Werkstattumgebung verliert
+ungespeicherte Aenderungen vollstaendig und ohne jeden Hinweis. Betrifft
+aber ausschliesslich ungespeicherte, im Speicher gehaltene Aenderungen -
+bereits gespeicherte Programmdateien sind durch LES-053/LES-054 bereits
+korrekt/deterministisch. Neues Feature, nichts Bestehendes haengt davon
+ab; keine 0.9.0-Abnahmekriterien verlangen es unabhaengig von der
+Feature-Entscheidung selbst.
 
 - [ ] Autosave und Absturzwiederherstellung als getrennte, atomare
   Wiederherstellungsdatei vorsehen. Originaldateien duerfen niemals ungefragt
   ueberschrieben werden.
 - [ ] Wiederherstellung, Versionskennung, unvollstaendige Autosaves und die
   Entscheidung des Anwenders im UI nachvollziehbar behandeln.
+- [ ] Autosave-Roundtrips erhalten alle fachlichen Daten und den korrekten
+  Dirty-State (vormals als 0.9.0-Abnahmekriterium unter LES-052 gefuehrt -
+  hierher verschoben, da abhaengig von dieser Feature-Entscheidung).
 
-**Undo/Redo:** schwaecher begruendet speziell fuer 0.9.0 - der bestehende
-Workflow erzwingt bereits explizites Speichern
-(`handle_save_changes()`/LES-047-Verknuepfungszwang fuer Step-Dateien),
-eine nicht gespeicherte Fehleingabe wird durch Nicht-Speichern/Neuladen
-faktisch bereits "rueckgaengig gemacht". Kein bekannter Datenverlust-
-Vorfall, der Undo/Redo speziell fuer 0.9.0 statt spaeter erzwingt -
-Kandidat fuer eine Verschiebung auf 1.0.0, sofern das Projekt das so
-entscheidet (hier nur festgestellt, nicht umgesetzt oder umpriorisiert).
+**Undo/Redo - optionales zukuenftiges Feature, Ziel 1.0.0 oder spaeter:**
+schwaecher begruendet als Autosave - der bestehende Workflow erzwingt
+bereits explizites Speichern (`handle_save_changes()`/LES-047-
+Verknuepfungszwang fuer Step-Dateien), eine nicht gespeicherte Fehleingabe
+wird durch Nicht-Speichern/Neuladen faktisch bereits "rueckgaengig
+gemacht". Kein bekannter Datenverlust-Vorfall, der Undo/Redo erzwingt.
 
 - [ ] Undo/Redo auf Modell- oder Command-Ebene entwerfen; Widget-Zustaende
   duerfen nicht die Undo-Historie bilden.
 - [ ] Undo/Redo fuer Parameter-, Segment-, Step-, Werkzeug- und Preset-
   Aenderungen mit klarer Dirty-State-Behandlung testen.
+- [ ] Undo-Roundtrips erhalten alle fachlichen Daten und den korrekten
+  Dirty-State (vormals als 0.9.0-Abnahmekriterium unter LES-052 gefuehrt -
+  hierher verschoben, da abhaengig von dieser Feature-Entscheidung).
 
 ### 5. Werkzeugdaten und technische Pruefung
 
@@ -503,9 +576,13 @@ offenen Punkte mehr.
   `checks.py::_check_tool_matches_snapshot()`) - kein eigener Punkt mehr
   hier, um die Aufgabe nicht doppelt zu fuehren.
 
-- [ ] einen technischen Pruefbericht pro Programm vorsehen: Werkzeuge,
-  Grenzen, Futter-Sperrzone, XRI/XRA, Vorschub/Drehzahl, Warnungen und
-  verwendete G-Code-Strategien. Neues Feature, existiert bisher nicht.
+- [ ] **(optionales zukuenftiges Feature, Ziel 1.0.0 oder spaeter)** einen
+  technischen Pruefbericht pro Programm vorsehen: Werkzeuge, Grenzen,
+  Futter-Sperrzone, XRI/XRA, Vorschub/Drehzahl, Warnungen und verwendete
+  G-Code-Strategien. Neues Feature, existiert bisher nicht. 0.9.0-Scope-
+  Audit 2026-09-21: projektweite Suche findet keine einzige bestehende
+  Referenz auf einen solchen Bericht - vollstaendig gruenes Feld, nichts
+  Bestehendes haengt davon ab. Kein 0.9.0-Blocker.
 
 ### Abnahme fuer LES-052
 
@@ -551,10 +628,11 @@ Audit 2026-09-20 bereits erfuellt, kein offener Punkt mehr:
   und `test_load_step_into_clean_program_marks_program_dirty`
   (`tests/test_dirty_state_load_save_contract.py`), beide vor dem Fix rot.
 
-- [ ] Undo-Roundtrips erhalten alle fachlichen Daten und den korrekten
-  Dirty-State - abhaengig von Abschnitt 4 (Undo/Redo).
-- [ ] Autosave-Roundtrips erhalten alle fachlichen Daten und den korrekten
-  Dirty-State - abhaengig von Abschnitt 4 (Autosave).
+0.9.0-Scope-Audit 2026-09-21: die vormals hier gefuehrten Undo-/Autosave-
+Roundtrip-Kriterien sind zu Abschnitt 4 verschoben (sie haengen an der
+dortigen, noch offenen Feature-Entscheidung, nicht an bestehendem 0.9.0-
+Umfang - siehe dort). Damit ist "Abnahme fuer LES-052" fuer 0.9.0
+vollstaendig erfuellt, kein offener Punkt mehr.
 
 (Die frueher hier zusaetzlich gefuehrte Regel "bei Generator-/
 Fahrwegaenderungen Referenzen/NGC/rs274/SIM ausfuehren" ist entfernt - sie
@@ -698,8 +776,13 @@ und gehoert inhaltlich nicht zu "Vorschau und Darstellung" - dieser Punkt
 wird jetzt ausschliesslich unter LES-052 Abschnitt 3 (projektweites
 Fehlergrenzen-Aufraeumen) gefuehrt, nicht mehr hier.
 
-**Technische Restbereinigung, kein funktionaler Blocker fuer 0.9.0** (kein
-daraus bekannter Fehler in falscher/fehlender Preview-Geometrie):
+**Technische Restbereinigung, verschoben auf 1.0.0/spaeter (kein
+funktionaler Blocker fuer 0.9.0)** (kein daraus bekannter Fehler in
+falscher/fehlender Preview-Geometrie). 0.9.0-Scope-Audit 2026-09-21
+bestaetigt per Code-Pruefung: alle drei sind bereits reine, in sich
+geschlossene Funktionen ohne Qt-/Handler-Kopplung - die Aufgabe ist
+ausschliesslich Verschieben in eine andere Datei, keine
+Verhaltensaenderung. LES-044 ist damit fuer 0.9.0 abgeschlossen:
 
 - [ ] `_pixel_to_z()` (`preview_widget.py`) als Qt-freie Funktion nach
   `preview_geometry.py` auslagern (Pixel->Z-Ruecktransformation, reine

@@ -17,6 +17,52 @@
 
 ## [Unreleased]
 
+### 0.9.0-Scope-Audit: Architekturpunkte ohne bekannten Fehler auf 1.0.0/optional verschoben 2026-09-21
+
+Systematischer Audit aller bis dahin als "Ziel 0.9.0" gefuehrten
+Architekturpunkte (LES-022, LES-044, LES-051-Rest, LES-052-Handler-Kleber/
+`except Exception`/Fehlerklassen/Undo-Redo/Autosave/Pruefbericht) einzeln
+gegen den Code- und Teststand: keiner davon behebt einen bekannten Fehler,
+verursacht falschen G-Code/falsche Fahrwege oder blockiert ein bestehendes
+0.9.0-Abnahmekriterium. Scope entsprechend bereinigt (`TODO.md`/
+`ROADMAP.md`):
+
+- LES-022, LES-044: aus den 0.9.0-"Verbindlichen Aufgaben" entfernt -
+  ihr 0.9.0-relevanter Kern (`MotionState`/`SpindleState`-Zentralisierung
+  bzw. Qt-freie Vorschaugeometrie) ist bereits abgeschlossen, die
+  jeweiligen Restpunkte (vier untypisierte, aber konsistente
+  Generator-Laufzustaende; drei reine Funktionsverschiebungen) verschoben
+  auf 1.0.0/spaeter.
+- LES-051 Restpunkte (dauerhaft fehlendes UI-Fragment, optionaler
+  Bedienelement-Datenvertrag) und LES-052-Handler-Kleber: verschoben auf
+  1.0.0/spaeter bzw. als optionales zukuenftiges Architekturfeature
+  eingestuft.
+- `except Exception`-Bereinigung: kein eigener 0.9.0-Meilenstein mehr -
+  konkrete, einzeln bestaetigte Faelle werden weiterhin gezielt mit
+  Regressionstest behoben (wie in den letzten Sitzungen bereits praktiziert),
+  statt eine pauschale Bereinigung als Meilenstein zu fuehren.
+- Zentrale Fehlerdiagnose/Fehlerklassen-Taxonomie: verschoben auf
+  1.0.0/spaeter - der bestehende `format_user_error()`/
+  `parse_error_location()`-Mechanismus ist fuer 0.9.0 ausreichend.
+- Undo/Redo, technischer Pruefbericht: als optionale zukuenftige Features
+  eingestuft, Ziel 1.0.0 oder spaeter.
+- Autosave: als optionales zukuenftiges Feature mit dokumentiertem
+  Recovery-Nutzen eingestuft (kein Warnhinweis beim Schliessen des Panels
+  mit ungespeicherten Aenderungen existiert aktuell), aber kein
+  0.9.0-Blocker.
+- Die davon abhaengigen Undo-/Autosave-Roundtrip-Abnahmekriterien aus der
+  0.9.0-"Abnahme fuer LES-052" entfernt und bei den jeweiligen
+  zukuenftigen Features neu eingeordnet.
+
+Release-Prozess bleibt bewusst unveraendert offen: der schreibende
+Release-Pfad wird erst beim tatsaechlichen Erstellen von 0.9.0 einmal
+durchgespielt, nicht vorab kuenstlich. LES-043/LES-030 unveraendert
+ausserhalb des 0.9.0-Scopes.
+
+**Ergebnis: fuer 0.9.0 ist damit kein bekannter funktionaler Codefehler
+mehr offen.** Der verbleibende technische Schritt ist der regulaere
+Release-Vorgang selbst.
+
 ### Fix (LES-052 Abschnitt 3): Reentranz in `_write_contour_row()` behoben - deterministischer Sync/Dirty-Ablauf 2026-09-21
 
 Der im vorherigen Durchgang gefundene, bewusst nicht behobene

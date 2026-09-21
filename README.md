@@ -409,20 +409,29 @@ editiert werden koennen.
 Die vollstaendige, priorisierte Aufgabenliste steht in der
 [TODO.md](TODO.md), die Release-Zuordnung in der [ROADMAP.md](ROADMAP.md).
 
-Aktuelle Reihenfolge (P1 zuerst, Details und Aufwand in TODO.md):
+Der 0.9.0-Scope-Audit (2026-09-21, Details in TODO.md/ROADMAP.md) hat
+bestaetigt: fuer 0.9.0 ist kein bekannter funktionaler Codefehler mehr
+offen. Der Panel-Architektur-/Zustandsmodell-Kern (LES-051/LES-052) ist
+fuer 0.9.0 abgeschlossen, einschliesslich der atomaren State-/Rollback-/
+Fehlergrenzen-Arbeiten. Verbleibende Prioritaeten:
 
-1. Release-Prozess einmal vollstaendig mit dem tatsaechlich schreibenden Pfad
-   durchspielen und Manifest-Vollstaendigkeit absichern - vor 0.9.0
-2. LES-051 Panel-Grundgeruest und Darstellungsadapter weiter entkoppeln
-   (Handler-Kleber reduzieren, Ladevertrag fuer Standalone/Embedded)
-3. LES-052 Zustandsmodell, Controller und Wiederherstellung - Zustandstrennung
-   und Darstellungsadapter sind groesstenteils umgesetzt; offen bleiben vor
-   allem atomare Fehlergrenzen, Undo/Redo und Autosave/Wiederherstellung
-4. LES-022 zentralen Bewegungs- und Modalzustand vervollstaendigen
-5. LES-044 verbleibende Vorschau-Geometrie aus der Qt-Darstellung loesen
-6. LES-032 Werkzeuggeometrie fuer Plausibilitaet und Kollision erweitern
-7. LES-043 Gegenspindel als separates Projekt spezifizieren (nicht 0.9.0)
-8. LES-030 weitere reale Maschinenprofile verifizieren (extern, offen)
+1. Release-Prozess: den tatsaechlich schreibenden Release-Pfad beim
+   0.9.0-Release-Vorgang selbst einmal durchspielen und Manifest-
+   Vollstaendigkeit absichern
+2. LES-043 Gegenspindel als separates Projekt spezifizieren (nicht 0.9.0)
+3. LES-030 weitere reale Maschinenprofile verifizieren (extern, offen)
+
+Auf 1.0.0/spaeter verschoben bzw. als optionale zukuenftige Features
+eingestuft (kein bekannter Fehler, kein 0.9.0-Blocker, Einzelbegruendung
+in TODO.md): restliche LES-051/LES-052-Punkte (Handler-Kleber, breite
+`except Exception`-Faelle, zentrale Fehlerdiagnose/Fehlerklassen, Undo/
+Redo, Autosave, technischer Pruefbericht), LES-022 (vier restliche
+Settings-Zustaende) sowie LES-044 (drei restliche Codeverschiebungen).
+LES-032 Werkzeuggeometrie: die Werkzeughuellen-/Bohrstangengeometrie-
+Pruefung ist mit der offiziellen LinuxCNC-`tool.tbl` nicht loesbar und
+wurde bewusst dauerhaft geschlossen; die Erkennung geaenderter
+Werkzeugmerkmale seit Programmerstellung ist bereits umgesetzt - kein
+offener Punkt mehr.
 
 ## Regressionstests und Smoke-Test
 
@@ -661,20 +670,28 @@ Current behaviour:
 The complete prioritized backlog is maintained in [TODO.md](TODO.md), with
 release milestones in [ROADMAP.md](ROADMAP.md).
 
-Current order (P1 first, details and effort in TODO.md):
+The 0.9.0 scope audit (2026-09-21, details in TODO.md/ROADMAP.md)
+confirmed: no known functional code defect remains open for 0.9.0. The
+panel architecture/state model core (LES-051/LES-052) is complete for
+0.9.0, including the atomic state/rollback/error-boundary work. Remaining
+priorities:
 
-1. run the actual writing release path once end to end and verify manifest
-   completeness - before 0.9.0
-2. LES-051 further decouple the panel skeleton and presentation adapters
-   (reduce handler glue, define the standalone/embedded load contract)
-3. LES-052 state model, controller and recovery - state separation and
-   presentation adapters are largely done; what remains is mainly atomic
-   error boundaries, undo/redo and autosave/recovery
-4. LES-022 complete the central motion/modal state
-5. LES-044 move the remaining preview geometry out of the Qt presentation
-6. LES-032 extend tool geometry for plausibility and collision checks
-7. LES-043 specify the sub-spindle feature as a separate project (not 0.9.0)
-8. LES-030 verify further real machine profiles (external, open)
+1. Release process: run the actual writing release path once end to end,
+   as part of the actual 0.9.0 release itself, and verify manifest
+   completeness
+2. LES-043 specify the sub-spindle feature as a separate project (not 0.9.0)
+3. LES-030 verify further real machine profiles (external, open)
+
+Deferred to 1.0.0/later, or reclassified as optional future features (no
+known defect, no 0.9.0 blocker, per-item justification in TODO.md): the
+remaining LES-051/LES-052 points (handler glue, broad `except Exception`
+cases, central error diagnostics/error classes, undo/redo, autosave,
+technical inspection report), LES-022 (four remaining settings states),
+and LES-044 (three remaining code relocations). LES-032 tool geometry:
+the tool-envelope/boring-bar-geometry check is not solvable with the
+official LinuxCNC `tool.tbl` and was deliberately closed for good;
+detecting tool-characteristic changes since program creation is already
+implemented - no open point remains.
 
 ## Regression and Smoke Test
 

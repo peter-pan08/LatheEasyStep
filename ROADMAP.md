@@ -103,8 +103,6 @@ Bedienung duerfen Bearbeitungsdaten und G-Code nicht beeinflussen.
 
 Verbindliche Aufgaben:
 
-- LES-022 zentraler Bewegungs- und Modalzustand
-- LES-044 vollstaendige Trennung von Vorschaugeometrie und Qt-Darstellung
 - LES-051 Panel-Grundgeruest und Darstellungsadapter
 - LES-052 Zustandsmodell, Controller und Wiederherstellung
 - LES-053 Programm-/Step-Dateiformat versionieren
@@ -129,6 +127,39 @@ Abnahmekriterien:
 Die bereits erledigte Trennung der Bearbeitungsreiter wird nicht erneut
 geplant. LES-055 beschreibt eine sicherheitsrelevante Erweiterung fuer die
 Maschinenprofil-Kompatibilitaet und ist fuer 1.0.0 verpflichtend.
+
+### 0.9.0-Scope-Audit 2026-09-21: Umfang bereinigt, kein bekannter Codefehler mehr offen
+
+LES-022 (zentraler Bewegungs-/Modalzustand) und LES-044 (Trennung
+Vorschaugeometrie/Qt-Darstellung) sind aus den "Verbindlichen Aufgaben"
+entfernt: ihr fuer 0.9.0 relevanter Kern ist bereits abgeschlossen
+(`MotionState`/`SpindleState` zentral fuer alle dynamisch umgeschalteten
+Modalgruppen; Vorschaugeometrie vollstaendig als Qt-freie Datenvertraege
+ausgelagert) und erfuellt die obigen Abnahmekriterien bereits vollstaendig.
+Die jeweils verbleibenden Restpunkte (vier untypisierte, aber intern
+konsistente Generator-Laufzustaende bei LES-022; drei reine
+Funktionsverschiebungen ohne Verhaltensaenderung bei LES-044) sind
+verschoben auf 1.0.0/spaeter - siehe `TODO.md` fuer die technische
+Einzelbegruendung je Punkt.
+
+LES-051 und LES-052 bleiben als "Verbindliche Aufgaben" gefuehrt, sind
+aber fuer 0.9.0 inhaltlich abgeschlossen: alle Abnahmekriterien oben sind
+erfuellt. Ihre jeweils verbleibenden Restpunkte (Handler-Kleber-Reduktion,
+projektweite `except Exception`-Bereinigung, zentrale Fehlerdiagnose/
+Fehlerklassen-Taxonomie, dauerhaft fehlendes UI-Fragment, optionaler
+Bedienelement-Datenvertrag, Undo/Redo, Autosave, technischer Pruefbericht)
+sind allesamt auf 1.0.0/spaeter verschoben bzw. als eigenstaendige,
+optionale zukuenftige Features ohne festes Versionsziel eingestuft - keiner
+davon behebt einen bekannten Fehler, verursacht falschen G-Code/falsche
+Fahrwege oder blockiert eines der obigen Abnahmekriterien. Einzelbegruendung
+je Punkt in `TODO.md`.
+
+**Fuer 0.9.0 ist damit derzeit kein bekannter funktionaler Codefehler mehr
+offen.** Der verbleibende technische Schritt ist der reguläre Release-
+Vorgang selbst, einschliesslich des bisher nur lesend (`--check`)
+getesteten, noch nie schreibend durchgespielten Release-Skripts (siehe
+`TODO.md` → "Release-Prozess"). Dieser Schritt wird bewusst erst beim
+tatsaechlichen Erstellen von 0.9.0 durchgefuehrt, nicht vorab kuenstlich.
 
 ## 1.0.0 - Werkstattgeeigneter dokumentierter Stand
 
