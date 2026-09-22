@@ -163,6 +163,7 @@ from lathe_easystep.ui_dirty import (
     clear_dirty_operation,
     clear_program_dirty,
     clear_dirty_state,
+    handle_window_close_event,
     has_unsaved_changes,
     init_dirty_state,
     mark_all_operations_dirty,
@@ -1124,6 +1125,28 @@ class HandlerClass:
     def _warn_if_dirty(self, context: str, *, row: int | None = None) -> None:
         warn_if_dirty(self, context, row=row)
 
+    def class_patch__(self):
+        # QtVCP-Lifecycle-Hook, aufgerufen von `/usr/bin/qtvcp` direkt nach
+        # `load_extension()` und vor `APP.exec()` - fuer Standalone
+        # (`qtvcp -c easystep`) und Embedded (`EMBED_TAB_COMMAND=qtvcp -x
+        # {XID} -c easystep ...`) identisch, da beide denselben
+        # `/usr/bin/qtvcp`-Startpfad und dieselbe `VCPWindow`/`MainPage`-
+        # QMainWindow-Klasse durchlaufen. `self.w` ist zu diesem Zeitpunkt
+        # bereits das echte Fenster (siehe `__init__`). QtVCP selbst
+        # ueberschreibt `closeEvent` nirgends, daher ist das Ersetzen hier
+        # sicher moeglich und der einzige Weg, das Schliessen tatsaechlich
+        # abzubrechen (anders als `closing_cleanup__()`, das laut
+        # QtVCP-Quelltext erst nach `APP.exec()` laeuft).
+        try:
+            window = self.w
+            if window is not None and hasattr(window, "closeEvent"):
+                window.closeEvent = self._handle_window_close_event
+        except Exception as exc:
+            self._log(f"[LatheEasyStep] class_patch__: closeEvent hook not installed: {exc}", level="warning")
+
+    def _handle_window_close_event(self, event):
+        handle_window_close_event(self, event)
+
     def _startup_mark(self, label: str):
         try:
             delta = time.monotonic() - getattr(self, "_startup_epoch", time.monotonic())
@@ -2054,6 +2077,16 @@ class HandlerClass:
             pass
         try:
             self._update_dirty_status()
+        except Exception:
+            pass
+        try:
+            # ID-only-Vollaudit 2026-09-21: Vorschau-Canvas-Beschriftung
+            # (Legende/Warnungsbox/Schnittlabels) braucht die aktuelle
+            # Sprache - ueber den bestehenden Refresh-Pfad statt eigener
+            # Logik (setzt handler.preview*.language via PreviewView).
+            self._startup_mark("_apply_language_texts: refresh_preview begin")
+            self._refresh_preview()
+            self._startup_mark("_apply_language_texts: refresh_preview end")
         except Exception:
             pass
         self._startup_mark("_apply_language_texts: validate_language begin")

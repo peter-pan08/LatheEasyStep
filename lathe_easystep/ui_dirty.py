@@ -6,6 +6,7 @@ from .dirty_state import DirtyState
 from .model import OpType
 from .translations import TRANSLATIONS
 from .ui_helpers import current_language as _lang, tab_label
+from .ui_persistence import handle_save_changes
 from .ui_step_list_view import StepListView
 
 
@@ -191,3 +192,80 @@ def warn_if_dirty(handler, context: str, *, row: int | None = None) -> None:
         QtWidgets.QMessageBox.warning(parent, title, text)
     except Exception:
         pass
+
+
+def confirm_discard_or_save_on_exit(handler) -> bool:
+    """Speichern/Verwerfen/Abbrechen-Abfrage fuer den Beendigungspfad.
+
+    Rueckgabe True bedeutet: das Fenster darf tatsaechlich schliessen.
+    Nutzt ausschliesslich den bestehenden Speicherpfad (handle_save_changes()) -
+    keine eigene parallele Speicherlogik.
+    """
+    if not has_unsaved_changes(handler):
+        return True
+    lang = _lang(handler)
+    parent = getattr(handler, "root_widget", None) or handler._find_root_widget()
+    box = QtWidgets.QMessageBox(parent)
+    box.setIcon(QtWidgets.QMessageBox.Warning)
+    box.setWindowTitle(TRANSLATIONS.tr("dialog.unsaved_changes_on_exit.title", lang))
+    box.setText(TRANSLATIONS.tr("dialog.unsaved_changes_on_exit.body", lang))
+    save_button = box.addButton(
+        TRANSLATIONS.tr("dialog.unsaved_changes_on_exit.save", lang), QtWidgets.QMessageBox.AcceptRole
+    )
+    discard_button = box.addButton(
+        TRANSLATIONS.tr("dialog.unsaved_changes_on_exit.discard", lang), QtWidgets.QMessageBox.DestructiveRole
+    )
+    box.addButton(
+        TRANSLATIONS.tr("dialog.unsaved_changes_on_exit.cancel", lang), QtWidgets.QMessageBox.RejectRole
+    )
+    box.setDefaultButton(save_button)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is save_button:
+        handle_save_changes(handler)
+        return not has_unsaved_changes(handler)
+    if clicked is discard_button:
+        return True
+    # Abbrechen oder Dialog anderweitig geschlossen (z. B. Fenster-X):
+    # sicherer Default ist "nicht schliessen".
+    return False
+
+
+def handle_window_close_event(handler, event) -> None:
+    """QtVCP-Fenster-`closeEvent`-Ersatz, gebunden via `class_patch__()`.
+
+    `closing_cleanup__()` laeuft laut QtVCP-Quelltext (`/usr/bin/qtvcp`)
+    erst NACH `QApplication.exec()`, kann das Schliessen also nicht mehr
+    verhindern. Nur ein echter `closeEvent` auf dem QMainWindow selbst kann
+    das (`event.ignore()`); QtVCP patcht dafuer keinen eigenen Handler,
+    daher ersetzt `class_patch__()` `self.w.closeEvent` durch diese
+    Funktion.
+
+    Fail-safe bei ungeklaertem Zustand: eine unerwartete Ausnahme waehrend
+    der Dirty-Pruefung/des Dialogs fuehrt zu `event.ignore()` (Fenster
+    bleibt offen), NICHT zum Schliessen trotz moeglicherweise noch
+    ungespeicherter Aenderungen - Datenverlust ist der schlechtere Fehler
+    als ein Fenster, das sich einmal nicht schliesst. `_runtime.
+    closing_window` (`RuntimeState`) verhindert dabei zusaetzlich, dass ein
+    reentranter Aufruf (z. B. ein zweites Close-Signal, waehrend der
+    Speichern-/Verwerfen-/Abbrechen-Dialog noch offen ist) einen weiteren
+    Dialog stapelt - der reentrante Aufruf ignoriert das Event sofort ohne
+    erneute Pruefung.
+    """
+    runtime = getattr(handler, "_runtime", None)
+    if runtime is not None and getattr(runtime, "closing_window", False):
+        event.ignore()
+        return
+    if runtime is not None:
+        runtime.closing_window = True
+    try:
+        if confirm_discard_or_save_on_exit(handler):
+            event.accept()
+        else:
+            event.ignore()
+    except Exception as exc:
+        handler._log(f"[LatheEasyStep] closeEvent dirty-check failed, keeping window open: {exc}", level="warning")
+        event.ignore()
+    finally:
+        if runtime is not None:
+            runtime.closing_window = False

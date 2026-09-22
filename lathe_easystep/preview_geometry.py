@@ -250,23 +250,25 @@ def offset_polygons_to_screen(
 
 
 LEGEND_ENTRIES: Tuple[Dict[str, object], ...] = (
-    {"label": "Werkzeugweg", "color": (0, 255, 0), "width": 2, "style": "solid"},
-    {"label": "Werkstück", "color": (70, 155, 255), "width": 2, "style": "solid"},
-    {"label": "Hilfsgeometrie", "color": (145, 145, 145), "width": 1, "style": "dashdot"},
-    {"label": "Aktiv", "color": (255, 0, 0), "width": 2, "style": "solid"},
-    {"label": "Rohteil", "color": (180, 180, 180), "width": 1, "style": "solid"},
-    {"label": "Rückzug", "color": (0, 255, 255), "width": 1, "style": "dash"},
-    {"label": "Schruppkontur", "color": (240, 180, 0), "width": 2, "style": "dash"},
-    {"label": "Freistich", "color": (0, 190, 255), "width": 2, "style": "solid"},
-    {"label": "Bearbeitungslinie", "color": (255, 0, 0), "width": 1, "style": "dash"},
-    {"label": "Futter-Sperrzone", "color": (200, 60, 220), "width": 1, "style": "dashdot"},
+    {"label_key": "runtime.preview.legend.tool_path", "color": (0, 255, 0), "width": 2, "style": "solid"},
+    {"label_key": "runtime.preview.legend.workpiece", "color": (70, 155, 255), "width": 2, "style": "solid"},
+    {"label_key": "runtime.preview.legend.aux_geometry", "color": (145, 145, 145), "width": 1, "style": "dashdot"},
+    {"label_key": "runtime.preview.legend.active", "color": (255, 0, 0), "width": 2, "style": "solid"},
+    {"label_key": "runtime.preview.legend.stock", "color": (180, 180, 180), "width": 1, "style": "solid"},
+    {"label_key": "runtime.preview.legend.retract", "color": (0, 255, 255), "width": 1, "style": "dash"},
+    {"label_key": "runtime.preview.legend.roughing_contour", "color": (240, 180, 0), "width": 2, "style": "dash"},
+    {"label_key": "runtime.preview.legend.relief", "color": (0, 190, 255), "width": 2, "style": "solid"},
+    {"label_key": "runtime.preview.legend.machining_line", "color": (255, 0, 0), "width": 1, "style": "dash"},
+    {"label_key": "runtime.preview.legend.chuck_nogo", "color": (200, 60, 220), "width": 1, "style": "dashdot"},
 )
-"""LES-051: reiner Datenvertrag fuer die Vorschau-Legende - Label, RGB-Farbe,
-Linienbreite und ein Qt-freier Stilname (`solid`/`dash`/`dashdot`). Vorher
-wurden diese Werte direkt als `QPen`/`QColor`-Objekte in `preview_widget.py`s
-`paintEvent()` konstruiert; jetzt liest der Qt-Adapter nur noch aus dieser
-Liste. Bewusst NICHT gleichzeitig uebersetzt (eigenes, separates Thema -
-die Legende war schon vorher rein Deutsch und ungebunden an `_tr()`, siehe
+"""LES-051: reiner Datenvertrag fuer die Vorschau-Legende - `.lng`-Schluessel,
+RGB-Farbe, Linienbreite und ein Qt-freier Stilname (`solid`/`dash`/
+`dashdot`). Vorher wurden diese Werte direkt als `QPen`/`QColor`-Objekte in
+`preview_widget.py`s `paintEvent()` konstruiert; jetzt liest der Qt-Adapter
+nur noch aus dieser Liste. `label_key` statt `label`, damit dieses Modul
+Qt-frei bleibt (`translations.py` importiert transitiv `qtpy` ueber
+`ui_static.py` und wuerde diese Garantie brechen) - `preview_widget.py` loest
+den Schluessel beim Zeichnen auf (ID-only-Vollaudit 2026-09-21, siehe
 TODO.md LES-044)."""
 
 
@@ -396,15 +398,16 @@ def legend_layout(
 
 
 STATUS_BOX_STYLE: Dict[str, object] = {
-    "header": "Warnungen",
+    "header_key": "runtime.preview.status.header",
     "border_color": (180, 80, 20),
     "fill_color": (255, 240, 210, 220),
     "text_color": (90, 40, 0),
 }
 """LES-051: reiner Datenvertrag fuer die Status-/Warnungsbox (Randfarbe,
 Fuellfarbe inkl. Alpha, Textfarbe, Kopfzeile) - analog zu LEGEND_ENTRIES.
-`paintEvent()` konstruiert daraus nur noch `QPen`/`QColor`/`QBrush`. Bewusst
-NICHT gleichzeitig uebersetzt (eigenes Thema, siehe LES-044)."""
+`paintEvent()` konstruiert daraus nur noch `QPen`/`QColor`/`QBrush`.
+`header_key` statt `header` - `preview_widget.py` loest den `.lng`-Schluessel
+beim Zeichnen auf (ID-only-Vollaudit 2026-09-21, siehe TODO.md LES-044)."""
 
 
 def status_message_layout(messages, *, widget_width: float) -> Dict[str, object] | None:

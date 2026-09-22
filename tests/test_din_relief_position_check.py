@@ -8,8 +8,11 @@ from lathe_easystep.contour_logic import build_contour_variants
 from lathe_easystep.model import OpType, Operation
 
 
+_RELIEF_KEYS = {"warning.din_relief_missing_thread_size", "warning.din_relief_missing_side"}
+
+
 def _relief_warnings(warnings):
-    return [w for w in warnings if "Freistich" in w]
+    return [w for w in warnings if w["key"] in _RELIEF_KEYS]
 
 
 def _relief_segment(z, orientation="end"):

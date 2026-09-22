@@ -25,7 +25,7 @@ def _tool(**overrides):
 
 
 def _width_warnings(warnings):
-    return [w for w in warnings if "Werkzeugbreite" in w]
+    return [w for w in warnings if w["key"] == "warning.tool_width_mismatch"]
 
 
 def test_extract_insert_width_from_comment_reads_iso_grooving_code():
@@ -54,8 +54,8 @@ def test_mismatched_manual_width_is_flagged():
     ]
     warnings = _width_warnings(validate_program_setup(ops, {"tools": {4: tool}}))
     assert len(warnings) == 1
-    assert "T04" in warnings[0]
-    assert "Schritt 2" in warnings[0]
+    assert warnings[0]["params"]["tool_num"] == 4
+    assert warnings[0]["params"]["idx"] == 2
 
 
 def test_matching_manual_width_is_silent():

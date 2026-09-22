@@ -29,8 +29,15 @@ def _abspanen_op(tool_snapshot=None, tool=1):
     return Operation(OpType.ABSPANEN, params, path=[(40.0, 0.0), (20.0, -20.0)])
 
 
+_SNAPSHOT_KEYS = {
+    "warning.tool_snapshot_radius_changed",
+    "warning.tool_snapshot_orientation_changed",
+    "warning.tool_snapshot_width_changed",
+}
+
+
 def _snapshot_warnings(warnings):
-    return [w for w in warnings if "geaendert" in w]
+    return [w for w in warnings if w["key"] in _SNAPSHOT_KEYS]
 
 
 def test_build_tool_snapshot_contains_only_the_three_relevant_fields():
@@ -64,7 +71,8 @@ def test_changed_radius_is_detected():
     warnings = validate_program_setup([op], {"tools": current_tools})
     hits = _snapshot_warnings(warnings)
     assert len(hits) == 1
-    assert "T01" in hits[0] and "Radius" in hits[0]
+    assert hits[0]["key"] == "warning.tool_snapshot_radius_changed"
+    assert hits[0]["params"]["tool_num"] == 1
 
 
 def test_changed_orientation_is_detected():
@@ -74,7 +82,7 @@ def test_changed_orientation_is_detected():
     warnings = validate_program_setup([op], {"tools": current_tools})
     hits = _snapshot_warnings(warnings)
     assert len(hits) == 1
-    assert "Orientierung" in hits[0]
+    assert hits[0]["key"] == "warning.tool_snapshot_orientation_changed"
 
 
 def test_changed_insert_width_is_detected():
@@ -84,7 +92,7 @@ def test_changed_insert_width_is_detected():
     warnings = validate_program_setup([op], {"tools": current_tools})
     hits = _snapshot_warnings(warnings)
     assert len(hits) == 1
-    assert "Einstichbreite" in hits[0]
+    assert hits[0]["key"] == "warning.tool_snapshot_width_changed"
 
 
 def test_operation_without_snapshot_produces_no_warning():

@@ -17,7 +17,277 @@
 
 ## [Unreleased]
 
-- Noch keine Eintraege. Neue Umbauten werden ab hier dokumentiert.
+### Feature: Exit-Schutz bei ungespeicherten Aenderungen 2026-09-21
+
+Bestaetigter Befund aus der Post-Release-Doku-Pruefung: `warn_if_dirty()`
+lief bisher ausschliesslich bei Tab-/Step-Wechsel, nie beim tatsaechlichen
+Beenden - ein Panel-Absturz war nicht der Grund, ein regulaeres Schliessen
+mit ungespeicherten Aenderungen verlor sie kommentarlos.
+
+Vor der Implementierung gegen den installierten QtVCP-Quelltext
+(`/usr/bin/qtvcp`, `qtvcp/qt_makegui.py`) geprueft: `closing_cleanup__()`
+laeuft erst NACH `QApplication.exec()` und kann das Schliessen nicht mehr
+verhindern. `class_patch__()` dagegen laeuft vor `APP.exec()`, sobald
+`self.w` (das echte QtVCP-Fenster) bereits existiert - identisch fuer
+Standalone (`qtvcp -c easystep`) und Embedded (`Drehbank.ini`:
+`EMBED_TAB_COMMAND=qtvcp -x {XID} -c easystep ...`), da Embedded laut
+INI ein eigener `qtvcp`-Prozess ist, kein Python-Kindwidget von QtDragon,
+und damit denselben Startpfad durchlaeuft.
+
+Umgesetzt: `HandlerClass.class_patch__()` (`lathe_easystep_handler.py`)
+ersetzt `self.w.closeEvent` durch `_handle_window_close_event()`, delegiert
+an `lathe_easystep/ui_dirty.py::handle_window_close_event()`/
+`confirm_discard_or_save_on_exit()`. Bei ungespeicherten Aenderungen ein
+Speichern-/Verwerfen-/Abbrechen-Dialog mit eigenen Buttons (nicht Qts
+Standardbuttons, deren Text nicht aus `.lng` kaeme): Speichern ruft den
+bestehenden `handle_save_changes()`-Pfad auf und schliesst nur, wenn
+danach kein Dirty-State mehr besteht; Verwerfen laesst schliessen zu;
+Abbrechen verhindert das Schliessen tatsaechlich; ohne Dirty-State
+erscheint kein Dialog. Keine eigene parallele Speicherlogik, kein
+Autosave - Crash-/Stromausfall-Wiederherstellung bleibt bewusst eine
+getrennte, weiterhin offene Funktion (siehe TODO.md LES-052 Abschnitt 4).
+
+**Nachbesserung nach Review (2026-09-21):** der urspruengliche
+Exception-Fallback ("schliessen") war bei vorhandenem Dirty-State nicht
+fail-safe - ein unerwarteter Fehler haette Datenverlust ermoeglicht statt
+ihn zu verhindern. Korrigiert auf fail-closed: jede unerwartete Ausnahme
+waehrend der Dirty-Pruefung/des Dialogs fuehrt jetzt zu `event.ignore()`
+(Fenster bleibt offen). Zusaetzlich neuer Reentranz-Schutz
+(`RuntimeState.closing_window`, analog zu den neun bestehenden
+Reentranz-Sperren des Feldes) verhindert, dass ein zweites Close-Signal
+waehrend der laufenden Pruefung einen zweiten Dialog stapelt - der
+reentrante Aufruf ignoriert sofort ohne erneute Pruefung.
+
+Neue `.lng`-Schluessel `dialog.unsaved_changes_on_exit.*` in de/en/es.
+Tests: `tests/test_class_patch_close_event.py` (Stub, zwei Faelle,
+`class_patch__()`-Verdrahtung), `tests/test_unsaved_changes_on_exit_real_qt.py`
+(Real-Qt, acht Faelle: kein Dialog ohne Dirty-State,
+Speichern/Verwerfen/Abbrechen einzeln, Exception-Fallback bleibt jetzt
+fail-closed offen, Reentranz-Schutz gegen doppelten Dialog, sowie eine
+Integration mit dem echten `handle_save_changes()`). Volle Suite: 970
+Stub-/139 Real-Qt-Tests, 0 Skips. Kein Generator-/Geometriecode betroffen,
+daher keine rs274-Referenzpruefung noetig.
+
+### Dokumentation: ID-only-Vollaudit und Known-Limitations-Bereinigung 2026-09-21
+
+Vollstaendiger Audit der strikten UI-/Spracharchitektur (statische
+`.ui`-Texte, dynamische Python-Texte, Dialoge, Tooltips, Combo-Eintraege,
+Placeholder, Tabellenkoepfe, Status-/Warnmeldungen) gegen den tatsaechlichen
+Code, nicht nur gegen TODO.md-Eintraege. Ergebnis: das gesamte statische
+`.ui`-Chrome ist vollstaendig `.lng`-basiert (`ui_static.py` erfasst es
+automatisch); zwei reale, bisher nicht in TODO.md gefuehrte Ausnahmen
+bleiben bestehen und wurden dort neu aufgenommen statt stillschweigend zu
+bleiben: die komplette Vorschau-Canvas-Beschriftung (`preview_widget.py`
+importiert `TRANSLATIONS` an keiner Stelle - Legende, Warnungsbox,
+Schnitt-/Vorderansicht-Labels sind dauerhaft Deutsch) sowie zwei rohe,
+unuebersetzte `str(exc)`-Fehlermeldungen im Step-/Programm-Ladepfad
+(`ui_persistence.py:220,330`, haengt an der bereits als 1.0.0/spaeter
+eingestuften Fehlerklassen-Taxonomie). Technische Achs-/Bewegungscodes
+("X"/"Z"/"XZ") wurden bewusst nicht als Verstoss gewertet - sprachunabhaengige
+Bezeichner, keine UI-Prosa. `README.md`s Aussage "Umbau noch nicht
+vollstaendig abgeschlossen" entsprechend auf den tatsaechlich
+nachgewiesenen Stand korrigiert statt faelschlich auf "abgeschlossen"
+gesetzt.
+
+`Known Limitations` (DE/EN) gegen Code, Tests, TODO.md/ROADMAP.md und
+vorhandene SIM-/Backplot-Nachweise geprueft statt pauschal als veraltet
+verworfen: die Werkzeughuellen-/Bohrstangengeometrie-Pruefung wird jetzt
+korrekt als dauerhaft strukturell geschlossen (LES-032) statt als offen
+dargestellt; Innen-Schrupp-/DIN-Freistich-Punkte praezisiert auf
+"SIM/Backplot verifiziert (0.8.0-Release-Gate), reale Trockenlaeufe offen
+(LES-030)" statt pauschal "brauchen weitere Realtests"; der laut LES-001/039
+bereits abgeschlossene kontextabhaengige Freifahrt-Punkt entfernt.
+
+### Fix: ID-only-Verstoesse aus dem Vollaudit behoben 2026-09-21
+
+Beide im vorherigen Audit-Eintrag genannten Verstoesse ueber das
+bestehende `_tr()`/`TRANSLATIONS`/`.lng`-System behoben, keine neue
+Architektur: `ViewState.language` (`view_state.py`) plus
+`language`-Property auf `LathePreviewWidget`, gesetzt ueber
+`PreviewView.apply_paths()` (`ui_preview_view.py`, jedes Neuzeichnen) und
+`_apply_language_texts()` -> `_refresh_preview()`
+(`lathe_easystep_handler.py`, jede Sprachumschaltung). `LEGEND_ENTRIES`/
+`STATUS_BOX_STYLE` (`preview_geometry.py`) halten jetzt `label_key`/
+`header_key` statt Literaltext, damit das Modul Qt-frei bleibt
+(`preview_widget.py` loest den Schluessel erst beim Zeichnen auf). Neue
+`runtime.preview.*`-Schluessel (Legende, Statusbox-Kopfzeile, Schnitt-/
+Vorderansicht-Labels) in de/en/es. `get_machine_limit_warnings()`
+(`gcode_safety.py`) nutzt jetzt `gcode_comment()` (dieselbe Qt-freie
+`.lng`-Mechanik wie alle anderen `(WARN: ...)`-Kommentare in
+`gcode_program.py`/`gcode_safety.py`) mit neuen
+`gcode.comment.limit_warning_x/z`-Schluesseln - betrifft auch generierten
+G-Code (`gcode_program.py:361`), daher Referenzregeneration und
+12-Referenzen-/43-Matrix-rs274-Lauf durchgefuehrt: kein Diff, da keine
+Referenz-/Matrixgeometrie diese Warnung tatsaechlich ausloest.
+
+`ui_persistence.py:220,330` nutzen jetzt `format_user_error()` mit
+`fallback_title` (neuer Schluessel `message.step.load_failed`, bereits
+vorhandener `message.program.load_failed`) statt rohem `str(exc)`.
+`ui_messages.py::format_user_error()`s letzter Fallback (kein bekanntes
+Muster, kein `fallback_title`, kein `op_number`) gibt nicht mehr den
+rohen `detail`-Text zurueck, sondern `TRANSLATIONS.tr("message.
+generic_error", lang).format(detail=detail)` - neuer Schluessel in
+de/en/es. In allen Faellen bleibt die technische Detailmeldung
+eingebettet, der sichtbare Rahmen kommt vollstaendig aus `.lng`.
+
+**Zweiter Audit-Durchgang nach dem Fix: neuer, groesserer Befund - die
+Migration ist NICHT vollstaendig.** Beim erneuten, diesmal bis in
+`ui_preview.py`s Warnungs-Aggregation (`prog["__warnings"]`,
+Zeilen 361-364) reichenden Nachverfolgen zeigte sich, dass die
+Vorschau-Statusbox neben `get_machine_limit_warnings()` (jetzt behoben)
+noch zwei weitere, unabhaengige Warnungsquellen mit hartkodiertem
+deutschem Text anzeigt, die im ersten Audit-Durchgang nicht mitverfolgt
+wurden: `checks.py::validate_program_setup()` (ca. 24 Stellen ueber
+mehrere Hilfsfunktionen, u. a. auch in G-Code-`(WARN: ...)`-Kommentaren
+via `gcode_program.py:231,363`) und
+`tool_logic.py::radius_warning_details()` (eine Stelle, nur UI-Statusbox).
+Nicht behoben - Umfang und G-Code-Beruehrung (bei `checks.py`) rechtfertigen
+einen eigenen, bewusst abgegrenzten Arbeitsschritt statt einer
+unangekuendigten Ausweitung; als offener Punkt neu in `TODO.md` (LES-044)
+aufgenommen, README entsprechend nicht auf "vollstaendig abgeschlossen"
+gesetzt.
+
+### Fix: verbliebener ID-only-Rest (checks.py/tool_logic.py) behoben, repo-weiter Vollaudit abgeschlossen 2026-09-22
+
+Vor der Umsetzung Datenfluss geprueft: `validate_program_setup()`s
+Warnungen werden von rund einem Dutzend Tests inhaltlich weiterverarbeitet
+(Substring-Filter auf konkrete deutsche Woerter, z. B. `"Werkzeugzuordnung"
+in w` in `tests/test_tool_kind_mismatch_check.py`) und teils als
+G-Code-`(WARN: ...)`-Kommentar eingebettet (`gcode_program.py`). Direktes
+Uebersetzen in der Pruefungslogik haette beides gebrochen bzw. Domainlogik
+von lokalisiertem Text abhaengig gemacht - stattdessen stabile
+Meldungs-IDs plus Parameter:
+
+- `checks.py::CheckWarning` (`{"key": str, "params": dict}`) und
+  `checks.py::format_warning(warning, lang)` als einzige
+  Uebersetzungsgrenze, ueber `gcode_comment()` (dieselbe Qt-freie
+  `.lng`-Mechanik wie der Rest der Generatorpipeline - `checks.py` bleibt
+  damit wie `gcode_safety.py`/`gcode_utils.py` ohne Qt-Import, siehe LES-044
+  2026-09-14 zur selben Entscheidung bei `gcode_comment()`s Einfuehrung).
+  Alle rund 24 `_check_*()`-Warnungen sowie die Inline-Pruefungen in
+  `validate_program_setup()` umgestellt; `_TOOL_KIND_LABELS_DE`/
+  `_OP_TYPE_LABELS_DE`-Lookup-Dicts entfernt (Rohwerte `kind`/`op_type`
+  bleiben jetzt in den Parametern, `format_warning()` loest sie erst beim
+  Anzeigen ueber `tool.kind.*`/`optype.*`-Schluessel auf); Thread-Preset-
+  Feldkonflikte analog ueber `field.*`-Schluessel und einen neuen
+  `warning.thread_preset_field_conflict_item`-Baustein.
+- `tool_logic.py::radius_warning_details()` liefert dieselbe Struktur
+  (`warning.tool_radius_unknown`), der leere-Kommentar-Fallback
+  ("kein Kommentar") wird ueber `warning.no_tool_comment` aufgeloest statt
+  hartkodiert zu bleiben.
+- `gcode_program.py`/`ui_preview.py` uebersetzen erst beim tatsaechlichen
+  Einbetten: `gcode_program.py` ueber das bereits vorhandene `lang` beim
+  G-Code-Kommentar, `ui_preview.py` neu ueber `current_language(handler)`
+  (vorher fehlte "lang" in `prog` fuer die Vorschau-Statusbox komplett -
+  `get_machine_limit_warnings()` faellt dort seit dieser Aenderung
+  ebenfalls korrekt auf die aktuelle UI-Sprache zurueck, nicht mehr
+  automatisch auf Deutsch).
+- 9 betroffene Testdateien von Substring- auf Key-/Parameter-Vergleiche
+  umgestellt (`test_tool_kind_mismatch_check.py`,
+  `test_tool_width_mismatch_check.py`, `test_tool_snapshot_check.py`,
+  `test_groove_chuck_reachability_check.py`,
+  `test_thread_preset_consistency_check.py`,
+  `test_dangling_contour_reference_check.py`,
+  `test_duplicate_operation_check.py`, `test_drill_before_internal_check.py`,
+  `test_din_relief_position_check.py`, `test_tool_warning_wiring.py`) - alle
+  pruefen jetzt `warnings[i]["key"]`/`["params"][...]` statt deutscher
+  Wortfragmente.
+- 47 neue `.lng`-Schluessel (`warning.*`, `optype.*`, `tool.kind.*`,
+  `field.*`) in de/en/es. Neue Regressionstests:
+  `tests/test_checks_warning_translation.py` (`format_warning()` isoliert,
+  inkl. verschachtelter Aufloesung fuer `tool_kind_mismatch`/
+  `thread_preset_field_conflicts`/leere Preset-/Kommentar-Fallbacks;
+  Vollstaendigkeitscheck aller neuen Schluessel in allen drei Sprachen) und
+  ein neuer Fall in `tests/test_gcode_comments_are_language_dependent.py`
+  (End-to-End durch den echten Generatorpfad).
+
+**Danach repo-weiter Vollaudit (nicht nur die jetzt bekannten Funktionen) -
+zwei weitere, kleinere Funde, ebenfalls behoben:** `gcode_drill.py`
+(Retract-unter-safe_z-Warnung) und `gcode_safety.py::get_approach_warnings()`
+(drei Meldungen: Startpunkt im Rohteil/in der Futter-Sperrzone,
+Rueckzugsebene schneidet Futterbereich; nur G-Code-Kommentare, keine
+UI-Statusbox, keine Testweiterverarbeitung) nutzten hartkodiertes Deutsch -
+direkt via `gcode_comment()` uebersetzt, analog zu
+`get_machine_limit_warnings()`. `ui_groove.py::render_groove_diagrams()`
+zeichnete das Label "Stirn" im Einstich-/Abstich-Lagediagramm fest
+Deutsch - neuer Schluessel `runtime.groove.label_face`.
+
+Als Nicht-Verstoss identifiziert und bewusst nicht angefasst:
+`checks.py::validate_contour()` und `tool_logic.py::
+collect_tool_orientation_warnings()` enthalten hartkodiertes Deutsch,
+sind aber toter Code (projektweit nicht aufgerufen, per Grep verifiziert).
+`contour_logic.py::validate_contour_segments_for_profile()`s Fehlertexte
+gehen ausschliesslich in interne Logs. Technische Bezeichner (Achsnamen,
+ISO-Codes, Werkzeugnummern, Masseinheiten, G-Code selbst, "WARN"/"Step"
+als feste Kommentarpraefixe) bleiben unveraendert sprachinvariant.
+
+**Ergebnis des abschliessenden Audits: keine bekannte sichtbare UI-Prosa
+mehr ausserhalb der `.lng`-Dateien.** `README.md` entsprechend auf den
+tatsaechlich abgeschlossenen Zustand gebracht, der temporaere
+LES-044-Punkt aus dem vorherigen Audit-Durchgang in `TODO.md` als erledigt
+dokumentiert.
+
+Separater, nicht ID-only-bezogener Nebenbefund waehrend dieser Pruefung:
+im echten, Handler-getriebenen "Programm erzeugen"-Pfad wird
+`settings["lang"]` nirgends gesetzt (`ui_header.py::
+collect_program_header()` liefert keinen `lang`-Schluessel) - G-Code-
+Kommentare fallen dort unabhaengig von der UI-Sprache immer auf Deutsch
+zurueck, obwohl LES-044 (2026-09-14) genau das als Ziel dokumentiert und
+auf Funktionsebene bereits korrekt testet. Der Text selbst kommt weiterhin
+korrekt aus `.lng` (keine ID-only-Verletzung), nur die Sprachauswahl
+erreicht den Aufrufer nicht - reine Verdrahtungsluecke, nicht Teil dieses
+Auftrags, nur dokumentiert (siehe TODO.md).
+
+Tests: 977 Stub-/139 Real-Qt-Tests, 0 Skips. Referenzregeneration ohne
+Diff; 12 Referenzen und 43 Matrixprogramme unter `rs274` bestanden (noetig,
+da mehrere der behobenen Warnungen G-Code-Kommentare beeinflussen).
+
+### Fix: Sprach-Verdrahtungsluecke bei "Programm erzeugen" behoben 2026-09-22
+
+Der im vorherigen Audit-Eintrag dokumentierte Nebenbefund behoben:
+`settings["lang"]` wurde im echten, Handler-getriebenen "Programm
+erzeugen"-Pfad nirgends gesetzt - G-Code-Kommentare fielen deshalb in der
+laufenden UI immer auf Deutsch zurueck, unabhaengig von der gewaehlten
+UI-Sprache, obwohl LES-044 (2026-09-14) genau das als Ziel dokumentierte
+und auf Funktionsebene bereits korrekt testete (nur
+`generate_program_gcode()` isoliert, nicht ueber den echten Handler-Pfad).
+
+Datenfluss vor der Korrektur geprueft: aktuelle UI-Sprache
+(`handler._current_language_code()`, liest die `program_language`-Combo)
+-> `ui_flow.py::build_gcode_lines()` (alleiniger realer Aufrufpfad:
+`write_gcode_file()` -> `handler._build_gcode_lines()` ->
+`build_gcode_lines()` -> `handler.model.generate_gcode()`) ->
+`gcode_program.py::generate_program_gcode()` -> `gcode_comment()`/
+`format_warning()`. `build_gcode_lines()` baute `handler.model.
+program_settings` bisher ausschliesslich aus `_collect_program_header()`
+(Formulardaten ohne "lang") auf.
+
+Kleinste Korrektur: eine Zeile in `build_gcode_lines()`,
+`handler.model.program_settings["lang"] = current_language(handler)` -
+der bereits bestehende `ui_helpers.py`-Wrapper um
+`_current_language_code()` (kein neuer Sprachzustand, keine zweite
+Verwaltung). `current_language()` faengt fehlendes Handler-Setup bereits
+ab (Fallback "de"), daher auch mit synthetischen Test-Handlern ohne
+Widget-Baum sicher nutzbar.
+
+Bewusst NICHT persistiert: `build_program_data()` (Speicherpfad fuer
+`.lse`-Dateien) ruft `_collect_program_header()` unabhaengig und ohne
+"lang" erneut auf, statt `handler.model.program_settings` wiederzuverwenden,
+gespeicherte Programme werden dadurch nicht sprachabhaengig, es gilt
+beim Erzeugen stets die dann aktuelle UI-Sprache. `numeric.py::_TEXT_KEYS`
+um `"lang"` ergaenzt (deklarativ, verhindert jede Fehlinterpretation als
+Zahl explizit statt ueber den bestehenden String-Parse-Fallback).
+
+Neue Regressionstests `tests/test_gcode_language_wiring.py` (6 Faelle,
+treiben den echten `build_gcode_lines()`-Pfad direkt an, nicht nur
+`generate_program_gcode()` isoliert): DE/EN/ES-Kommentare je einzeln
+nachgewiesen; Sprachwechsel ohne Programmneuladen zwischen zwei Aufrufen
+desselben Handlers wirkt sofort; technische G-Code-Struktur (Zeilen ohne
+`(...)`-Kommentare) bleibt zwischen den drei Sprachen byte-identisch;
+expliziter Nachweis, dass `build_program_data()` kein "lang" enthaelt.
+
+Tests: 983 Stub-/139 Real-Qt-Tests, 0 Skips. Referenzregeneration ohne
+Diff; 12 Referenzen und 43 Matrixprogramme unter `rs274` bestanden.
 
 ## [0.9.0] - 2026-09-21
 

@@ -113,3 +113,31 @@ def test_spanish_translation_also_differs_from_german_and_english():
     assert "(Aproximacion antes del ranurado)" in es
     assert es != de
     assert es != en
+
+
+def _lines_with_thread_end_outside_stock(lang):
+    ops, settings = example_programs()["Gewinde.ngc"]
+    settings = dict(settings)
+    # Gewinde.ngc: thread_start_z=0.0 (Default), length=30.0 -> Gewindeende
+    # bei Z=-30. zi=-10.0 (statt -55.0) laesst das bewusst ausserhalb des
+    # Rohteil-Z-Bereichs liegen, ohne irgendein REQUIRED_KEYS-Pflichtfeld zu
+    # verletzen (reine advisory Warnung aus validate_program_setup(), kein
+    # harter Generatorfehler).
+    settings["zi"] = -10.0
+    if lang is not None:
+        settings["lang"] = lang
+    return generate_program_gcode(ops, settings)
+
+
+def test_validate_program_setup_warning_comment_is_translated():
+    """ID-only-Vollaudit 2026-09-21: validate_program_setup() liefert seither
+    strukturierte Warnungen (Schluessel+Parameter) statt fertiger Saetze -
+    format_warning() muss sie beim Einbetten als G-Code-Kommentar korrekt in
+    die per settings['lang'] gewuenschte Sprache uebersetzen, end-to-end
+    durch den echten Generatorpfad (nicht nur format_warning() isoliert,
+    siehe test_checks_warning_translation.py)."""
+    de = _joined(_lines_with_thread_end_outside_stock(None))
+    en = _joined(_lines_with_thread_end_outside_stock("en"))
+    assert "(WARN: Gewindeende ausserhalb des Werkstuecks)" in de
+    assert "(WARN: Thread end outside the stock)" in en
+    assert "Werkstueck" not in en

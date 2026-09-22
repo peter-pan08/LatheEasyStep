@@ -656,6 +656,7 @@ def get_approach_warnings(settings: Dict[str, object] | None, start_pos: Tuple[f
     warnings: List[str] = []
     if settings is None or start_pos is None:
         return warnings
+    lang = settings.get("lang")
     x, z = start_pos
     xa = float_or_none(settings.get("xa"))
     xi = float_or_none(settings.get("xi"))
@@ -667,14 +668,16 @@ def get_approach_warnings(settings: Dict[str, object] | None, start_pos: Tuple[f
         z_min = min(zi, za)
         z_max = max(zi, za)
         if x_min - 1e-6 <= x <= x_max + 1e-6 and z_min - 1e-6 <= z <= z_max + 1e-6:
-            warnings.append(f"Startpunkt X{x:.3f} Z{z:.3f} liegt im Rohteil")
+            warnings.append(gcode_comment("gcode.comment.approach_start_in_stock", lang, x=f"{x:.3f}", z=f"{z:.3f}"))
     x_min = float_or_none(settings.get("chuck_no_go_x_min"))
     x_max = float_or_none(settings.get("chuck_no_go_x_max"))
     z_lim = float_or_none(settings.get("chuck_no_go_z_limit"))
     if x_min is not None and x_max is not None and z_lim is not None:
         if min(x_min, x_max) - 1e-6 <= x <= max(x_min, x_max) + 1e-6:
             if z <= z_lim + 1e-6:
-                warnings.append(f"Startpunkt X{x:.3f} Z{z:.3f} liegt in der Futter-Sperrzone")
+                warnings.append(
+                    gcode_comment("gcode.comment.approach_start_in_chuck_no_go", lang, x=f"{x:.3f}", z=f"{z:.3f}")
+                )
         safe = get_safe_position(settings)
         if safe is not None:
             safe_x, safe_z = safe
@@ -685,13 +688,21 @@ def get_approach_warnings(settings: Dict[str, object] | None, start_pos: Tuple[f
             # diese Pruefung widerspraeche die Warnung dem tatsaechlichen,
             # bereits durch validate_chuck_segment() abgesicherten Fahrweg.
             if safe_z <= z_lim + 1e-6 and min(x_min, x_max) - 1e-6 <= safe_x <= max(x_min, x_max) + 1e-6:
-                warnings.append(f"Rueckzugsebene X{safe_x:.3f} Z{safe_z:.3f} schneidet den Futterbereich")
+                warnings.append(
+                    gcode_comment(
+                        "gcode.comment.approach_retract_plane_crosses_chuck",
+                        lang,
+                        x=f"{safe_x:.3f}",
+                        z=f"{safe_z:.3f}",
+                    )
+                )
     return warnings
 
 
 def get_machine_limit_warnings(settings: Dict[str, object] | None) -> List[str]:
     if settings is None:
         return []
+    lang = settings.get("lang")
     warnings: List[str] = []
     xa = float_or_none(settings.get("xa"))
     xi = float_or_none(settings.get("xi"))
@@ -712,7 +723,9 @@ def get_machine_limit_warnings(settings: Dict[str, object] | None) -> List[str]:
         for key in ("xt", "xra", "xri"):
             val = bounds.get(key)
             if val is not None and not (low <= val <= high):
-                warnings.append(f"{key.upper()}={val:.3f} liegt ausserhalb plausibler X-Grenzen")
+                warnings.append(
+                    gcode_comment("gcode.comment.limit_warning_x", lang, axis_key=key.upper(), val=f"{val:.3f}")
+                )
     if za is not None and zi is not None:
         span = max(abs(za - zi), 1.0)
         low = min(zi, za) - span * 10.0 - 50.0
@@ -720,7 +733,9 @@ def get_machine_limit_warnings(settings: Dict[str, object] | None) -> List[str]:
         for key in ("zt", "zra", "zri"):
             val = bounds.get(key)
             if val is not None and not (low <= val <= high):
-                warnings.append(f"{key.upper()}={val:.3f} liegt ausserhalb plausibler Z-Grenzen")
+                warnings.append(
+                    gcode_comment("gcode.comment.limit_warning_z", lang, axis_key=key.upper(), val=f"{val:.3f}")
+                )
     return warnings
 
 

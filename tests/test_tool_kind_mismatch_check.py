@@ -24,7 +24,7 @@ def _tool(**overrides):
 
 
 def _kind_warnings(warnings):
-    return [w for w in warnings if "Werkzeugzuordnung" in w]
+    return [w for w in warnings if w["key"] == "warning.tool_kind_mismatch"]
 
 
 def test_drilling_tool_used_for_groove_operation_is_flagged():
@@ -35,8 +35,8 @@ def test_drilling_tool_used_for_groove_operation_is_flagged():
     ]
     warnings = _kind_warnings(validate_program_setup(ops, {"tools": {5: tool}}))
     assert len(warnings) == 1
-    assert "T05" in warnings[0]
-    assert "Schritt 2" in warnings[0]
+    assert warnings[0]["params"]["tool_num"] == 5
+    assert warnings[0]["params"]["idx"] == 2
 
 
 def test_drilling_tool_used_for_drill_operation_is_silent():
@@ -56,9 +56,11 @@ def test_grooving_tool_used_for_thread_operation_is_flagged():
     ]
     warnings = _kind_warnings(validate_program_setup(ops, {"tools": {7: tool}}))
     assert len(warnings) == 1
-    assert "T07" in warnings[0]
-    assert "Gewindewerkzeug" not in warnings[0]  # das ist der ERWARTETE Kind, nicht der gefundene
-    assert "Stechwerkzeug" in warnings[0]
+    assert warnings[0]["params"]["tool_num"] == 7
+    # "kind" ist der tatsaechlich gefundene Kind (grooving), nicht der fuer
+    # THREAD erwartete (threading) - genau das macht die Warnung aus.
+    assert warnings[0]["params"]["kind"] == "grooving"
+    assert warnings[0]["params"]["op_type"] == "thread"
 
 
 def test_tool_without_orientation_is_never_flagged():

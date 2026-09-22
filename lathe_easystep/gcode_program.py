@@ -6,7 +6,7 @@ from copy import deepcopy
 from .numeric import validate_finite_data
 from typing import Dict, List, Optional, Tuple
 
-from .checks import validate_program_setup, validate_tool_table_completeness
+from .checks import format_warning, validate_program_setup, validate_tool_table_completeness
 from .comments import unnumbered_comment
 from .contour_logic import build_contour_variants, select_thread_relief_for_contour, thread_relief_spec
 from .gcode_drill import generate_drill_gcode
@@ -361,7 +361,7 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     for warning in get_machine_limit_warnings(settings):
         header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
     for warning in validation_warnings:
-        header_lines.append(f"(WARN: {sanitize_comment_text(warning)})")
+        header_lines.append(f"(WARN: {sanitize_comment_text(format_warning(warning, lang))})")
     header_lines.append("")
 
     all_subs: List[List[str]] = []

@@ -8,7 +8,7 @@ from lathe_easystep.model import OpType, Operation
 
 
 def _dangling_contour_warnings(warnings):
-    return [w for w in warnings if "existiert" in w]
+    return [w for w in warnings if w["key"] == "warning.dangling_contour_reference"]
 
 
 def test_abspanen_referencing_deleted_contour_is_warned_not_silent():
@@ -27,7 +27,7 @@ def test_abspanen_referencing_deleted_contour_is_warned_not_silent():
     ]
     warnings = _dangling_contour_warnings(validate_program_setup(ops, {}))
     assert len(warnings) == 1
-    assert "geloeschte_kontur" in warnings[0]
+    assert warnings[0]["params"]["contour_name"] == "geloeschte_kontur"
 
 
 def test_abspanen_referencing_existing_contour_stays_silent():

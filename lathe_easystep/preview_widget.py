@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 from qtpy import QtCore, QtGui, QtWidgets
 
 from .model import Operation, OpType
+from .translations import TRANSLATIONS
 from .view_state import ViewState
 from .preview_scene import (
     build_front_view_draw_plan,
@@ -139,6 +140,14 @@ class LathePreviewWidget(QtWidgets.QWidget):
     @slice_z.setter
     def slice_z(self, value: float) -> None:
         self._view.slice_z = value
+
+    @property
+    def language(self) -> str:
+        return self._view.language
+
+    @language.setter
+    def language(self, value: str) -> None:
+        self._view.language = value or "de"
 
     @property
     def _view_zoom(self) -> float:
@@ -362,7 +371,10 @@ class LathePreviewWidget(QtWidgets.QWidget):
         painter.drawEllipse(QtCore.QPointF(cx, cy), pix_rad, pix_rad)
 
         painter.setPen(self._chrome_pen("slice_view_text"))
-        painter.drawText(10, self.height() - 10, f"Schnitt bei Z = {self.slice_z:.3f} mm")
+        slice_view_label = TRANSLATIONS.tr("runtime.preview.slice_view.label", self.language).format(
+            z=f"{self.slice_z:.3f}"
+        )
+        painter.drawText(10, self.height() - 10, slice_view_label)
 
     def set_front_context(self, program: Dict[str, object] | None = None, operation: Operation | None = None):
         self.front_program = dict(program or {})
@@ -515,10 +527,19 @@ class LathePreviewWidget(QtWidgets.QWidget):
             draw_ring(circle)
 
         painter.setPen(self._chrome_pen("front_info_text"))
-        painter.drawText(10, self.height() - 10, f"Vorderansicht bei Z = {self.slice_z:.3f} mm")
+        front_view_label = TRANSLATIONS.tr("runtime.preview.front_view.label", self.language).format(
+            z=f"{self.slice_z:.3f}"
+        )
+        painter.drawText(10, self.height() - 10, front_view_label)
         if active_diams:
-            painter.drawText(10, 16, "D final: " + ", ".join(f"{d:.3f}" for d in active_diams[:3]))
-        painter.drawText(10, 32, f"D max: {max_diameter:.3f}")
+            d_final_label = TRANSLATIONS.tr("runtime.preview.front_view.d_final", self.language).format(
+                values=", ".join(f"{d:.3f}" for d in active_diams[:3])
+            )
+            painter.drawText(10, 16, d_final_label)
+        d_max_label = TRANSLATIONS.tr("runtime.preview.front_view.d_max", self.language).format(
+            value=f"{max_diameter:.3f}"
+        )
+        painter.drawText(10, 32, d_max_label)
 
     def mousePressEvent(self, event):  # type: ignore[override]
         # Click on legend to toggle
@@ -735,7 +756,9 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     p1, p2 = QtCore.QPointF(*line[0]), QtCore.QPointF(*line[1])
                     painter.setPen(self._chrome_pen("side_slice_line"))
                     painter.drawLine(p1, p2)
-                    label = f"Schnitt Z {zline:.3f}"
+                    label = TRANSLATIONS.tr("runtime.preview.side_view.slice_label", self.language).format(
+                        z=f"{zline:.3f}"
+                    )
                     text_pos = QtCore.QPointF(*grid["slice"]["label_pos"])
                     painter.setPen(self._chrome_pen("side_slice_label"))
                     painter.drawText(text_pos, label)
@@ -859,7 +882,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     }
                     legend_items = [
                         (
-                            entry["label"],
+                            TRANSLATIONS.tr(entry["label_key"], self.language),
                             QtGui.QPen(
                                 QtGui.QColor(*entry["color"]),
                                 entry["width"],
@@ -883,7 +906,7 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     painter.drawText(
                         QtCore.QRectF(*layout["header_text_rect"]),
                         QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
-                        "Legende"
+                        TRANSLATIONS.tr("runtime.preview.legend.header", self.language)
                     )
 
                     for (label, pen), row in zip(legend_items, layout["rows"]):
@@ -907,7 +930,8 @@ class LathePreviewWidget(QtWidgets.QWidget):
                     painter.setBrush(QtGui.QBrush(QtGui.QColor(*STATUS_BOX_STYLE["fill_color"])))
                     painter.drawRoundedRect(QtCore.QRectF(*status_layout["box_rect"]), 6, 6)
                     painter.setPen(QtGui.QPen(QtGui.QColor(*STATUS_BOX_STYLE["text_color"]), 1))
-                    painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), STATUS_BOX_STYLE["header"])
+                    status_header = TRANSLATIONS.tr(STATUS_BOX_STYLE["header_key"], self.language)
+                    painter.drawText(QtCore.QPointF(*status_layout["header_pos"]), status_header)
                     for msg, pos in zip(status_layout["messages"], status_layout["line_positions"]):
                         painter.drawText(QtCore.QPointF(*pos), f"- {msg}")
                 except Exception as exc:

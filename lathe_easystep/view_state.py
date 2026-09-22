@@ -17,7 +17,14 @@ eine der 62 Nutzungsstellen in `preview_widget.py` angefasst werden musste.
 `float`-Felder (`pan_x`/`pan_y`) gehalten, nicht als `QPointF` - damit dieses
 Modul komplett ohne Qt-Import auskommt und wie die anderen Zustandsklassen
 ohne laufende Qt-Anwendung testbar bleibt. Die `_view_pan`-Property auf dem
-Widget baut das `QPointF` erst an der Grenze zu Qt."""
+Widget baut das `QPointF` erst an der Grenze zu Qt.
+
+`language` (ID-only-Vollaudit 2026-09-21): die Canvas-Beschriftung (Legende,
+Warnungsbox, Schnitt-/Vorderansicht-Labels) war zuvor fest Deutsch, da
+`preview_widget.py` keine Sprache kannte. `PreviewView.apply_paths()`
+(`ui_preview_view.py`) und `_apply_language_texts()`
+(`lathe_easystep_handler.py`) setzen `widget.language` jetzt bei jedem
+Neuzeichnen bzw. jeder Sprachumschaltung."""
 
 from __future__ import annotations
 
@@ -36,6 +43,7 @@ class ViewState:
     legend_collapsed: bool = False
     show_legend: bool = True
     status_messages: list[str] = field(default_factory=list)
+    language: str = "de"
 
 
 __all__ = ["ViewState"]

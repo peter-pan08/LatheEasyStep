@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """Schmale Ausgabeschnittstelle fuer Seiten-, Schnitt- und Konturvorschau."""
 
+from .ui_helpers import current_language
+
 
 class PreviewView:
     """Kapselt die konkreten Preview-Widgets hinter fachlichen Operationen."""
@@ -31,6 +33,17 @@ class PreviewView:
         if hasattr(widget, "set_status_messages"):
             widget.set_status_messages(messages)
 
+    @staticmethod
+    def _set_language(widget, lang) -> None:
+        # ID-only-Vollaudit 2026-09-21: die Canvas-Beschriftung (Legende,
+        # Warnungsbox, Schnitt-/Vorderansicht-Labels) braucht die aktuelle
+        # Sprache bei jedem Neuzeichnen, siehe ViewState.language.
+        if hasattr(widget, "language"):
+            try:
+                widget.language = lang
+            except Exception:
+                pass
+
     def apply_paths(
         self,
         paths,
@@ -44,11 +57,13 @@ class PreviewView:
         handler = self._handler
         context = program_context or {}
         messages = context.get("__warnings", []) if context.get("preview_warnings") else []
+        lang = current_language(handler)
         preview = handler.preview
 
         if preview is not None:
             if hasattr(preview, "set_collision"):
                 preview.set_collision(collision)
+            self._set_language(preview, lang)
             self._set_messages(preview, messages)
             self._set_paths(preview, paths, active_index)
             self._set_context(preview, program_context, active_operation)
@@ -68,12 +83,14 @@ class PreviewView:
                 preview_slice.set_slice_z(getattr(preview, "slice_z", 0.0) if preview is not None else 0.0)
             except Exception:
                 pass
+            self._set_language(preview_slice, lang)
             self._set_messages(preview_slice, messages)
             self._set_paths(preview_slice, paths, active_index)
             self._set_context(preview_slice, program_context, active_operation)
 
         contour_preview = handler.contour_preview
         if include_contour_preview and contour_preview is not None:
+            self._set_language(contour_preview, lang)
             self._set_paths(contour_preview, paths, active_index)
 
     def apply_scene(

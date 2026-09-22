@@ -4,12 +4,65 @@ from typing import Dict, List, Tuple
 
 from .contour_features import normalize_relief_mode, resolve_din_relief
 from .gcode_safety import validate_chuck_segment
-from .gcode_utils import is_internal_side, is_left_hand
+from .gcode_utils import gcode_comment, is_internal_side, is_left_hand
 from .model import OpType
 from .presets import thread_preset_values
 
 
 ValidationError = Tuple[int, str]  # (Elementindex, Beschreibung)
+
+# ID-only-Vollaudit 2026-09-21: validate_program_setup() und ihre
+# Hilfsfunktionen liefern seither KEINEN fertig lokalisierten Text mehr,
+# sondern stabile, sprachunabhaengige Warnungen (Schluessel + Parameter).
+# Grund: dieselben Ergebnisse werden technisch weiterverarbeitet (rund ein
+# Dutzend Tests filtern/vergleichen Warnungen inhaltlich, z. B.
+# tests/test_tool_kind_mismatch_check.py) - Domainlogik darf dafuer keine
+# lokalisierten Saetze erzeugen, die je nach Sprache auseinanderlaufen.
+# Uebersetzt wird erst an der jeweiligen Darstellungsgrenze
+# (format_warning(), unten) ueber gcode_comment() - dieselbe Qt-freie
+# .lng-Mechanik wie alle anderen G-Code-Kommentare, da validate_program_setup()
+# Teil der Qt-freien Generatorpipeline ist (auch in gcode_program.py
+# genutzt) und deshalb nicht auf translations.py/Qt zugreifen soll.
+CheckWarning = Dict[str, object]  # {"key": str, "params": Dict[str, object]}
+
+
+def _warn(warnings: List[CheckWarning], key: str, **params: object) -> None:
+    warnings.append({"key": key, "params": params})
+
+
+_PRESET_LABEL_KEYS = {
+    "warning.thread_preset_pitch_mismatch",
+    "warning.thread_preset_major_mismatch",
+    "warning.thread_preset_field_conflicts",
+}
+
+
+def format_warning(warning: CheckWarning, lang: str | None = None) -> str:
+    """Uebersetzt eine strukturierte Warnung in sichtbaren Text - an der
+    Darstellungsgrenze (G-Code-Kommentar oder Vorschau-Statusbox), nicht in
+    der Pruefungslogik selbst."""
+    key = warning["key"]
+    params = dict(warning.get("params") or {})
+    if key in _PRESET_LABEL_KEYS and not params.get("label"):
+        params["label"] = gcode_comment("warning.unnamed_preset_label", lang)
+    if key == "warning.tool_radius_unknown" and not params.get("comment"):
+        params["comment"] = gcode_comment("warning.no_tool_comment", lang)
+    if key == "warning.tool_kind_mismatch":
+        params["kind_label"] = gcode_comment(f"tool.kind.{params.pop('kind')}", lang)
+        params["op_label"] = gcode_comment(f"optype.{params.pop('op_type')}", lang)
+    elif key == "warning.thread_preset_field_conflicts":
+        conflicts = params.pop("conflicts")
+        params["conflicts"] = ", ".join(
+            gcode_comment(
+                "warning.thread_preset_field_conflict_item",
+                lang,
+                field=gcode_comment(f"field.{c['field_key']}", lang),
+                actual=c["actual"],
+                target=c["target"],
+            )
+            for c in conflicts
+        )
+    return gcode_comment(key, lang, **params)
 
 
 def validate_contour(contour) -> List[ValidationError]:
@@ -45,7 +98,7 @@ def _is_internal_machining_op(op_type: str, params: Dict[str, object]) -> bool:
     return False
 
 
-def _check_drill_before_internal_machining(operations: List[object], warnings: List[str]) -> None:
+def _check_drill_before_internal_machining(operations: List[object], warnings: List[CheckWarning]) -> None:
     """Der Generator darf Operationen nicht eigenmaechtig umsortieren, aber ein
     Werkzeug, das in eine Bohrung einfahren soll (Innen-Abspanen/-Einstich/
     -Gewinde), braucht diese Bohrung bereits vorher - sonst faehrt es in
@@ -63,11 +116,7 @@ def _check_drill_before_internal_machining(operations: List[object], warnings: L
             continue
         if first_drill_index is None or idx < first_drill_index:
             comment = str(params.get("comment") or "").strip() or f"Operation {idx + 1}"
-            warnings.append(
-                f"Innenbearbeitung '{comment}' steht vor der (ersten) Bohrung in der Ablaufreihenfolge - "
-                "das Werkzeug hat moeglicherweise keinen Zugang zum Material. Bohrung nach vorne verschieben "
-                "oder Reihenfolge pruefen."
-            )
+            _warn(warnings, "warning.drill_before_internal_machining", comment=comment)
 
 
 # Schluessel, die zwei Operationen faelschlich als "verschieden" erscheinen
@@ -90,7 +139,7 @@ def _params_for_duplicate_compare(params: Dict[str, object]) -> tuple:
     return items
 
 
-def _check_duplicate_operations(operations: List[object], warnings: List[str]) -> None:
+def _check_duplicate_operations(operations: List[object], warnings: List[CheckWarning]) -> None:
     """Meldet fachlich identische Operationen (gleicher Typ, gleiche
     Bearbeitungsparameter) als Hinweis. Loescht oder aendert NICHTS automatisch
     - der Nutzer entscheidet, ob eine Mehrfachverwendung beabsichtigt ist."""
@@ -103,10 +152,12 @@ def _check_duplicate_operations(operations: List[object], warnings: List[str]) -
         key = (op_type, _params_for_duplicate_compare(params))
         first_idx = seen.get(key)
         if first_idx is not None:
-            warnings.append(
-                f"Operation {idx + 1} ist inhaltlich identisch mit Operation {first_idx + 1} "
-                f"(gleicher Typ '{op_type}', gleiche Bearbeitungsparameter). Falls nicht "
-                "beabsichtigt: pruefen, ob hier eine andere Operation gemeint war."
+            _warn(
+                warnings,
+                "warning.duplicate_operation",
+                idx=idx + 1,
+                first_idx=first_idx + 1,
+                op_type=op_type,
             )
         else:
             seen[key] = idx
@@ -122,26 +173,7 @@ _OP_TYPE_EXPECTED_TOOL_KINDS: Dict[str, set] = {
     "drill": {"drilling"},
 }
 
-_TOOL_KIND_LABELS_DE = {
-    "turning": "Drehwerkzeug",
-    "drilling": "Bohrwerkzeug",
-    "grooving": "Stechwerkzeug",
-    "threading": "Gewindewerkzeug",
-    "parting": "Abstechwerkzeug",
-}
-
-_OP_TYPE_LABELS_DE = {
-    "face": "Plan-Operation",
-    "turn": "Dreh-Operation",
-    "bore": "Bohrungsdreh-Operation",
-    "abspanen": "Abspanen-Operation",
-    "thread": "Gewinde-Operation",
-    "groove": "Stech-Operation",
-    "drill": "Bohr-Operation",
-}
-
-
-def _check_tool_kind_matches_operation(operations: List[object], tools: Dict[int, object], warnings: List[str]) -> None:
+def _check_tool_kind_matches_operation(operations: List[object], tools: Dict[int, object], warnings: List[CheckWarning]) -> None:
     """LES-028/LES-032: `Tool.kind` (aus der Q-Orientierung der Werkzeug-
     tabelle geparst - siehe `tools.py`) wurde bisher nirgends gegen den
     tatsaechlich verwendeten Operationstyp geprueft. Ein Werkzeug, dessen
@@ -176,19 +208,21 @@ def _check_tool_kind_matches_operation(operations: List[object], tools: Dict[int
         kind = getattr(tool, "kind", None)
         if not kind or kind == "parting" or kind in expected_kinds:
             continue
-        kind_label = _TOOL_KIND_LABELS_DE.get(kind, kind)
-        op_label = _OP_TYPE_LABELS_DE.get(op_type, op_type)
-        warnings.append(
-            f"T{tool_num:02d}: Q{orientation}-Wert deutet auf '{kind_label}' hin, "
-            f"aber in Schritt {idx + 1} fuer eine {op_label} verwendet. "
-            "Bitte Werkzeugzuordnung pruefen."
+        _warn(
+            warnings,
+            "warning.tool_kind_mismatch",
+            tool_num=tool_num,
+            orientation=orientation,
+            kind=kind,
+            idx=idx + 1,
+            op_type=op_type,
         )
 
 
 _GROOVE_WIDTH_PARAM_KEYS = ("wtool", "W_tool", "tool_width", "cutting_width", "groove_cutting_width")
 
 
-def _check_tool_width_matches_operation(operations: List[object], tools: Dict[int, object], warnings: List[str]) -> None:
+def _check_tool_width_matches_operation(operations: List[object], tools: Dict[int, object], warnings: List[CheckWarning]) -> None:
     """LES-032: `Tool.insert_width_mm` (aus dem ISO-Einstich-Einsatzcode im
     Kommentar abgeleitet, z. B. "MGMN200" -> 2,00 mm - siehe `tools.py`)
     wurde bisher nirgends gegen die manuell eingetragene Werkzeugbreite
@@ -226,10 +260,13 @@ def _check_tool_width_matches_operation(operations: List[object], tools: Dict[in
         if insert_width is None:
             continue
         if abs(manual_width - insert_width) > 0.05:
-            warnings.append(
-                f"T{tool_num:02d}: Kommentar deutet auf {insert_width:.2f} mm Schneidenbreite hin, "
-                f"in Schritt {idx + 1} werden aber {manual_width:.2f} mm eingetragen. "
-                "Bitte Werkzeugbreite pruefen."
+            _warn(
+                warnings,
+                "warning.tool_width_mismatch",
+                tool_num=tool_num,
+                insert_width=insert_width,
+                idx=idx + 1,
+                manual_width=manual_width,
             )
 
 
@@ -247,7 +284,7 @@ def _tool_snapshot_value_differs(old_value: object, new_value: object, *, tol: f
         return old_value != new_value
 
 
-def _check_tool_matches_snapshot(operations: List[object], tools: Dict[int, object], warnings: List[str]) -> None:
+def _check_tool_matches_snapshot(operations: List[object], tools: Dict[int, object], warnings: List[CheckWarning]) -> None:
     """LES-032/LES-053 (Format v2): `op.params["tool_snapshot"]` (siehe
     `tools.py::build_tool_snapshot()`) haelt fest, welche Radius-/
     Orientierungs-/Einstichbreiten-Werte beim letzten Speichern dieser
@@ -276,27 +313,36 @@ def _check_tool_matches_snapshot(operations: List[object], tools: Dict[int, obje
         if tool is None:
             continue
         if _tool_snapshot_value_differs(snapshot.get("radius_mm"), getattr(tool, "radius_mm", None)):
-            warnings.append(
-                f"T{tool_num:02d}: Radius hat sich seit dem Speichern von Schritt {idx + 1} "
-                f"geaendert ({float(snapshot.get('radius_mm') or 0.0):.3f} mm -> "
-                f"{float(getattr(tool, 'radius_mm', 0.0) or 0.0):.3f} mm). Bitte Werkzeug pruefen."
+            _warn(
+                warnings,
+                "warning.tool_snapshot_radius_changed",
+                tool_num=tool_num,
+                idx=idx + 1,
+                old_radius=float(snapshot.get("radius_mm") or 0.0),
+                new_radius=float(getattr(tool, "radius_mm", 0.0) or 0.0),
             )
         snap_orientation = snapshot.get("orientation")
         tool_orientation = getattr(tool, "q", None)
         if snap_orientation != tool_orientation:
-            warnings.append(
-                f"T{tool_num:02d}: Orientierung hat sich seit dem Speichern von Schritt {idx + 1} "
-                f"geaendert (Q{snap_orientation} -> Q{tool_orientation}). Bitte Werkzeug pruefen."
+            _warn(
+                warnings,
+                "warning.tool_snapshot_orientation_changed",
+                tool_num=tool_num,
+                idx=idx + 1,
+                old_orientation=snap_orientation,
+                new_orientation=tool_orientation,
             )
         if _tool_snapshot_value_differs(snapshot.get("insert_width_mm"), getattr(tool, "insert_width_mm", None)):
-            warnings.append(
-                f"T{tool_num:02d}: Einstichbreite hat sich seit dem Speichern von Schritt {idx + 1} "
-                f"geaendert. Bitte Werkzeug pruefen."
+            _warn(
+                warnings,
+                "warning.tool_snapshot_width_changed",
+                tool_num=tool_num,
+                idx=idx + 1,
             )
 
 
 def _check_groove_reaches_chuck_no_go_zone(
-    operations: List[object], tools: Dict[int, object], settings: Dict[str, object], warnings: List[str]
+    operations: List[object], tools: Dict[int, object], settings: Dict[str, object], warnings: List[CheckWarning]
 ) -> None:
     """LES-032: Erreichbarkeits-/Werkzeughuellenpruefung mit Tooltable-Daten.
 
@@ -344,8 +390,12 @@ def _check_groove_reaches_chuck_no_go_zone(
             point = (floor_diameter, z_edge)
             try:
                 validate_chuck_segment(settings, point, point)
-            except ValueError as exc:
-                warnings.append(f"Schritt {idx + 1}: {exc}")
+            except ValueError:
+                # Die eigene Meldung von validate_chuck_segment() wird bewusst
+                # nicht relayed (bliebe sonst unuebersetztes Deutsch) - der
+                # umgebende Kontext (Schritt, "Futter-Sperrzone") ist bereits
+                # eindeutig genug.
+                _warn(warnings, "warning.groove_reaches_chuck_no_go_zone", step=idx + 1)
                 break
 
 
@@ -382,8 +432,8 @@ def validate_tool_table_completeness(operations: List[object], tools: Dict[int, 
         )
 
 
-def validate_program_setup(operations: List[object], settings: Dict[str, object]) -> List[str]:
-    warnings: List[str] = []
+def validate_program_setup(operations: List[object], settings: Dict[str, object]) -> List[CheckWarning]:
+    warnings: List[CheckWarning] = []
     contour_by_name: Dict[str, object] = {}
     tools = settings.get("tools", {}) if isinstance(settings.get("tools", {}), dict) else {}
     _check_drill_before_internal_machining(operations, warnings)
@@ -404,9 +454,9 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
             comment = str(getattr(tool, "comment", "") or "").lower()
             op_side_value = params.get("side", params.get("orientation", 0))
             if op_type in ("abspanen", "thread") and not is_internal_side(op_side_value) and any(word in comment for word in ("innen", "internal", "inside", " id ")):
-                warnings.append(f"Tool T{tool_num:02d} wirkt wie Innenwerkzeug, Operation aber wie Aussenbearbeitung")
+                _warn(warnings, "warning.tool_looks_internal_op_external", tool_num=tool_num)
             if op_type in ("abspanen", "thread") and is_internal_side(op_side_value) and any(word in comment for word in ("aussen", "außen", "external", "outside", " od ")):
-                warnings.append(f"Tool T{tool_num:02d} wirkt wie Aussenwerkzeug, Operation aber wie Innenbearbeitung")
+                _warn(warnings, "warning.tool_looks_external_op_internal", tool_num=tool_num)
         if op_type == "contour":
             name = str(params.get("name") or "").strip()
             if name:
@@ -426,17 +476,17 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
                 start_z, end_z = 0.0, 0.0
                 za, zi = 0.0, 0.0
             if pitch <= 0.0 or length <= 0.0:
-                warnings.append("G76 ohne sinnvolle Steigung/Laenge konfiguriert")
+                _warn(warnings, "warning.thread_g76_invalid_pitch_length")
             if depth < 0.0:
-                warnings.append("G76 mit negativer Gewindetiefe konfiguriert")
+                _warn(warnings, "warning.thread_g76_negative_depth")
             if abs(start_z - end_z) <= 1e-9:
-                warnings.append("Gewindestart und Gewindeende sind identisch")
+                _warn(warnings, "warning.thread_start_end_identical")
             z_min = min(zi, za)
             z_max = max(zi, za)
             if start_z < z_min - 1e-9 or start_z > z_max + 1e-9:
-                warnings.append("Gewindestart ausserhalb des Werkstuecks")
+                _warn(warnings, "warning.thread_start_outside_stock")
             if end_z < z_min - 1e-9 or end_z > z_max + 1e-9:
-                warnings.append("Gewindeende ausserhalb des Werkstuecks")
+                _warn(warnings, "warning.thread_end_outside_stock")
             standard = params.get("standard")
             if isinstance(standard, dict):
                 # Realer Fund: "standard" (Preset-Metadaten, z. B. label_key
@@ -450,49 +500,48 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
                 std_pitch = standard.get("pitch")
                 if std_pitch not in (None, "") and abs(float(std_pitch) - pitch) > 1e-6:
                     label = str(standard.get("label") or standard.get("label_key") or "").strip()
-                    warnings.append(
-                        f"Gewinde-Preset {label or '(unbenannt)'} nennt Steigung {float(std_pitch):.3f}, "
-                        f"tatsaechlich verwendet wird aber {pitch:.3f} - Preset und manueller Wert sind "
-                        "inkonsistent. Bitte pruefen, welcher Wert gewollt ist."
+                    _warn(
+                        warnings,
+                        "warning.thread_preset_pitch_mismatch",
+                        label=label,
+                        preset_value=float(std_pitch),
+                        actual_value=pitch,
                     )
                 std_major = standard.get("major")
                 major_diameter = float(params.get("major_diameter", 0.0) or 0.0)
                 if std_major not in (None, "") and abs(float(std_major) - major_diameter) > 1e-6:
                     label = str(standard.get("label") or standard.get("label_key") or "").strip()
-                    warnings.append(
-                        f"Gewinde-Preset {label or '(unbenannt)'} nennt Nenndurchmesser {float(std_major):.3f}, "
-                        f"tatsaechlich verwendet wird aber {major_diameter:.3f} - Preset und manueller Wert "
-                        "sind inkonsistent. Bitte pruefen, welcher Wert gewollt ist."
+                    _warn(
+                        warnings,
+                        "warning.thread_preset_major_mismatch",
+                        label=label,
+                        preset_value=float(std_major),
+                        actual_value=major_diameter,
                     )
                 expected = thread_preset_values(standard)
                 if expected is not None:
-                    field_labels = {
-                        "thread_depth": "Gewindetiefe",
-                        "first_depth": "erste Zustellung",
-                        "peak_offset": "Spitzenversatz",
-                        "retract_r": "Ruecklauf R",
-                        "infeed_q": "Zustellwinkel Q",
-                        "spring_passes": "Federschnitte",
-                        "e": "Auslauf E",
-                        "l": "Auslaufmodus L",
-                    }
+                    field_keys = (
+                        "thread_depth", "first_depth", "peak_offset", "retract_r",
+                        "infeed_q", "spring_passes", "e", "l",
+                    )
                     conflicts = []
-                    for key, field_label in field_labels.items():
-                        if key not in params or params.get(key) in (None, ""):
+                    for field_key in field_keys:
+                        if field_key not in params or params.get(field_key) in (None, ""):
                             continue
                         try:
-                            actual = float(params[key])
+                            actual = float(params[field_key])
                         except (TypeError, ValueError):
                             continue
-                        target = expected[key]
+                        target = expected[field_key]
                         if abs(actual - target) > 1e-6:
-                            conflicts.append(f"{field_label} {actual:.3f} statt {target:.3f}")
+                            conflicts.append({"field_key": field_key, "actual": actual, "target": target})
                     if conflicts:
                         label = str(standard.get("label") or standard.get("label_key") or "").strip()
-                        warnings.append(
-                            f"Gewinde-Preset {label or '(unbenannt)'} und manuelle Werte sind "
-                            f"inkonsistent: {', '.join(conflicts)}. Bitte Preset erneut anwenden "
-                            "oder bewusst auf Benutzerdefiniert umstellen."
+                        _warn(
+                            warnings,
+                            "warning.thread_preset_field_conflicts",
+                            label=label,
+                            conflicts=conflicts,
                         )
         if op_type != "abspanen":
             continue
@@ -509,11 +558,7 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
             # der Nutzer sollte den kaputten Verweis SOFORT sehen, nicht
             # erst beim naechsten Speicherversuch.
             if contour_name:
-                warnings.append(
-                    f"Abspanen-Step verweist auf Kontur '{contour_name}', "
-                    "die nicht (mehr) existiert - vermutlich geloescht oder "
-                    "umbenannt. Kontur neu auswaehlen, bevor gespeichert wird."
-                )
+                _warn(warnings, "warning.dangling_contour_reference", contour_name=contour_name)
             continue
         contour_params = getattr(contour_op, "params", {}) or {}
         segments = contour_params.get("segments") or []
@@ -526,9 +571,9 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
             if str(feature.get("feature_type") or "").strip().lower() == "din_relief":
                 relief_features.append(feature)
                 if not str(feature.get("thread_size") or "").strip():
-                    warnings.append("DIN-Freistich ohne Gewindegroesse definiert")
+                    _warn(warnings, "warning.din_relief_missing_thread_size")
                 if "internal" not in feature and "side" not in feature:
-                    warnings.append("DIN-Freistich ohne Aussen/Innen-Angabe definiert")
+                    _warn(warnings, "warning.din_relief_missing_side")
         tool_width = params.get("cutting_width", params.get("tool_width"))
         if tool_width not in (None, ""):
             try:
@@ -538,9 +583,9 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
             for feature in relief_features:
                 width = float(feature.get("width", 0.0) or 0.0)
                 if tool_width_f > width + 1e-9:
-                    warnings.append("Einstichwerkzeug breiter als Freistich/Hinterschnitt")
+                    _warn(warnings, "warning.groove_tool_wider_than_relief")
         if relief_mode == "separate" and not params.get("undercut_tool") and not params.get("tool"):
-            warnings.append("Hinterschnitt separat aktiviert, aber kein Werkzeug hinterlegt")
+            _warn(warnings, "warning.relief_separate_no_tool")
         if relief_mode == "separate":
             try:
                 undercut_tool_num = int(float(params.get("undercut_tool", 0) or 0))
@@ -550,8 +595,8 @@ def validate_program_setup(operations: List[object], settings: Dict[str, object]
             if undercut_tool is not None:
                 undercut_comment = str(getattr(undercut_tool, "comment", "") or "").lower()
                 if not any(token in undercut_comment for token in ("einst", "stech", "groove", "undercut", "freistich", "abstech")):
-                    warnings.append(f"Hinterschnitt separat aktiv, aber T{undercut_tool_num:02d} wirkt nicht wie Einstich-/Spezialwerkzeug")
-        for key in ("xt", "zt", "xra", "xri", "zra", "zri"):
-            if settings.get(key) in (None, ""):
-                warnings.append(f"{key.upper()} ist nicht gesetzt")
+                    _warn(warnings, "warning.relief_separate_tool_mismatch", tool_num=undercut_tool_num)
+        for settings_key in ("xt", "zt", "xra", "xri", "zra", "zri"):
+            if settings.get(settings_key) in (None, ""):
+                _warn(warnings, "warning.retract_plane_not_set", axis_key=settings_key.upper())
     return warnings

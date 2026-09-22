@@ -93,6 +93,10 @@ def collect_tool_orientation_warnings(handler):
 
 
 def radius_warning_details(handler):
+    """Gibt strukturierte Warnungen zurueck (Schluessel + Parameter, keine
+    fertigen Saetze) - dieselbe Darstellung wie checks.py::CheckWarning,
+    uebersetzt erst an der Darstellungsgrenze via checks.py::format_warning()
+    (ID-only-Vollaudit 2026-09-21)."""
     details = []
     for idx, op in enumerate(handler.model.operations):
         if op.op_type != handler.OpType.ABSPANEN:
@@ -107,9 +111,11 @@ def radius_warning_details(handler):
         tool = handler._tool_table.tools.get(tool_num)
         radius = tool.radius_mm if tool else 0.0
         if radius <= 0.0:
-            comment = tool.comment if tool and tool.comment else "kein Kommentar"
-            message = f"Step {idx+1}: Tool T{tool_num:02d} ({comment}) hat keinen bekannten Radius → Kompensation (G41.1/G42.1) wird deaktiviert."
-            details.append({"idx": idx, "op": op, "tool_num": tool_num, "message": message})
+            comment = tool.comment if tool and tool.comment else ""
+            details.append({
+                "key": "warning.tool_radius_unknown",
+                "params": {"idx": idx + 1, "tool_num": tool_num, "comment": comment},
+            })
     return details
 
 

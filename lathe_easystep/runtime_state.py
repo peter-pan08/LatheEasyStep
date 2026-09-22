@@ -1,10 +1,11 @@
 """Zentraler Panel-Laufzeitzustand (LES-052, vierte Etappe; `adding_operation`/
 `last_add_operation_ts` bei der `_handle_add_operation()`-Extraktion nach
-`ui_flow.py` ergaenzt, siehe TODO.md/CHANGELOG.md).
+`ui_flow.py` ergaenzt; `closing_window` beim Exit-Schutz (`ui_dirty.py::
+handle_window_close_event()`) ergaenzt, siehe TODO.md/CHANGELOG.md).
 
 Ersetzt die bisherigen losen Handler-Attribute durch ein einzelnes
-typisiertes Objekt (`handler._runtime`). Qt-frei. Neun der elf Felder sind
-reine Reentranz-Sperren nach demselben Muster: `if state.x: return`,
+typisiertes Objekt (`handler._runtime`). Qt-frei. Zehn der zwoelf Felder
+sind reine Reentranz-Sperren nach demselben Muster: `if state.x: return`,
 `state.x = True`, dann im `finally`-Block `state.x = False` - verhindert,
 dass ein doppelt gefeuertes Qt-Signal (z. B. ein versehentlicher Doppel-
 klick) dieselbe Aktion zweimal parallel ausfuehrt. `ui_loading` ist
@@ -43,6 +44,7 @@ class RuntimeState:
     ui_loading: bool = False
     adding_operation: bool = False
     last_add_operation_ts: float = 0.0
+    closing_window: bool = False
 
 
 __all__ = ["RuntimeState"]

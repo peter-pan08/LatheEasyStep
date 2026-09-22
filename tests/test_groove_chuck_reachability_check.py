@@ -31,7 +31,7 @@ def _tool(**overrides):
 
 
 def _reach_warnings(warnings):
-    return [w for w in warnings if "Futter-Sperrzone" in w]
+    return [w for w in warnings if w["key"] == "warning.groove_reaches_chuck_no_go_zone"]
 
 
 def _groove_op(z, diameter=20.0, depth=5.0, lage=0, tool=4):
@@ -47,7 +47,7 @@ def test_groove_centerline_inside_chuck_zone_is_flagged_even_without_tool_width(
     ops = [Operation(OpType.PROGRAM_HEADER, {}), _groove_op(z=-3.0, tool=0)]
     warnings = _reach_warnings(validate_program_setup(ops, dict(_CHUCK_SETTINGS, tools={})))
     assert len(warnings) == 1
-    assert "Schritt 2" in warnings[0]
+    assert warnings[0]["params"]["step"] == 2
 
 
 def test_groove_outside_zone_but_tool_width_reaches_into_it_is_flagged():
@@ -60,7 +60,7 @@ def test_groove_outside_zone_but_tool_width_reaches_into_it_is_flagged():
     ops = [Operation(OpType.PROGRAM_HEADER, {}), _groove_op(z=-1.5, tool=4)]
     warnings = _reach_warnings(validate_program_setup(ops, dict(_CHUCK_SETTINGS, tools={4: tool})))
     assert len(warnings) == 1
-    assert "Schritt 2" in warnings[0]
+    assert warnings[0]["params"]["step"] == 2
 
 
 def test_groove_well_clear_of_chuck_zone_is_silent():

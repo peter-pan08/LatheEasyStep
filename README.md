@@ -58,7 +58,7 @@ weiter als ein reiner Prototyp:
 - das ungenutzte und nicht importierbare Alt-Paket `lathe_easystep/contour/` wurde entfernt; die aktive Konturlogik bleibt in `contour_logic.py` und `contour_features.py`
 - die aktuelle Entwicklungsbasis inkl. Freistich-/Sicherheitsausbau, UI-Teilung, Real-Qt-Regressionen und realen Generatorfixes ist mit `968 passed (Stub-Qt), 131 passed (Real-Qt), 0 skipped` validiert
 - `lathe_easystep.ui` ist die Shell; acht Bearbeitungsreiter, die Step-Liste/Programmverwaltung und die Aktionsleiste liegen als eigene `.ui`-Fragmente unter `lathe_easystep/ui_parts/`
-- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.022 identische, nichtleere Sprachschluessel
+- `de.lng`, `en.lng` und `es.lng` besitzen jeweils 1.178 identische, nichtleere Sprachschluessel (Stand 22.09.2026, ID-only-Vollaudit)
 - zusaetzlich wurden UI-Sichtbarkeitsregeln fuer weitere Bearbeitungsarten per Regressionstest abgesichert und die Test-Infrastruktur fuer echte PyQt5-Roundtrip-Tests gegen die uebrige Stub-Suite gehaertet
 
 Der derzeit dokumentierte Arbeitsstand ist `Version 0.9.0`.
@@ -95,10 +95,21 @@ Fuer die UI gilt jetzt verbindlich eine strikte Trennung von Anzeige und Logik:
 Das macht unvollstaendige Sprachdateien sofort sichtbar und verhindert, dass
 Logik von lokalisierten Anzeige-Texten abhaengt.
 
-Der Umbau ist noch nicht vollstaendig abgeschlossen. Verbleibende direkte
-Textquellen aus Python oder der `.ui` werden nicht mehr stillschweigend als
-"ok" behandelt, sondern explizit als offene Architekturarbeit in `TODO.md`
-gefuehrt.
+Das gesamte statische `.ui`-Chrome (Reiter, Buttons, Labels, Tooltips,
+Combo-Eintraege, Tabellenkoepfe) wird automatisch ueber `ui_static.py`
+erfasst. Nach einem repo-weiten ID-only-Vollaudit (21.09.2026, Details in
+TODO.md/CHANGELOG.md) gilt: keine bekannte sichtbare UI-Prosa mehr
+ausserhalb der `.lng`-Dateien - das schliesst die Vorschau-Canvas-
+Beschriftung (Legende, Warnungsbox, Schnitt-/Vorderansicht-Labels), alle
+Warnungen in der Vorschau-Statusbox (`checks.py`, `gcode_safety.py`,
+`tool_logic.py`) sowie zuvor unuebersetzte Fehlermeldungen im
+Speicher-/Ladepfad (`ui_persistence.py`, `format_user_error()`) ein.
+Technische Bezeichner (Achsnamen X/Z, ISO-Codes, Werkzeugnummern, G-Code
+selbst) sind davon ausgenommen. Auch die G-Code-Kommentare selbst folgen
+beim tatsaechlichen "Programm erzeugen" jetzt zuverlaessig der aktuell
+gewaehlten UI-Sprache (22.09.2026, Details in TODO.md/CHANGELOG.md) -
+gespeicherte `.lse`-Programme bleiben davon unabhaengig, nur die
+Erzeugung selbst verwendet die jeweils aktuelle Sprache.
 
 ## Wichtiger Hinweis
 
@@ -452,9 +463,9 @@ Die Referenzprogramme liegen unter `ngc/` und decken derzeit ab:
 
 Der aktuelle Stand ist funktional, aber noch nicht fachlich abgeschlossen.
 
-- Gemeinsame Anfahrt ist achsweise; vollstaendige Rohteil-/Werkzeughuellenpruefung und erste Freifahrt bleiben offen
-- Innen-Schruppen, Innenstufen, Innenkonen, Innenradien und Innenfreistiche brauchen weitere Realtests
-- Lokale DIN-Freistiche funktionieren an beliebigen Segmenten; Normwerte und neue Fahrwege brauchen weitere Verifikation
+- Werkzeughuellen-/Bohrstangengeometrie-Kollisionspruefung ist mit der offiziellen LinuxCNC-`tool.tbl` strukturell nicht moeglich und wurde bewusst dauerhaft geschlossen (LES-032); Rueckzug/Sperrzonen werden weiterhin punktbezogen ohne reale Werkzeug-/Halterausdehnung geprueft
+- Innen-Schruppen, Innenstufen, Innenkonen und Innenradien sind per SIM/Backplot verifiziert (0.8.0-Release-Gate); reale Trockenlaeufe an der Maschine stehen noch aus (LES-030, 1.0.0-Kriterium)
+- Lokale DIN-Freistiche funktionieren an beliebigen Segmenten und sind fuer die dokumentierten Normfaelle per SIM/Backplot verifiziert; weitere reale Verifikation neuer Fahrwege steht noch aus
 - reale Maschinen- und Kollisionsfaelle muessen weiterhin per Backplot und Trockenlauf verifiziert werden
 
 ## Aktuelle Modulstruktur
@@ -522,7 +533,7 @@ early prototype:
 - handler, generator, contour and preview logic have been modularized substantially further for version 0.8.0
 - the current development baseline is validated with `968 passed (Stub-Qt), 131 passed (Real-Qt), 0 skipped`
 - `lathe_easystep.ui` is now the shell; eight operation tabs, the step list/program management area and the action button bar live as separate `.ui` fragments under `lathe_easystep/ui_parts/`
-- the German, English and Spanish catalogs each contain the same 1,022 non-empty translation keys
+- the German, English and Spanish catalogs each contain the same 1,178 non-empty translation keys (as of 2026-09-22, ID-only full audit)
 
 ## Branch Status
 
@@ -710,9 +721,9 @@ The checked-in reference programs under `ngc/` currently cover:
 
 The current state is usable, but not yet technically complete.
 
-- Shared approaches use separate axis moves; full stock/tool-envelope checks and initial clearance remain open
-- internal steps, tapers, radii and reliefs need additional real-machine verification
-- Local DIN reliefs work at arbitrary segments; norm data and new toolpaths still require verification
+- Tool-envelope/boring-bar-geometry collision checking is not solvable with the official LinuxCNC `tool.tbl` and was deliberately closed for good (LES-032); retract/no-go-zone checks remain point-based, without real tool/holder extent
+- Internal roughing, steps, tapers and radii are verified via SIM/backplot (0.8.0 release gate); real-machine dry runs are still outstanding (LES-030, a 1.0.0 criterion)
+- Local DIN reliefs work at arbitrary segments and are verified via SIM/backplot for the documented norm cases; further real-machine verification of new toolpaths is still outstanding
 - real-machine clearance and collision behaviour still require backplot and dry-run verification
 
 

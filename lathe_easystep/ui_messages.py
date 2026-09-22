@@ -96,4 +96,8 @@ def format_user_error(handler, exc: Exception, *, fallback_title: str = "") -> s
         return f"{fallback_title}:\n{detail}"
     if op_number:
         return TRANSLATIONS.tr("message.step_error", lang).format(step=op_number, tab=tab, detail=detail)
-    return detail
+    # ID-only-Vollaudit 2026-09-21: auch der letzte Fallback (kein bekanntes
+    # Muster, kein fallback_title, kein op_number) darf nie rohen,
+    # unuebersetzten Text zurueckgeben - der sichtbare Rahmen kommt aus
+    # .lng, die technische Detailmeldung bleibt eingebettet.
+    return TRANSLATIONS.tr("message.generic_error", lang).format(detail=detail)

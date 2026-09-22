@@ -8,7 +8,7 @@ from lathe_easystep.model import OpType, Operation
 
 
 def _warns_about_order(warnings):
-    return any("vor der (ersten) Bohrung" in w for w in warnings)
+    return any(w["key"] == "warning.drill_before_internal_machining" for w in warnings)
 
 
 def test_internal_abspanen_before_drill_warns():
@@ -52,7 +52,7 @@ def test_internal_groove_and_thread_before_drill_warn():
         Operation(OpType.DRILL, {"tool": 10, "comment": "Bohren"}),
     ]
     warnings = validate_program_setup(ops, {})
-    order_warnings = [w for w in warnings if "vor der (ersten) Bohrung" in w]
+    order_warnings = [w for w in warnings if w["key"] == "warning.drill_before_internal_machining"]
     assert len(order_warnings) == 2
 
 

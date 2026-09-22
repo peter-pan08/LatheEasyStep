@@ -7,8 +7,15 @@ from lathe_easystep.checks import validate_program_setup
 from lathe_easystep.model import OpType, Operation
 
 
+_PRESET_KEYS = {
+    "warning.thread_preset_pitch_mismatch",
+    "warning.thread_preset_major_mismatch",
+    "warning.thread_preset_field_conflicts",
+}
+
+
 def _preset_warnings(warnings):
-    return [w for w in warnings if "Preset" in w]
+    return [w for w in warnings if w["key"] in _PRESET_KEYS]
 
 
 def test_diverging_preset_pitch_is_reported():
@@ -30,7 +37,9 @@ def test_diverging_preset_pitch_is_reported():
     ]
     warnings = _preset_warnings(validate_program_setup(ops, {"za": 0.0, "zi": -50.0}))
     assert len(warnings) == 1
-    assert "3.500" in warnings[0] and "1.750" in warnings[0]
+    assert warnings[0]["key"] == "warning.thread_preset_pitch_mismatch"
+    assert warnings[0]["params"]["preset_value"] == 3.5
+    assert warnings[0]["params"]["actual_value"] == 1.75
 
 
 def test_matching_preset_and_pitch_is_silent():
@@ -63,7 +72,9 @@ def test_diverging_preset_major_diameter_is_reported():
     ]
     warnings = _preset_warnings(validate_program_setup(ops, {"za": 0.0, "zi": -50.0}))
     assert len(warnings) == 1
-    assert "30.000" in warnings[0] and "20.000" in warnings[0]
+    assert warnings[0]["key"] == "warning.thread_preset_major_mismatch"
+    assert warnings[0]["params"]["preset_value"] == 30.0
+    assert warnings[0]["params"]["actual_value"] == 20.0
 
 
 def test_thread_without_standard_preset_is_silent():
@@ -94,6 +105,6 @@ def test_diverging_derived_preset_values_are_reported_together():
     warnings = _preset_warnings(validate_program_setup(ops, {"za": 0.0, "zi": -50.0}))
 
     assert len(warnings) == 1
-    assert "Gewindetiefe" in warnings[0]
-    assert "Zustellwinkel" in warnings[0]
-    assert "erste Zustellung" in warnings[0]
+    assert warnings[0]["key"] == "warning.thread_preset_field_conflicts"
+    conflict_field_keys = {c["field_key"] for c in warnings[0]["params"]["conflicts"]}
+    assert conflict_field_keys == {"thread_depth", "infeed_q", "first_depth"}

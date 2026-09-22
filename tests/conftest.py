@@ -17,6 +17,7 @@ REAL_QT_TESTS = {
     "test_preview_no_synthetic_links_between_operations.py",
     "test_preview_slice_interpolation.py",
     "test_preview_navigation.py",
+    "test_unsaved_changes_on_exit_real_qt.py",
     "test_step_action_buttons_stay_readable.py",
     "test_dirty_status_label_grid_layout.py",
     "test_contour_table_interaction.py",

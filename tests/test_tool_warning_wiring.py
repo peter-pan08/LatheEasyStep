@@ -53,7 +53,8 @@ def test_radius_warning_details_flags_tool_without_radius():
     h = _FakeHandler([op], {2: tool})
     details = h._radius_warning_details()
     assert len(details) == 1
-    assert "T02" in details[0]["message"]
+    assert details[0]["key"] == "warning.tool_radius_unknown"
+    assert details[0]["params"]["tool_num"] == 2
 
 
 def test_radius_warning_details_silent_when_radius_known():

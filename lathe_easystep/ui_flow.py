@@ -10,7 +10,7 @@ from qtpy import QtCore, QtWidgets
 from .gcode_utils import is_internal_side, is_left_hand
 from .model import Operation, OpType
 from .comments import is_generated_comment, update_auto_comment
-from .ui_helpers import translate as _tr
+from .ui_helpers import current_language, translate as _tr
 from .ui_messages import format_user_error, parse_error_location
 from .ui_step_list_view import StepListView
 
@@ -128,6 +128,16 @@ def build_gcode_lines(handler):
     header = handler._collect_program_header()
     handler.model.program_settings = header
     handler.model.program_settings["tools"] = handler._tool_table.tools
+    # Sprach-Verdrahtungsluecke (ID-only-Vollaudit 2026-09-21) behoben: die
+    # aktuelle UI-Sprache soll fuer G-Code-Kommentare gelten, ohne einen
+    # zweiten Sprachzustand einzufuehren - deshalb hier frisch ueber den
+    # bestehenden current_language()/_current_language_code()-Mechanismus
+    # gelesen statt persistiert (siehe build_program_data(), das
+    # _collect_program_header() unabhaengig davon erneut aufruft -
+    # gespeicherte .lse-Programme werden dadurch nicht sprachabhaengig).
+    # current_language() faengt fehlendes Handler-Setup (z. B. synthetische
+    # Test-Handler ohne Widget-Baum) bereits ab und faellt auf "de" zurueck.
+    handler.model.program_settings["lang"] = current_language(handler)
     handler.model.spindle_speed_max = float(header.get("s1_max") or 0.0)
     unique_tools = set()
     for op in handler.model.operations:

@@ -6,7 +6,8 @@ from dataclasses import asdict, is_dataclass
 
 
 _TEXT_KEYS = {"comment", "title", "name", "program_name", "label", "label_key",
-              "description", "contour_name", "header_lines", "footer_lines", "helper_subs"}
+              "description", "contour_name", "header_lines", "footer_lines", "helper_subs",
+              "lang"}
 
 
 def finite_float(value: object, label: str = "Wert") -> float:

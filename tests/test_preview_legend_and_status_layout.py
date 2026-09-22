@@ -84,12 +84,12 @@ def test_legend_entries_are_a_pure_qt_free_data_contract():
     reine Zahlen/Strings, importierbar und pruefbar ohne echtes PyQt5 (dieser
     Test laeuft bewusst in der Stub-Qt-Suite, nicht bei den Real-Qt-Tests)."""
     assert len(LEGEND_ENTRIES) == 10
-    seen_labels = set()
+    seen_label_keys = set()
     for entry in LEGEND_ENTRIES:
-        assert set(entry.keys()) == {"label", "color", "width", "style"}
-        assert isinstance(entry["label"], str) and entry["label"]
-        assert entry["label"] not in seen_labels, "Label doppelt vergeben"
-        seen_labels.add(entry["label"])
+        assert set(entry.keys()) == {"label_key", "color", "width", "style"}
+        assert isinstance(entry["label_key"], str) and entry["label_key"]
+        assert entry["label_key"] not in seen_label_keys, "label_key doppelt vergeben"
+        seen_label_keys.add(entry["label_key"])
         assert entry["style"] in ("solid", "dash", "dashdot")
         r, g, b = entry["color"]
         for channel in (r, g, b):
@@ -108,9 +108,9 @@ def test_status_box_style_is_a_pure_qt_free_data_contract():
     """LES-051: analog zu LEGEND_ENTRIES - kein QColor/QPen/QBrush in
     STATUS_BOX_STYLE selbst, reine Zahlen/Strings."""
     assert set(STATUS_BOX_STYLE.keys()) == {
-        "header", "border_color", "fill_color", "text_color",
+        "header_key", "border_color", "fill_color", "text_color",
     }
-    assert isinstance(STATUS_BOX_STYLE["header"], str) and STATUS_BOX_STYLE["header"]
+    assert isinstance(STATUS_BOX_STYLE["header_key"], str) and STATUS_BOX_STYLE["header_key"]
     for key in ("border_color", "fill_color", "text_color"):
         channels = STATUS_BOX_STYLE[key]
         assert len(channels) in (3, 4)  # RGB oder RGBA

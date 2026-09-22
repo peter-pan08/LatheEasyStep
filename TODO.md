@@ -46,7 +46,7 @@ Status 0.9.0: freigegeben".
 | LES-051 | - | Panel-Grundgeruest/Darstellungsadapter: 0.9.0-Kernumfang abgeschlossen, zwei Restpunkte verschoben (siehe Abschnitt) | - | 0.9.0 abgeschlossen |
 | LES-052 | - | Panel-Architektur/Zustandsmodell: 0.9.0-Kernumfang abgeschlossen, Restpunkte verschoben/optional (siehe Abschnitt) | - | 0.9.0 abgeschlossen |
 | LES-022 | P3 | vier verstreute Settings-Zustaende typisieren (kein bekannter Fehler, Audit 2026-09-21: reine Typisierung) | S | 1.0.0/spaeter |
-| LES-044 | P3 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, Audit 2026-09-21: reine Codeverschiebung) | S | 1.0.0/spaeter |
+| LES-044 | P3 | drei kleine Qt-freie Restauslagerungen (kein bekannter Fehler, reine Codeverschiebung); ID-only-Vollaudit 2026-09-21 abgeschlossen, keine bekannte sichtbare UI-Prosa mehr ausserhalb `.lng` | S | 1.0.0/spaeter |
 | LES-043 | P2 | Gegenspindelfunktion als separates Projekt spezifizieren | XL | separat |
 | LES-030 | extern | weitere reale Maschinenprofile verifizieren | extern | offen |
 | Release-Prozess | P3 | Standing-Checkliste fuer jedes zukuenftige Release pflegen (siehe Abschnitt) | S | laufend |
@@ -512,19 +512,45 @@ Teil des 0.9.0-Umfangs. Beide bleiben eigenstaendige, optionale
 zukuenftige Features ohne festes Versionsziel; Autosave mit deutlich
 staerkerer sachlicher Begruendung als Undo/Redo (siehe jeweils unten).
 
-**Autosave/Absturzwiederherstellung - optionales zukuenftiges Feature mit
-dokumentiertem Recovery-Nutzen, aber kein 0.9.0-Blocker:** plausibler,
-konkreter funktionaler Nutzen, durch Code-Pruefung 2026-09-21 bestaetigt -
-es existiert keinerlei Warnung beim Schliessen des Panels mit
-ungespeicherten Aenderungen (`warn_if_dirty()` laeuft ausschliesslich bei
-Tab-/Step-Wechsel, `ui_selection.py:46,110`, nicht beim Beenden); ein
-Panel-Absturz oder Stromausfall in der Werkstattumgebung verliert
-ungespeicherte Aenderungen vollstaendig und ohne jeden Hinweis. Betrifft
-aber ausschliesslich ungespeicherte, im Speicher gehaltene Aenderungen -
-bereits gespeicherte Programmdateien sind durch LES-053/LES-054 bereits
-korrekt/deterministisch. Neues Feature, nichts Bestehendes haengt davon
-ab; keine 0.9.0-Abnahmekriterien verlangen es unabhaengig von der
-Feature-Entscheidung selbst.
+**Exit-Schutz bei ungespeicherten Aenderungen: umgesetzt 2026-09-21**
+(nachgeholter Befund aus der Code-Pruefung 2026-09-21, bewusst getrennt von
+Autosave behandelt - siehe unten). `warn_if_dirty()` lief bis dahin
+ausschliesslich bei Tab-/Step-Wechsel (`ui_selection.py:46,110`), nie beim
+Beenden. Geprueft wurde der tatsaechliche QtVCP-Lifecycle gegen den
+installierten Quelltext (`/usr/bin/qtvcp`, `qtvcp/qt_makegui.py`):
+`closing_cleanup__()` laeuft nachweislich erst NACH `QApplication.exec()`
+und kann das Schliessen nicht mehr verhindern. `class_patch__()` dagegen
+laeuft vor `APP.exec()` mit bereits vorhandenem `self.w` (dem echten
+QtVCP-Fenster) und wird fuer Standalone (`qtvcp -c easystep`) und Embedded
+(`EMBED_TAB_COMMAND=qtvcp -x {XID} -c easystep ...`) identisch aufgerufen,
+da beide Modi denselben `/usr/bin/qtvcp`-Startpfad und dieselbe
+QMainWindow-Klasse (`VCPWindow`/`MainPage`) durchlaufen - Embedded startet
+laut `Drehbank.ini` als eigener `qtvcp`-Prozess mit `-x`, nicht als
+Python-Kindwidget von QtDragon. Umgesetzt: `HandlerClass.class_patch__()`
+ersetzt `self.w.closeEvent` durch `_handle_window_close_event()`
+(`lathe_easystep_handler.py`), delegiert an
+`ui_dirty.py::handle_window_close_event()`/
+`confirm_discard_or_save_on_exit()`. Bei ungespeicherten Aenderungen
+erscheint ein Speichern-/Verwerfen-/Abbrechen-Dialog (eigene Buttons statt
+Qt-Standardbuttons, da deren Text nicht aus `.lng` kaeme): Speichern nutzt
+den bestehenden `handle_save_changes()`-Pfad und schliesst nur, wenn
+danach kein Dirty-State mehr besteht; Verwerfen laesst schliessen zu;
+Abbrechen verhindert das Schliessen tatsaechlich; ohne Dirty-State
+erscheint kein Dialog. Tests: `tests/test_class_patch_close_event.py`
+(Stub, `class_patch__()`-Verdrahtung), `tests/test_unsaved_changes_on_exit_real_qt.py`
+(Real-Qt, sieben Faelle inkl. echter `handle_save_changes()`-Integration).
+
+**Autosave/Absturzwiederherstellung - weiterhin optionales zukuenftiges
+Feature mit dokumentiertem Recovery-Nutzen, aber kein 0.9.0-Blocker:** der
+Exit-Schutz oben deckt ausschliesslich den regulaeren Beendigungsvorgang
+ab. Ein Panel-Absturz oder Stromausfall in der Werkstattumgebung verliert
+ungespeicherte Aenderungen weiterhin vollstaendig und ohne jeden Hinweis -
+dafuer waere eine getrennte, atomare Wiederherstellungsdatei noetig, keine
+Erweiterung des Exit-Schutzes. Betrifft ausschliesslich ungespeicherte, im
+Speicher gehaltene Aenderungen - bereits gespeicherte Programmdateien sind
+durch LES-053/LES-054 bereits korrekt/deterministisch. Neues Feature,
+nichts Bestehendes haengt davon ab; keine 0.9.0-Abnahmekriterien verlangen
+es unabhaengig von der Feature-Entscheidung selbst.
 
 - [ ] Autosave und Absturzwiederherstellung als getrennte, atomare
   Wiederherstellungsdatei vorsehen. Originaldateien duerfen niemals ungefragt
@@ -813,6 +839,131 @@ Jeden dieser Schritte weiterhin mit einem kleinen Stub-Test und einem
 Real-Qt-Start pruefen (etablierte Praxis, siehe Changelog); bereits
 abgeschlossene Vorschau-Pakete nicht erneut als offene Aufgaben
 dokumentieren.
+
+**ID-only-Vollaudit 2026-09-21, erster Durchgang: behoben.** Die
+Vorschau-Canvas-Beschriftung war Qt-frei-sprachunwissend und dauerhaft
+Deutsch (`preview_widget.py` importierte `TRANSLATIONS` an keiner Stelle).
+Umgesetzt: `ViewState.language` (`view_state.py`) plus `language`-Property
+auf `LathePreviewWidget`, gesetzt ueber `PreviewView.apply_paths()`
+(`ui_preview_view.py`) und bei Sprachumschaltung ueber
+`_apply_language_texts()` -> `_refresh_preview()`
+(`lathe_easystep_handler.py`). `LEGEND_ENTRIES`/`STATUS_BOX_STYLE`
+(`preview_geometry.py`) halten jetzt `label_key`/`header_key` statt
+Literaltext (Modul bleibt Qt-frei, Aufloesung erst in
+`preview_widget.py`); die gezeichneten Labels ("Schnitt bei Z = ...",
+"Vorderansicht bei Z = ...", "D final:", "D max:", "Schnitt Z ...",
+"Legende") sowie `get_machine_limit_warnings()` (`gcode_safety.py`, auch
+in G-Code-`(WARN: ...)`-Kommentaren, siehe `gcode_program.py:361`) nutzen
+jetzt `TRANSLATIONS.tr()`/`gcode_comment()` mit neuen `runtime.preview.*`/
+`gcode.comment.limit_warning_*`-Schluesseln in allen drei Sprachdateien.
+Ebenfalls behoben: `ui_persistence.py:220,330` (roher `str(exc)` bei
+ungueltigen Step-/Programm-Dateien) nutzen jetzt `format_user_error()` mit
+neuem `fallback_title` (`message.step.load_failed`/bereits vorhandenem
+`message.program.load_failed`); `format_user_error()`s letzter Fallback
+ohne `fallback_title`/`op_number` gibt nicht mehr rohen `detail` zurueck,
+sondern `TRANSLATIONS.tr("message.generic_error", lang).format(detail=...)`
+(`ui_messages.py`). Nicht betroffen/kein Verstoss: die Achsbeschriftungen
+"X"/"Z"/"XZ" (`preview_widget.py`, `ui_contour.py:387`,
+`ui_operations.py:178`) sind technische, sprachunabhaengige
+Achs-/Bewegungscodes, keine Uebersetzungsfaelle.
+
+**ID-only-Vollaudit 2026-09-21, zweiter Durchgang: weiterer Befund,
+inzwischen ebenfalls behoben.** Die Vorschau-Statusbox zeigte laut
+`ui_preview.py:361-364` zwei weitere, unabhaengige Warnungsquellen mit
+hartkodiertem Text, die im ersten Durchgang nicht mitverfolgt wurden:
+`checks.py::validate_program_setup()` (ca. 24 Stellen ueber
+`_check_drill_before_internal_machining()`, `_check_duplicate_operations()`,
+`_check_tool_kind_matches_operation()`, `_check_tool_width_matches_operation()`,
+`_check_tool_matches_snapshot()`, `_check_groove_reaches_chuck_no_go_zone()`
+sowie mehrere Inline-Pruefungen fuer Gewinde/DIN-Freistich/Einstich, auch
+in G-Code-`(WARN: ...)`-Kommentaren via `gcode_program.py:231,363`) und
+`tool_logic.py::radius_warning_details()` (eine Stelle, nur UI-Statusbox).
+
+Umgesetzt: **stabile Meldungs-IDs plus Parameter statt fertiger Saetze**,
+da dieselben Ergebnisse technisch weiterverarbeitet werden (rund ein
+Dutzend Tests filtern/vergleichen Warnungen inhaltlich, z. B.
+`tests/test_tool_kind_mismatch_check.py`). `checks.py::CheckWarning`
+(`{"key": str, "params": dict}`) plus `checks.py::format_warning()` als
+zentrale Uebersetzungsgrenze (nutzt `gcode_comment()` - dieselbe Qt-freie
+`.lng`-Mechanik wie der Rest der Generatorpipeline, `checks.py` bleibt
+Qt-frei). `radius_warning_details()` liefert dieselbe Struktur.
+`gcode_program.py`/`ui_preview.py` uebersetzen erst beim Einbetten
+(G-Code-Kommentar bzw. Vorschau-Statusbox, mit `current_language(handler)`).
+Alle betroffenen Tests (9 Dateien) von Substring- auf Key-/Parameter-
+Vergleiche umgestellt. 47 neue `.lng`-Schluessel (`warning.*`, `optype.*`,
+`tool.kind.*`, `field.*`) in allen drei Sprachen, Regressionstests in
+`tests/test_checks_warning_translation.py` und
+`tests/test_gcode_comments_are_language_dependent.py`.
+
+**Dritter Durchgang (repo-weiter Vollaudit, nicht nur die bekannten
+Funktionen): zwei weitere, kleinere Funde, ebenfalls behoben.**
+`gcode_drill.py` (Retract-unter-safe_z-Warnung, `"... verwende safe_z"`)
+und `gcode_safety.py::get_approach_warnings()` (drei Meldungen: Startpunkt
+im Rohteil/in der Futter-Sperrzone, Rueckzugsebene schneidet Futterbereich,
+nur in G-Code-Kommentare eingebettet, keine UI-Statusbox) nutzten
+hartkodiertes Deutsch ohne jeden `.lng`-Bezug. Keine Weiterverarbeitung
+durch Tests (nur Substring-Pruefung des unveraenderten Default-Texts),
+daher direkt via `gcode_comment()` uebersetzt (analog zu
+`get_machine_limit_warnings()`), keine Teststruktur-Aenderung noetig.
+`ui_groove.py::render_groove_diagrams()` zeichnete das Label "Stirn"
+(Einstich-/Abstich-Lagediagramm) fest Deutsch - neuer Schluessel
+`runtime.groove.label_face`. Referenzregeneration (kein Diff) und
+12+43-rs274-Lauf danach wiederholt, da G-Code-Kommentartext betroffen war.
+
+Als Nicht-Verstoss geprueft und bewusst ausgenommen (kein Fix noetig):
+`checks.py::validate_contour()` und `tool_logic.py::
+collect_tool_orientation_warnings()` enthalten ebenfalls hartkodiertes
+Deutsch, sind aber toter Code - projektweit nicht aufgerufen (verifiziert
+per Grep ueber `lathe_easystep/`, `lathe_easystep_handler.py`, `tests/`),
+erreichen also nie einen Nutzer. `contour_logic.py::
+validate_contour_segments_for_profile()`s Fehlertexte gehen ausschliesslich
+in `handler._log(...)` (interne Logs, per Definition von der ID-only-Regel
+ausgenommen). Technische Bezeichner wie "X"/"Z"/"XZ", "ID"/"OD", "mm"/
+"inch", Werkzeugnummern/-radien/ISO-Codes und "WARN"/"Step" als feste
+G-Code-Kommentarpraefixe bleiben unveraendert sprachinvariant - keine
+UI-Prosa.
+
+**Ergebnis: keine bekannte sichtbare UI-Prosa mehr ausserhalb der
+`.lng`-Dateien.** Details zum tatsaechlichen repo-weiten Pruefumfang siehe
+CHANGELOG.md.
+
+**Sprach-Verdrahtungsluecke (separater, nicht ID-only-bezogener
+Nebenbefund derselben Pruefung): behoben 2026-09-22.**
+`settings["lang"]` wurde im echten, Handler-getriebenen
+"Programm erzeugen"-Pfad nirgends gesetzt (`ui_header.py::
+collect_program_header()` liefert keinen `lang`-Schluessel) -
+`gcode_comment()` fiel dadurch in der laufenden UI immer auf Deutsch
+zurueck, unabhaengig von der gewaehlten UI-Sprache, obwohl LES-044
+(2026-09-14) genau das als Ziel dokumentiert und auf Funktionsebene bereits
+korrekt testete. War keine ID-only-Regelverletzung (der Text kam korrekt
+aus `.lng`, nur die Sprachauswahl selbst erreichte den Aufrufer nicht).
+
+Datenfluss geprueft: `ui_flow.py::build_gcode_lines()` ist der alleinige
+reale Aufrufpfad (`write_gcode_file()` -> `handler._build_gcode_lines()`
+-> `build_gcode_lines()` -> `handler.model.generate_gcode()`) - hier und
+nur hier wird `handler.model.program_settings` aus
+`_collect_program_header()` aufgebaut. Kleinste Korrektur: eine Zeile,
+`handler.model.program_settings["lang"] = current_language(handler)`
+(bestehender `ui_helpers.py`-Wrapper um `_current_language_code()`, kein
+neuer Sprachzustand). `current_language()` faengt fehlendes Handler-Setup
+bereits ab (Fallback "de"), dadurch auch fuer synthetische Test-Handler
+ohne Widget-Baum sicher.
+
+Bewusst NICHT persistiert: `build_program_data()`
+(Speicherpfad fuer `.lse`) ruft `_collect_program_header()` unabhaengig
+und ohne "lang" erneut auf, statt `handler.model.program_settings`
+wiederzuverwenden - gespeicherte Programme werden dadurch nicht
+sprachabhaengig, die jeweils aktuelle UI-Sprache gilt beim Erzeugen.
+`numeric.py::_TEXT_KEYS` um `"lang"` ergaenzt (rein deklarativ - ein
+Sprachcode wird nie als Zahl fehlinterpretiert, aber explizit statt
+zufaellig ueber den String-Parse-Fallback abgesichert).
+
+Regressionstests: `tests/test_gcode_language_wiring.py` (6 Faelle) treibt
+den echten `build_gcode_lines()`-Pfad direkt an - DE/EN/ES-Kommentare,
+Sprachwechsel ohne Programmneuladen zwischen zwei Aufrufen desselben
+Handlers, technische G-Code-Struktur (Zeilen ohne `(...)`-Kommentare)
+bleibt zwischen den Sprachen byte-identisch, sowie der explizite
+Nicht-Persistenz-Nachweis gegen `build_program_data()`.
 
 ## LES-032 Werkzeuggeometrie
 

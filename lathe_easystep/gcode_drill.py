@@ -81,7 +81,9 @@ def generate_drill_gcode(
     )
     emit_coolant(lines, op.params.get("coolant_mode", op.params.get("coolant", False)))
     if retract < safe_z:
-        lines.append(f"(WARN: retract ({retract:.3f}) < safe_z ({safe_z:.3f}); verwende safe_z)")
+        lines.append(
+            f"(WARN: {gcode_comment('gcode.comment.retract_below_safe_z', lang, retract=f'{retract:.3f}', safe_z=f'{safe_z:.3f}')})"
+        )
         retract = safe_z
 
     lines.append(f"({gcode_comment('gcode.comment.approach_before_cycle', lang)})")

@@ -217,7 +217,11 @@ def handle_load_step(handler, *, step_file_filter: str) -> None:
             data = parse_step_payload(data)
             op = handler._step_data_to_operation(data)
         except ValueError as exc:
-            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), str(exc))
+            QtWidgets.QMessageBox.warning(
+                parent,
+                _tr(handler, "dialog.step.load.title"),
+                format_user_error(handler, exc, fallback_title=_tr(handler, "message.step.load_failed")),
+            )
             return
         if op is None:
             QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.step.load.title"), _tr(handler, "message.step.invalid"))
@@ -327,7 +331,11 @@ def handle_load_program(handler) -> None:
                 file_path,
             )
         except ValueError as exc:
-            QtWidgets.QMessageBox.warning(parent, _tr(handler, "dialog.program.load.title"), str(exc))
+            QtWidgets.QMessageBox.warning(
+                parent,
+                _tr(handler, "dialog.program.load.title"),
+                format_user_error(handler, exc, fallback_title=_tr(handler, "message.program.load_failed")),
+            )
             return
 
         # SICHERHEITSFUND 2026-09-20 (LES-052 Abschnitt 3): das komplette neue

@@ -8,7 +8,7 @@ from lathe_easystep.model import OpType, Operation
 
 
 def _duplicate_warnings(warnings):
-    return [w for w in warnings if "identisch" in w]
+    return [w for w in warnings if w["key"] == "warning.duplicate_operation"]
 
 
 def test_identical_operations_produce_optional_warning_not_deletion():
@@ -28,7 +28,7 @@ def test_identical_operations_produce_optional_warning_not_deletion():
     ]
     warnings = _duplicate_warnings(validate_program_setup(ops, {}))
     assert len(warnings) == 1
-    assert "Operation 3" in warnings[0] and "Operation 2" in warnings[0]
+    assert warnings[0]["params"]["idx"] == 3 and warnings[0]["params"]["first_idx"] == 2
     # Keine automatische Aenderung: beide Operationen bleiben unangetastet.
     assert len(ops) == 3
 

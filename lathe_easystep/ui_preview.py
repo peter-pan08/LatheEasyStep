@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Dict, List, Tuple
 
-from .checks import validate_program_setup
+from .checks import format_warning, validate_program_setup
 from .contour_features import normalize_relief_mode
 from .contour_logic import (
     build_contour_variants,
@@ -15,6 +15,7 @@ from .gcode_safety import get_machine_limit_warnings
 from .model import OpType, Operation
 from .preview_scene import PreviewScene, scene_from_legacy_paths
 from .translations import TRANSLATIONS
+from .ui_helpers import current_language
 from .ui_step_list_view import StepListView
 from .ui_preview_view import PreviewView
 
@@ -348,6 +349,11 @@ def collect_preview_state(
 
     prog = handler._collect_program_header() or {}
     prog["__operations"] = list(handler.model.operations)
+    lang = current_language(handler)
+    # collect_program_header() liefert keine "lang" - fuer die Vorschau-
+    # Statusbox (anders als beim G-Code-Kommentarpfad) ist die aktuelle
+    # UI-Sprache hier aber bekannt, siehe current_language() oben.
+    prog["lang"] = lang
     # LES-044: die folgenden zwei Bloecke bleiben bewusst breit - jeder
     # aggregiert mehrere unabhaengige Funktionen (Warnungen: drei,
     # Rohteil-/Rueckzugs-/Sperrzonen-Vorschau: vier), deren jeweilige
@@ -358,11 +364,13 @@ def collect_preview_state(
     # dieser Datei. Beide betreffen nur die Vorschau-/Warnungsanzeige, nie
     # die G-Code-Erzeugung selbst.
     try:
-        prog["__warnings"] = (
-            get_machine_limit_warnings(prog)
-            + validate_program_setup(handler.model.operations, {**prog, "tools": getattr(getattr(handler, "_tool_table", None), "tools", {})})
-            + [detail["message"] for detail in handler._radius_warning_details()]
-        )
+        structured_warnings = validate_program_setup(
+            handler.model.operations,
+            {**prog, "tools": getattr(getattr(handler, "_tool_table", None), "tools", {})},
+        ) + handler._radius_warning_details()
+        prog["__warnings"] = get_machine_limit_warnings(prog) + [
+            format_warning(w, lang) for w in structured_warnings
+        ]
     except Exception as exc:
         _LOGGER.debug("[LatheEasyStep] %s: unexpected exception suppressed: %s", "collect_preview_state", exc)
         prog["__warnings"] = []

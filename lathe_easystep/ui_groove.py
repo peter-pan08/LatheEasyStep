@@ -3,6 +3,7 @@ from __future__ import annotations
 from qtpy import QtCore, QtGui
 
 from .translations import TRANSLATIONS
+from .ui_helpers import current_language
 
 
 def setup_groove_tab_ui(handler) -> None:
@@ -111,7 +112,7 @@ def render_groove_diagrams(handler) -> None:
                     p.drawRect(95, 25, 18, 18)
             else:
                 p.drawLine(80, 15, 80, 55)
-                p.drawText(84, 22, "Stirn")
+                p.drawText(84, 22, TRANSLATIONS.tr("runtime.groove.label_face", current_language(handler)))
                 p.drawRect(80, 30, 20, 12)
                 if idx == 2:
                     p.drawLine(130, 20, 95, 20)
