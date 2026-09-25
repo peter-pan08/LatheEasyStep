@@ -32,6 +32,7 @@ M9
 G0 X150.000 Z300.000
 T01 M6
 o<les_first_tool> endif
+G43 H1
 
 
 (Step 1: face)

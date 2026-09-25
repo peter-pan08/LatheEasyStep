@@ -150,15 +150,36 @@ def build_gcode_lines(handler):
             tool_val = 0
         if tool_val > 0:
             unique_tools.add(tool_val)
-    if unique_tools:
+    # LES-Audit 2026-09-23 (Werkzeugwechsel-/Programmende-Position): XT/ZT
+    # wird nur noch dann zwingend verlangt, wenn tatsaechlich etwas davon
+    # Gebrauch macht - der Modus "LinuxCNC/Maschine" verzichtet bewusst auf
+    # die LES-eigene Wechselpunktfahrt, und die Endposition kann jetzt auch
+    # unabhaengig von XT/ZT gewaehlt werden (freie Parkposition oder
+    # Programmstart-Position), siehe get_end_park_lines() (gcode_safety.py).
+    toolchange_position_mode = str(header.get("toolchange_position_mode", "les") or "les").strip().lower()
+    park_mode = str(header.get("park_mode", "toolchange") or "toolchange").strip().lower()
+    toolchange_needs_xt_zt = bool(unique_tools) and toolchange_position_mode != "linuxcnc"
+    end_needs_xt_zt = park_mode not in ("end_position", "park", "custom", "program_start")
+    if toolchange_needs_xt_zt or end_needs_xt_zt:
         xt = header.get("xt")
         zt = header.get("zt")
         if xt is None or zt is None:
-            raise ValueError("Bitte XT und ZT im Programm-Tab eintragen, da ein Werkzeugwechsel ausgegeben wird.")
-    header_lines = tool_change_position_lines(header)
-    footer_lines = tool_change_position_lines(header)
-    handler.model.program_settings["header_lines"] = header_lines
-    handler.model.program_settings["footer_lines"] = footer_lines
+            raise ValueError(
+                "Bitte XT und ZT im Programm-Tab eintragen, da ein Werkzeugwechsel oder die "
+                "Werkzeugwechselpunkt-Endposition ausgegeben wird."
+            )
+    # header_lines positioniert nur den (seltenen) Fall eines Programms ganz
+    # ohne Werkzeug-Operation vorab am Wechselpunkt - im LinuxCNC-Modus faehrt
+    # LES auch dafuer nicht selbst zu XT/ZT.
+    if unique_tools and toolchange_position_mode != "linuxcnc":
+        handler.model.program_settings["header_lines"] = tool_change_position_lines(header)
+    # footer_lines wird bewusst NICHT mehr hier gesetzt (vormals immer die
+    # Werkzeugwechselposition, unabhaengig von park_mode) - das hat die
+    # bereits vorhandene Parkmodus-Logik in get_end_park_lines()
+    # (gcode_safety.py) faktisch unerreichbar gemacht, siehe TODO.md/
+    # CHANGELOG.md. generate_program_gcode() ruft get_end_park_lines()
+    # jetzt wieder tatsaechlich auf, sobald program_settings["footer_lines"]
+    # leer ist.
     return handler.model.generate_gcode()
 
 

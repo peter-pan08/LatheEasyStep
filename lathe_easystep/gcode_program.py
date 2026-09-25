@@ -306,6 +306,21 @@ def generate_program_gcode(operations: List[Operation], program_settings: Dict[s
     ]
     handler_header_lines = [str(x) for x in settings.get("header_lines", []) or []]
     footer_lines_from_settings = [str(x) for x in settings.get("footer_lines", []) or []]
+    park_mode = str(settings.get("park_mode", "toolchange") or "toolchange").strip().lower()
+    if park_mode == "program_start":
+        # LES-Audit 2026-09-23 (Programmende-Positionen): die Startposition
+        # kann nur zur LAUFZEIT bekannt sein (Werkstattbediener faehrt vor
+        # Zyklusstart frei), niemals zum Zeitpunkt der G-Code-Erzeugung -
+        # deshalb #<_x>/#<_z> (Interpreter-Parameter, "current relative
+        # position ... including all offsets", siehe LinuxCNC-Dokumentation
+        # docs/src/gcode/overview.adoc) statt eines in Python berechneten
+        # Literalwerts. Erfassung VOR jeder eigenen Bewegung/Werkzeugaktion,
+        # damit unveraendert die Position gilt, die der Bediener vor
+        # Zyklusstart tatsaechlich angefahren hat.
+        header_lines.append(f"({gcode_comment('gcode.comment.program_start_position_capture', lang)})")
+        header_lines.append("#<_les_start_x> = #<_x>")
+        header_lines.append("#<_les_start_z> = #<_z>")
+        header_lines.append("")
     header_lines.extend(["G18 G7 G90 G91.1 G40 G80", "G20" if str(unit).strip().lower() in ("inch", "in", "zoll", "imperial") else "G21", "G95", "G54", ""])
     header_lines.append(f"({gcode_comment('gcode.comment.safety_params_begin', lang)})")
     xt = settings.get("xt")

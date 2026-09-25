@@ -1,6 +1,6 @@
 # TODO LatheEasyStep
 
-Stand: 2026-09-21
+Stand: 2026-09-25
 
 Diese Datei enthaelt ausschliesslich offene Aufgaben. Abgeschlossene Arbeiten,
 Befunde und historische Teststaende stehen im [CHANGELOG.md](CHANGELOG.md) und
@@ -14,10 +14,18 @@ in den Berichten unter `doc/`. Release-Ziele stehen in [ROADMAP.md](ROADMAP.md).
   (`release_manifest.txt` definiert die veroeffentlichten Pfade); die
   Historie von `main` sowie die Tags `v0.7.0`/`v0.8.0` wurden dafuer einmalig
   neu aufgebaut (siehe README.md-Hinweis fuer bestehende Klone).
-- 968 Stub-Qt-Tests und 131 Tests mit echtem PyQt5, keine Skips.
+- 1007 Stub-Qt-Tests und 139 Tests mit echtem PyQt5, keine Skips (Stand
+  Arbeitsblock "Werkzeugwechsel und Programmabschluss", siehe
+  CHANGELOG.md 2026-09-23).
 - Zwoelf Referenzprogramme bestehen statische NGC-Pruefung und den nativen
   LinuxCNC-Interpreter (`rs274`); zusaetzlich bestehen 43 Matrixprogramme.
-- Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt.
+- Alle zwoelf Referenzen wurden in der QtDragon-SIM bis `M30` ausgefuehrt
+  (Stand vor dem Arbeitsblock 2026-09-23). Die beiden neuen Modi
+  (`program_toolchange_position_mode=linuxcnc`, `park_mode=program_start`)
+  wurden zusaetzlich am 2026-09-23 in einer eigenen, headless betriebenen
+  LinuxCNC-Session (echtes `task`/`motion`/HAL, kein `rs274`-Batch) bis
+  `M30` verifiziert - siehe CHANGELOG.md fuer die vier geprueften
+  Szenarien und Soll-/Ist-Werte. Kein Fehlverhalten gefunden.
 - Der Generator ist von Qt getrennt. Reiter, Step-Verwaltung und Vorschau
   liegen in eigenen UI-/Fachmodulen.
 

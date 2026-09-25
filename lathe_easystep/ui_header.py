@@ -87,6 +87,7 @@ def collect_program_header(self) -> Dict[str, object]:
     for attr in (
         "program_spindle_mode",
         "program_spindle_max_rpm",
+        "program_toolchange_position_mode",
         "program_park_mode",
         "program_toolchange_coords",
         "program_park_coords",
@@ -220,6 +221,8 @@ def collect_program_header(self) -> Dict[str, object]:
     if getattr(self, "program_spindle_mode", None):
         header["spindle_mode"] = _combo_data(self.program_spindle_mode)
     header["spindle_max_rpm"] = _val(getattr(self, "program_spindle_max_rpm", None))
+    if getattr(self, "program_toolchange_position_mode", None):
+        header["toolchange_position_mode"] = _combo_data(self.program_toolchange_position_mode)
     if getattr(self, "program_park_mode", None):
         header["park_mode"] = _combo_data(self.program_park_mode)
     if getattr(self, "program_toolchange_coords", None):

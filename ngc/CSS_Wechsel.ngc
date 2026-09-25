@@ -36,6 +36,7 @@ M9
 G0 X150.000 Z300.000
 T01 M6
 o<les_first_tool> endif
+G43 H1
 
 
 (Step 1: face)
@@ -58,6 +59,7 @@ M9
 (Toolchange move)
 G0 X150.000 Z300.000
 T02 M6
+G43 H2
 G0 X80.000 Z2.000
 
 (Step 2: drill)
@@ -80,6 +82,7 @@ M9
 (Toolchange move)
 G0 X150.000 Z300.000
 T01 M6
+G43 H1
 G0 X80.000 Z2.000
 
 (Step 3: face)

@@ -141,7 +141,7 @@ def bootstrap_widget_refs(handler) -> None:
         "program_zra_absolute", "program_zri_absolute", "program_xt_absolute",
         "program_zt_absolute", "program_s1", "label_prog_s1", "program_s3", "label_prog_s3",
         "program_spindle", "program_tool", "program_npv", "program_spindle_mode",
-        "program_spindle_max_rpm", "program_park_mode", "program_toolchange_coords",
+        "program_spindle_max_rpm", "program_toolchange_position_mode", "program_park_mode", "program_toolchange_coords",
         "program_park_coords", "program_park_x", "program_park_z",
         "program_park_sequential", "program_optional_stop_toolchange", "program_preview_warnings",
         "face_mode", "face_edge_type",

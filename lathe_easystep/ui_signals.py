@@ -71,6 +71,7 @@ def connect_global_form_signals(handler) -> None:
         getattr(handler, "program_chuck_profile", None),
         getattr(handler, "program_spindle_mode", None),
         getattr(handler, "program_toolchange_coords", None),
+        getattr(handler, "program_toolchange_position_mode", None),
         getattr(handler, "program_park_mode", None),
         getattr(handler, "program_park_coords", None),
     ):

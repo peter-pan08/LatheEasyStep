@@ -70,6 +70,7 @@ def apply_program_header_to_handler(
     set_combo(getattr(handler, "program_chuck_grip_mode", None), header.get("chuck_grip_mode"))
     set_combo(getattr(handler, "program_chuck_profile", None), header.get("chuck_profile"))
     set_combo(getattr(handler, "program_spindle_mode", None), header.get("spindle_mode"))
+    set_combo(getattr(handler, "program_toolchange_position_mode", None), header.get("toolchange_position_mode"))
     set_combo(getattr(handler, "program_park_mode", None), header.get("park_mode"))
     toolchange_coords = header.get("toolchange_coords")
     if toolchange_coords is None:

@@ -183,9 +183,26 @@ def _ensure_program_widgets(handler, root) -> None:
     _ensure_row(
         handler,
         layout,
+        "label_program_toolchange_position_mode",
+        "Werkzeugwechselposition",
+        _combo(
+            [("LES (XT/ZT anfahren)", "les"), ("LinuxCNC/Maschine (kein XT/ZT)", "linuxcnc")],
+            "program_toolchange_position_mode",
+        ),
+    )
+    _ensure_row(
+        handler,
+        layout,
         "label_program_park_mode",
         "Parkmodus",
-        _combo([("Werkzeugwechselpunkt", "toolchange"), ("Freie Parkposition", "end_position")], "program_park_mode"),
+        _combo(
+            [
+                ("Werkzeugwechselpunkt", "toolchange"),
+                ("Freie Parkposition", "end_position"),
+                ("Position bei Programmstart", "program_start"),
+            ],
+            "program_park_mode",
+        ),
     )
     _ensure_row(
         handler,

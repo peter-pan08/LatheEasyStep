@@ -99,6 +99,7 @@ UI_TEXT_KEYS = {
     "label_groove_cutting_speed": "text.label_cutting_speed",
     "label_thread_spindle_mode": "text.label_program_spindle_mode",
     "label_thread_cutting_speed": "text.label_cutting_speed",
+    "label_program_toolchange_position_mode": "text.label_program_toolchange_position_mode",
     "label_program_park_mode": "text.label_program_park_mode",
     "label_program_toolchange_coords": "text.label_program_toolchange_coords",
     "label_program_park_coords": "text.label_program_park_coords",
@@ -295,6 +296,7 @@ UI_TOOLTIP_KEYS = {
     "groove_cutting_speed": "tooltip.cutting_speed",
     "thread_spindle_mode": "tooltip.program_spindle_mode",
     "thread_cutting_speed": "tooltip.cutting_speed",
+    "program_toolchange_position_mode": "tooltip.program_toolchange_position_mode",
     "program_park_mode": "tooltip.program_park_mode",
     "program_toolchange_coords": "tooltip.program_toolchange_coords",
     "program_park_coords": "tooltip.program_park_coords",
@@ -600,6 +602,16 @@ COMBO_ITEM_REGISTRY = {
             "combo.program_spindle_mode.css"
         ]
     ],
+    "program_toolchange_position_mode": [
+        [
+            "les",
+            "combo.program_toolchange_position_mode.les"
+        ],
+        [
+            "linuxcnc",
+            "combo.program_toolchange_position_mode.linuxcnc"
+        ]
+    ],
     "program_park_mode": [
         [
             "toolchange",
@@ -608,6 +620,10 @@ COMBO_ITEM_REGISTRY = {
         [
             "end_position",
             "combo.program_park_mode.end_position"
+        ],
+        [
+            "program_start",
+            "combo.program_park_mode.program_start"
         ]
     ],
     "program_toolchange_coords": [

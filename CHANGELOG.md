@@ -17,6 +17,180 @@
 
 ## [Unreleased]
 
+### SIM-Verifikation: Werkzeugwechsel-/Programmende-Modi in echter LinuxCNC-Session bestaetigt 2026-09-23
+
+Nachtrag zum Arbeitsblock "Werkzeugwechsel- und Programmende-Position"
+(siehe folgender Eintrag) - dessen `rs274`-Pruefung deckt nur Parser-/
+Interpreter-Akzeptanz ab, keine reale Werkzeugwechsel-Interaktion
+(`iocontrol.0.tool-change`/`tool-changed`-Handshake) und keine
+tatsaechliche Fahrwegausfuehrung ueber `task`/`motion`. Deshalb zusaetzlich
+eine eigene, headless betriebene LinuxCNC-Session aufgebaut (Basis:
+`sim.qtdragon_lathe.basic_xz_lathe-1/lathe.ini`, als eigene Kopie im
+Scratch-Bereich, NICHT die bestehende lokale SIM-Installation veraendert -
+`basic_sim.tcl -no_use_hal_manualtoolchange`, eigene Werkzeugtabelle mit
+bewusst von null verschiedenen X/Z-Offsets fuer T1/T2, um G43-Aktivierung
+an einer tatsaechlichen Positionsverschiebung nachweisen zu koennen; das
+DISPLAY-Programm ist ein minimales Python-Skript nach dem Muster des
+offiziellen LinuxCNC-Tests `tests/toolchanger/reload-tool` -
+`linuxcnc.command()`/`stat()` statt Qt).
+
+Vier Szenarien end-to-end bis `M30` gefahren, jeweils mit Trajektorien-
+Mitschnitt (Position/Werkzeug/Spindel/Werkzeugoffset alle ~100ms):
+
+1. **`toolchange_position_mode=linuxcnc`, Werkzeug nicht aktiv** (leere
+   Spindel): `tool_in_spindle` wechselt 0->1, `G43 H1` aktiviert den
+   konfigurierten Offset (Soll Z+5.000, Ist Z+5.000), keine `XT`/`ZT`-
+   Fahrt vor dem Wechsel in der Trajektorie, die anschliessende sichere
+   Anfahrt der FACE-Operation zeigt eine reine Einzelachs-Bewegung (Z),
+   keine Diagonale.
+2. **`toolchange_position_mode=linuxcnc`, Werkzeug bereits aktiv** (T1
+   vorher per MDI geladen, `#<_current_tool>==1`): die Spindel (vorher per
+   MDI auf eine unterscheidbare Testdrehzahl gesetzt) bleibt bis zum
+   eigenen `G97 S500 M3` der FACE-Operation durchgehend aktiv - der
+   Wechsel-Zweig (der M5/M9 vor `T01 M6` enthaelt) wurde nachweislich
+   uebersprungen; `G43 H1` lief trotzdem erneut (Offset am Ende weiterhin
+   korrekt aktiv).
+3. **`park_mode=program_start`**: Maschine per MDI auf eine willkuerliche
+   Position gefahren (X25.000/Z-33.000 Radius, kein Werkzeugoffset aktiv),
+   Programm mit einem ANDEREN Werkzeug (T2, Offset X2.000/Z-3.000) bis
+   `M30` durchlaufen. Ergebnis: die rohe Achsposition am Ende
+   (X27.000/Z-36.000) unterscheidet sich von der Startposition um genau
+   den T2-Offset - das ist beabsichtigt und korrekt (G43-Offsets sind
+   grundsaetzlich werkzeugabhaengig). Im logischen/werkstueckbezogenen
+   Frame (Achsposition minus aktivem Werkzeugoffset, das ist exakt das,
+   was `#<_x>`/`#<_z>` und damit auch `#<_les_start_x>`/`#<_les_start_z>`
+   liefern) stimmen Start- und Endposition exakt ueberein (X25.000/
+   Z-33.000 beide). Die Beziehung "Achsposition = logische Position +
+   aktiver Werkzeugoffset" wurde vorab in einem eigenen Diagnose-Szenario
+   unabhaengig per MDI bestaetigt (u. a. mit T2s X- UND Z-Offset, nicht
+   nur Z).
+4. Sicherer Rueckzug vor der Endpositionierung: in allen Szenarien zeigt
+   die Trajektorie vor jeder Wechsel-/Endposition-Fahrt eine reine
+   Einzelachs-Bewegung (nie beide Achsen gleichzeitig ausserhalb der
+   eigentlichen Zerspanungszyklen) - keine direkte Diagonale vom Werkstueck
+   zur Wechsel- oder Endposition gefunden.
+
+Kein Fehlverhalten des Generators gefunden - alle vier Szenarien
+bestaetigen den bereits durch `rs274`/pytest ermittelten Stand. Zwei
+Umgebungs-Stolpersteine bei der Werkzeugerstellung des Testaufbaus
+notiert (betreffen nur den Testaufbau, nicht den Generator): `c.home()`/
+`c.mdi()`s `wait_complete()`-Rueckgabe ist unter Scheduling-Last dieser
+Sandbox (Task-Hauptschleife zeitweise >0.9s statt konfigurierter 0.05s)
+keine verlaessliche Garantie fuer physische Bewegungsfertigstellung -
+zusaetzliches Polling auf stabile Position/IDLE-Status noetig; fehlende
+`INTRO_GRAPHIC`/`INTRO_TIME`-Schluessel in der Test-INI liessen bei jedem
+Lauf einen nicht quittierbaren Tcl/Tk-Fehlerdialog haengen (harmlose
+Meldung, aber blockierender Prozess) - beide Punkte behoben.
+
+`G7`/`G8`-Semantik von `#<_x>` (immer Radius, unabhaengig vom Durchmesser-
+Modus) zusaetzlich isoliert per `rs274`+`(print, ...)` bestaetigt: unter
+`G7` liefert die bestehende `*2`-Rueckschreibformel exakt den
+urspruenglichen Wert zurueck; unter (von LES nie verwendetem) `G8` waere
+sie falsch - das begruendet empirisch, warum LES' Header `G7` unbedingt
+und vor jeder Rueckkehr-Bewegung setzt.
+
+### Feature: Werkzeugwechsel- und Programmende-Position getrennt, Werkzeugoffset-Aktivierung nachgezogen 2026-09-23
+
+Ausgangspunkt: versionsgenaue Pruefung gegen die installierte
+LinuxCNC-Version (`2:2.10.0~pre1+git20260916.0749.7f63661b9b5b-1`,
+`/usr/src/linuxcnc-master`) und die Maschinenkonfiguration
+(`Drehbank.ini`, `TOOL_CHANGE_MODE=MANUAL`, kein `RANDOM_TOOLCHANGER`).
+
+**Werkzeugoffset-Fund und -Fix:** laut `docs/src/lathe/lathe-user.adoc`
+und `docs/src/gcode/g-code.adoc` aktivieren weder `Tn` noch `M6` den
+Werkzeugoffset aus der Tooltable - das dokumentierte Muster ist
+ausdruecklich `Tn M6 G43`, auch fuer Drehmaschinen. LES gab bisher an
+keiner Stelle `G43` aus - ein bestehender Fahrwegfehler (Werkzeuglaenge/
+-offset war nach jedem `Tn M6` inaktiv). `append_tool_and_spindle()` und
+`append_initial_tool_check()` (`gcode_safety.py`) geben jetzt
+`G43 H<tool_num>` nach jedem `Tn M6` aus. Zusaetzlich geprueft, ob
+`#<_current_tool> == n` am Programmstart den passenden Offset bereits
+garantiert: nein (z. B. nach einem vorherigen Programm mit anderem
+G43/G49-Zustand) - deshalb steht `G43 H<n>` in
+`append_initial_tool_check()` unbedingt ausserhalb des
+`o<les_first_tool> if/endif`, nicht nur im Wechsel-Zweig.
+
+**Werkzeugwechselposition (neu, UI-Auswahl):** `program_toolchange_position_mode`
+(Default `les`, Rueckwaertskompatibilitaet fuer alte `.lse`). Modus LES:
+unveraendertes Verhalten - sicherer Rueckzug, `XT`/`ZT`-Fahrt, `Tn M6`,
+`G43`. Modus LinuxCNC/Maschine: LES erzeugt weiterhin die werkstueck-
+bezogenen sicheren Rueckzuege, `Tn M6` und `G43`, aber keine `XT`/`ZT`-
+Fahrt und keine maschinenspezifische Rueckfahrt - diese Bewegung liegt
+dann vollstaendig bei LinuxCNC. Neue Hilfsfunktion
+`_toolchange_position_is_les()` (`gcode_safety.py`) steuert beide
+Erzeugungspfade. Die bestehende Optimierung (T3->T3 kein Wechsel,
+T3->T5 Wechsel) bleibt unveraendert (`#<_current_tool>`-Vergleich).
+
+**Programmende (Bugfix + neue dritte Variante):** `get_end_park_lines()`
+(`gcode_safety.py`) existierte bereits fuer `park_mode` "toolchange"/
+"end_position", war aber im echten UI-Pfad unerreichbar -
+`ui_flow.py::build_gcode_lines()` ueberschrieb `program_settings
+["footer_lines"]` bisher IMMER mit der Werkzeugwechselposition, egal
+welcher `park_mode` gewaehlt war. Das war der eigentliche Grund, warum
+"Programmende an XT/ZT gekoppelt" wirkte, obwohl die Parkmodus-Logik
+laengst vorhanden war. Behoben durch Entfernen der bedingungslosen
+Ueberschreibung; `generate_program_gcode()` ruft `get_end_park_lines()`
+jetzt tatsaechlich auf. `XT`/`ZT` wird nur noch dann zwingend verlangt,
+wenn Werkzeugwechsel (Modus LES) oder Endposition (`park_mode`
+"toolchange", Default) tatsaechlich davon Gebrauch macht.
+
+Dritte `park_mode`-Variante "Position bei Programmstart"
+(`program_start`): zuerst gegen die installierte LinuxCNC-Version
+geprueft, mit welchen Interpreterparametern die tatsaechliche Position
+zuverlaessig lesbar ist - `#<_x>`/`#<_z>` (`interp_namedparams.cc`,
+`_setup.current_x`/`current_z`), dokumentiert als "current relative
+position in the active coordinate system including all offsets"
+(Koordinatensystem UND Werkzeugoffset bereits eingerechnet). Bewusst
+NICHT eine zur Erzeugungszeit in Python berechnete Position - die
+tatsaechliche Startposition ist erst zur Laufzeit bekannt (Bediener
+faehrt vor Zyklusstart frei). `generate_program_gcode()`
+(`gcode_program.py`) erfasst deshalb ganz am Anfang, vor jeder eigenen
+Bewegung/Werkzeugaktion, `#<_les_start_x> = #<_x>` und
+`#<_les_start_z> = #<_z>` (neue, LES-eigene globale Parameter); die
+Rueckfahrt vor `M30` verwendet ausschliesslich diese Interpreter-
+Ausdruecke (`G0 X[#<_les_start_x>*2] Z[#<_les_start_z>]`), nie einen
+Literalwert. Wichtige, bei Drehmaschinen nicht offensichtliche
+Besonderheit: `#<_x>` liefert bei LinuxCNC-Drehmaschinen laut
+Dokumentation immer den RADIUS, unabhaengig vom aktiven `G7`
+(Durchmessermodus, LES' Standard-Header setzt `G7`) - deshalb `*2` beim
+Zurueckschreiben als `X`-Wort, damit `G7` es korrekt wieder halbiert.
+`Z` braucht keine Korrektur. Vor jeder Endpositionierung bleibt der
+vorhandene sichere Bearbeitungsrueckzug erhalten (`emit_safe_retract_for_op()`
+laeuft strukturell unveraendert vor der Endpositionierung) - keine
+direkte diagonale Bewegung vom Werkstueck zur Endposition eingefuehrt.
+Der Mechanismus wurde nicht nur dokumentarisch, sondern empirisch mit
+dem echten `rs274`-Interpreter verifiziert; kein Fall gefunden, in dem
+"Rueckkehr zur Programmstartposition" wegen Koordinaten-/Offsetsemantik
+unzuverlaessig waere.
+
+Neue UI-Elemente (Combo `program_toolchange_position_mode`, dritter
+Eintrag bei `program_park_mode`) folgen der bestehenden `.lng`-only-
+Architektur: eindeutige IDs, ausschliesslich `.lng`, keine Fallback-Texte
+in Python/`.ui`. 7 neue Schluessel in de/en/es (identische Key-Sets,
+1185 Eintraege je Sprache, keine leeren Werte, kein Raw-Key-Fallback
+ueber `TRANSLATIONS.tr()` geprueft). Bestehende `.lse`-Dateien ohne die
+beiden neuen Header-Felder laden unveraendert mit dem bisherigen
+Verhalten (LES-Wechselpunktfahrt, `park_mode` "toolchange") - `header`
+wird in `persistence.py::build_program_data()` bereits vollstaendig ohne
+Allow-Liste persistiert, die neuen Felder brauchten daher keine
+Persistenzlogik, nur die Formular-Anwendung in `ui_program.py`.
+
+Neue Tests: `tests/test_toolchange_and_end_position.py` (24 Faelle) -
+G43-Aktivierung nach jedem `Tn M6` (beide Erzeugungspfade, inkl. des
+"Werkzeug bereits geladen"-Zweigs), T3->T3 vs. T3->T5, Werkzeugwechsel-
+Modus LES vs. LinuxCNC (inkl. Mehrfachwechsel, inkl. Innen-
+Sicherheitsrueckzug vor dem Wechsel), alle drei `park_mode`-Varianten
+sowohl isoliert (`get_end_park_lines()`) als auch ueber den echten
+`build_gcode_lines()`-Pfad (Regressionsnachweis fuer den behobenen Bug),
+sicherer Rueckzug vor der Endpositionierung (aussen und innen),
+Save/Load-Rundlauf der neuen Einstellungen, Altbestand ohne die neuen
+Felder. Volle Suite: 1007 Stub-/139 Real-Qt-Tests, 0 Skips.
+Referenzregeneration: erwarteter Diff von genau einer neuen `G43 H<n>`-
+Zeile je Werkzeugwechsel in allen zwoelf Referenzen (drei bei
+`CSS_Wechsel.ngc`, das dreimal das Werkzeug wechselt), sonst keine
+inhaltliche Aenderung. 12 Referenzen und 43 Matrixprogramme bestehen den
+nativen LinuxCNC-Interpreter (`rs274`).
+
 ### Feature: Exit-Schutz bei ungespeicherten Aenderungen 2026-09-21
 
 Bestaetigter Befund aus der Post-Release-Doku-Pruefung: `warn_if_dirty()`

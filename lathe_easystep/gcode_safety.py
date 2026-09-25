@@ -416,7 +416,7 @@ def append_tool_and_spindle(
         if tool_num != last_tool:
             if settings is None:
                 raise ValueError("Werkzeugwechsel erfordert Programmkopf mit XT/ZT.")
-            toolchange_lines = move_to_toolchange_pos(settings)
+            toolchange_lines = move_to_toolchange_pos(settings) if _toolchange_position_is_les(settings) else []
             lines.append(f"({gcode_comment('gcode.comment.tool_label', settings.get('lang'), tool=f'{tool_num:02d}')})")
             if settings is not None:
                 # M1 VOR der angenommenen sicheren Rueckzugsbewegung, nicht
@@ -451,6 +451,15 @@ def append_tool_and_spindle(
                 lines.append("M9")
                 lines.extend(toolchange_lines)
             lines.append(f"T{tool_num:02d} M6")
+            # LES-Audit 2026-09-23 (Werkzeugoffset): laut installierter
+            # LinuxCNC-Dokumentation (docs/src/lathe/lathe-user.adoc,
+            # docs/src/gcode/g-code.adoc "G43 Tool Length Offset") aktiviert
+            # weder Tn noch M6 den Werkzeugoffset aus der Tooltable - das
+            # dokumentierte Muster ist ausdruecklich "Tn M6 G43", auch fuer
+            # Drehmaschinen. Explizites H<tool_num> statt bloss "G43" (das
+            # implizit den zuletzt per M6 geladenen Werkzeug verwendet), um
+            # nicht von dieser impliziten Kopplung abzuhaengen.
+            lines.append(f"G43 H{tool_num}")
             if settings is not None:
                 settings["_current_tool"] = tool_num
                 safe = get_safe_position(settings)
@@ -590,6 +599,16 @@ def _coord_mode(settings: Dict[str, object] | None, primary_key: str, *, legacy_
     return default
 
 
+def _toolchange_position_is_les(settings: Dict[str, object] | None) -> bool:
+    """True (Default): LES faehrt selbst XT/ZT an. False ("linuxcnc"): LES
+    ueberlaesst die reine Wechselbewegung vollstaendig LinuxCNC/der
+    Maschine - sichere werkstueckbezogene Rueckzuege, Tn M6 und G43 bleiben
+    in beiden Faellen LES-Aufgabe (siehe append_tool_and_spindle()/
+    append_initial_tool_check())."""
+    mode = str((settings or {}).get("toolchange_position_mode", "les") or "les").strip().lower()
+    return mode != "linuxcnc"
+
+
 def move_to_toolchange_pos(settings: Dict[str, object], label: str | None = None) -> List[str]:
     xt = float_or_none(settings.get("xt"))
     zt = float_or_none(settings.get("zt"))
@@ -639,8 +658,10 @@ def append_initial_tool_check(
     tool_num = get_tool_number({"tool": tool_value})
     if tool_num <= 0:
         return
-    toolchange_lines = move_to_toolchange_pos(
-        settings, gcode_comment("gcode.comment.first_toolchange", settings.get("lang"))
+    toolchange_lines = (
+        move_to_toolchange_pos(settings, gcode_comment("gcode.comment.first_toolchange", settings.get("lang")))
+        if _toolchange_position_is_les(settings)
+        else []
     )
     lines.append(f"({gcode_comment('gcode.comment.start_condition', settings.get('lang'))})")
     lines.append(f"o<les_first_tool> if [#<_current_tool> NE {tool_num}]")
@@ -648,6 +669,14 @@ def append_initial_tool_check(
         lines.append("M1")
     lines.extend(("M5", "M9", *toolchange_lines, f"T{tool_num:02d} M6"))
     lines.append("o<les_first_tool> endif")
+    # LES-Audit 2026-09-23 (Werkzeugoffset): unbedingt ausserhalb des
+    # if/endif, nicht nur im Wechsel-Zweig - #<_current_tool> == n am
+    # Programmstart (der "kein Wechsel noetig"-Zweig) garantiert NICHT, dass
+    # der passende Werkzeugoffset bereits aktiv ist (z. B. nach einem
+    # vorherigen Programm mit anderem G43/G49-Zustand oder nach dem
+    # Einschalten). "G43 H<n>" ist idempotent und muss deshalb in jedem Fall
+    # laufen, sobald feststeht, welches Werkzeug tatsaechlich geladen ist.
+    lines.append(f"G43 H{tool_num}")
     settings["_current_tool"] = tool_num
     _motion_state(settings).clear()
 
@@ -755,6 +784,20 @@ def get_end_park_lines(settings: Dict[str, object] | None) -> List[str]:
         if sequential:
             return [label, f"{'G53 G0' if park_machine else 'G0'} X{x_park:.3f}", f"{'G53 G0' if park_machine else 'G0'} Z{z_park:.3f}"]
         return [label, f"{'G53 G0' if park_machine else 'G0'} X{x_park:.3f} Z{z_park:.3f}"]
+    if park_mode == "program_start":
+        # #<_les_start_x>/#<_les_start_z> wurden am Programmanfang erfasst
+        # (gcode_program.py, "program_start_position_capture") - reine
+        # Interpreter-Ausdruecke, kein in Python berechneter Literalwert.
+        # #<_x> liefert bei Drehmaschinen laut LinuxCNC-Dokumentation immer
+        # den RADIUS, auch im aktiven G7-Durchmessermodus - deshalb *2 beim
+        # Zurueckschreiben als X-Wort, damit G7 es wieder korrekt halbiert.
+        # Ausschliesslich Werkstueckkoordinaten: die erfassten Werte sind
+        # bereits "including all offsets" im aktiven Koordinatensystem, ein
+        # G53-Bezug wuerde sie falsch interpretieren.
+        label = f"({gcode_comment('gcode.comment.program_start_position_end', lang)})"
+        if sequential:
+            return [label, "G0 X[#<_les_start_x>*2]", "G0 Z[#<_les_start_z>]"]
+        return [label, "G0 X[#<_les_start_x>*2] Z[#<_les_start_z>]"]
     xt_end = float_or_none(settings.get("xt"))
     zt_end = float_or_none(settings.get("zt"))
     if xt_end is None or zt_end is None:

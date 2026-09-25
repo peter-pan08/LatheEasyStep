@@ -200,7 +200,19 @@ Hier werden die globalen Programmeinstellungen festgelegt:
 - Werkzeugdatenbank
 - Maschinenprofil, Spannfutter und Spannart
 - explizite Koordinatensystemwahl fuer Werkzeugwechsel- und Parkpositionen (`Werkstueckkoordinaten` oder `Maschinenkoordinaten / G53`)
-- vor jedem expliziten `T.. M6` wird derselbe definierte Werkzeugwechselpunkt angefahren
+- Auswahl, wer die Werkzeugwechselposition anfaehrt: `LES` (Standard, wie
+  bisher: sicherer Rueckzug, dann `XT`/`ZT`-Wechselpunktfahrt, dann `T.. M6`)
+  oder `LinuxCNC/Maschine` (LES erzeugt weiterhin die sicheren Rueckzuege
+  und `T.. M6`, faehrt aber keinen eigenen Wechselpunkt an - die Fahrt zur
+  Wechselposition liegt dann vollstaendig bei LinuxCNC/der Maschinenkonfiguration)
+- separate Auswahl fuer die Position am Programmende, unabhaengig vom
+  Werkzeugwechsel: definierte Parkposition X/Z, Werkzeugwechselpunkt `XT`/`ZT`
+  (bisheriges Standardverhalten) oder die beim Start des G-Code-Programms
+  tatsaechlich vorhandene Position (zur Laufzeit ueber LinuxCNC-
+  Interpreterparameter erfasst, nicht die Position zum Zeitpunkt der
+  G-Code-Erzeugung); vor der Endpositionierung wird immer zuerst der
+  vorhandene sichere Bearbeitungsrueckzug angefahren, nie eine direkte
+  Bewegung aus dem Werkstueck heraus
 
 ## Reiter "Planen"
 
@@ -363,6 +375,13 @@ Lathe EasyStep trennt jetzt sauber zwischen Generatorverhalten und Maschinenlogi
 - `Werkstueckkoordinaten` erzeugen normale `G0 X.. Z..`-Bewegungen
 - `Maschinenkoordinaten` erzeugen explizit `G53 G0 X.. Z..`
 - der Generator fuegt nach `T.. M6` kein zusaetzliches `G0 X0 Z0` ein
+- nach jedem `T.. M6` gibt der Generator zusaetzlich `G43 H..` aus, um den
+  Werkzeugoffset aus der Tooltable tatsaechlich zu aktivieren (laut
+  LinuxCNC-Dokumentation aktiviert `Tn M6` allein noch keinen Offset)
+- im Modus `LES` (Standard) faehrt LES vor `T.. M6` selbst den definierten
+  Werkzeugwechselpunkt (`XT`/`ZT`) an; im Modus `LinuxCNC/Maschine`
+  uebernimmt das vollstaendig die LinuxCNC-Konfiguration - LES erzeugt in
+  diesem Fall nur noch die sicheren Rueckzuege und `T.. M6`/`G43`
 
 Der mit dem realen Testprogramm gepruefte Stand (`/home/adm1n/linuxcnc/nc_files/Test.ngc`) zeigt:
 

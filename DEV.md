@@ -149,6 +149,24 @@ Gemeinsame Querschnittslogik:
     `gcode_roughing.py`) traegt seine tatsaechlich erreichte
     Bandendposition selbst ein, statt dass der Aufrufer danach
     bedingungslos `clear()` setzen muss.
+  - Arbeitsblock 2026-09-23 (Werkzeugwechsel-/Programmende-Position, siehe
+    CHANGELOG.md): `append_tool_and_spindle()`/
+    `append_initial_tool_check()` geben nach jedem `Tn M6` jetzt `G43 H<n>`
+    aus (LinuxCNC aktiviert Tooltable-Offsets laut Dokumentation weder
+    ueber `Tn` noch `M6` allein). Neue Hilfsfunktion
+    `_toolchange_position_is_les(settings)` (`gcode_safety.py`) liest
+    `settings["toolchange_position_mode"]` ("les"/"linuxcnc") und steuert,
+    ob `move_to_toolchange_pos()` ueberhaupt aufgerufen wird. `get_end_park_lines()`
+    (bereits vorhanden, war aber via `ui_flow.py::build_gcode_lines()`
+    faktisch unerreichbar, da `program_settings["footer_lines"]`
+    bedingungslos ueberschrieben wurde - Bug behoben) hat eine dritte
+    `park_mode`-Variante `"program_start"`: Rueckfahrt ausschliesslich ueber
+    zur Laufzeit erfasste Interpreterparameter (`#<_les_start_x>`/
+    `#<_les_start_z>`, gesetzt in `generate_program_gcode()` ganz am Anfang
+    aus `#<_x>`/`#<_z>`), nie ueber einen zur Erzeugungszeit berechneten
+    Literalwert. Bei Drehmaschinen liefert `#<_x>` laut LinuxCNC immer den
+    Radius, unabhaengig vom aktiven `G7` - deshalb `*2` beim
+    Zurueckschreiben als `X`-Wort.
   - **Bewusst dauerhaft auf `clear()` (Endposition unbekannt), kein
     offener Punkt:** G71/G72-Roughing-Zyklus ohne folgendes G70
     (`generate_abspanen_gcode()`, `gcode_roughing.py`) und der Nut-Zyklus
